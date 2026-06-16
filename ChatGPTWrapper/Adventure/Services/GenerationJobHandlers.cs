@@ -128,6 +128,8 @@ internal static class GenerationJobHandlers
                     context.StoryContextIncludesState),
             GenerationJobId.ProposeSourceEdits =>
                 SourceEditService.BuildSourceEditPrompt(bundle, context.UserPrompt ?? ""),
+            GenerationJobId.ProposeJsonImport =>
+                SourceJsonImportService.BuildImportPrompt(bundle),
             GenerationJobId.DraftFramework =>
                 """
                 === ADVENTURE DRAFTING ===
@@ -264,6 +266,7 @@ internal static class GenerationJobHandlers
             GenerationJobId.ExpandSection => ApplySectionBootstrap(bundle, responseText),
             GenerationJobId.ContinuityCheck => ApplyContinuityCheck(bundle, responseText),
             GenerationJobId.ProposeSourceEdits => ApplyProposeSourceEdits(bundle, responseText),
+            GenerationJobId.ProposeJsonImport => ApplyProposeJsonImport(bundle, responseText),
             GenerationJobId.DraftFramework =>
                 ApplyDraftFramework(bundle, responseText),
             GenerationJobId.DesignExtractStep =>
@@ -299,6 +302,7 @@ internal static class GenerationJobHandlers
     {
         GenerationJobId.ProcessTurn => true,
         GenerationJobId.DesignExtractStep => true,
+        GenerationJobId.ProposeJsonImport => true,
         _ => false,
     };
 
@@ -354,7 +358,11 @@ internal static class GenerationJobHandlers
             return IsValidPlainTextJobResponse(responseText);
 
         if (ExpectsJsonObjectResponse(jobId))
+        {
+            if (string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
+                return SourceJsonImportService.IsSettledResponse(responseText, streamComplete);
             return IsSettledProcessTurnResponse(responseText, streamComplete);
+        }
 
         if (HasActionableJobProposals(jobId, responseText))
             return true;
@@ -988,6 +996,17 @@ internal static class GenerationJobHandlers
         {
             return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "parse_failed" };
         }
+    }
+
+    private static GenerationJobResult ApplyProposeJsonImport(AdventureBundle bundle, string responseText)
+    {
+        var count = SourceJsonImportService.ParseAndEnqueue(bundle, responseText);
+        return new GenerationJobResult
+        {
+            Success = true,
+            ProposalCount = count,
+            Error = count == 0 ? "no_proposals_parsed" : null,
+        };
     }
 
     private static GenerationJobResult ApplyProposeSourceEdits(AdventureBundle bundle, string responseText)

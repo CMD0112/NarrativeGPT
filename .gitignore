@@ -1,11 +1,50 @@
+# .NET build outputs
 bin/
 obj/
 artifacts/
 dist/
-.vs/
+
+# Local ad-hoc build / verify directories
+_build*/
+_test*/
+_native*/
+.build-*/
+
+# .NET artifacts
 *.user
 *.suo
+*.userosscache
+*.sln.docstates
 *.cache
 *.dll
+*.exe
 *.pdb
+*.nupkg
+*.snupkg
+
+# Test and coverage
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.lcov
+.msCoverageSourceRootsMapping_*
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.rsuser
+*.DotSettings.user
+
+# Cursor
+.cursor/
+
+# OS
 .DS_Store
+Thumbs.db
+Desktop.ini
+
+# Scratch / temp
+.tmp*
+*.log

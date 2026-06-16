@@ -78,6 +78,7 @@ public sealed class GenerationJobGuideTests
     [InlineData(GenerationJobId.ContinuityCheck)]
     [InlineData(GenerationJobId.ProcessTurn)]
     [InlineData(GenerationJobId.ProposeSourceEdits)]
+    [InlineData(GenerationJobId.ProposeJsonImport)]
     public void EditableUtilityJobIds_have_non_empty_defaults(string jobId)
     {
         Assert.False(string.IsNullOrWhiteSpace(GenerationJobGuideService.BuildDefaultInstructionBody(jobId)));

@@ -148,6 +148,9 @@ public partial class MainWindow
             or GenerationJobId.DesignExtractStep
             or GenerationJobId.DraftFramework;
 
+    private static bool UsesUtilityWebView(string jobId) =>
+        jobId is GenerationJobId.ProposeJsonImport or GenerationJobId.ProposeSourceEdits;
+
     private async Task<GenerationJobResult?> RunGenerationJobForActiveAdventureAsync(
         string jobId,
         GenerationJobContext? context = null,
@@ -176,11 +179,12 @@ public partial class MainWindow
         }
 
         var isDesignJob = IsDesignGenerationJob(jobId);
+        var useUtilityWebView = UsesUtilityWebView(jobId);
 
-        var usesInline = !isDesignJob && UtilityDeliveryModeService.UsesInlineDelivery(bundle);
+        var usesInline = !isDesignJob && !useUtilityWebView && UtilityDeliveryModeService.UsesInlineDelivery(bundle);
         WebView2 wv;
         CoreWebView2 core;
-        if (isDesignJob || _appMode == AppMode.Design)
+        if ((isDesignJob || _appMode == AppMode.Design) && !useUtilityWebView)
         {
             try
             {
@@ -377,7 +381,11 @@ public partial class MainWindow
 
         string? status = null;
         if (result.Success && result.ProposalCount > 0)
-            status = $"Extracted {result.ProposalCount} proposal(s).";
+        {
+            status = jobId == GenerationJobId.ProposeJsonImport
+                ? $"Queued {result.ProposalCount} JSON import proposal(s) — review in Sources."
+                : $"Extracted {result.ProposalCount} proposal(s).";
+        }
         else if (!result.Success && result.SkippedReason is null)
             status = FormatDesignJobStatusError(jobId, result.Error);
         else if (!string.IsNullOrWhiteSpace(result.DisplayText))
@@ -524,6 +532,21 @@ public partial class MainWindow
         RunGenerationJobForActiveAdventureAsync(
             GenerationJobId.ProposeSourceEdits,
             new GenerationJobContext { UserPrompt = userPrompt });
+
+    private async Task<DesignExtractResult?> RunProposeJsonImportAsync(Guid adventureId)
+    {
+        _activeAdventureId = adventureId;
+        var result = await RunGenerationJobForActiveAdventureAsync(GenerationJobId.ProposeJsonImport);
+        if (result is null)
+            return null;
+
+        return new DesignExtractResult
+        {
+            Success = result.Success,
+            ProposalCount = result.ProposalCount,
+            Error = result.Error,
+        };
+    }
 
     private Task RunDraftFrameworkAsync() =>
         RunGenerationJobForActiveAdventureAsync(GenerationJobId.DraftFramework);

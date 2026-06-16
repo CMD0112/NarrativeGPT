@@ -42,6 +42,8 @@ public partial class AdventureDesignView : UserControl
 
     public Func<AdventureDesignStep, Task<DesignExtractResult?>>? ExtractStepAsync { get; set; }
 
+    public Func<Task<DesignExtractResult?>>? ProposeJsonImportAsync { get; set; }
+
     public Func<Task<string?>>? ImportFrameworkDraftAsync { get; set; }
 
     public Func<bool, bool, Task>? LaunchAdventureAsync { get; set; }
@@ -652,7 +654,25 @@ public partial class AdventureDesignView : UserControl
         regenerateBtn.Click += RegenerateJsonFromSources_Click;
         actions.Children.Add(regenerateBtn);
 
+        var hasLore = ProjectSourceImportService.ImportableLoreFileNames.Any(fileName =>
+            File.Exists(Path.Combine(sourcesDir, fileName)));
+        var aiImportBtn = new Button
+        {
+            Content = "Propose JSON from sources (AI)",
+            Padding = new Thickness(8, 4, 8, 4),
+            Margin = new Thickness(0, 0, 6, 6),
+            Opacity = 0.92,
+            ToolTip = "Fallback when canonical markdown cannot be parsed — runs a utility job to propose scenario.json / entities.json updates",
+        };
+        aiImportBtn.Click += ProposeJsonImport_Click;
+        aiImportBtn.IsEnabled = hasLore
+                                && ProposeJsonImportAsync is not null
+                                && !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
+        actions.Children.Add(aiImportBtn);
+
         panel.Children.Add(actions);
+
+        AppendJsonImportReviewPanel(panel);
 
         DraftPanel.Children.Add(new Border
         {
@@ -754,9 +774,14 @@ public partial class AdventureDesignView : UserControl
 
         var changeBlock = Environment.NewLine + Environment.NewLine + changeReport.Format();
 
+        var suggestAi = result.Warnings.Count > 0 || !changeReport.HasChanges
+            ? Environment.NewLine + Environment.NewLine
+              + "Tip: For non-canonical markdown, try Propose JSON from sources (AI)."
+            : "";
+
         var confirm = MessageBox.Show(
             Window.GetWindow(this),
-            result.Summary + changeBlock + warningBlock + Environment.NewLine + Environment.NewLine
+            result.Summary + changeBlock + warningBlock + suggestAi + Environment.NewLine + Environment.NewLine
             + "Apply these changes to scenario.json and entities.json?",
             "Regenerate JSON from sources",
             MessageBoxButton.YesNo,
@@ -1211,6 +1236,214 @@ public partial class AdventureDesignView : UserControl
         Save();
         RefreshUi();
         SetStatus("Imported framework draft into Sources step.");
+    }
+
+    private async void ProposeJsonImport_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null || ProposeJsonImportAsync is null)
+            return;
+
+        SetStatus("Proposing JSON from sources (AI)…");
+        try
+        {
+            var result = await ProposeJsonImportAsync();
+            _bundle = AdventureStore.Load(_bundle.Metadata.Id);
+            if (result is null)
+            {
+                SetStatus("JSON import job did not run.");
+                return;
+            }
+
+            if (result.Success && result.ProposalCount > 0)
+                SetStatus($"Queued {result.ProposalCount} JSON import proposal(s) — review below.");
+            else
+                SetStatus(result.Error ?? "No JSON import proposals returned.");
+            RefreshUi();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message);
+        }
+    }
+
+    private void AppendJsonImportReviewPanel(StackPanel panel)
+    {
+        if (_bundle is null)
+            return;
+
+        var queue = _bundle.Scenario.JsonImportReviewQueue;
+        if (queue.Count == 0)
+            return;
+
+        var muted = (System.Windows.Media.Brush)FindResource("MutedTextBrush");
+        var borderBrush = (System.Windows.Media.Brush)FindResource("BorderBrushSubtle");
+
+        var review = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
+        review.Children.Add(new TextBlock
+        {
+            Text = $"{queue.Count} JSON import proposal(s) awaiting review",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 6),
+        });
+
+        foreach (var item in queue.ToList())
+        {
+            var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var summary = FormatJsonImportProposalSummary(item);
+            row.Children.Add(new TextBlock
+            {
+                Text = summary,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+
+            var acceptBtn = new Button
+            {
+                Content = "Accept",
+                Padding = new Thickness(8, 2, 8, 2),
+                Margin = new Thickness(6, 0, 0, 0),
+                Tag = item.Id,
+            };
+            acceptBtn.Click += AcceptJsonImportProposal_Click;
+            Grid.SetColumn(acceptBtn, 1);
+            row.Children.Add(acceptBtn);
+
+            var rejectBtn = new Button
+            {
+                Content = "Reject",
+                Padding = new Thickness(8, 2, 8, 2),
+                Margin = new Thickness(4, 0, 0, 0),
+                Tag = item.Id,
+            };
+            rejectBtn.Click += RejectJsonImportProposal_Click;
+            Grid.SetColumn(rejectBtn, 2);
+            row.Children.Add(rejectBtn);
+
+            review.Children.Add(row);
+        }
+
+        var bulk = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+        var acceptAll = new Button
+        {
+            Content = "Accept all",
+            Padding = new Thickness(8, 4, 8, 4),
+            Margin = new Thickness(0, 0, 6, 0),
+        };
+        acceptAll.Click += AcceptAllJsonImportProposals_Click;
+        bulk.Children.Add(acceptAll);
+
+        var rejectAll = new Button
+        {
+            Content = "Reject all",
+            Padding = new Thickness(8, 4, 8, 4),
+        };
+        rejectAll.Click += RejectAllJsonImportProposals_Click;
+        bulk.Children.Add(rejectAll);
+        review.Children.Add(bulk);
+
+        panel.Children.Add(new Border
+        {
+            BorderBrush = borderBrush,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8),
+            Margin = new Thickness(0, 8, 0, 0),
+            Background = (System.Windows.Media.Brush)FindResource("PanelBgBrush"),
+            Child = review,
+        });
+    }
+
+    private static string FormatJsonImportProposalSummary(JsonImportReviewItem item)
+    {
+        if (string.Equals(item.Kind, SourceJsonImportService.KindScenarioField, StringComparison.OrdinalIgnoreCase))
+        {
+            var preview = PreviewProposalText(item.Value);
+            var prior = string.IsNullOrWhiteSpace(item.PriorValue) ? "" : $" (was: {PreviewProposalText(item.PriorValue)})";
+            return $"scenario.{item.Field} → {preview}{prior}";
+        }
+
+        var entityPreview = PreviewProposalText(item.Value);
+        return $"{item.Action} {item.EntityType} \"{item.Name}\" → {entityPreview}";
+    }
+
+    private static string PreviewProposalText(string value)
+    {
+        var trimmed = value.Trim().ReplaceLineEndings(" ");
+        return trimmed.Length <= 64 ? trimmed : trimmed[..61] + "…";
+    }
+
+    private void AcceptJsonImportProposal_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null || sender is not Button { Tag: Guid id })
+            return;
+
+        var item = _bundle.Scenario.JsonImportReviewQueue.FirstOrDefault(q => q.Id == id);
+        if (item is null)
+            return;
+
+        if (!SourceJsonImportService.ApplyAccepted(_bundle, item))
+        {
+            SetStatus("Could not apply JSON import proposal.");
+            return;
+        }
+
+        _bundle.Scenario.JsonImportReviewQueue.Remove(item);
+        AdventureDesignService.HydrateFromScenario(_bundle);
+        Save();
+        RefreshUi();
+        SetStatus("Applied JSON import proposal.");
+    }
+
+    private void RejectJsonImportProposal_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null || sender is not Button { Tag: Guid id })
+            return;
+
+        var item = _bundle.Scenario.JsonImportReviewQueue.FirstOrDefault(q => q.Id == id);
+        if (item is null)
+            return;
+
+        _bundle.Scenario.JsonImportReviewQueue.Remove(item);
+        Save();
+        RefreshUi();
+        SetStatus("Rejected JSON import proposal.");
+    }
+
+    private void AcceptAllJsonImportProposals_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null || _bundle.Scenario.JsonImportReviewQueue.Count == 0)
+            return;
+
+        var applied = 0;
+        foreach (var item in _bundle.Scenario.JsonImportReviewQueue.ToList())
+        {
+            if (SourceJsonImportService.ApplyAccepted(_bundle, item))
+                applied++;
+        }
+
+        _bundle.Scenario.JsonImportReviewQueue.Clear();
+        AdventureDesignService.HydrateFromScenario(_bundle);
+        Save();
+        RefreshUi();
+        SetStatus(applied > 0
+            ? $"Applied {applied} JSON import proposal(s)."
+            : "No JSON import proposals could be applied.");
+    }
+
+    private void RejectAllJsonImportProposals_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null || _bundle.Scenario.JsonImportReviewQueue.Count == 0)
+            return;
+
+        var count = _bundle.Scenario.JsonImportReviewQueue.Count;
+        _bundle.Scenario.JsonImportReviewQueue.Clear();
+        Save();
+        RefreshUi();
+        SetStatus($"Rejected {count} JSON import proposal(s).");
     }
 
     private void PersistFieldsFromUi()

@@ -34,6 +34,33 @@ public sealed class ScenarioDocument
     public string LexiconAvoid { get; set; } = "";
 
     public List<SourceEditReviewItem> SourceEditReviewQueue { get; set; } = [];
+
+    public List<JsonImportReviewItem> JsonImportReviewQueue { get; set; } = [];
+}
+
+public sealed class JsonImportReviewItem
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary><c>scenarioField</c> or <c>entity</c>.</summary>
+    public string Kind { get; set; } = "";
+
+    /// <summary>Scenario property key (camelCase) when <see cref="Kind"/> is scenarioField.</summary>
+    public string Field { get; set; } = "";
+
+    /// <summary><c>person</c>, <c>place</c>, <c>concept</c>, or <c>faction</c> when Kind is entity.</summary>
+    public string EntityType { get; set; } = "";
+
+    public string Name { get; set; } = "";
+
+    /// <summary><c>add</c>, <c>update</c>, or <c>remove</c> for entities; scenario fields always set.</summary>
+    public string Action { get; set; } = "update";
+
+    public string Value { get; set; } = "";
+
+    public string PriorValue { get; set; } = "";
+
+    public string Rationale { get; set; } = "";
 }
 
 public sealed class SourceEditReviewItem

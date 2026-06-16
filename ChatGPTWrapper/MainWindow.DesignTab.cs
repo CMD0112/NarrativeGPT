@@ -574,6 +574,7 @@ public partial class MainWindow
         view.PullSourcesFromDesignThreadAsync = () =>
             RunPullSourcesFromDesignThreadAsync(view.AdventureId!.Value);
         view.ExtractStepAsync = step => RunDesignExtractStepAsync(view.AdventureId!.Value, step);
+        view.ProposeJsonImportAsync = () => RunProposeJsonImportAsync(view.AdventureId!.Value);
         view.ImportFrameworkDraftAsync = async () =>
         {
             _activeAdventureId = view.AdventureId;

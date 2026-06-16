@@ -12,6 +12,7 @@ internal static class GenerationJobGuideService
     public const int ContinuitySeedVersion = 1;
     public const int ProcessTurnSeedVersion = 1;
     public const int SourceEditSeedVersion = 1;
+    public const int JsonImportSeedVersion = 1;
     public const int DesignAdventureSeedVersion = 1;
     public const int DesignExtractSeedVersion = 1;
 
@@ -28,6 +29,7 @@ internal static class GenerationJobGuideService
         GenerationJobId.BootstrapSections or GenerationJobId.ExpandSection => LoreSeedVersion,
         GenerationJobId.ContinuityCheck => ContinuitySeedVersion,
         GenerationJobId.ProposeSourceEdits => SourceEditSeedVersion,
+        GenerationJobId.ProposeJsonImport => JsonImportSeedVersion,
         GenerationJobId.DesignAdventure => DesignAdventureSeedVersion,
         GenerationJobId.DesignExtractStep => DesignExtractSeedVersion,
         _ => 1,
@@ -75,6 +77,14 @@ internal static class GenerationJobGuideService
             Respond with JSON only — array of objects:
             { "targetFile": "world.md"|"plot.md"|"scenario.md"|"instructions", "operation": "replace"|"append", "content": string, "rationale": string }.
             Do not invent facts that contradict provided excerpts.
+            """,
+        GenerationJobId.ProposeJsonImport => """
+            You propose updates to adventure scenario.json and entities.json by reading source markdown.
+            Respond with JSON only — one object with optional keys:
+            scenarioFields: array of { "field": string, "value": string, "rationale": string }.
+            entities: array of { "action": "add"|"update"|"remove", "name": string, "entityType": "person"|"place"|"concept"|"faction", "description": string, "rationale": string }.
+            Allowed field keys: setting, playerRole, genre, tone, openingSituation, majorConflicts, startingConstraints, plotEssentials, worldRules, authorsNote, lexiconRules, lexiconPools, lexiconAvoid.
+            For remove actions, description may be omitted. If nothing to propose, return { "scenarioFields": [], "entities": [] }.
             """,
         GenerationJobId.DesignAdventure => """
             You help design a new interactive fiction adventure before play begins.
@@ -157,6 +167,7 @@ internal static class GenerationJobGuideService
         GenerationJobId.BootstrapLore => "Cards (AI)",
         GenerationJobId.ContinuityCheck => "Continuity (AI)",
         GenerationJobId.ProposeSourceEdits => "Source edits (AI)",
+        GenerationJobId.ProposeJsonImport => "JSON import (AI)",
         GenerationJobId.DesignAdventure => "Adventure design (AI)",
         GenerationJobId.DesignExtractStep => "Design extract (AI)",
         _ => jobId,
@@ -171,6 +182,7 @@ internal static class GenerationJobGuideService
         GenerationJobId.BootstrapLore,
         GenerationJobId.ContinuityCheck,
         GenerationJobId.ProposeSourceEdits,
+        GenerationJobId.ProposeJsonImport,
         GenerationJobId.DesignAdventure,
         GenerationJobId.DesignExtractStep,
     ];

@@ -14,6 +14,8 @@ internal static class GenerationJobId
     public const string ContinuityCheck = "continuity_check";
     public const string ProposeSourceEdits = "propose_source_edits";
 
+    public const string ProposeJsonImport = "propose_json_import";
+
     public const string DraftFramework = "draft_framework";
 
     public const string DesignAdventure = "design_adventure";
@@ -38,5 +40,6 @@ internal static class GenerationJobId
         ExpandSection,
         ContinuityCheck,
         ProposeSourceEdits,
+        ProposeJsonImport,
     ];
 }

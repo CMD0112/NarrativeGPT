@@ -16,6 +16,7 @@ Catalog of business-logic services in `ChatGPTWrapper/Adventure/Services/` and `
 | `expand_story_card` | Expand one card | Separate or inline | `cards.reviewQueue` | `GenerationJobHandlers` |
 | `continuity_check` | Local continuity warnings | Separate or inline | `continuity.warnings` | `GenerationJobHandlers` |
 | `propose_source_edits` | Propose markdown edits | Separate or inline | `scenario.sourceEditReviewQueue` | `GenerationJobHandlers` |
+| `propose_json_import` | Propose JSON from sources (AI fallback) | Utility thread | `scenario.jsonImportReviewQueue` | `GenerationJobHandlers` |
 | `process_turn` | Legacy bundled processing | — | Multiple | Obsolete |
 | `generate_recap` | — | — | — | Obsolete (local `RecapFormatter`) |
 

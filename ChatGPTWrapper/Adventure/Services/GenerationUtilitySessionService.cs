@@ -19,6 +19,7 @@ internal static class GenerationUtilitySessionService
             or GenerationJobId.BootstrapSections or GenerationJobId.ExpandSection => "[CGW:lore]",
         GenerationJobId.ContinuityCheck => "[CGW:check]",
         GenerationJobId.ProposeSourceEdits => "[CGW:source-edit]",
+        GenerationJobId.ProposeJsonImport => "[CGW:json-import]",
         GenerationJobId.DesignAdventure or GenerationJobId.DesignExtractStep => "[CGW:design]",
         _ => "[CGW:job]",
     };

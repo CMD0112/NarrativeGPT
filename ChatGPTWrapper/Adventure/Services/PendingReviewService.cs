@@ -22,7 +22,9 @@ internal sealed class PendingReviewCounts
 
     public int SourceEdits { get; init; }
 
-    public int Total => Entities + Memories + Summary + Cards + SourceEdits;
+    public int JsonImports { get; init; }
+
+    public int Total => Entities + Memories + Summary + Cards + SourceEdits + JsonImports;
 }
 
 internal static class PendingReviewService
@@ -41,6 +43,7 @@ internal static class PendingReviewService
             Summary = summary,
             Cards = bundle.Cards.ReviewQueue.Count,
             SourceEdits = bundle.Scenario.SourceEditReviewQueue.Count,
+            JsonImports = bundle.Scenario.JsonImportReviewQueue.Count,
         };
     }
 
@@ -62,6 +65,8 @@ internal static class PendingReviewService
             parts.Add($"{counts.Cards} card{(counts.Cards == 1 ? "" : "s")}");
         if (counts.SourceEdits > 0)
             parts.Add($"{counts.SourceEdits} source edit{(counts.SourceEdits == 1 ? "" : "s")}");
+        if (counts.JsonImports > 0)
+            parts.Add($"{counts.JsonImports} JSON import{(counts.JsonImports == 1 ? "" : "s")}");
 
         return counts.Total == 1
             ? "1 proposal awaiting review"
@@ -76,6 +81,7 @@ internal static class PendingReviewService
         GenerationJobId.UpdateSummary => PendingReviewDestination.WorldSettings,
         GenerationJobId.BootstrapLore or GenerationJobId.ExpandStoryCard => PendingReviewDestination.MemoryCardsSettings,
         GenerationJobId.ProposeSourceEdits => PendingReviewDestination.SourcesSettings,
+        GenerationJobId.ProposeJsonImport => PendingReviewDestination.SourcesSettings,
         _ => PendingReviewDestination.WorldSettings,
     };
 

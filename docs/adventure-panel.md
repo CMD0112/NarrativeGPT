@@ -881,7 +881,7 @@ Sync state is recomputed by the planner (`RefreshSyncedFlag`); export no longer 
 
 Edits to `scenario.md` `## opening`, entity sections in `cast.md` / `world.md` / `plot.md`, and lexicon `rules` / `pools` / `avoid` are merged offline. Removals queue `SourceEditReviewQueue` instead of deleting entities immediately. Works with a custom adventures root ([CMD-17](https://linear.app/cmd0112/issue/CMD-17/configurable-adventures-directory-and-external-folder-association)) — import resolves paths via `AdventureSourceFileService` under the configured library directory.
 
-For LLM-assisted import from sources, see CMD-19 (future).
+For LLM-assisted import from sources, see CMD-19 — **Propose JSON from sources (AI)** in Design → Sources (utility job `propose_json_import`; review queue on `scenario.jsonImportReviewQueue`). Deterministic import remains the default.
 
 ### Plan build
 
