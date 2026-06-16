@@ -1,0 +1,24 @@
+<Window x:Class="ChatGPTWrapper.Views.RandomTableDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Random table"
+        Height="280"
+        Width="360"
+        MinHeight="220"
+        MinWidth="320"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ComboBox x:Name="TableBox" Margin="0,0,0,12"/>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,12">
+            <TextBlock x:Name="ResultBlock" FontSize="16" TextWrapping="Wrap"/>
+        </ScrollViewer>
+        <Button Grid.Row="2" Content="Roll" Style="{StaticResource PrimaryButtonStyle}" MinWidth="88" Click="Roll_Click"/>
+    </Grid>
+</Window>

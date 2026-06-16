@@ -1,0 +1,40 @@
+namespace ChatGPTWrapper.Adventure.Services;
+
+internal static class SectionSchema
+{
+    public const string ScenarioFile = "scenario.md";
+    public const string WorldFile = "world.md";
+    public const string PlotFile = "plot.md";
+    public const string CastFile = "cast.md";
+
+    public const string LexiconFile = "lexicon.md";
+
+    public static readonly string[] CoreLoreFiles =
+    [
+        ScenarioFile,
+        WorldFile,
+        PlotFile,
+        CastFile,
+    ];
+
+    public static string DisplaySectionTitle(string sectionId) => sectionId switch
+    {
+        "opening" => "Opening",
+        "rules" => "Rules",
+        "essentials" => "Essentials",
+        "player" => "Player",
+        "party" => "Party",
+        "npcs" => "NPCs",
+        "locations" => "Locations",
+        "factions" => "Factions",
+        "concepts" => "Concepts",
+        "creatures" => "Creatures",
+        "misc" => "Misc",
+        "quests" => "Quests",
+        "mysteries" => "Mysteries",
+        "conflicts" => "Conflicts",
+        "consequences" => "Consequences",
+        "events" => "Events",
+        _ => sectionId.Replace('-', ' '),
+    };
+}

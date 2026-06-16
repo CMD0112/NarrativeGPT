@@ -1,0 +1,193 @@
+/*
+ * ChatGPT Wrapper — optional prose enhancements (toolbar: Enhanced prose).
+ * Overrides Tailwind Typography tokens and code/table styling; not loaded by default.
+ */
+
+[class*="group/turn-messages"] .markdown,
+[class*="group/turn-messages"] .prose,
+[class*="group/turn-messages"] .whitespace-pre-wrap,
+[class*="group/turn-messages"] [class*="whitespace-pre-wrap"] {
+  line-height: 1.62;
+  letter-spacing: 0.01em;
+}
+
+[class*="group/turn-messages"] .markdown.prose {
+  --tw-prose-body: color-mix(in srgb, var(--text-primary, CanvasText) 93%, transparent);
+  --tw-prose-headings: color-mix(in srgb, var(--text-primary, CanvasText) 97%, transparent);
+  --tw-prose-lead: color-mix(in srgb, var(--text-primary, CanvasText) 78%, transparent);
+  --tw-prose-links: color-mix(in srgb, var(--text-primary, CanvasText) 72%, var(--accent, #38bdf8) 28%);
+  --tw-prose-bold: inherit;
+  --tw-prose-counters: color-mix(in srgb, var(--text-secondary, CanvasText) 72%, transparent);
+  --tw-prose-bullets: color-mix(in srgb, var(--text-secondary, CanvasText) 65%, transparent);
+  --tw-prose-hr: color-mix(in srgb, var(--border-light, rgba(128, 128, 128, 0.35)) 100%, transparent);
+  --tw-prose-quotes: color-mix(in srgb, var(--text-primary, CanvasText) 82%, transparent);
+  --tw-prose-quote-borders: color-mix(in srgb, var(--text-primary, CanvasText) 22%, transparent);
+  --tw-prose-captions: color-mix(in srgb, var(--text-secondary, CanvasText) 68%, transparent);
+  --tw-prose-code: color-mix(in srgb, var(--text-primary, CanvasText) 95%, transparent);
+  --tw-prose-pre-code: color-mix(in srgb, var(--text-primary, CanvasText) 94%, transparent);
+  --tw-prose-pre-bg: color-mix(in srgb, var(--main-surface-secondary, #1a1a1a) 78%, transparent);
+  --tw-prose-th-borders: color-mix(in srgb, var(--text-primary, CanvasText) 16%, transparent);
+  --tw-prose-td-borders: color-mix(in srgb, var(--text-primary, CanvasText) 11%, transparent);
+}
+
+html.dark [class*="group/turn-messages"] .markdown.prose {
+  color: color-mix(in srgb, var(--text-primary, #ececec) 93%, transparent);
+}
+
+html.light [class*="group/turn-messages"] .markdown.prose {
+  color: color-mix(in srgb, var(--text-primary, #111827) 94%, transparent);
+}
+
+[class*="group/turn-messages"] .markdown.prose :where(p, li, td, th, h1, h2, h3, h4, h5, h6, blockquote) {
+  color: inherit;
+}
+
+[class*="group/turn-messages"] .markdown.prose :where(a) {
+  color: color-mix(in srgb, var(--text-primary, currentColor) 68%, var(--accent, #0ea5e9) 32%);
+  text-decoration-color: color-mix(in srgb, currentColor 42%, transparent);
+}
+
+[class*="group/turn-messages"] .markdown.prose :where(a):hover {
+  color: color-mix(in srgb, var(--text-primary, currentColor) 58%, var(--accent, #38bdf8) 42%);
+}
+
+[class*="group/turn-messages"] .markdown.prose :where(pre),
+[class*="group/turn-messages"] .markdown :where(pre) {
+  background: color-mix(in srgb, var(--main-surface-secondary, #262626) 88%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--text-primary, CanvasText) 18%, transparent) !important;
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem !important;
+}
+
+html.light [class*="group/turn-messages"] .markdown.prose :where(pre),
+html.light [class*="group/turn-messages"] .markdown :where(pre) {
+  background: color-mix(in srgb, var(--main-surface-secondary, #f3f4f6) 92%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--text-primary, CanvasText) 16%, transparent) !important;
+}
+
+[class*="group/turn-messages"] .markdown.prose :where(:not(pre) > code) {
+  background: color-mix(in srgb, var(--text-primary, CanvasText) 10%, transparent);
+  color: inherit !important;
+}
+
+html.light [class*="group/turn-messages"] .markdown.prose :where(:not(pre) > code) {
+  background: color-mix(in srgb, var(--text-primary, CanvasText) 8%, transparent);
+}
+
+.cgw-md-user.markdown,
+.markdown.cgw-md-user[data-cgw-md-done],
+.prose.cgw-md-user[data-cgw-md-done] {
+  line-height: 1.42;
+  font-size: 0.9375rem;
+  letter-spacing: -0.012em;
+}
+
+.cgw-md-user.markdown p {
+  margin-top: 0.35em;
+  margin-bottom: 0.35em;
+}
+
+.cgw-md-user.markdown > :first-child {
+  margin-top: 0 !important;
+}
+
+.cgw-md-user.markdown > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.cgw-md-user.markdown ul,
+.cgw-md-user.markdown ol {
+  margin-top: 0.35em;
+  margin-bottom: 0.35em;
+  padding-left: 1.15em;
+}
+
+.cgw-md-user.markdown li {
+  margin-top: 0.15em;
+  margin-bottom: 0.15em;
+}
+
+.cgw-md-user.markdown pre {
+  margin-top: 0.45em;
+  margin-bottom: 0.45em;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.88em;
+  line-height: 1.45;
+}
+
+.cgw-md-user.markdown :not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.cgw-md-user.markdown h1,
+.cgw-md-user.markdown h2,
+.cgw-md-user.markdown h3 {
+  margin-top: 0.65em;
+  margin-bottom: 0.35em;
+  line-height: 1.25;
+}
+
+.cgw-md-user.markdown h1:first-child,
+.cgw-md-user.markdown h2:first-child,
+.cgw-md-user.markdown h3:first-child {
+  margin-top: 0;
+}
+
+.cgw-md-user.markdown blockquote {
+  margin: 0.4em 0;
+  padding-left: 0.85em;
+  border-left-width: 3px;
+  border-left-style: solid;
+  border-left-color: color-mix(in srgb, var(--text-primary, #ececec) 18%, transparent);
+  color: color-mix(in srgb, var(--text-primary, #ececec) 88%, transparent);
+}
+
+[class*="group/turn-messages"] .markdown.prose table,
+.cgw-md-user.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+  margin: 0.65em 0;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+[class*="group/turn-messages"] .markdown.prose th,
+[class*="group/turn-messages"] .markdown.prose td,
+.cgw-md-user.markdown th,
+.cgw-md-user.markdown td {
+  border: 1px solid color-mix(in srgb, var(--text-primary, #ececec) 12%, transparent);
+  padding: 0.4em 0.55em;
+  text-align: left;
+  vertical-align: top;
+}
+
+[class*="group/turn-messages"] .markdown.prose thead th,
+.cgw-md-user.markdown thead th {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--main-surface-secondary, #333) 55%, transparent);
+}
+
+[class*="group/turn-messages"] .markdown.prose hr,
+.cgw-md-user.markdown hr {
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--border-light, rgba(255,255,255,0.15)) 100%, transparent);
+  margin: 0.85em 0;
+}
+
+[class*="group/turn-messages"] .markdown.prose input[type="checkbox"],
+.cgw-md-user.markdown input[type="checkbox"] {
+  margin-right: 0.35em;
+  vertical-align: middle;
+}
+
+[class*="group/turn-messages"] .markdown.prose pre code,
+.cgw-md-user.markdown pre code {
+  display: block;
+  overflow-x: auto;
+  white-space: pre;
+}

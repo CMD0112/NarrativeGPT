@@ -1,0 +1,27 @@
+<Window x:Class="ChatGPTWrapper.Views.LibrariesDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Libraries"
+        Height="480"
+        Width="520"
+        MinHeight="360"
+        MinWidth="440"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ComboBox x:Name="KindBox" Grid.Row="0" Margin="0,0,0,8" SelectionChanged="KindBox_SelectionChanged"/>
+        <ListBox x:Name="ItemsList" Grid.Row="1"/>
+        <TextBlock Grid.Row="2" Margin="0,12,0,0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"
+                   Text="Scenario, world, character, preset, and template libraries are stored locally under libraries/."/>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Close" Padding="12,6" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

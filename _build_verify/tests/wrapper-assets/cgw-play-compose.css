@@ -1,0 +1,311 @@
+#cgw-native-composer-offscreen {
+  position: fixed !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  z-index: -1 !important;
+}
+
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-composer-root) > *:not(#cgw-play-composer-root) {
+  display: none !important;
+}
+
+/* Hide native ChatGPT composer as soon as wrapper mode is active */
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:not(:has(#cgw-play-composer-root)),
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"][data-cgw-stale-composer="1"] {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  max-height: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  visibility: hidden !important;
+}
+
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-composer-root) > *:not(#cgw-play-composer-root),
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-composer-root) > [data-cgw-native-composer-suppressed="1"],
+html[data-cgw-wrapper-composer="1"] form:has(#prompt-textarea):has(#cgw-play-composer-root) > *:not(#cgw-play-composer-root) {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  min-height: 0 !important;
+  max-height: 1px !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  top: 0 !important;
+  left: 0 !important;
+}
+
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"],
+html[data-cgw-wrapper-composer="1"] form:has(#prompt-textarea):has(#cgw-play-composer-root) {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"],
+html[data-cgw-wrapper-composer="1"] form:has(#prompt-textarea) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  position: relative !important;
+}
+
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"] form:not(:has(#cgw-play-composer-root)),
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"] > div:not(#cgw-play-composer-root):has(#prompt-textarea),
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"] > div:not(#cgw-play-composer-root):has([data-testid="composer-text-input"]) {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  opacity: 0 !important;
+}
+
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"] #prompt-textarea,
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"] [data-testid="composer-text-input"],
+html[data-cgw-wrapper-composer="1"] form:has(#prompt-textarea) #prompt-textarea,
+html[data-cgw-wrapper-composer="1"] form:has(#prompt-textarea) [data-testid="composer-text-input"],
+html[data-cgw-wrapper-composer="1"] #cgw-native-composer-offscreen #prompt-textarea,
+html[data-cgw-wrapper-composer="1"] #cgw-native-composer-offscreen [data-testid="composer-text-input"],
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"] div.ProseMirror[contenteditable="true"],
+html[data-cgw-wrapper-composer="1"] form:has(#prompt-textarea) div.ProseMirror[contenteditable="true"],
+html[data-cgw-wrapper-composer="1"] #cgw-native-composer-offscreen div.ProseMirror[contenteditable="true"] {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+/* Keep native submit clickable for automation (clip only, not display:none) */
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"] button[data-testid*="composer"],
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"] button[data-testid*="submit"],
+html[data-cgw-wrapper-composer="1"] form:has(#prompt-textarea) button {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: auto !important;
+}
+#cgw-play-composer-root.cgw-compose-fixed {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100000;
+  padding: 0 16px 16px;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--cgw-compose-dock-bg, color-mix(in srgb, var(--cgw-bg-base, #161618) 96%, transparent)) 70%, transparent);
+}
+
+#cgw-play-composer-root.cgw-compose-fixed .cgw-compose-wrap {
+  pointer-events: auto;
+}
+
+html:not(.dark) #cgw-play-composer-root.cgw-compose-fixed,
+html[data-theme="light"] #cgw-play-composer-root.cgw-compose-fixed {
+  --cgw-compose-dock-bg: rgba(255, 255, 255, 0.96);
+}
+
+#cgw-play-composer-root {
+  --cgw-compose-bg: var(--cgw-bg-elevated, #28282e);
+  --cgw-compose-border: color-mix(in srgb, var(--cgw-border-subtle, #32323a) 80%, transparent);
+  --cgw-compose-text: var(--cgw-text-primary, #ededf0);
+  --cgw-compose-placeholder: color-mix(in srgb, var(--cgw-text-muted, #9898a4) 85%, transparent);
+  --cgw-compose-send-bg: var(--cgw-text-primary, #ededf0);
+  --cgw-compose-send-fg: var(--cgw-bg-base, #161618);
+  --cgw-compose-muted: var(--cgw-text-muted, #9898a4);
+  --cgw-compose-dock-bg: color-mix(in srgb, var(--cgw-bg-base, #161618) 96%, transparent);
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 0 12px;
+  pointer-events: auto;
+  opacity: 1 !important;
+  position: relative;
+  z-index: 5;
+  flex: 0 0 auto;
+  order: 0;
+}
+
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-composer-root) {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+}
+
+#cgw-play-composer-root .cgw-compose-wrap {
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+#cgw-play-composer-root .cgw-compose-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-radius: 28px;
+  border: 1px solid var(--cgw-compose-border, rgba(255, 255, 255, 0.12));
+  background: var(--cgw-compose-bg, var(--cgw-bg-elevated, #28282e));
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+#cgw-play-composer-root .cgw-compose-main {  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 10px 10px 14px;
+  min-height: 52px;
+}
+
+#cgw-play-composer-root .cgw-compose-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 24px;
+  max-height: 200px;
+  resize: none;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: var(--cgw-compose-text, var(--cgw-text-primary, #ededf0));
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  padding: 4px 0;
+  margin: 0;
+  overflow-y: auto;
+  field-sizing: content;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#cgw-play-composer-root .cgw-compose-input:focus,
+#cgw-play-composer-root .cgw-compose-input:focus-visible {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+#cgw-play-composer-root .cgw-compose-send:focus,
+#cgw-play-composer-root .cgw-compose-send:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+#cgw-play-composer-root .cgw-compose-input::placeholder {
+  color: var(--cgw-compose-placeholder, rgba(236, 236, 236, 0.45));
+}
+
+#cgw-play-composer-root .cgw-compose-send {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cgw-compose-send-bg, var(--cgw-text-primary, #ededf0));
+  color: var(--cgw-compose-send-fg, var(--cgw-bg-base, #161618));
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+#cgw-play-composer-root .cgw-compose-send:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+#cgw-play-composer-root .cgw-compose-send:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+#cgw-play-composer-root .cgw-compose-send:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+#cgw-play-composer-root .cgw-compose-send svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+#cgw-play-composer-root .cgw-compose-footer {
+  padding: 0 16px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--cgw-compose-muted, rgba(236, 236, 236, 0.55));
+  min-height: 0;
+}
+
+#cgw-play-composer-root .cgw-compose-footer:empty {
+  display: none;
+  padding: 0;
+}
+
+#cgw-play-composer-root.cgw-compose-busy .cgw-compose-input {
+  opacity: 0.65;
+}
+
+html:not(.dark) #cgw-play-composer-root,
+html[data-theme="light"] #cgw-play-composer-root {
+  --cgw-compose-bg: #f4f4f4;
+  --cgw-compose-border: rgba(0, 0, 0, 0.08);
+  --cgw-compose-border-focus: rgba(0, 0, 0, 0.16);
+  --cgw-compose-text: #0d0d0d;
+  --cgw-compose-placeholder: rgba(13, 13, 13, 0.45);
+  --cgw-compose-send-bg: #0d0d0d;
+  --cgw-compose-send-fg: #ffffff;
+  --cgw-compose-muted: rgba(13, 13, 13, 0.55);
+}
+
+@media (prefers-color-scheme: light) {
+  html:not(.dark):not([data-theme="dark"]) #cgw-play-composer-root {
+    --cgw-compose-bg: #f4f4f4;
+    --cgw-compose-border: rgba(0, 0, 0, 0.08);
+    --cgw-compose-border-focus: rgba(0, 0, 0, 0.16);
+    --cgw-compose-text: #0d0d0d;
+    --cgw-compose-placeholder: rgba(13, 13, 13, 0.45);
+    --cgw-compose-send-bg: #0d0d0d;
+    --cgw-compose-send-fg: #ffffff;
+    --cgw-compose-muted: rgba(13, 13, 13, 0.55);
+  }
+}

@@ -1,0 +1,28 @@
+<Window x:Class="ChatGPTWrapper.Views.EditTurnDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Edit turn"
+        Height="400"
+        Width="520"
+        MinHeight="320"
+        MinWidth="440"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Text="Player" Margin="0,0,0,4"/>
+        <TextBox x:Name="PlayerBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto" Margin="0,0,0,12"/>
+        <TextBlock Grid.Row="2" Text="Narrator" Margin="0,0,0,4"/>
+        <TextBox x:Name="NarratorBox" Grid.Row="3" AcceptsReturn="True" TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto" Margin="0,0,0,12"/>
+        <Button Grid.Row="4" Content="Save" Style="{StaticResource PrimaryButtonStyle}" MinWidth="88" HorizontalAlignment="Right" Click="Save_Click"/>
+    </Grid>
+</Window>

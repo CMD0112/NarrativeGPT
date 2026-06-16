@@ -1,0 +1,11 @@
+bin/
+obj/
+artifacts/
+dist/
+.vs/
+*.user
+*.suo
+*.cache
+*.dll
+*.pdb
+.DS_Store

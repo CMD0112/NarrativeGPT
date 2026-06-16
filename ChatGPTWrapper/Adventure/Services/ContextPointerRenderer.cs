@@ -1,0 +1,152 @@
+using ChatGPTWrapper.Adventure.Models;
+
+namespace ChatGPTWrapper.Adventure.Services;
+
+internal static class ContextPointerRenderer
+{
+    public static string FormatProsePointer(AdventureBundle bundle, ContextPointer pointer)
+    {
+        var fileRef = FormatProjectFileReference(bundle, pointer.FileName);
+
+        if (pointer.Mode == RenderMode.ClusterSummary)
+        {
+            var names = string.Join(", ", pointer.ClusterNames);
+            return $"Retrieve from {fileRef} — section \"{SectionSchema.DisplaySectionTitle(pointer.SectionId)}\" — NPCs in scene: {names}";
+        }
+
+        var sectionTitle = DisplaySectionPath(pointer.SectionId);
+        if (pointer.SectionId.Contains('/'))
+        {
+            var parts = pointer.SectionId.Split('/', 2);
+            var parent = SectionSchema.DisplaySectionTitle(parts[0]);
+            return $"Retrieve from {fileRef} — section \"{parent}\" — entry \"{pointer.Title}\" (id: {parts[1]})";
+        }
+
+        return $"Retrieve from {fileRef} — section \"{sectionTitle}\" (id: {pointer.SectionId})";
+    }
+
+    public static string BuildSourcesV2Block(
+        AdventureBundle bundle,
+        ContextResolveResult resolved,
+        PacketMode mode,
+        ProjectSourceReadiness? readiness = null,
+        bool useContextTags = true)
+    {
+        var inner = BuildSourcesInnerLines(bundle, resolved, mode, readiness);
+        if (!useContextTags)
+            return "=== PROJECT SOURCES ===\n" + string.Join('\n', inner);
+
+        var lines = new List<string>
+        {
+            $"[[cgw:sources v=\"2\" mode=\"{(mode == PacketMode.Thin ? "thin" : "fat")}\"]]",
+        };
+        lines.AddRange(inner);
+        lines.Add("[[/cgw:sources]]");
+        return string.Join('\n', lines);
+    }
+
+    public static string BuildFatSourcesBlock(
+        AdventureBundle bundle,
+        ContextResolveResult resolved,
+        bool useContextTags = true,
+        ProjectSourceReadiness? readiness = null) =>
+        BuildSourcesV2Block(bundle, resolved, PacketMode.Fat, readiness, useContextTags);
+
+    private static List<string> BuildSourcesInnerLines(
+        AdventureBundle bundle,
+        ContextResolveResult resolved,
+        PacketMode mode,
+        ProjectSourceReadiness? readiness)
+    {
+        var lines = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
+            lines.Add($"Project: {bundle.Metadata.LinkedProjectId}");
+
+        if (lines.Count > 0)
+            lines.Add("");
+
+        lines.Add("ALWAYS RETRIEVE:");
+        if (resolved.Baseline.Count == 0)
+            AppendBaselineFallback(lines, bundle, readiness);
+        else
+            foreach (var p in resolved.Baseline)
+                lines.Add("- " + FormatProsePointer(bundle, p));
+
+        lines.Add("");
+        lines.Add("THIS TURN:");
+        var turnPointers = resolved.ThisTurn.Where(p => p.Mode != RenderMode.InlineFull && p.Mode != RenderMode.InlineFlavor).ToList();
+        if (turnPointers.Count == 0)
+            lines.Add("- (none beyond inline excerpts below)");
+        else
+            foreach (var p in turnPointers)
+                lines.Add("- " + FormatProsePointer(bundle, p));
+
+        var inlines = resolved.All
+            .Where(p => p.Mode is RenderMode.InlineFull or RenderMode.InlineFlavor)
+            .ToList();
+        if (inlines.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("INLINE EXCERPTS:");
+            foreach (var p in inlines)
+            {
+                lines.Add($"--- Inline: {p.FileName} / {DisplaySectionPath(p.SectionId)} / {p.Title} ---");
+                lines.Add(ContextRenderPolicy.ExtractInlineBody(p));
+            }
+        }
+
+        return lines;
+    }
+
+    private static void AppendBaselineFallback(
+        List<string> lines,
+        AdventureBundle bundle,
+        ProjectSourceReadiness? readiness)
+    {
+        if (readiness?.CanDelegateStaticContent == true && readiness.SyncedFiles.Count > 0)
+        {
+            lines.Add("- (section index empty — retrieve these Project source files each turn)");
+            foreach (var file in readiness.SyncedFiles)
+            {
+                var fileRef = FormatProjectFileReference(bundle, file.RelativePath);
+                lines.Add($"- {fileRef} — {file.Description}");
+            }
+
+            return;
+        }
+
+        if (readiness?.HasLinkedProject == true
+            && !string.IsNullOrWhiteSpace(readiness.BlockingReason))
+        {
+            lines.Add($"- Sources not ready: {readiness.BlockingReason}");
+            if (!string.IsNullOrWhiteSpace(readiness.SuggestedAction))
+                lines.Add($"- {readiness.SuggestedAction}");
+            return;
+        }
+
+        lines.Add("- (none)");
+    }
+
+    private static string FormatProjectFileReference(AdventureBundle bundle, string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(bundle.Metadata.Title))
+            return relativePath;
+
+        var prefixed = AdventureDesignSourcePromptService.BuildPrefixedSourcesPath(
+            bundle.Metadata.Title,
+            relativePath);
+        return string.Equals(prefixed, relativePath, StringComparison.OrdinalIgnoreCase)
+            ? relativePath
+            : $"{prefixed} (canonical: {relativePath})";
+    }
+
+    private static string DisplaySectionPath(string sectionId)
+    {
+        if (!sectionId.Contains('/'))
+            return SectionSchema.DisplaySectionTitle(sectionId);
+
+        var parts = sectionId.Split('/', 2);
+        return $"{SectionSchema.DisplaySectionTitle(parts[0])} / {parts[1]}";
+    }
+}

@@ -1,0 +1,24 @@
+/*
+ * ChatGPT Wrapper — minimal base injection (stock ChatGPT markdown/code by default).
+ *
+ * Optional prose/color tweaks: enable "Enhanced prose" in the toolbar
+ * (loads prose-enhancements.css). User CSS: %LocalAppData%\ChatGPTWrapper\styles\user-overrides.css
+ */
+
+/* ----- Composer ----- */
+#prompt-textarea {
+  line-height: 1.5;
+  caret-color: var(--text-primary, #ececec);
+  outline: none !important;
+}
+
+#prompt-textarea:focus {
+  outline: none !important;
+}
+
+/* ----- Transcript column scrollbars only ----- */
+main [class*="overflow-y-auto"]:has([class*="group/turn-messages"]),
+main [class*="overflow-auto"]:has([class*="group/turn-messages"]) {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--scrollbar-color, rgba(255,255,255,0.35)) 55%, transparent) transparent;
+}

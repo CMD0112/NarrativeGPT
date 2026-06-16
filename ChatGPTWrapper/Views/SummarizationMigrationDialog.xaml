@@ -1,0 +1,53 @@
+<Window x:Class="ChatGPTWrapper.Views.SummarizationMigrationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Summarization migration wizard"
+        Height="560"
+        Width="680"
+        MinHeight="440"
+        MinWidth="520"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,12"
+                   Foreground="{StaticResource MutedTextBrush}"
+                   Text="Export a checkpoint packet, start a new play thread, then verify the pasted migration packet hash."/>
+        <TabControl x:Name="WizardTabs" Grid.Row="1">
+            <TabItem Header="1. Export">
+                <StackPanel Margin="8">
+                    <TextBlock x:Name="MetaLine" FontFamily="Consolas" FontSize="11" Margin="0,0,0,8"/>
+                    <TextBox x:Name="PacketBox" IsReadOnly="True" AcceptsReturn="True"
+                             TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" MinHeight="280"/>
+                    <Button Content="Copy packet" Padding="10,5" HorizontalAlignment="Left" Margin="0,8,0,0" Click="Copy_Click"/>
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="2. New thread">
+                <StackPanel Margin="8">
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,8"
+                               Text="Create a fresh ChatGPT play thread in your linked Project, then paste the migration packet as the first message."/>
+                    <TextBlock x:Name="NewThreadStatusLine" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                    <Button x:Name="CreateNewThreadButton" Content="Create new play thread…" Padding="12,6"
+                            HorizontalAlignment="Left" Click="CreateNewThread_Click"/>
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="3. Verify">
+                <StackPanel Margin="8">
+                    <TextBlock Text="Paste the migration packet you sent in the new thread:" Margin="0,0,0,4"/>
+                    <TextBox x:Name="VerifyPacketBox" AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" FontFamily="Consolas" MinHeight="200" Margin="0,0,0,8"/>
+                    <Button Content="Verify hash" Padding="10,5" HorizontalAlignment="Left" Margin="0,0,0,8" Click="Verify_Click"/>
+                    <TextBlock x:Name="VerifyResultLine" TextWrapping="Wrap" FontWeight="SemiBold"/>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Close" Padding="14,6" IsDefault="True" Click="Close_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

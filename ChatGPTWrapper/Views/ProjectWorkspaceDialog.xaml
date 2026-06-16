@@ -1,0 +1,158 @@
+<Window x:Class="ChatGPTWrapper.Views.ProjectWorkspaceDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ChatGPT Project"
+        Height="580"
+        Width="760"
+        MinHeight="480"
+        MinWidth="640"
+        ResizeMode="CanResizeWithGrip"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="IntroLine" Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,12"
+                   Text="Pick or create a ChatGPT Project below, then Link or Switch. After linking, use the Sources tab to export and publish lore files."/>
+        <TabControl x:Name="WorkspaceTabs" Grid.Row="1" SelectionChanged="WorkspaceTabs_SelectionChanged">
+            <TabItem Header="Projects" x:Name="ProjectsTab">
+                <ScrollViewer Margin="12" VerticalScrollBarVisibility="Auto">
+                    <DockPanel LastChildFill="True">
+                        <StackPanel DockPanel.Dock="Top">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button x:Name="RefreshProjectsButton" Content="Refresh" Padding="10,4" Margin="0,0,8,0" Click="RefreshProjects_Click"/>
+                                <TextBlock x:Name="DiscoveryLine" VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}"/>
+                            </StackPanel>
+                            <TextBlock x:Name="SessionHintLine" TextWrapping="Wrap" FontSize="11"
+                                       Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,8"/>
+                            <Grid x:Name="LinkedProjectBannerPanel" Margin="0,0,0,8" Visibility="Collapsed">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="LinkedProjectBanner" TextWrapping="Wrap" VerticalAlignment="Center"
+                                           Foreground="{StaticResource WarningBrush}"/>
+                                <Button x:Name="UnlinkProjectButton" Grid.Column="1" Content="Unlink…" Padding="10,4"
+                                        Margin="8,0,0,0" Click="UnlinkProject_Click"/>
+                            </Grid>
+                            <TabControl x:Name="ProjectModeTabs">
+                                <TabItem Header="From list">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*" MinHeight="180"/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock x:Name="SelectedProjectLine" Grid.Row="0" Margin="0,0,0,6"
+                                                   Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"
+                                                   Text="Projects load automatically. Select one, then Link below (or double-click a row)."/>
+                                        <ListBox x:Name="ProjectList" Grid.Row="1" DisplayMemberPath="Title" MinHeight="180"
+                                                 SelectionMode="Single"
+                                                 Background="{StaticResource PanelBgBrush}"
+                                                 Foreground="{StaticResource TextBrush}"
+                                                 BorderBrush="{StaticResource BorderBrushDark}"
+                                                 SelectionChanged="ProjectList_SelectionChanged"
+                                                 MouseDoubleClick="ProjectList_MouseDoubleClick"/>
+                                    </Grid>
+                                </TabItem>
+                                <TabItem x:Name="CreateProjectTab" Header="Create new">
+                                    <StackPanel Margin="8">
+                                        <TextBlock Text="Project name" Margin="0,0,0,4"/>
+                                        <TextBox x:Name="NewProjectNameBox"/>
+                                    </StackPanel>
+                                </TabItem>
+                                <TabItem Header="Advanced: URL">
+                                    <StackPanel Margin="8">
+                                        <TextBlock Text="Paste Project URL or gizmo id" Margin="0,0,0,4"/>
+                                        <TextBox x:Name="ManualUrlBox" Margin="0,0,0,4"/>
+                                        <TextBlock Text="Example: https://chatgpt.com/g/g-p-…/project or g-p-…"
+                                                   Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </TabItem>
+                            </TabControl>
+                            <StackPanel Margin="0,8,0,0">
+                                <CheckBox x:Name="SyncSourcesCheck" Content="Export and sync sources via API (advanced)" IsChecked="False" Margin="0,0,0,4"/>
+                                <TextBlock Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"
+                                           Text="Default: manual publish — export locally, then copy/drag to ChatGPT Project on the Sources tab."/>
+                                <CheckBox x:Name="UpdateInstructionsCheck" Content="Push narrator instructions from scenario" IsChecked="False" Margin="0,0,0,4"/>
+                                <CheckBox x:Name="CreateThreadCheck" Content="Create or pick play thread in Project" IsChecked="True"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </DockPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Connection">
+                <ScrollViewer Margin="12" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Session checklist" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock x:Name="CheckSignedIn" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="CheckDeviceId" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="CheckAccountId" Margin="0,0,0,4"
+                                   Foreground="{StaticResource MutedTextBrush}"/>
+                        <TextBlock Margin="0,0,0,12" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"
+                                   Text="Only Sign in and Device cookie are required. Account id is added automatically when you browse Projects in the ChatGPT tab."/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <Button x:Name="TestConnectionButton" Content="Test connection" Padding="12,6" Margin="0,0,8,0" Click="TestConnection_Click"/>
+                            <Button x:Name="CaptureHeadersButton" Content="Capture headers hint" Padding="12,6" Click="CaptureHeaders_Click"/>
+                        </StackPanel>
+                        <TextBlock x:Name="ProbeLine" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="LinkHealthLine" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Text="Open Projects in the ChatGPT sidebar, browse a project, then use Test connection so headers are captured automatically."
+                                   Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Sources" x:Name="SourcesTab">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock x:Name="SyncStatusLine" Grid.Row="0" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                    <WrapPanel Grid.Row="1" Margin="0,0,0,8">
+                        <Button x:Name="ManageSourcesButton" Content="Manage sources…" Padding="10,4" Margin="0,0,8,4" Click="ManageSources_Click"/>
+                        <Button x:Name="CopyInstructionsButton" Content="Copy instructions" Padding="10,4" Margin="0,0,8,4" Click="CopyInstructions_Click"/>
+                        <Button x:Name="OpenSourcesFolderButton" Content="Open sources folder" Padding="10,4" Margin="0,0,8,4" Click="OpenSourcesFolder_Click"/>
+                        <Button x:Name="RefreshExportButton" Content="Refresh export" Padding="10,4" Margin="0,0,8,4" Click="RefreshExport_Click"/>
+                    </WrapPanel>
+                    <TextBlock x:Name="ManualPublishGuideLine" Grid.Row="2" TextWrapping="Wrap" FontSize="11"
+                               Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,8"/>
+                    <Grid x:Name="ApiSyncPanel" Grid.Row="3" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <DataGrid x:Name="SyncFilesGrid" Grid.Row="0" AutoGenerateColumns="False"
+                                  CanUserAddRows="False" SelectionMode="Single" RowHeight="36"
+                                  Background="{StaticResource PanelBgBrush}"
+                                  Foreground="{StaticResource TextBrush}"
+                                  BorderBrush="{StaticResource BorderBrushDark}"/>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+                            <Button x:Name="SyncRefreshButton" Content="Refresh plan" Padding="10,4" Margin="0,0,8,0" Click="SyncRefresh_Click"/>
+                            <Button x:Name="SyncReconcileButton" Content="Reconcile duplicates…" Padding="10,4" Margin="0,0,8,0" Click="SyncReconcile_Click"/>
+                            <Button x:Name="SyncClearBindingsButton" Content="Clear remote bindings" Padding="10,4" Margin="0,0,8,0" Click="SyncClearBindings_Click"/>
+                            <Button x:Name="SyncApplySafeButton" Content="Apply safe" Padding="10,4" Margin="0,0,8,0" Click="SyncApplySafe_Click"/>
+                            <Button x:Name="SyncApplyAllButton" Content="Apply all" Padding="10,4" Click="SyncApplyAll_Click"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </TabItem>
+        </TabControl>
+        <StackPanel Grid.Row="2" Margin="0,8,0,4">
+            <TextBlock x:Name="StatusLine" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"/>
+            <TextBlock x:Name="ErrorLine" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+        </StackPanel>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="CopyDiagnosticsButton" Content="Copy diagnostics" Padding="12,6" Margin="0,0,8,0" Click="CopyDiagnostics_Click"/>
+            <Button x:Name="LinkButton" Content="Link project" Style="{StaticResource PrimaryButtonStyle}" MinWidth="88" Margin="0,0,8,0" IsDefault="True" Click="Link_Click"/>
+            <Button Content="Close" Padding="12,6" Margin="0,0,8,0" IsCancel="True"/>
+            <Button x:Name="DoneButton" Content="Done" Padding="12,6" Click="Done_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

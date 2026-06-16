@@ -1,0 +1,8 @@
+---
+description: Ask before deleting troubleshooting test files after they pass
+alwaysApply: true
+---
+
+# Test files
+
+For test files generated to understand and/or troubleshoot codebase behavior, ask the user if they would like those files deleted after they pass.

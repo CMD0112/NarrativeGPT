@@ -1,0 +1,24 @@
+html[data-cgw-wrapper-composer="1"] #prompt-textarea,
+html[data-cgw-wrapper-composer="1"] [data-testid="composer-text-input"],
+html[data-cgw-wrapper-composer="1"] div.ProseMirror[contenteditable="true"] {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+html[data-cgw-wrapper-composer="1"] form:has(#prompt-textarea) {
+  min-height: 0 !important;
+}
+
+html[data-cgw-wrapper-composer="1"] [data-testid="composer"] {
+  min-height: 0 !important;
+  padding-bottom: 0 !important;
+}

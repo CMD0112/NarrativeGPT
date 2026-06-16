@@ -1,0 +1,14 @@
+<UserControl x:Class="ChatGPTWrapper.Views.PlayPromptComposer"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Visibility="Collapsed"
+             Width="0"
+             Height="0"
+             IsHitTestVisible="False">
+    <!-- Internal adapter only — play uses the in-page wrapper composer. -->
+    <Grid>
+        <TextBox x:Name="PromptBox" Visibility="Collapsed"/>
+        <TextBox x:Name="MergedPreviewBox" Visibility="Collapsed"/>
+        <TextBlock x:Name="StatusLine" Visibility="Collapsed"/>
+    </Grid>
+</UserControl>

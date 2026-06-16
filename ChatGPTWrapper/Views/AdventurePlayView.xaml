@@ -1,0 +1,299 @@
+<UserControl x:Class="ChatGPTWrapper.Views.AdventurePlayView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource DialogBgBrush}">
+    <Grid x:Name="RootGrid" Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition x:Name="SessionCockpitRow" Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid x:Name="HeaderGrid" Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" MinWidth="0"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button x:Name="BackButton"
+                    Grid.Column="0"
+                    Content="← Dashboard"
+                    Padding="10,4"
+                    Click="Back_Click"/>
+            <TextBlock x:Name="TitleBlock"
+                       Grid.Column="1"
+                       FontSize="{StaticResource FontSizeTitle}"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"
+                       Margin="8,0"
+                       TextTrimming="CharacterEllipsis"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button x:Name="LinkProjectButton"
+                        Content="Link Project…"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Padding="10,4"
+                        Margin="0,0,8,0"
+                        ToolTip="Connect this adventure to a ChatGPT Project"
+                        Click="LinkProject_Click"/>
+                <Button x:Name="SourcesButton"
+                        Content="Sources…"
+                        Padding="10,4"
+                        Margin="0,0,8,0"
+                        ToolTip="Open Source Manager — export, publish, probe, and compare project files"
+                        Click="Sources_Click"/>
+                <Button x:Name="PlaySettingsButton"
+                        Content="Play settings…"
+                        Padding="10,4"
+                        Margin="0,0,8,0"
+                        Click="PlaySettings_Click"/>
+                <Button x:Name="RenameButton"
+                        Content="Rename…"
+                        Padding="10,4"
+                        Click="Rename_Click"/>
+            </StackPanel>
+        </Grid>
+
+        <Border x:Name="SessionCockpit"
+                Grid.Row="1"
+                Background="{StaticResource PanelBgBrush}"
+                BorderBrush="{StaticResource BorderBrushSubtle}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource RadiusCard}"
+                Padding="8"
+                Margin="0,0,0,8">
+            <StackPanel>
+                <Border x:Name="LinkProjectBanner"
+                        Background="{StaticResource AccentSubtleBrush}"
+                        BorderBrush="{StaticResource AccentBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource RadiusControl}"
+                        Padding="8"
+                        Margin="0,0,0,8"
+                        Visibility="Collapsed">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock TextWrapping="Wrap" VerticalAlignment="Center"
+                                   Text="Link a ChatGPT Project to enable AI jobs, source-delegated packets, and file publishing."/>
+                        <Button Grid.Column="1" Content="Link now…" Padding="10,4" Margin="8,0,0,0"
+                                Style="{StaticResource PrimaryButtonStyle}" Click="LinkProject_Click"/>
+                    </Grid>
+                </Border>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PlayTabStatusBlock"
+                               Foreground="{StaticResource MutedTextBrush}"
+                               FontSize="{StaticResource FontSizeHint}"
+                               TextWrapping="Wrap"/>
+                    <Button Grid.Column="1" Content="Session…" Padding="8,3" Margin="8,0,0,0"
+                            Click="OpenSessionSettings_Click"/>
+                </Grid>
+                <TextBlock x:Name="SessionLoadingBlock"
+                           Foreground="{StaticResource AccentBrush}"
+                           FontSize="{StaticResource FontSizeHint}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,4"
+                           Visibility="Collapsed"/>
+                <TextBlock x:Name="ThreadStatusBlock"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           FontSize="{StaticResource FontSizeHint}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,2"
+                           Cursor="Hand"
+                           ToolTip="Click to link a ChatGPT Project"
+                           MouseLeftButtonUp="ThreadStatus_Click"/>
+                <TextBlock x:Name="SourcesStatusBlock"
+                           Foreground="{StaticResource MutedTextBrush}"
+                           FontSize="{StaticResource FontSizeHint}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,6"
+                           Cursor="Hand"
+                           ToolTip="Open Source Manager"
+                           MouseLeftButtonUp="SourcesStatus_Click"/>
+                <WrapPanel x:Name="JobActionsPanel" Margin="0,0,0,0">
+                    <Button x:Name="ProcessLastExchangeButton" Content="Process last exchange (AI)" Padding="8,4" Margin="0,0,6,4"
+                            Click="ProcessLastExchange_Click" IsEnabled="False"
+                            ToolTip="Bundled memories + entities for the latest play exchange"/>
+                    <Button x:Name="SuggestMemoriesButton" Content="Memories (AI)" Padding="8,4" Margin="0,0,6,4"
+                            Click="SuggestMemories_Click" IsEnabled="False"/>
+                    <Button x:Name="RefreshSummaryButton" Content="Digest (AI)" Padding="8,4" Margin="0,0,6,4"
+                            Click="RefreshSummary_Click" IsEnabled="False"/>
+                    <Button x:Name="GenerateCardsButton" Content="Cards (AI)" Padding="8,4" Margin="0,0,6,4"
+                            Click="GenerateCards_Click" IsEnabled="False"/>
+                    <Button x:Name="GenerateRecapButton" Content="Recap" Padding="8,4" Margin="0,0,0,4"
+                            Click="GenerateRecap_Click" IsEnabled="False"
+                            ToolTip="Show story digest and recent play (no AI)"/>
+                </WrapPanel>
+                <Border x:Name="PendingReviewBanner"
+                        Background="{StaticResource WarningSubtleBrush}"
+                        CornerRadius="{StaticResource RadiusControl}"
+                        Padding="8"
+                        Margin="0,6,0,0"
+                        Visibility="Collapsed">
+                    <StackPanel>
+                        <TextBlock x:Name="PendingReviewHeader"
+                                   FontWeight="SemiBold"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,6"/>
+                        <WrapPanel>
+                            <Button x:Name="ReviewProposalsButton" Content="Review…" Padding="8,4" Margin="0,0,6,0"
+                                    Click="ReviewProposals_Click"/>
+                            <Button x:Name="ReviewMemoriesButton" Content="Memories" Padding="8,4" Margin="0,0,6,0"
+                                    Click="ReviewMemories_Click" Visibility="Collapsed"/>
+                            <Button x:Name="ReviewSummaryButton" Content="Summary" Padding="8,4" Margin="0,0,6,0"
+                                    Click="ReviewSummary_Click" Visibility="Collapsed"/>
+                            <Button x:Name="ReviewEntitiesButton" Content="Entities" Padding="8,4" Margin="0,0,6,0"
+                                    Click="ReviewEntities_Click" Visibility="Collapsed"/>
+                            <Button x:Name="ReviewCardsButton" Content="Cards" Padding="8,4" Margin="0,0,0,0"
+                                    Click="ReviewCards_Click" Visibility="Collapsed"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <TabControl x:Name="PlaySideTabControl" Grid.Row="2" Background="{StaticResource PanelBgBrush}">
+            <TabItem Header="Reference">
+                <DockPanel Margin="4">
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <Border x:Name="ReviewQueueBanner"
+                                Background="{StaticResource WarningSubtleBrush}"
+                                CornerRadius="{StaticResource RadiusControl}"
+                                Padding="8"
+                                Margin="0,0,0,8"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock x:Name="ReviewQueueHeader"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,6"/>
+                                <ListBox x:Name="ReviewQueueList"
+                                         MaxHeight="80"
+                                         DisplayMemberPath="DisplayLabel"
+                                         Margin="0,0,0,6"/>
+                                <WrapPanel>
+                                    <Button Content="Accept" Padding="8,4" Margin="0,0,6,0"
+                                            Click="AcceptReviewItem_Click"/>
+                                    <Button Content="Dismiss" Padding="8,4" Margin="0,0,6,0"
+                                            Click="DismissReviewItem_Click"/>
+                                    <Button Content="Edit…" Padding="8,4"
+                                            Click="EditReviewItem_Click"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                        <ComboBox x:Name="EntityFilterBox"
+                                  HorizontalAlignment="Stretch"
+                                  Margin="0,0,0,8"
+                                  SelectionChanged="EntityFilterBox_SelectionChanged"/>
+                        <WrapPanel x:Name="EntityActionsPanel" Margin="0,0,0,8">
+                            <Button Content="Add" Padding="8,4" Margin="0,0,6,0" Click="AddEntity_Click"/>
+                            <Button Content="Edit" Padding="8,4" Margin="0,0,6,0" Click="EditEntity_Click"/>
+                            <Button Content="Delete" Padding="8,4" Margin="0,0,6,0" Click="DeleteEntity_Click"/>
+                            <Button x:Name="PinEntityButton"
+                                    Content="Pin / Unpin"
+                                    Padding="8,4"
+                                    Margin="0,0,6,0"
+                                    Click="TogglePinEntity_Click"/>
+                            <Button x:Name="SuggestEntitiesButton"
+                                    Content="Suggest entities (AI)"
+                                    Padding="8,4"
+                                    IsEnabled="False"
+                                    Click="SuggestEntities_Click"
+                                    ToolTip="Requires a linked Project and a recent play exchange"/>
+                            <Button x:Name="ExpandEntityButton"
+                                    Content="Expand selected (AI)"
+                                    Padding="8,4"
+                                    Margin="6,0,0,0"
+                                    IsEnabled="False"
+                                    Click="ExpandEntity_Click"
+                                    ToolTip="Enrich the selected entity with AI"/>
+                        </WrapPanel>
+                    </StackPanel>
+                    <DataGrid x:Name="EntityGrid"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              HeadersVisibility="Column"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              SelectionMode="Single">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn x:Name="EntityNameColumn" Header="Name" Binding="{Binding Name}" Width="*"/>
+                            <DataGridTextColumn x:Name="EntityRoleColumn" Header="Role / status" Binding="{Binding RoleOrStatus}" Width="100"/>
+                            <DataGridCheckBoxColumn x:Name="EntityPinnedColumn" Header="Pinned" Binding="{Binding Pinned}" Width="52"/>
+                            <DataGridTextColumn x:Name="EntityDescriptionColumn" Header="Description" Binding="{Binding DescriptionSnippet}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+            <TabItem Header="Warnings">
+                <DockPanel Margin="8">
+                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <Button x:Name="RunContinuityButton" Content="Run continuity check (AI)"
+                                Padding="8,4" Margin="0,0,6,0" Click="RunContinuityCheck_Click" IsEnabled="False"/>
+                    </WrapPanel>
+                    <DataGrid x:Name="WarningsGrid"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              HeadersVisibility="Column"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Severity" Binding="{Binding Severity}" Width="72"/>
+                            <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="56"/>
+                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+            <TabItem Header="State">
+                <DockPanel Margin="4">
+                    <Button x:Name="EditWorldButton"
+                            DockPanel.Dock="Bottom"
+                            Content="Edit in Play settings → World"
+                            Padding="8,4"
+                            HorizontalAlignment="Left"
+                            Margin="0,8,0,0"
+                            Click="EditWorldInSettings_Click"/>
+                    <DataGrid x:Name="StateGrid"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              HeadersVisibility="Column"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn x:Name="StateFieldColumn" Header="Field" Binding="{Binding Field}" Width="140"/>
+                            <DataGridTextColumn x:Name="StateValueColumn" Header="Value" Binding="{Binding Value}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+
+        <Button Grid.Row="3" Content="More actions…" Padding="10,5" HorizontalAlignment="Left" Margin="0,6,0,0"
+                Click="MoreActionsButton_Click">
+            <Button.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Undo" Click="Undo_Click"/>
+                    <MenuItem Header="Branch" Click="Branch_Click"/>
+                    <MenuItem Header="Edit turn…" Click="EditTurn_Click"/>
+                    <Separator/>
+                    <MenuItem Header="Export…" Click="Export_Click"/>
+                    <MenuItem Header="Search…" Click="Search_Click"/>
+                    <Separator/>
+                    <MenuItem Header="Save state" Click="SaveState_Click"/>
+                    <MenuItem Header="Roll…" Click="Roll_Click"/>
+                    <Separator/>
+                    <MenuItem Header="Migration checkpoint…" Click="MigrationCheckpoint_Click"/>
+                    <MenuItem Header="Continue design…" Click="ContinueDesign_Click"/>
+                    <MenuItem Header="Draft adventure framework…" Click="DraftFramework_Click"/>
+                </ContextMenu>
+            </Button.ContextMenu>
+        </Button>
+    </Grid>
+</UserControl>

@@ -1,0 +1,207 @@
+<Window x:Class="ChatGPTWrapper.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:ChatGPTWrapper.Views"
+        xmlns:wv="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="ChatGPT Wrapper"
+        Height="900"
+        Width="1400"
+        MinWidth="560"
+        MinHeight="480"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Background="{StaticResource DialogBgBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border x:Name="ChatChromePanel" Grid.Row="0"
+                Background="{StaticResource ToolbarBgBrush}"
+                BorderBrush="{StaticResource BorderBrushSubtle}"
+                BorderThickness="0,0,0,1"
+                Padding="12,10">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Border Background="{StaticResource PanelBgBrush}"
+                            BorderBrush="{StaticResource BorderBrushSubtle}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource RadiusControl}"
+                            Padding="2"
+                            Margin="0,0,16,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="BrowseModeButton"
+                                    Content="Browse"
+                                    Style="{StaticResource ModeButtonStyle}"
+                                    Click="BrowseModeButton_Click"/>
+                            <Button x:Name="AdventuresModeButton"
+                                    Content="Adventures"
+                                    Style="{StaticResource ModeButtonStyle}"
+                                    Click="AdventuresModeButton_Click"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Width="1"
+                            Margin="0,4,16,4"
+                            Background="{StaticResource BorderBrushSubtle}"/>
+                    <Button x:Name="NewTabButton"
+                            Content="New tab"
+                            Margin="0,0,8,0"
+                            Click="NewTabButton_Click"/>
+                    <Button x:Name="CloseTabButton"
+                            Content="Close tab"
+                            Margin="0,0,8,0"
+                            Click="CloseTabButton_Click"/>
+                    <Button x:Name="ReloadButton"
+                            Content="Reload"
+                            Margin="0,0,16,0"
+                            Click="ReloadButton_Click"/>
+                    <Button x:Name="FormatButton"
+                            Content="Format…"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Click="FormatButton_Click">
+                        <Button.ToolTip>
+                            <ToolTip>
+                                Spacing, typography, phrase highlights, and continuous view behavior.
+                            </ToolTip>
+                        </Button.ToolTip>
+                    </Button>
+                </StackPanel>
+                <WrapPanel x:Name="TranscriptSettingsPanel" Margin="0,0,0,0">
+                    <TextBlock Text="View"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource MutedTextBrush}"
+                               FontSize="{StaticResource FontSizeHint}"
+                               Margin="0,0,12,4"/>
+                    <CheckBox x:Name="ContinuousViewCheckBox"
+                              Content="Continuous view"
+                              Margin="0,0,0,4"
+                              Checked="ContinuousViewCheckBox_Changed"
+                              Unchecked="ContinuousViewCheckBox_Changed"/>
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
+        <Grid x:Name="BodyGrid" Grid.Row="1" Margin="12,4,12,12" ClipToBounds="True">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="AdventureColumn" Width="0" MinWidth="0"/>
+                <ColumnDefinition x:Name="PlaySidePanelSplitterColumn" Width="0" MinWidth="0"/>
+                <ColumnDefinition x:Name="ChatColumn" Width="*" MinWidth="280"/>
+                <ColumnDefinition x:Name="PlayNotesPanelSplitterColumn" Width="0" MinWidth="0"/>
+                <ColumnDefinition x:Name="NotesColumn" Width="0" MinWidth="0"/>
+            </Grid.ColumnDefinitions>
+            <ContentControl x:Name="AdventureHost"
+                            Grid.Column="0"
+                            Visibility="Collapsed"
+                            ClipToBounds="True"/>
+            <GridSplitter x:Name="PlaySidePanelSplitter"
+                          Grid.Column="1"
+                          Style="{StaticResource SidePanelGridSplitterStyle}"
+                          ResizeBehavior="PreviousAndNext"
+                          ResizeDirection="Columns"
+                          ShowsPreview="False"
+                          Visibility="Collapsed"
+                          DragDelta="PlaySidePanelSplitter_DragDelta"
+                          DragCompleted="PlaySidePanelSplitter_DragCompleted"/>
+            <Button x:Name="CollapsePlaySidePanelButton"
+                    Grid.Column="1"
+                    Style="{StaticResource SidePanelRailButtonStyle}"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Panel.ZIndex="1"
+                    Visibility="Collapsed"
+                    ToolTip="Hide adventure panel"
+                    Click="CollapsePlaySidePanelButton_Click">
+                <Path Data="M8 5 L3 12 L8 19"
+                      Stroke="{StaticResource MutedTextBrush}"
+                      StrokeThickness="1.6"
+                      StrokeStartLineCap="Round"
+                      StrokeEndLineCap="Round"
+                      Stretch="Uniform"
+                      Width="7"
+                      Height="12"/>
+            </Button>
+            <Button x:Name="ExpandPlaySidePanelButton"
+                    Grid.Column="1"
+                    Style="{StaticResource SidePanelRailButtonStyle}"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Visibility="Collapsed"
+                    ToolTip="Show adventure panel"
+                    Click="ExpandPlaySidePanelButton_Click">
+                <Path Data="M3 5 L8 12 L3 19"
+                      Stroke="{StaticResource MutedTextBrush}"
+                      StrokeThickness="1.6"
+                      StrokeStartLineCap="Round"
+                      StrokeEndLineCap="Round"
+                      Stretch="Uniform"
+                      Width="7"
+                      Height="12"/>
+            </Button>
+            <Grid Grid.Column="2">
+                <TabControl x:Name="ChatTabs"
+                            VerticalAlignment="Stretch"
+                            VerticalContentAlignment="Top"
+                            Background="{StaticResource DialogBgBrush}"
+                            Foreground="{StaticResource TextBrush}"/>
+                <views:PlayPromptComposer x:Name="PlayPromptComposer"
+                                          Visibility="Collapsed"
+                                          Width="0"
+                                          Height="0"
+                                          IsHitTestVisible="False"/>
+                <wv:WebView2 x:Name="HiddenUtilityWebView"
+                             Visibility="Collapsed"
+                             Width="0"
+                             Height="0"
+                             IsHitTestVisible="False"/>
+            </Grid>
+            <GridSplitter x:Name="PlayNotesPanelSplitter"
+                          Grid.Column="3"
+                          Style="{StaticResource SidePanelGridSplitterStyle}"
+                          ResizeBehavior="PreviousAndNext"
+                          ResizeDirection="Columns"
+                          ShowsPreview="False"
+                          Visibility="Collapsed"
+                          DragDelta="PlayNotesPanelSplitter_DragDelta"
+                          DragCompleted="PlayNotesPanelSplitter_DragCompleted"/>
+            <Button x:Name="CollapsePlayNotesPanelButton"
+                    Grid.Column="3"
+                    Style="{StaticResource SidePanelRailButtonStyle}"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Panel.ZIndex="1"
+                    Visibility="Collapsed"
+                    ToolTip="Hide notes panel"
+                    Click="CollapsePlayNotesPanelButton_Click">
+                <Path Data="M3 5 L8 12 L3 19"
+                      Stroke="{StaticResource MutedTextBrush}"
+                      StrokeThickness="1.6"
+                      StrokeStartLineCap="Round"
+                      StrokeEndLineCap="Round"
+                      Stretch="Uniform"
+                      Width="7"
+                      Height="12"/>
+            </Button>
+            <Button x:Name="ExpandPlayNotesPanelButton"
+                    Grid.Column="3"
+                    Style="{StaticResource SidePanelRailButtonStyle}"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Visibility="Collapsed"
+                    ToolTip="Show notes panel"
+                    Click="ExpandPlayNotesPanelButton_Click">
+                <Path Data="M8 5 L3 12 L8 19"
+                      Stroke="{StaticResource MutedTextBrush}"
+                      StrokeThickness="1.6"
+                      StrokeStartLineCap="Round"
+                      StrokeEndLineCap="Round"
+                      Stretch="Uniform"
+                      Width="7"
+                      Height="12"/>
+            </Button>
+            <ContentControl x:Name="NotesHost"
+                            Grid.Column="4"
+                            Visibility="Collapsed"
+                            ClipToBounds="True"/>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,42 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A395E6E84EA}") = "Tests", "Tests", "{E8A4F1C2-3B5D-4E6F-9A0B-1C2D3E4F5A6B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatGPTWrapper", "ChatGPTWrapper\ChatGPTWrapper.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatGPTWrapper.ApiDiagnostics", "tests\ChatGPTWrapper.ApiDiagnostics\ChatGPTWrapper.ApiDiagnostics.csproj", "{F7B6E5D4-C3A2-1098-7654-3210FEDCBA98}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatGPTWrapper.Core", "ChatGPTWrapper.Core\ChatGPTWrapper.Core.csproj", "{708545CD-9DA2-46A9-9DEA-557591A4E3A0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChatGPTWrapper.SessionHost", "ChatGPTWrapper.SessionHost\ChatGPTWrapper.SessionHost.csproj", "{11C508CB-0884-4B25-B146-86CDFC0AD96D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F7B6E5D4-C3A2-1098-7654-3210FEDCBA98}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F7B6E5D4-C3A2-1098-7654-3210FEDCBA98}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F7B6E5D4-C3A2-1098-7654-3210FEDCBA98}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F7B6E5D4-C3A2-1098-7654-3210FEDCBA98}.Release|Any CPU.Build.0 = Release|Any CPU
+		{708545CD-9DA2-46A9-9DEA-557591A4E3A0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{708545CD-9DA2-46A9-9DEA-557591A4E3A0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{708545CD-9DA2-46A9-9DEA-557591A4E3A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{708545CD-9DA2-46A9-9DEA-557591A4E3A0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{11C508CB-0884-4B25-B146-86CDFC0AD96D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{11C508CB-0884-4B25-B146-86CDFC0AD96D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{11C508CB-0884-4B25-B146-86CDFC0AD96D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{11C508CB-0884-4B25-B146-86CDFC0AD96D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{F7B6E5D4-C3A2-1098-7654-3210FEDCBA98} = {E8A4F1C2-3B5D-4E6F-9A0B-1C2D3E4F5A6B}
+	EndGlobalSection
+EndGlobal

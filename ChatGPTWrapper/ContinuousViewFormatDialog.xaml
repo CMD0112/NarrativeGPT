@@ -1,0 +1,229 @@
+<Window x:Class="ChatGPTWrapper.ContinuousViewFormatDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ChatGPTWrapper"
+        Title="Format — Continuous view &amp; thread"
+        Height="680"
+        Width="860"
+        MinHeight="560"
+        MinWidth="760"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}"
+        ResizeMode="CanResizeWithGrip">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/WrapperChrome.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+    <Grid Margin="20"
+          Background="{StaticResource DialogBgBrush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MinWidth="300"/>
+            <ColumnDefinition Width="6"/>
+            <ColumnDefinition Width="280" MinWidth="200" MaxWidth="440"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TabControl x:Name="SettingsTabs"
+                    Grid.Column="0"
+                    Grid.Row="0"
+                    Margin="0,0,8,0">
+            <TabItem Header="Continuous view">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
+                    <StackPanel>
+                        <TextBlock x:Name="CvRequiredBanner"
+                                   Text="Layout and typography sliders apply only while Continuous view is enabled on the toolbar."
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,8"/>
+                        <Button x:Name="EnableContinuousViewButton"
+                                Content="Enable Continuous view for preview"
+                                HorizontalAlignment="Left"
+                                Margin="0,0,0,12"
+                                Click="EnableContinuousViewButton_Click"/>
+                        <TextBlock Text="Layout"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,8"/>
+                        <StackPanel x:Name="LayoutPanel"/>
+                        <TextBlock Text="Typography"
+                                   FontWeight="SemiBold"
+                                   Margin="0,16,0,8"/>
+                        <StackPanel x:Name="TypographyPanel"/>
+                        <TextBlock Text="Enhanced prose typography"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,8"/>
+                        <StackPanel x:Name="EnhancedTypographyPanel"/>
+                        <TextBlock Text="Code &amp; headings"
+                                   FontWeight="SemiBold"
+                                   Margin="0,16,0,8"/>
+                        <StackPanel x:Name="CodeHeadingsPanel"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Highlights">
+                <StackPanel Margin="8">
+                    <CheckBox x:Name="PhraseHighlightsCheckBox"
+                              Content="Enable phrase highlights"
+                              Margin="0,0,0,8"/>
+                    <TextBlock Text="Highlights apply in Continuous view only."
+                               Foreground="{StaticResource MutedTextBrush}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12"/>
+                    <local:PhraseHighlightsEditorControl x:Name="PhraseEditorControl"/>
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="Thread behavior">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
+                    <StackPanel>
+                        <CheckBox x:Name="ProseEnhancementsCheckBox"
+                                  Content="Enhanced prose (native message bubbles)"
+                                  Margin="0,0,0,6"/>
+                        <TextBlock Text="Improves stock ChatGPT message typography. Continuous view overlay uses the enhanced prose sliders on the Continuous view tab when this is on."
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12"/>
+                        <CheckBox x:Name="HideEditPromptsCheckBox"
+                                  Content="Hide edit prompts"
+                                  Margin="0,0,0,6"/>
+                        <TextBlock Text="After you edit an assistant response in continuous view, hides the original assistant turn and the revision user message."
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12"/>
+                        <CheckBox x:Name="HideContextTagsCheckBox"
+                                  Content="Hide packet context in thread"
+                                  Margin="0,0,0,6"/>
+                        <TextBlock Text="On the pinned play tab, show only your player line in the ChatGPT thread."
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12"/>
+                        <CheckBox x:Name="ExpandHiddenContextCheckBox"
+                                  Content="Expandable context summary"
+                                  Margin="0,0,0,6"/>
+                        <TextBlock Text="When packet context is hidden, include collapsed adventure context in the thread."
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12"/>
+                        <CheckBox x:Name="ShowImagesCheckBox"
+                                  Content="Show images in continuous view"
+                                  Margin="0,0,0,6"/>
+                        <TextBlock Text="When off, image attachments show a filename placeholder instead of inline images."
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12"/>
+                        <TextBlock Text="Composer clearance (px)"
+                                   Margin="0,0,0,4"/>
+                        <StackPanel x:Name="ComposerClearancePanel" Margin="0,0,0,8"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Presets">
+                <StackPanel Margin="8">
+                    <TextBlock Text="Apply a preset to spacing and typography, then fine-tune on the Continuous view tab."
+                               Foreground="{StaticResource MutedTextBrush}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,16"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <Button Content="Compact"
+                                Margin="0,0,8,0"
+                                Click="CompactPresetButton_Click"/>
+                        <Button Content="Default"
+                                Margin="0,0,8,0"
+                                Click="DefaultPresetButton_Click"/>
+                        <Button Content="Relaxed"
+                                Margin="0,0,8,0"
+                                Click="RelaxedPresetButton_Click"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <Button Content="Export format JSON…"
+                                Margin="0,0,8,0"
+                                Click="ExportFormatButton_Click"/>
+                        <Button Content="Import format JSON…"
+                                Click="ImportFormatButton_Click"/>
+                    </StackPanel>
+                    <Button Content="Reset all to defaults"
+                            HorizontalAlignment="Left"
+                            Click="ResetDefaultsButton_Click"/>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <GridSplitter Grid.Column="1"
+                      Grid.Row="0"
+                      Style="{StaticResource SidePanelGridSplitterStyle}"
+                      ResizeBehavior="PreviousAndNext"
+                      ResizeDirection="Columns"
+                      Width="6"/>
+
+        <Border Grid.Column="2"
+                Grid.Row="0"
+                Background="{StaticResource PanelBgBrush}"
+                BorderBrush="{StaticResource BorderBrushDark}"
+                BorderThickness="1"
+                Padding="12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Text="Injected CSS variables"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8"/>
+
+                <TextBox x:Name="CssPreviewTextBox"
+                         Grid.Row="1"
+                         IsReadOnly="True"
+                         TextWrapping="Wrap"
+                         AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto"
+                         FontFamily="Consolas"
+                         FontSize="11"
+                         Background="{StaticResource BgElevatedBrush}"
+                         BorderBrush="{StaticResource BorderSubtleBrush}"
+                         Padding="8"/>
+
+                <TextBlock Grid.Row="2"
+                           Text="Matches the runtime stylesheet injected into the chat page when Continuous view is on."
+                           Foreground="{StaticResource MutedTextBrush}"
+                           TextWrapping="Wrap"
+                           Margin="0,8,0,0"/>
+
+                <CheckBox x:Name="PreviewInChatCheckBox"
+                          Grid.Row="3"
+                          Content="Preview in chat"
+                          Margin="0,12,0,0"/>
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Column="0"
+                    Grid.ColumnSpan="3"
+                    Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,16,0,0">
+            <Button Content="OK"
+                    Style="{StaticResource PrimaryButtonStyle}"
+                    MinWidth="88"
+                    Margin="0,0,8,0"
+                    IsDefault="True"
+                    Click="OkButton_Click"/>
+            <Button Content="Apply"
+                    Padding="16,6"
+                    Margin="0,0,8,0"
+                    Click="ApplyButton_Click"/>
+            <Button Content="Cancel"
+                    Padding="16,6"
+                    IsCancel="True"
+                    Click="CancelButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

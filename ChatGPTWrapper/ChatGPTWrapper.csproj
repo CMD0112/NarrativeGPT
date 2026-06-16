@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+
+    <AssemblyName>ChatGPT Wrapper</AssemblyName>
+    <RootNamespace>ChatGPTWrapper</RootNamespace>
+    <ApplicationTitle>ChatGPT Wrapper</ApplicationTitle>
+    <AssemblyTitle>ChatGPT Wrapper</AssemblyTitle>
+    <Product>ChatGPT Wrapper</Product>
+    <Version>1.0.0</Version>
+
+    <PublishDir>$(MSBuildProjectDirectory)\dist\ChatGPT-Wrapper\</PublishDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ChatGPTWrapper.ApiDiagnostics" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ChatGPTWrapper.Core\ChatGPTWrapper.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3912.50" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\ChatGPT_files\**\*"
+             Link="wrapper-assets\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="PrepareShareablePublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_ShareStrip Include="$(PublishDir)**\*.pdb" />
+      <_ShareStrip Include="$(PublishDir)**\Microsoft.Web.WebView2*.xml" />
+    </ItemGroup>
+    <Delete Files="@(_ShareStrip)" ContinueOnError="true" />
+    <Message Importance="high" Text="Shareable build: $(PublishDir)" />
+  </Target>
+
+</Project>

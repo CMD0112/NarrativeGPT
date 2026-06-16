@@ -1,0 +1,60 @@
+<Window x:Class="ChatGPTWrapper.Views.SourceSyncDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="API sync diagnostics"
+        Height="560"
+        Width="900"
+        MinHeight="520"
+        MinWidth="640"
+        ResizeMode="CanResizeWithGrip"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,8"
+                   Text="Diagnostics only — programmatic API sync is deprecated. Use Source Manager for manual publish (copy instructions, drag files, mark Published)."/>
+        <TextBlock x:Name="RemoteBanner" Grid.Row="1" TextWrapping="Wrap" Margin="0,0,0,8"
+                   Foreground="{StaticResource MutedTextBrush}" Visibility="Collapsed"/>
+        <TextBlock x:Name="StatusLine" Grid.Row="2" Foreground="{StaticResource MutedTextBrush}"
+                   TextWrapping="Wrap" Margin="0,0,0,8"/>
+        <DataGrid x:Name="FilesGrid" Grid.Row="3" AutoGenerateColumns="False"
+                  CanUserAddRows="False" SelectionMode="Single" RowHeight="36"
+                  Background="{StaticResource PanelBgBrush}"
+                  Foreground="{StaticResource TextBrush}"
+                  BorderBrush="{StaticResource BorderBrushDark}"/>
+        <TextBlock x:Name="CapabilitiesHint" Grid.Row="4" Foreground="{StaticResource MutedTextBrush}"
+                   FontSize="11" TextWrapping="Wrap" Margin="0,8,0,8"/>
+        <StackPanel Grid.Row="5">
+            <WrapPanel Margin="0,0,0,8">
+                <TextBlock Text="Resolve" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <Button x:Name="KeepLocalButton" Content="Keep local" Padding="12,6" Margin="0,0,8,4" Click="KeepLocal_Click"/>
+                <Button x:Name="KeepRemoteButton" Content="Keep remote" Padding="12,6" Margin="0,0,8,4" Click="KeepRemote_Click"/>
+            </WrapPanel>
+            <WrapPanel Margin="0,0,0,8">
+                <TextBlock Text="Folder" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <Button x:Name="OpenFolderButton" Content="Open sources folder" Padding="12,6" Margin="0,0,8,4" Click="OpenFolder_Click"/>
+                <Button x:Name="PreviewButton" Content="Preview file" Padding="12,6" Margin="0,0,8,4" Click="Preview_Click"/>
+                <Button x:Name="OpenLogsButton" Content="Open logs folder" Padding="12,6" Margin="0,0,8,4" Click="OpenLogs_Click"/>
+            </WrapPanel>
+            <WrapPanel Margin="0,0,0,8">
+                <TextBlock Text="Plan" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <Button x:Name="RefreshButton" Content="Refresh plan" Padding="12,6" Margin="0,0,8,4" Click="Refresh_Click"/>
+                <Button x:Name="ReconcileDuplicatesButton" Content="Reconcile duplicates…" Padding="12,6" Margin="0,0,8,4" Click="ReconcileDuplicates_Click"/>
+                <Button x:Name="ClearBindingsButton" Content="Clear remote bindings" Padding="12,6" Margin="0,0,8,4" Click="ClearBindings_Click"/>
+            </WrapPanel>
+            <WrapPanel HorizontalAlignment="Right">
+                <Button x:Name="ApplySafeButton" Content="Apply safe" Padding="12,6" Margin="0,0,8,0" Click="ApplySafe_Click"/>
+                <Button x:Name="ApplyAllButton" Content="Apply all" Style="{StaticResource PrimaryButtonStyle}" MinWidth="88" Margin="0,0,8,0" Click="ApplyAll_Click"/>
+                <Button Content="Close" Padding="12,6" IsCancel="True" Click="Close_Click"/>
+            </WrapPanel>
+        </StackPanel>
+    </Grid>
+</Window>

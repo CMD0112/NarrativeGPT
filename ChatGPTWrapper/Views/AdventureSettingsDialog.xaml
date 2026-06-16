@@ -1,0 +1,14 @@
+<Window x:Class="ChatGPTWrapper.Views.AdventureSettingsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Adventure settings"
+        Height="1"
+        Width="1"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Visibility="Hidden"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid/>
+</Window>

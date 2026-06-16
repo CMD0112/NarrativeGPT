@@ -1,0 +1,18 @@
+<UserControl x:Class="ChatGPTWrapper.Views.AdventureNotesPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource DialogBgBrush}">
+    <DockPanel Margin="12">
+        <TextBlock DockPanel.Dock="Top"
+                   Text="Player notes — not sent to ChatGPT"
+                   Foreground="{StaticResource MutedTextBrush}"
+                   FontSize="11"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,8"/>
+        <TextBox x:Name="NotesBox"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto"
+                 LostFocus="NotesBox_LostFocus"/>
+    </DockPanel>
+</UserControl>

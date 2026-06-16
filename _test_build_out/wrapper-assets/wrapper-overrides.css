@@ -1,0 +1,57 @@
+/*
+ * ChatGPT Wrapper — minimal base injection (stock ChatGPT markdown/code by default).
+ *
+ * Optional prose/color tweaks: enable "Enhanced prose" in the toolbar
+ * (loads prose-enhancements.css). User CSS: %LocalAppData%\ChatGPTWrapper\styles\user-overrides.css
+ */
+
+:root {
+  --cgw-bg-base: #161618;
+  --cgw-bg-surface: #1e1e22;
+  --cgw-bg-elevated: #28282e;
+  --cgw-border-subtle: #32323a;
+  --cgw-border-strong: #45454f;
+  --cgw-text-primary: #ededf0;
+  --cgw-text-muted: #9898a4;
+  --cgw-accent: #5b9fd4;
+  --cgw-accent-subtle: rgba(91, 159, 212, 0.13);
+  --cgw-success: #6bcb8e;
+  --cgw-warning: #e5b567;
+  --cgw-error: #e57373;
+  --cgw-radius: 6px;
+}
+
+/* ----- Composer ----- */
+#prompt-textarea {
+  line-height: 1.5;
+  caret-color: var(--cgw-text-primary, var(--text-primary, #ededf0));
+  outline: none !important;
+}
+
+#prompt-textarea:focus {
+  outline: none !important;
+}
+
+/* ----- Transcript column scrollbars only ----- */
+main [class*="overflow-y-auto"]:has([class*="group/turn-messages"]),
+main [class*="overflow-auto"]:has([class*="group/turn-messages"]) {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--cgw-border-strong, rgba(255,255,255,0.35)) 55%, transparent) transparent;
+}
+
+main [class*="overflow-y-auto"]:has([class*="group/turn-messages"])::-webkit-scrollbar,
+main [class*="overflow-auto"]:has([class*="group/turn-messages"])::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+main [class*="overflow-y-auto"]:has([class*="group/turn-messages"])::-webkit-scrollbar-track,
+main [class*="overflow-auto"]:has([class*="group/turn-messages"])::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+main [class*="overflow-y-auto"]:has([class*="group/turn-messages"])::-webkit-scrollbar-thumb,
+main [class*="overflow-auto"]:has([class*="group/turn-messages"])::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--cgw-border-strong, #45454f) 70%, transparent);
+  border-radius: 4px;
+}

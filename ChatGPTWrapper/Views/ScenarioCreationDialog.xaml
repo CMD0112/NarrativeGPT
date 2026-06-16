@@ -1,0 +1,37 @@
+<Window x:Class="ChatGPTWrapper.Views.ScenarioCreationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="New adventure"
+        Height="620"
+        Width="560"
+        MinHeight="480"
+        MinWidth="440"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="20">
+        <StackPanel>
+            <TextBlock Text="Title" Margin="0,0,0,4"/>
+            <TextBox x:Name="TitleBox" Margin="0,0,0,12"/>
+            <TextBlock Text="Genre" Margin="0,0,0,4"/>
+            <TextBox x:Name="GenreBox" Margin="0,0,0,12"/>
+            <TextBlock Text="Setting" Margin="0,0,0,4"/>
+            <TextBox x:Name="SettingBox" AcceptsReturn="True" Height="60" TextWrapping="Wrap" Margin="0,0,0,12"/>
+            <TextBlock Text="Player role" Margin="0,0,0,4"/>
+            <TextBox x:Name="PlayerRoleBox" Margin="0,0,0,12"/>
+            <TextBlock Text="Opening situation" Margin="0,0,0,4"/>
+            <TextBox x:Name="OpeningBox" AcceptsReturn="True" Height="80" TextWrapping="Wrap" Margin="0,0,0,12"/>
+            <TextBlock Text="Plot essentials" Margin="0,0,0,4"/>
+            <TextBox x:Name="PlotBox" AcceptsReturn="True" Height="60" TextWrapping="Wrap" Margin="0,0,0,12"/>
+            <TextBlock Text="Author's note (style)" Margin="0,0,0,4"/>
+            <TextBox x:Name="AuthorsNoteBox" AcceptsReturn="True" Height="50" TextWrapping="Wrap" Margin="0,0,0,12"/>
+            <CheckBox x:Name="StartWithOpeningCheck" Content="Offer Start adventure on first play (opening narration)"
+                      IsChecked="True" Margin="0,0,0,16"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Design with AI instead…" Margin="0,0,8,0" Padding="14,6" Click="DesignWithAi_Click"/>
+                <Button Content="Cancel" Margin="0,0,8,0" Padding="14,6" IsCancel="True"/>
+                <Button Content="Create" Style="{StaticResource PrimaryButtonStyle}" MinWidth="88" IsDefault="True" Click="Create_Click"/>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Window>

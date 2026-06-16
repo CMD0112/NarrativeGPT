@@ -1,0 +1,18 @@
+---
+description: Use Linear desktop app URLs instead of browser links
+alwaysApply: true
+---
+
+# Linear issue links
+
+When referencing or linking Linear issues, use the desktop app URL scheme instead of browser URLs.
+
+Convert:
+
+`https://linear.app/{workspace}/issue/{KEY}` → `linear://{workspace}/issue/{KEY}`
+
+Examples:
+
+- `https://linear.app/cmd0112/issue/CMD-68` → `linear://cmd0112/issue/CMD-68`
+
+Apply this in chat replies, comments, PR descriptions, and markdown you generate. When Linear MCP or other tools return `https://linear.app/...` URLs, rewrite them to `linear://...` when citing issues. Do not use browser URLs unless the user explicitly asks for a web link.

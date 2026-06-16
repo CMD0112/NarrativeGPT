@@ -1,0 +1,77 @@
+using System.IO;
+
+namespace ChatGPTWrapper;
+
+/// <summary>
+/// Runtime folders under %LocalAppData%\ChatGPTWrapper (optional user CSS, WebView2 profile).
+/// Adventures may use a user-configured root via <see cref="WrapperSettingsStore"/>.
+/// </summary>
+internal static class AppDirectories
+{
+    internal static string? TestRootOverride { get; set; }
+
+    private static string? _adventuresDirectoryOverride;
+
+    /// <summary>Fixed config root (settings, WebView2, libraries) — not overridden by adventures path.</summary>
+    public static string ConfigRoot =>
+        TestRootOverride
+        ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ChatGPTWrapper");
+
+    public static string Root => ConfigRoot;
+
+    public static string StylesDirectory => Path.Combine(Root, "styles");
+
+    public static string WebView2UserDataDirectory => Path.Combine(Root, "WebView2UserData");
+
+    public static string DefaultAdventuresDirectory => Path.Combine(Root, "adventures");
+
+    public static string AdventuresDirectory =>
+        _adventuresDirectoryOverride ?? DefaultAdventuresDirectory;
+
+    public static string LibrariesDirectory => Path.Combine(Root, "libraries");
+
+    public static string BackupsDirectory => Path.Combine(Root, "backups");
+
+    public static string AdventureDirectory(Guid adventureId)
+    {
+        var custom = AdventureLocationStore.TryGet(adventureId);
+        if (!string.IsNullOrWhiteSpace(custom))
+            return custom;
+
+        return Path.Combine(AdventuresDirectory, adventureId.ToString("D"));
+    }
+
+    public static string AdventureSourcesDirectory(Guid adventureId) =>
+        Path.Combine(AdventureDirectory(adventureId), "sources");
+
+    internal static void ApplyAdventuresDirectoryOverride(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            _adventuresDirectoryOverride = null;
+            return;
+        }
+
+        _adventuresDirectoryOverride = Path.GetFullPath(path.Trim());
+    }
+
+    public static void EnsureCreated()
+    {
+        WrapperSettingsStore.Initialize();
+        AdventureLocationStore.Initialize();
+
+        Directory.CreateDirectory(Root);
+        Directory.CreateDirectory(StylesDirectory);
+        Directory.CreateDirectory(WebView2UserDataDirectory);
+        Directory.CreateDirectory(AdventuresDirectory);
+        Directory.CreateDirectory(LibrariesDirectory);
+        Directory.CreateDirectory(BackupsDirectory);
+        Directory.CreateDirectory(Path.Combine(LibrariesDirectory, "scenarios"));
+        Directory.CreateDirectory(Path.Combine(LibrariesDirectory, "worlds"));
+        Directory.CreateDirectory(Path.Combine(LibrariesDirectory, "characters"));
+        Directory.CreateDirectory(Path.Combine(LibrariesDirectory, "presets"));
+        Directory.CreateDirectory(Path.Combine(LibrariesDirectory, "templates"));
+    }
+}

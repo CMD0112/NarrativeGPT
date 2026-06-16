@@ -1,0 +1,128 @@
+<Window x:Class="ChatGPTWrapper.Views.InstructionDesignerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Instructions designer"
+        Height="720"
+        Width="960"
+        MinHeight="560"
+        MinWidth="760"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MinWidth="320"/>
+            <ColumnDefinition Width="8"/>
+            <ColumnDefinition Width="*" MinWidth="280"/>
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
+            <Expander Header="How to draft instructions" IsExpanded="False" Margin="0,0,0,8">
+                <StackPanel Margin="8,4,0,0">
+                    <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
+                               Text="1. Fill voice, boundaries, and portrayal rules below — watch the live preview."/>
+                    <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
+                               Text="2. Save — persists fields to the adventure (design and play stay in sync)."/>
+                    <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
+                               Text="3. Generate instructions file — writes instructions-snippet.md locally without AI."/>
+                    <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
+                               Text="4. Copy instructions → paste into ChatGPT Project custom instructions → Mark instructions pasted."/>
+                    <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedTextBrush}"
+                               Text="Optional: Refine instructions with AI in Design mode polishes wording only — define boundaries here first. Full guide: docs/instruction-contract-guide.md"/>
+                </StackPanel>
+            </Expander>
+            <TextBlock Text="Narrator instruction contract"
+                       FontWeight="SemiBold"
+                       FontSize="14"
+                       Margin="0,0,0,4"/>
+            <TextBlock x:Name="DriftLine"
+                       Foreground="{StaticResource MutedTextBrush}"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,4"/>
+            <TextBlock Foreground="{StaticResource MutedTextBrush}"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Text="Edit fields on the left. Preview shows the canonical body used for Copy instructions, export, and AI refinement."/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" Grid.Column="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="Voice &amp; format" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="Perspective" Margin="0,0,0,4"/>
+                <TextBox x:Name="PerspectiveBox" Margin="0,0,0,8" TextChanged="Fields_Changed"/>
+                <WrapPanel Margin="0,0,0,8">
+                    <StackPanel Width="140" Margin="0,0,12,0">
+                        <TextBlock Text="Tense" Margin="0,0,0,4"/>
+                        <TextBox x:Name="TenseBox" TextChanged="Fields_Changed"/>
+                    </StackPanel>
+                    <StackPanel Width="140" Margin="0,0,12,0">
+                        <TextBlock Text="Detail level" Margin="0,0,0,4"/>
+                        <TextBox x:Name="DetailBox" TextChanged="Fields_Changed"/>
+                    </StackPanel>
+                    <StackPanel Width="140">
+                        <TextBlock Text="Tone" Margin="0,0,0,4"/>
+                        <TextBox x:Name="ToneBox" TextChanged="Fields_Changed"/>
+                    </StackPanel>
+                </WrapPanel>
+                <WrapPanel Margin="0,0,0,8">
+                    <StackPanel Width="140" Margin="0,0,12,0">
+                        <TextBlock Text="Difficulty" Margin="0,0,0,4"/>
+                        <TextBox x:Name="DifficultyBox" TextChanged="Fields_Changed"/>
+                    </StackPanel>
+                    <StackPanel Width="140">
+                        <TextBlock Text="Violence level" Margin="0,0,0,4"/>
+                        <TextBox x:Name="ViolenceBox" TextChanged="Fields_Changed"/>
+                    </StackPanel>
+                </WrapPanel>
+                <TextBlock Text="Author's note (style only)" Margin="0,0,0,4"/>
+                <TextBox x:Name="AuthorsNoteBox" AcceptsReturn="True" MinHeight="56" TextWrapping="Wrap"
+                         Margin="0,0,0,12" TextChanged="Fields_Changed"/>
+
+                <TextBlock Text="Global content boundaries (one per line)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBox x:Name="BoundariesBox" AcceptsReturn="True" MinHeight="72" TextWrapping="Wrap"
+                         Margin="0,0,0,12" TextChanged="Fields_Changed"/>
+
+                <TextBlock Text="Subject portrayal rules (Subject: rule)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBlock Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"
+                           Text="Characters, factions, or concepts. Example: Mara: Avoid treating as passive."
+                           Margin="0,0,0,4"/>
+                <TextBox x:Name="PortrayalBox" AcceptsReturn="True" MinHeight="72" TextWrapping="Wrap"
+                         Margin="0,0,0,12" TextChanged="Fields_Changed"/>
+
+                <TextBlock Text="Instruction addendum (optional)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                <TextBox x:Name="AddendumBox" AcceptsReturn="True" MinHeight="48" TextWrapping="Wrap"
+                         Margin="0,0,0,8" TextChanged="Fields_Changed"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <GridSplitter Grid.Row="1" Grid.Column="1"
+                      Style="{StaticResource SidePanelGridSplitterStyle}"
+                      ResizeBehavior="PreviousAndNext"
+                      ResizeDirection="Columns"
+                      Width="8"/>
+
+        <DockPanel Grid.Row="1" Grid.Column="2">
+            <TextBlock DockPanel.Dock="Top" Text="Live preview" FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TextBox x:Name="PreviewBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto" FontFamily="Consolas"/>
+        </DockPanel>
+
+        <WrapPanel Grid.Row="2" Grid.ColumnSpan="3" Margin="0,12,0,0">
+            <Button Content="Generate instructions file" Padding="12,6" Margin="0,0,8,4"
+                    Click="GenerateFile_Click"/>
+            <Button Content="Copy instructions" Padding="12,6" Margin="0,0,8,4"
+                    Click="Copy_Click"/>
+            <Button Content="Mark instructions pasted" Padding="12,6" Margin="0,0,8,4"
+                    Click="MarkPasted_Click"/>
+            <Button Content="Cancel" Padding="12,6" Margin="0,0,8,4" IsCancel="True"/>
+            <Button Content="Save" Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" IsDefault="True"
+                    Click="Save_Click"/>
+        </WrapPanel>
+    </Grid>
+</Window>
