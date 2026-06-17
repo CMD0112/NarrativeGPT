@@ -66,7 +66,7 @@ internal static class AdventureSourceFileService
         var normalized = NormalizeRelativePath(relativePath);
         var sourcesDir = SourcesDirectory(bundle);
         var absolutePath = Path.Combine(sourcesDir, normalized);
-        var normalizedContent = content.Trim() + Environment.NewLine;
+        var normalizedContent = SourceMarkdownNormalizer.Normalize(normalized, content.Trim()) + Environment.NewLine;
         var contentHash = ProjectSourceExportService.ComputeSha256Bytes(Encoding.UTF8.GetBytes(normalizedContent));
 
         var entry = FindOrCreateManifestEntry(bundle, normalized);

@@ -253,10 +253,14 @@
                         <TextBlock Text="Play session" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <TextBlock Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"
                                    Margin="0,0,0,6"
-                                   Text="Start new play thread… copies the play start packet to your clipboard, navigates your Play tab to your Project, and pins it. Click New chat in ChatGPT, paste (Ctrl+V), and press Send. Link to active tab only switches pin on an already-open chat."/>
+                                   Text="Start new play thread… copies the play start packet to your clipboard, navigates your Play tab to your Project, and pins it. Click New chat in ChatGPT, paste (Ctrl+V), and press Send. Draft new project chat… keeps your current play thread bound while you open the Project page to create a utility or secondary chat."/>
                         <WrapPanel Margin="0,0,0,8">
                             <Button x:Name="StartNewPlayThreadButton" Content="Start new play thread…" Padding="8,4" Margin="0,0,6,6"
                                     Click="StartNewPlayThread_Click"/>
+                            <Button x:Name="DraftNewProjectChatButton" Content="Draft new project chat…" Padding="8,4" Margin="0,0,6,6"
+                                    Click="DraftNewProjectChat_Click"/>
+                            <Button x:Name="CancelProjectChatDraftButton" Content="Cancel drafting" Padding="8,4" Margin="0,0,6,6"
+                                    Click="CancelProjectChatDraft_Click" Visibility="Collapsed"/>
                             <Button x:Name="PinPlayTabButton" Content="Link to active browser tab" Padding="8,4" Margin="0,0,6,6"
                                     Click="PinPlayTab_Click"/>
                             <Button x:Name="OpenPinnedPlayTabButton" Content="Open pinned tab" Padding="8,4" Margin="0,0,6,6"
@@ -266,6 +270,9 @@
                         </WrapPanel>
                         <TextBlock x:Name="PlayTabStatusBlock" Foreground="{StaticResource MutedTextBrush}"
                                    FontSize="{StaticResource FontSizeHint}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="ProjectChatDraftStatusBlock" Foreground="#C9A227"
+                                   FontSize="{StaticResource FontSizeHint}" TextWrapping="Wrap" Margin="0,0,0,4"
+                                   Visibility="Collapsed"/>
                         <TextBlock x:Name="ThreadStatusBlock" Foreground="{StaticResource MutedTextBrush}"
                                    FontSize="{StaticResource FontSizeHint}" TextWrapping="Wrap" Margin="0,0,0,4"/>
                         <WrapPanel Margin="0,0,0,8">

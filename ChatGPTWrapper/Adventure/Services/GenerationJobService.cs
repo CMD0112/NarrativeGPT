@@ -44,7 +44,7 @@ internal sealed class GenerationJobService
             };
         }
 
-        if (UtilityDeliveryModeService.UsesInlineDelivery(bundle))
+        if (!IsDesignSourceJob(jobId) && UtilityDeliveryModeService.UsesInlineDelivery(bundle))
         {
             if (playCore is null || playTurnService is null)
             {
@@ -80,7 +80,7 @@ internal sealed class GenerationJobService
             utilityJobId,
             context.ForceRotate,
             turnService,
-            cancellationToken);
+            cancellationToken: cancellationToken);
         if (session is null)
         {
             return new GenerationJobResult
@@ -92,19 +92,23 @@ internal sealed class GenerationJobService
 
         var gizmoId = bundle.Metadata.LinkedProjectId;
 
-        var transcriptService = new PlayThreadTranscriptService(_conversationSend, playTurnService);
-        var storyBuilder = new UtilityStoryContextBuilder(transcriptService);
-        var storyContext = await storyBuilder.BuildAsync(bundle, jobId, playCore, cancellationToken);
-        context.StoryContextBlock = storyContext.Text;
-        context.StoryContextHasTranscript = storyContext.HasTranscriptSection;
-        var storySettings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
-        context.OmitRedundantJobTurnSlices =
-            storySettings.OmitRedundantJobTurnSlices && storyContext.HasTranscriptSection;
-        context.StoryContextIncludesSummary =
-            storySettings.IncludeRollingSummary && !string.IsNullOrWhiteSpace(bundle.Summary.RollingSummary);
-        context.StoryContextIncludesState =
-            storySettings.IncludeState
-            && EntityExtractionService.BuildWorldSnapshot(bundle, includeSummary: false) != "(none)";
+        UtilityStoryContextBuildResult storyContext = new();
+        if (!IsDesignSourceJob(jobId))
+        {
+            var transcriptService = new PlayThreadTranscriptService(_conversationSend, playTurnService);
+            var storyBuilder = new UtilityStoryContextBuilder(transcriptService);
+            storyContext = await storyBuilder.BuildAsync(bundle, jobId, playCore, cancellationToken);
+            context.StoryContextBlock = storyContext.Text;
+            context.StoryContextHasTranscript = storyContext.HasTranscriptSection;
+            var storySettings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
+            context.OmitRedundantJobTurnSlices =
+                storySettings.OmitRedundantJobTurnSlices && storyContext.HasTranscriptSection;
+            context.StoryContextIncludesSummary =
+                storySettings.IncludeRollingSummary && !string.IsNullOrWhiteSpace(bundle.Summary.RollingSummary);
+            context.StoryContextIncludesState =
+                storySettings.IncludeState
+                && EntityExtractionService.BuildWorldSnapshot(bundle, includeSummary: false) != "(none)";
+        }
 
         var prompt = GenerationJobHandlers.BuildJobPrompt(bundle, jobId, context);
         var baselineCount = -1;
@@ -208,7 +212,7 @@ internal sealed class GenerationJobService
                 var recapture = await turnService.CaptureStableAssistantAsync(
                     core,
                     baselineCount,
-                    30_000,
+                    GetDomRecaptureTimeoutMs(jobId),
                     effectiveConversationId,
                     gizmoId,
                     cancellationToken);
@@ -217,6 +221,20 @@ internal sealed class GenerationJobService
                 else
                     captureError = recapture.Error ?? sendResult.Error ?? "capture_premature";
             }
+        }
+
+        if (string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
+        {
+            responseText = await TryImproveJsonImportResponseAsync(
+                core,
+                bundle,
+                turnService,
+                effectiveConversationId,
+                gizmoId!,
+                parentMessageId,
+                baselineCount,
+                responseText,
+                cancellationToken);
         }
 
         var applyResult = GenerationJobHandlers.ApplyResponse(bundle, jobId, responseText, captureError, context);
@@ -279,7 +297,13 @@ internal sealed class GenerationJobService
         string jobId,
         AdventureTurnService? turnService = null,
         CancellationToken cancellationToken = default) =>
-        EnsureUtilityConversationAsync(core, bundle, jobId, forceRotate: true, turnService, cancellationToken);
+        EnsureUtilityConversationAsync(
+            core,
+            bundle,
+            jobId,
+            forceRotate: true,
+            turnService,
+            cancellationToken: cancellationToken);
 
     public async Task<GenerationUtilitySession?> EnsureUtilityConversationAsync(
         CoreWebView2 core,
@@ -287,6 +311,7 @@ internal sealed class GenerationJobService
         string jobId,
         bool forceRotate = false,
         AdventureTurnService? turnService = null,
+        bool seedIfNeeded = true,
         CancellationToken cancellationToken = default)
     {
         AdventureProjectBindingService.SyncLinkedProjectFields(bundle.Metadata);
@@ -309,7 +334,7 @@ internal sealed class GenerationJobService
             return null;
         }
         if (PlayTabPinService.HasUtilityPin(bundle)
-            && !string.Equals(jobId, GenerationJobId.DesignAdventure, StringComparison.OrdinalIgnoreCase))
+            && !IsDesignUtilityJob(jobId))
         {
             var pinned = await EnsurePinnedUtilityConversationAsync(
                 core,
@@ -427,9 +452,21 @@ internal sealed class GenerationJobService
 
             if (created.ClientBootstrapped)
             {
-                metadata.UtilityConversationLastError =
-                    "utility_create_failed: ChatGPT did not register a new conversation — create a Project chat manually and pin it";
-                return null;
+                ProjectChatDraftService.BeginUtilityDraft(bundle);
+                var page = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
+                    core,
+                    conversationId,
+                    gizmoId,
+                    cancellationToken);
+                if (!page.Success)
+                {
+                    metadata.UtilityConversationLastError =
+                        page.Error ?? "utility_client_bootstrap_nav_failed";
+                    return null;
+                }
+
+                ProjectLinkDiagnostics.Log(
+                    $"Client-bootstrapped utility conversation {conversationId} navigated for {jobId}");
             }
 
             session = new GenerationUtilitySession
@@ -444,7 +481,7 @@ internal sealed class GenerationJobService
             AdventureStore.Save(bundle);
         }
 
-        if (createdNew || session.JobCount == 0)
+        if (seedIfNeeded && (createdNew || session.JobCount == 0) && !IsDesignSourceJob(jobId))
         {
             await EnsureUtilityConversationPageAsync(core, session.ConversationId, gizmoId, cancellationToken);
 
@@ -521,6 +558,8 @@ internal sealed class GenerationJobService
 
         metadata.UtilitySessions[jobId] = session;
         metadata.UtilityConversationLastError = null;
+        if (ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id) == ProjectChatDraftKind.Utility)
+            ProjectChatDraftService.Complete(bundle);
         AdventureStore.Save(bundle);
         return session;
     }
@@ -662,7 +701,8 @@ internal sealed class GenerationJobService
 
             if (!string.IsNullOrWhiteSpace(responseText))
             {
-                if (GenerationJobHandlers.ExpectsPlainTextResponse(jobId))
+                if (GenerationJobHandlers.ExpectsPlainTextResponse(jobId)
+                    || string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
                 {
                     if (GenerationJobHandlers.IsSettledJobResponse(jobId, responseText, streamComplete: attempt >= 1))
                         return new UtilityCaptureResult { Text = responseText };
@@ -742,9 +782,14 @@ internal sealed class GenerationJobService
             ? null
             : new ProjectConversationCreateOptions { TryUiCreate = _tryUiCreateConversation };
 
+    private static bool IsDesignSourceJob(string jobId) =>
+        string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(jobId, GenerationJobId.ProposeSourceEdits, StringComparison.OrdinalIgnoreCase);
+
     private static bool IsDesignUtilityJob(string jobId) =>
         string.Equals(jobId, GenerationJobId.DesignAdventure, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(jobId, GenerationJobId.DesignExtractStep, StringComparison.OrdinalIgnoreCase);
+        || string.Equals(jobId, GenerationJobId.DesignExtractStep, StringComparison.OrdinalIgnoreCase)
+        || IsDesignSourceJob(jobId);
 
     private static bool IsUnregisteredConversationSeedFailure(string? error) =>
         string.Equals(error, "http_403", StringComparison.OrdinalIgnoreCase)
@@ -823,7 +868,8 @@ internal sealed class GenerationJobService
         string messageText,
         string jobId,
         AdventureTurnService? turnService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool seedOnly = false)
     {
         var readiness = await UtilityConversationReadinessService.ProbeAsync(
             core,
@@ -896,13 +942,14 @@ internal sealed class GenerationJobService
         }
 
         var timeoutMs = AdventureTurnService.ComputeUtilityJobTimeoutMs(messageText.Length);
+        var captureJobId = seedOnly ? null : jobId;
         var result = await turnService.SubmitUtilityJobAsync(
             core,
             conversationId,
             gizmoId,
             messageText,
             timeoutMs,
-            jobId,
+            captureJobId,
             cancellationToken);
 
         if (!result.Success
@@ -945,10 +992,24 @@ internal sealed class GenerationJobService
             seed,
             jobId,
             turnService,
-            cancellationToken);
+            cancellationToken,
+            seedOnly: true);
 
         if (seedResult.Success)
             return seedResult;
+
+        if (IsUtilitySendError(seedResult.Error, "capture_premature")
+            && !string.IsNullOrWhiteSpace(seedResult.AssistantText)
+            && seedResult.AssistantText.Length >= AdventureTurnService.UtilityMinCapturedTextLength)
+        {
+            return new ConversationSendResult
+            {
+                Success = true,
+                ConversationId = seedResult.ConversationId ?? conversationId,
+                AssistantText = seedResult.AssistantText,
+                StreamComplete = true,
+            };
+        }
 
         await Task.Delay(400, cancellationToken);
         await EnsureUtilityParentReadyAsync(
@@ -966,7 +1027,8 @@ internal sealed class GenerationJobService
             seed,
             jobId,
             turnService,
-            cancellationToken);
+            cancellationToken,
+            seedOnly: true);
     }
 
     private async Task<GenerationJobResult> RunInlineJobAsync(
@@ -1067,7 +1129,7 @@ internal sealed class GenerationJobService
                 var recapture = await playTurnService.CaptureStableAssistantAsync(
                     playCore,
                     baselineCount,
-                    30_000,
+                    GetDomRecaptureTimeoutMs(jobId),
                     effectiveConversationId,
                     gizmoId,
                     cancellationToken);
@@ -1135,13 +1197,78 @@ internal sealed class GenerationJobService
     internal static bool IsUtilitySendError(string? error, string code) =>
         error?.StartsWith(code, StringComparison.OrdinalIgnoreCase) == true;
 
+    private async Task<string> TryImproveJsonImportResponseAsync(
+        CoreWebView2 core,
+        AdventureBundle bundle,
+        AdventureTurnService? turnService,
+        string conversationId,
+        string gizmoId,
+        string? parentMessageId,
+        int baselineCount,
+        string? responseText,
+        CancellationToken cancellationToken)
+    {
+        var best = responseText ?? "";
+        if (SourceJsonImportService.HasCompleteJsonImportDelivery(best)
+            && SourceJsonImportService.CountProposalsDryRun(bundle, best) > 0)
+            return best;
+
+        if (turnService is not null
+            && baselineCount >= 0
+            && !SourceJsonImportService.HasCompleteJsonImportDelivery(best))
+        {
+            var recapture = await turnService.CaptureStableAssistantAsync(
+                core,
+                baselineCount,
+                GetDomRecaptureTimeoutMs(GenerationJobId.ProposeJsonImport),
+                conversationId,
+                gizmoId,
+                cancellationToken);
+            if (recapture.Success
+                && !string.IsNullOrWhiteSpace(recapture.Text)
+                && recapture.Text.Length > best.Length)
+                best = recapture.Text;
+        }
+
+        if (SourceJsonImportService.CountProposalsDryRun(bundle, best) == 0
+            && !string.IsNullOrWhiteSpace(parentMessageId))
+        {
+            var api = await CaptureUtilityApiTailAsync(
+                core,
+                conversationId,
+                parentMessageId,
+                GenerationJobId.ProposeJsonImport,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(api.Text)
+                && api.Text.Length > best.Length
+                && SourceJsonImportService.HasCompleteJsonImportDelivery(api.Text))
+                best = api.Text;
+        }
+
+        return best;
+    }
+
     private static bool ShouldRetryDomCapture(
         string jobId,
         string? responseText,
         ConversationSendResult sendResult) =>
         sendResult.StreamComplete
         && (IsUtilitySendError(sendResult.Error, "capture_premature")
-            || AdventureTurnService.IsUtilityCapturePremature(jobId, responseText ?? ""));
+            || AdventureTurnService.IsUtilityCapturePremature(jobId, responseText ?? "")
+            || ShouldRetryJsonImportCapture(jobId, responseText, sendResult));
+
+    private static bool ShouldRetryJsonImportCapture(
+        string jobId,
+        string? responseText,
+        ConversationSendResult sendResult) =>
+        string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal)
+        && !string.IsNullOrWhiteSpace(responseText)
+        && !SourceJsonImportService.HasCompleteJsonImportDelivery(responseText);
+
+    private static int GetDomRecaptureTimeoutMs(string jobId) =>
+        string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal)
+            ? 120_000
+            : 30_000;
 
     private static void TraceUtilityJobPhase(
         string phase,

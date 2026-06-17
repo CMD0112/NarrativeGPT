@@ -129,11 +129,16 @@ internal static class SectionMarkdownParser
             var trimmed = line.Trim();
             foreach (var label in labels)
             {
-                var prefix = $"**{label}:**";
-                if (!trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    continue;
+                var boldPrefix = $"**{label}:**";
+                if (trimmed.StartsWith(boldPrefix, StringComparison.OrdinalIgnoreCase))
+                    return trimmed[boldPrefix.Length..].Trim();
 
-                return trimmed[prefix.Length..].Trim();
+                var plainPrefix = $"{label}:";
+                if (trimmed.StartsWith(plainPrefix, StringComparison.OrdinalIgnoreCase)
+                    && !trimmed.StartsWith("**", StringComparison.Ordinal))
+                {
+                    return trimmed[plainPrefix.Length..].Trim();
+                }
             }
         }
 

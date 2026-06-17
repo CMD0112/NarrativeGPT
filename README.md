@@ -7,7 +7,7 @@ Desktop wrapper for [ChatGPT](https://chatgpt.com) using .NET 9 WPF and Microsof
 **Full documentation:** [docs/INDEX.md](docs/INDEX.md)
 
 - **Users:** [user guide](docs/user-guide.md) · [Adventures](docs/adventure-panel.md) · [Projects & sync](docs/user-projects-and-sync.md) · [Instruction contract guide](docs/instruction-contract-guide.md) · [troubleshooting](docs/troubleshooting.md)
-- **Developers:** [architecture](docs/architecture.md) · [utility jobs](docs/utility-job-orchestration.md) · [bridges](docs/webview-bridges.md) · [data models](docs/data-model-reference.md) · [services](docs/services-reference.md) · [testing](docs/testing.md)
+- **Developers:** [architecture](docs/architecture.md) · [utility jobs](docs/utility-job-orchestration.md) · [bridges](docs/webview-bridges.md) · [data models](docs/data-model-reference.md) · [services](docs/services-reference.md) · [testing](docs/testing.md) · [Linear integration](docs/linear-integration.md)
 
 ## Prerequisites
 

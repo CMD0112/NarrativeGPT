@@ -106,11 +106,21 @@ internal static class AdventureDesignContextService
 
         AdventureProjectBindingService.SyncLinkedProjectFields(bundle.Metadata);
 
+        if (ProjectChatDraftService.ShouldStayOnProjectPage(bundle, core.Source))
+        {
+            return new DesignContextResult
+            {
+                Status = DesignContextStatus.Ready,
+                ConversationId = GetDesignConversationId(bundle),
+            };
+        }
+
         var session = await jobService.EnsureUtilityConversationAsync(
             core,
             bundle,
             GenerationJobId.DesignAdventure,
             turnService: turnService,
+            seedIfNeeded: false,
             cancellationToken: cancellationToken);
 
         if (session is null || string.IsNullOrWhiteSpace(session.ConversationId))

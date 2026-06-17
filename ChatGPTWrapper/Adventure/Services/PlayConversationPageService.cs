@@ -56,6 +56,9 @@ internal static class PlayConversationPageService
         if (bundle.Metadata.ProjectLink is not null)
             bundle.Metadata.ProjectLink.PlayConversationId = parsed;
 
+        if (ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id) == ProjectChatDraftKind.Play)
+            ProjectChatDraftService.Complete(bundle);
+
         return true;
     }
 
@@ -118,9 +121,10 @@ internal static class PlayConversationPageService
         }
 
         var storedConversationId = bundle.Metadata.LinkedConversationId;
-        if (string.IsNullOrWhiteSpace(storedConversationId))
+        if (string.IsNullOrWhiteSpace(storedConversationId)
+            || ProjectChatDraftService.ShouldStayOnProjectPage(bundle, href))
         {
-            // Fresh play thread: user may be on the linked Project page (often still /project
+            // Fresh play thread (or draft mode): user may be on the linked Project page (often still /project
             // after "New chat") with the start packet pasted in the composer.
             if (AdventureNavigationService.IsOnLinkedProjectPage(href, bundle))
             {
@@ -133,13 +137,16 @@ internal static class PlayConversationPageService
                 };
             }
 
-            return new PlayThreadPageResult
+            if (string.IsNullOrWhiteSpace(storedConversationId))
             {
-                Success = false,
-                Error =
-                    "No play thread is linked. In the pinned Play tab, click New chat in your Project, "
-                    + "paste the start packet (Ctrl+V), then send again.",
-            };
+                return new PlayThreadPageResult
+                {
+                    Success = false,
+                    Error =
+                        "No play thread is linked. In the pinned Play tab, click New chat in your Project, "
+                        + "paste the start packet (Ctrl+V), then send again.",
+                };
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(browserConversationId)

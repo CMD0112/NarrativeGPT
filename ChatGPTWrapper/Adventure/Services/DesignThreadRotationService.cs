@@ -35,16 +35,13 @@ internal static class DesignThreadRotationService
     public static string BuildStartPacket(AdventureBundle bundle)
     {
         AdventureDesignService.EnsureWorkspace(bundle);
-        var step = bundle.DesignWorkspace.CurrentStep;
-        if (step is AdventureDesignStep.Setup)
-            step = AdventureDesignStep.Concept;
 
         var jobId = GenerationJobId.DesignAdventure;
         var sequence = GenerationUtilitySessionService.GetNextSequence(bundle.Metadata, jobId);
         var parts = new List<string>
         {
             GenerationJobHandlers.BuildSeedPrompt(bundle, jobId, sequence).Trim(),
-            AdventureDesignService.BuildStepSeedPrompt(bundle, step).Trim(),
+            AdventureDesignService.BuildGeneralSeedPrompt(bundle).Trim(),
         };
 
         return string.Join(

@@ -86,6 +86,25 @@ public sealed class DesignThreadPersistenceTests
     }
 
     [Fact]
+    public void TryResolveDesignConversationFromSource_rejects_play_thread_not_browser_tab()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Thread guard");
+        bundle.Metadata.LinkedProjectId = "g-p-design";
+        bundle.Metadata.LinkedConversationId = "play-thread-id";
+
+        var playUrl = ChatGptUrls.BuildProjectConversationUrl("play-thread-id", "g-p-design");
+        Assert.False(
+            DesignTabPinService.TryResolveDesignConversationFromSource(bundle, playUrl, out _, out var playError));
+        Assert.Equal("design_same_as_play_thread", playError);
+
+        var designUrl = ChatGptUrls.BuildProjectConversationUrl("design-thread-id", "g-p-design");
+        Assert.True(
+            DesignTabPinService.TryResolveDesignConversationFromSource(bundle, designUrl, out var conversationId, out var designError));
+        Assert.Null(designError);
+        Assert.Equal("design-thread-id", conversationId);
+    }
+
+    [Fact]
     public void FormatDesignThreadStatus_shows_pin_instructions_when_not_ready()
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Pin hint");
@@ -235,7 +254,7 @@ public sealed class DesignThreadPersistenceTests
     }
 
     [Fact]
-    public void BuildStartPacket_includes_utility_seed_and_current_step_brief()
+    public void BuildStartPacket_includes_utility_seed_and_general_design_brief()
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Clipboard test");
         bundle.Metadata.LinkedProjectId = "g-p-design";
@@ -245,8 +264,10 @@ public sealed class DesignThreadPersistenceTests
         var packet = DesignThreadRotationService.BuildStartPacket(bundle);
 
         Assert.Contains("[CGW:design]", packet, StringComparison.Ordinal);
-        Assert.Contains("ADVENTURE DESIGN — CONCEPT", packet, StringComparison.Ordinal);
-        Assert.Contains("fogbound harbor", packet, StringComparison.Ordinal);
+        Assert.Contains("=== ADVENTURE DESIGN ===", packet, StringComparison.Ordinal);
+        Assert.Contains("Clipboard test", packet, StringComparison.Ordinal);
+        Assert.DoesNotContain("ADVENTURE DESIGN — CONCEPT", packet, StringComparison.Ordinal);
+        Assert.DoesNotContain("fogbound harbor", packet, StringComparison.Ordinal);
     }
 
     [Fact]

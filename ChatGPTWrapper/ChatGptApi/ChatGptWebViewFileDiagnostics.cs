@@ -69,7 +69,30 @@ internal static class ChatGptWebViewFileDiagnostics
             var resultPath = e.ResultFilePath;
             var handled = false;
 
-            if (string.IsNullOrWhiteSpace(resultPath))
+            if (Uri.TryCreate(download.Uri, UriKind.Absolute, out var uri)
+                && ChatGptUrls.IsTrustedChatGptTopLevelUri(uri))
+            {
+                try
+                {
+                    AppDirectories.EnsureCreated();
+                    Directory.CreateDirectory(DownloadsDirectory);
+                    var sourceName = !string.IsNullOrWhiteSpace(resultPath)
+                        ? resultPath
+                        : download.ResultFilePath;
+                    var fileName = SanitizeFileName(sourceName);
+                    if (string.IsNullOrWhiteSpace(fileName))
+                        fileName = "chat-download-" + DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+                    resultPath = Path.Combine(DownloadsDirectory, fileName);
+                    e.ResultFilePath = resultPath;
+                    handled = true;
+                }
+                catch
+                {
+                    /* keep browser default */
+                }
+            }
+            else if (string.IsNullOrWhiteSpace(resultPath))
             {
                 try
                 {

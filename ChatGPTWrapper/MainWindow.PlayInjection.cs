@@ -332,6 +332,22 @@ public partial class MainWindow
                 return;
             }
 
+            if (composeInjection is not null
+                && ProjectChatDraftService.ShouldSuppressPlayAutomation(
+                    bundle,
+                    composeInjection.WebView,
+                    ChatTabs,
+                    composeInjection.WebView.CoreWebView2?.Source))
+            {
+                SetPlayComposeStatus(
+                    "Play send is disabled on this tab while drafting a new Project chat.",
+                    composeInjection);
+                await ReleaseComposeSendLockAsync();
+                traceScope.Complete("blocked", "draft_tab");
+                traceScope = null;
+                return;
+            }
+
             playerLine = ResolvePlayPlayerInput(bundle, consumeQueue: true, composeText);
             var attachmentContext = BuildAttachmentContext(sendRequest, pendingAttachments);
             playerLine = PlaySurfaceActionSendHelper.ApplyInjectedOnly(bundle, playerLine);

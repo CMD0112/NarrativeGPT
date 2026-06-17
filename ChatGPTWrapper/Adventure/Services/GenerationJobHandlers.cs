@@ -333,7 +333,11 @@ internal static class GenerationJobHandlers
             return IsValidPlainTextJobResponse(responseText);
 
         if (ExpectsJsonObjectResponse(jobId))
+        {
+            if (string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
+                return SourceJsonImportService.IsParseableResponse(responseText);
             return !string.IsNullOrWhiteSpace(EntityExtractionService.TryNormalizeJsonObjectResponse(responseText));
+        }
 
         if (!ExpectsJsonArrayResponse(jobId))
             return !string.IsNullOrWhiteSpace(StripPlainText(responseText));

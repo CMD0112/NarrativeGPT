@@ -240,6 +240,19 @@ internal static class AdventureDesignService
         SetField(bundle, AdventureDesignStep.Lexicon, "lexiconAvoid", s.LexiconAvoid);
     }
 
+    public static string BuildGeneralSeedPrompt(AdventureBundle bundle)
+    {
+        var title = bundle.Metadata.Title;
+        return $"""
+            === ADVENTURE DESIGN ===
+            Adventure: {title}
+            Help the author develop this interactive fiction adventure before play begins.
+            Work on concept, world, plot, cast, lexicon, project sources, and narrator instructions as needed.
+            Ask clarifying questions. Do not start narrating play — this is pre-production design only.
+            The wrapper will send step-specific briefs when the author focuses on a design step.
+            """;
+    }
+
     public static string BuildStepSeedPrompt(AdventureBundle bundle, AdventureDesignStep step)
     {
         var title = bundle.Metadata.Title;

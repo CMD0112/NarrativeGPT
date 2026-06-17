@@ -30,6 +30,8 @@ public sealed class PlayComposeAssetTests
         Assert.Contains("__cgwPlayComposeUnmount", text);
         Assert.Contains("__cgwPlayComposeVersion", text);
         Assert.Contains("__cgwSetWrapperComposer", text);
+        Assert.Contains("__cgwSetNativeComposePassthrough", text);
+        Assert.Contains("__cgwNativeComposePassthrough", text);
         Assert.Contains("__cgwPlayComposeEnsureHooks", text);
         Assert.Contains("triggerNativeSend", text);
         Assert.DoesNotContain("cgw-compose-accept", text);
@@ -109,7 +111,7 @@ public sealed class PlayComposeAssetTests
         Assert.Contains("attachmentsPreStaged", text);
         Assert.Contains("allAttachmentsReady", text);
         Assert.Contains("cgw-compose-upload-spinner", text);
-        Assert.Contains("COMPOSE_VERSION = 22", text);
+        Assert.Contains("COMPOSE_VERSION = 24", text);
     }
 
     [Fact]

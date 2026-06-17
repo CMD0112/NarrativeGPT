@@ -85,6 +85,7 @@ public partial class MainWindow
 
         var playTabForReuse = ResolvePlayWebView(bundle) ?? _playWebView;
 
+        ProjectChatDraftService.BeginPlayDraft(bundle);
         PlayThreadRotationService.ReleasePlayThread(bundle);
         PlayThreadRotationService.PersistRelease(bundle);
         PlayContextSessionCache.Invalidate(adventureId);
@@ -177,6 +178,131 @@ public partial class MainWindow
             MessageBoxImage.Information);
     }
 
+    public async Task DraftNewProjectChatAsync(Guid adventureId)
+    {
+        var bundle = AdventureStore.Load(adventureId);
+        if (bundle is null)
+            return;
+
+        AdventureProjectBindingService.SyncLinkedProjectFields(bundle.Metadata);
+        var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
+        if (string.IsNullOrWhiteSpace(gizmoId))
+        {
+            MessageBox.Show(
+                this,
+                "Link a ChatGPT Project first.",
+                "Draft new project chat",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
+        await EnsureChatWebViewEnvironmentReadyAsync();
+
+        ProjectChatDraftService.BeginDraftOnProjectPage(bundle);
+
+        var wv = GetActiveWebView();
+        if (wv is null)
+        {
+            foreach (var item in ChatTabs.Items)
+            {
+                if (item is TabItem { Content: WebView2 existing })
+                {
+                    wv = existing;
+                    break;
+                }
+            }
+        }
+
+        if (wv is null && _chatWebViewEnvironment is not null)
+            wv = await AddChatTabAsync("ChatGPT");
+
+        if (wv is null)
+        {
+            MessageBox.Show(
+                this,
+                "No browser tab is available. Open a ChatGPT tab first.",
+                "Draft new project chat",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        if (wv.CoreWebView2 is null && _chatWebViewEnvironment is not null)
+            await wv.EnsureCoreWebView2Async(_chatWebViewEnvironment);
+
+        if (wv.CoreWebView2 is not { } core)
+            return;
+
+        SelectTabForWebView(wv);
+        ProjectChatDraftService.NoteDraftTab(bundle, wv, ChatTabs);
+        await SuspendPlayAutomationForDraftTabAsync(wv);
+
+        var projectUrl = ChatGptUrls.BuildProjectUrl(gizmoId);
+        if (!AdventureNavigationService.IsOnLinkedProjectPage(core.Source, bundle))
+        {
+            core.Navigate(projectUrl);
+            await WaitForChatGptNavigationAsync(core);
+        }
+
+        MessageBox.Show(
+            this,
+            "Drafting mode is on — the wrapper will not redirect this tab to your pinned play thread "
+            + "while you stay on the Project page.\n\n"
+            + "Click New chat in ChatGPT, then pin the tab as your utility tab when ready.\n\n"
+            + "Use Cancel drafting in Play settings → Session to restore normal navigation.",
+            "Draft new project chat",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    public void CancelProjectChatDraft(Guid adventureId)
+    {
+        var bundle = AdventureStore.Load(adventureId);
+        if (bundle is null || !ProjectChatDraftService.IsActive(bundle))
+            return;
+
+        WebView2? draftTab = null;
+        foreach (var item in ChatTabs.Items)
+        {
+            if (item is TabItem { Content: WebView2 wv }
+                && ProjectChatDraftService.IsDraftTab(bundle, wv, ChatTabs))
+            {
+                draftTab = wv;
+                break;
+            }
+        }
+
+        ProjectChatDraftService.Cancel(bundle);
+        UpdatePlayLinkStatus();
+
+        if (draftTab is not null && !IsPinnedUtilityWebView(draftTab))
+            _ = RestorePlayAutomationForTabAsync(draftTab);
+    }
+
+    private async Task SuspendPlayAutomationForDraftTabAsync(WebView2 wv)
+    {
+        if (wv.CoreWebView2 is not { } core)
+            return;
+
+        if (_playComposeInjections.TryGetValue(wv, out var injection))
+            await injection.SetNativePassthroughAsync(true);
+        else
+            await ChatGptPlayComposeInjection.ApplyNativePassthroughAsync(core, true);
+    }
+
+    private async Task RestorePlayAutomationForTabAsync(WebView2 wv)
+    {
+        if (wv.CoreWebView2 is not { } core)
+            return;
+
+        if (_playComposeInjections.TryGetValue(wv, out var injection))
+            await injection.SetNativePassthroughAsync(false);
+        else
+            await ChatGptPlayComposeInjection.ApplyNativePassthroughAsync(core, false);
+    }
+
     private WebView2? ResolveExistingChatWebView(WebView2? preferred)
     {
         if (preferred is not null && PlayTabPinService.GetTabKey(preferred, ChatTabs) is not null)
@@ -232,6 +358,11 @@ public partial class MainWindow
         }
 
         PlayTabPinService.PinUtilityTab(bundle, active, ChatTabs);
+        if (_playComposeInjections.TryGetValue(active, out var injection))
+            _ = injection.SetNativePassthroughAsync(true);
+        else if (active.CoreWebView2 is { } utilityCore)
+            _ = ChatGptPlayComposeInjection.ApplyNativePassthroughAsync(utilityCore, true);
+
         GetOrRegisterAdventureBridge(active);
         SelectTabForWebView(active);
         UpdatePlayLinkStatus();
@@ -283,6 +414,15 @@ public partial class MainWindow
         if (bundle is null)
             return null;
 
+        if (ProjectChatDraftService.ShouldSuppressPlayTabSelection(bundle)
+            && _appMode == AppMode.Play
+            && GetActiveWebView() is { } draftActive)
+        {
+            var draftSource = draftActive.CoreWebView2?.Source;
+            if (AdventureNavigationService.IsOnLinkedProjectPage(draftSource, bundle))
+                return draftActive;
+        }
+
         if (PlayTabPinService.TryFindWebViewForPlaySession(ChatTabs, bundle) is { } sessionTab)
             return sessionTab;
 
@@ -292,7 +432,8 @@ public partial class MainWindow
             if (PlayTabPinService.IsOnPlayTarget(source, bundle))
                 return active;
 
-            if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId)
+            if ((string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId)
+                 || ProjectChatDraftService.ShouldStayOnProjectPage(bundle, source))
                 && AdventureNavigationService.IsOnLinkedProjectPage(source, bundle))
             {
                 return active;
@@ -322,15 +463,17 @@ public partial class MainWindow
             if (wv.CoreWebView2 is null && _chatWebViewEnvironment is not null)
                 await wv.EnsureCoreWebView2Async(_chatWebViewEnvironment);
 
-            if (navigateToBrowseTarget)
+            if (navigateToBrowseTarget && wv.CoreWebView2 is { } coreBeforeNav)
             {
+                if (ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, coreBeforeNav.Source, wv, ChatTabs))
+                    UpdatePlayLinkStatus();
+
                 var browseUrl = AdventureNavigationService.ResolvePlayBrowseUrl(bundle);
                 if (browseUrl is not null
-                    && wv.CoreWebView2 is { } core
-                    && AdventureNavigationService.ShouldNavigateToPlayTarget(core.Source, bundle, browseUrl))
+                    && AdventureNavigationService.ShouldNavigateToPlayTarget(coreBeforeNav.Source, bundle, browseUrl))
                 {
-                    core.Navigate(browseUrl);
-                    await WaitForChatGptNavigationAsync(core);
+                    coreBeforeNav.Navigate(browseUrl);
+                    await WaitForChatGptNavigationAsync(coreBeforeNav);
                 }
             }
 
@@ -496,6 +639,10 @@ public partial class MainWindow
         AdventureNavigationService.SyncLinkedFields(bundle);
 
         var linkedProject = AdventureNavigationService.HasLinkedProject(bundle);
+        var drafting = ProjectChatDraftService.IsActive(bundle);
+        if (drafting)
+            selectTab = false;
+
         var wv = await ResolvePlayWebViewAsync(
             adventureId,
             promptToPinIfMissing: false,
@@ -538,7 +685,7 @@ public partial class MainWindow
                 AdventureStore.Save(bundle);
             }
 
-            var browseUrl = deferPlayContext
+            var browseUrl = deferPlayContext || drafting
                 ? AdventureNavigationService.ResolveLinkedProjectPageUrl(bundle)
                 : AdventureNavigationService.ResolvePlayBrowseUrl(bundle);
             if (navigateToBrowseTarget
@@ -549,7 +696,7 @@ public partial class MainWindow
                 await WaitForChatGptNavigationAsync(core);
             }
 
-            if (deferPlayContext || !prepareContext)
+            if (deferPlayContext || drafting || !prepareContext)
                 return;
 
             if (await PlayContextSessionCache.ShouldSkipReensureAsync(bundle, core, GetOrCreateTurnService(wv)))
@@ -616,6 +763,20 @@ public partial class MainWindow
 
     private void RegisterContextTagsInjection(WebView2 wv)
     {
+        if (_activeAdventureId is { } adventureId)
+        {
+            var bundle = AdventureStore.Load(adventureId);
+            if (bundle is not null
+                && ProjectChatDraftService.ShouldSuppressPlayAutomation(
+                    bundle,
+                    wv,
+                    ChatTabs,
+                    wv.CoreWebView2?.Source))
+            {
+                return;
+            }
+        }
+
         if (!ReferenceEquals(wv, _playWebView) && !IsPinnedPlayWebView(wv))
             return;
 
@@ -658,6 +819,15 @@ public partial class MainWindow
             if (bundle is null || injection.WebView.CoreWebView2 is not { } core)
                 return;
 
+            if (ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, core.Source, injection.WebView, ChatTabs))
+            {
+                UpdatePlayLinkStatus();
+                _ = SuspendPlayAutomationForDraftTabAsync(injection.WebView);
+            }
+
+            if (ProjectChatDraftService.ShouldSuppressPlayAutomation(bundle, injection.WebView, ChatTabs, core.Source))
+                return;
+
             DebouncedPlaySendWarmup(bundle, core);
         };
     }
@@ -667,11 +837,50 @@ public partial class MainWindow
         if (_appMode != AppMode.Play)
             return;
 
+        if (_activeAdventureId is { } adventureId)
+        {
+            var bundle = AdventureStore.Load(adventureId);
+            if (bundle is not null)
+            {
+                if (IsPinnedUtilityWebView(wv)
+                    || ProjectChatDraftService.ShouldSuppressPlayAutomation(
+                        bundle,
+                        wv,
+                        ChatTabs,
+                        wv.CoreWebView2?.Source))
+                {
+                    if (_playComposeInjections.TryGetValue(wv, out var existing))
+                        _ = existing.SetNativePassthroughAsync(true);
+                    return;
+                }
+            }
+        }
+
         if (!ReferenceEquals(wv, _playWebView)
             && !IsPinnedPlayWebView(wv)
             && !ReferenceEquals(wv, GetActiveWebView()))
         {
             return;
+        }
+
+        if (!ReferenceEquals(wv, _playWebView)
+            && !IsPinnedPlayWebView(wv)
+            && ReferenceEquals(wv, GetActiveWebView())
+            && _activeAdventureId is { } activeId)
+        {
+            var bundle = AdventureStore.Load(activeId);
+            if (bundle is not null
+                && (IsPinnedUtilityWebView(wv)
+                    || ProjectChatDraftService.ShouldSuppressPlayAutomation(
+                        bundle,
+                        wv,
+                        ChatTabs,
+                        wv.CoreWebView2?.Source)))
+            {
+                if (_playComposeInjections.TryGetValue(wv, out var existing))
+                    _ = existing.SetNativePassthroughAsync(true);
+                return;
+            }
         }
 
         if (!_playComposeInjections.TryGetValue(wv, out var injection))
@@ -682,7 +891,11 @@ public partial class MainWindow
         }
 
         if (wv.CoreWebView2 is not null)
+        {
             injection.Register(GetOrCreatePageHost(wv));
+            if (injection.NativePassthrough)
+                _ = injection.SetNativePassthroughAsync(true);
+        }
     }
 
     internal ChatGptPlayComposeInjection? GetActivePlayComposeInjection()
@@ -760,6 +973,21 @@ public partial class MainWindow
         _ = ChatGptAdventureBridgeInjection.ApplyPlaySurfaceActionsAsync(
             core,
             bundle.Metadata.Settings.PlaySurfaceActions);
+    }
+
+    private bool IsPinnedUtilityWebView(WebView2 wv)
+    {
+        if (_activeAdventureId is not { } id)
+            return false;
+
+        var bundle = AdventureStore.Load(id);
+        if (bundle is null || string.IsNullOrWhiteSpace(bundle.Metadata.PinnedUtilityTabKey))
+            return false;
+
+        return string.Equals(
+            PlayTabPinService.GetTabKey(wv, ChatTabs),
+            bundle.Metadata.PinnedUtilityTabKey,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private bool IsPinnedPlayWebView(WebView2 wv)

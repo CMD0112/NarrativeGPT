@@ -224,9 +224,6 @@ internal static class DesignTabPinService
         var key = PlayTabPinService.GetTabKey(webView, tabs)
                   ?? throw new InvalidOperationException("Could not resolve tab key for WebView.");
 
-        if (PlayTabPinService.IsSameTabAsPlayPin(bundle, webView, tabs))
-            throw new InvalidOperationException("Design tab cannot be the same tab as the play tab.");
-
         var source = webView.CoreWebView2?.Source;
         if (!TryResolveDesignConversationFromSource(bundle, source, out var conversationId, out var error))
         {
@@ -264,6 +261,8 @@ internal static class DesignTabPinService
         bundle.Metadata.PinnedDesignTabKey = key;
         bundle.Metadata.PinnedDesignTabTitle = PlayTabPinService.GetTabTitle(webView, tabs);
         bundle.Metadata.PinnedDesignTabUrl = source;
+        if (ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id) == ProjectChatDraftKind.Design)
+            ProjectChatDraftService.Complete(bundle);
         AdventureStore.Save(bundle);
     }
 

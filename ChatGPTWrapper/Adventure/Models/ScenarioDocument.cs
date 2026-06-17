@@ -36,6 +36,22 @@ public sealed class ScenarioDocument
     public List<SourceEditReviewItem> SourceEditReviewQueue { get; set; } = [];
 
     public List<JsonImportReviewItem> JsonImportReviewQueue { get; set; } = [];
+
+    /// <summary>Last proposed scenario.json / entities.json captured from a json import utility reply.</summary>
+    public JsonImportProposedSnapshot? JsonImportProposedSnapshot { get; set; }
+}
+
+public sealed class JsonImportProposedSnapshot
+{
+    public string ScenarioJson { get; set; } = "";
+
+    public string EntitiesJson { get; set; } = "";
+
+    public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public List<string> NonCanonicalFilenames { get; set; } = [];
+
+    public List<string> PreviewWarnings { get; set; } = [];
 }
 
 public sealed class JsonImportReviewItem
@@ -61,6 +77,34 @@ public sealed class JsonImportReviewItem
     public string PriorValue { get; set; } = "";
 
     public string Rationale { get; set; } = "";
+}
+
+public enum JsonImportConflictSeverity
+{
+    None,
+    Supported,
+    Drift,
+    Unsupported,
+}
+
+public sealed class JsonImportProposalAnalysis
+{
+    public Guid ProposalId { get; init; }
+
+    public JsonImportConflictSeverity Severity { get; init; }
+
+    /// <summary>Accepting would update JSON without a matching markdown change.</summary>
+    public bool WarnStaleSourcesOnAccept { get; init; }
+
+    public string? SourceRef { get; init; }
+
+    public string? SourceExcerpt { get; init; }
+
+    public string? DeterministicValue { get; init; }
+
+    public string DisplaySummary { get; init; } = "";
+
+    public string? EntityLinkageHint { get; init; }
 }
 
 public sealed class SourceEditReviewItem

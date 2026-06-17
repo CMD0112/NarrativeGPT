@@ -607,6 +607,8 @@ public partial class MainWindow
         _playView.OpenUtilityThreadAsync = jobId => OpenUtilityThreadAsync(jobId);
         _playView.RotateUtilityThreadAsync = jobId => RotateUtilityThreadAsync(jobId);
         _playView.StartNewPlayThreadAsync = () => StartNewPlayThreadAsync(adventureId);
+        _playView.DraftNewProjectChatAsync = () => DraftNewProjectChatAsync(adventureId);
+        _playView.CancelProjectChatDraft = () => CancelProjectChatDraft(adventureId);
         _playView.RunSourceEditJobAsync = prompt => RunSourceEditJobAsync(prompt);
         _playView.RunDraftFrameworkAsync = () => RunDraftFrameworkAsync();
         _playView.ContinueDesignAsync = () => OpenContinueDesignWizardAsync(adventureId);

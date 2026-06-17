@@ -113,6 +113,13 @@ internal static class AdventureNavigationService
             return false;
         }
 
+        if (!string.IsNullOrWhiteSpace(gizmoId)
+            && IsOnLinkedProjectPage(source, bundle)
+            && ProjectChatDraftService.ShouldStayOnProjectPage(bundle, source))
+        {
+            return false;
+        }
+
         if (IsGenericHomepage(source))
             return true;
 
@@ -132,6 +139,9 @@ internal static class AdventureNavigationService
         if (!string.IsNullOrWhiteSpace(DesignTabPinService.GetDesignConversationId(bundle))
             && IsOnLinkedProjectPage(source, bundle))
         {
+            if (ProjectChatDraftService.ShouldStayOnProjectPage(bundle, source))
+                return false;
+
             return true;
         }
 
@@ -229,6 +239,9 @@ internal static class AdventureNavigationService
             if (PlayTabPinService.IsOnPlayTarget(source, bundle))
                 return true;
 
+            if (ProjectChatDraftService.IsValidDraftTarget(bundle, source, intent))
+                return true;
+
             if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
             {
                 var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
@@ -240,6 +253,10 @@ internal static class AdventureNavigationService
             }
         }
         else if (DesignTabPinService.IsOnDesignTarget(source, bundle))
+        {
+            return true;
+        }
+        else if (ProjectChatDraftService.IsValidDraftTarget(bundle, source, intent))
         {
             return true;
         }
@@ -277,7 +294,8 @@ internal static class AdventureNavigationService
 
         if (intent == AdventureNavigationIntent.Play
             && !string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId)
-            && !AdventureProjectBindingService.ShouldDeferLinkedPlayContextAfterProjectLink(bundle))
+            && !AdventureProjectBindingService.ShouldDeferLinkedPlayContextAfterProjectLink(bundle)
+            && !ProjectChatDraftService.IsActive(bundle))
         {
             var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
             if (!string.IsNullOrWhiteSpace(gizmoId))

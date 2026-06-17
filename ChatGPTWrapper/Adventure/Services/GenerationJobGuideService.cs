@@ -12,7 +12,7 @@ internal static class GenerationJobGuideService
     public const int ContinuitySeedVersion = 1;
     public const int ProcessTurnSeedVersion = 1;
     public const int SourceEditSeedVersion = 1;
-    public const int JsonImportSeedVersion = 1;
+    public const int JsonImportSeedVersion = 3;
     public const int DesignAdventureSeedVersion = 1;
     public const int DesignExtractSeedVersion = 1;
 
@@ -79,11 +79,13 @@ internal static class GenerationJobGuideService
             Do not invent facts that contradict provided excerpts.
             """,
         GenerationJobId.ProposeJsonImport => """
-            You propose updates to adventure scenario.json and entities.json by reading source markdown.
-            Respond with JSON only — one object with optional keys:
+            Parts 1–2 are required in one reply (downloadable files plus matching inline begin/end blocks).
+            Part 3 is optional plain JSON (no markdown fences) — if omitted, the wrapper diffs your proposed files.
             scenarioFields: array of { "field": string, "value": string, "rationale": string }.
             entities: array of { "action": "add"|"update"|"remove", "name": string, "entityType": "person"|"place"|"concept"|"faction", "description": string, "rationale": string }.
             Allowed field keys: setting, playerRole, genre, tone, openingSituation, majorConflicts, startingConstraints, plotEssentials, worldRules, authorsNote, lexiconRules, lexiconPools, lexiconAvoid.
+            Every rationale MUST cite supporting sourceRef value(s) from the job packet verbatim (e.g. "plot.md#essentials").
+            Derive values from the referenced source material; do not invent facts absent from cited sources.
             For remove actions, description may be omitted. If nothing to propose, return { "scenarioFields": [], "entities": [] }.
             """,
         GenerationJobId.DesignAdventure => """
