@@ -33,6 +33,9 @@ public sealed class PlaySendWarmupService
         if (!ChatGptPageGate.IsInjectable(core.Source))
             return;
 
+        if (ProjectChatDraftService.ShouldSuppressPlayAutomation(bundle, null, null, core.Source))
+            return;
+
         if (!PlaySendDeliveryPolicy.ShouldPrefetchApiWarmup(bundle))
             return;
 

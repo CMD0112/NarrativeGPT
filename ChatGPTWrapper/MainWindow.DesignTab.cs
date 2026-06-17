@@ -65,6 +65,15 @@ public partial class MainWindow
         if (bundle is null)
             return null;
 
+        if (ProjectChatDraftService.ShouldSuppressPlayTabSelection(bundle)
+            && _appMode == AppMode.Design
+            && GetActiveWebView() is { } draftActive)
+        {
+            var draftSource = draftActive.CoreWebView2?.Source;
+            if (AdventureNavigationService.IsOnLinkedProjectPage(draftSource, bundle))
+                return draftActive;
+        }
+
         if (DesignTabPinService.TryFindWebViewOnEligibleDesignConversation(ChatTabs, bundle) is { } sessionTab)
             return sessionTab;
 
@@ -73,7 +82,8 @@ public partial class MainWindow
             var source = active.CoreWebView2?.Source;
             if (DesignTabPinService.IsOnDesignTarget(source, bundle)
                 || (string.IsNullOrWhiteSpace(DesignTabPinService.GetDesignConversationId(bundle))
-                    && AdventureNavigationService.IsOnLinkedProjectPage(source, bundle)))
+                    && AdventureNavigationService.IsOnLinkedProjectPage(source, bundle))
+                || ProjectChatDraftService.ShouldStayOnProjectPage(bundle, source))
             {
                 return active;
             }
@@ -85,7 +95,8 @@ public partial class MainWindow
     private async Task<WebView2?> ResolveDesignWebViewAsync(
         Guid adventureId,
         bool selectTab = true,
-        bool ensureThread = false)
+        bool ensureThread = false,
+        bool preserveCurrentPage = false)
     {
         var bundle = AdventureStore.Load(adventureId);
         if (bundle is null)
@@ -99,26 +110,44 @@ public partial class MainWindow
                 await wv.EnsureCoreWebView2Async(_chatWebViewEnvironment);
 
             AdventureNavigationService.SyncLinkedFields(bundle);
-            var browseUrl = AdventureNavigationService.ResolveDesignBrowseUrl(bundle, preferThread: ensureThread);
-            if (browseUrl is not null
-                && wv.CoreWebView2 is { } core
-                && AdventureNavigationService.ShouldNavigateToDesignTarget(core.Source, bundle, browseUrl))
+            if (!preserveCurrentPage && wv.CoreWebView2 is { } coreBeforeNav)
             {
-                core.Navigate(browseUrl);
-                await WaitForChatGptNavigationAsync(core);
+                if (ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, coreBeforeNav.Source, wv, ChatTabs))
+                    UpdateDesignLinkStatus();
+
+                var browseUrl = AdventureNavigationService.ResolveDesignBrowseUrl(bundle, preferThread: ensureThread);
+                if (browseUrl is not null
+                    && AdventureNavigationService.ShouldNavigateToDesignTarget(coreBeforeNav.Source, bundle, browseUrl))
+                {
+                    coreBeforeNav.Navigate(browseUrl);
+                    await WaitForChatGptNavigationAsync(coreBeforeNav);
+                }
             }
 
-            await ApplyDesignWebViewNavigationAsync(bundle, wv, ensureThread);
+            if (preserveCurrentPage)
+                await WireDesignWebViewWithoutNavigationAsync(wv);
+            else
+                await ApplyDesignWebViewNavigationAsync(bundle, wv, ensureThread);
+
             if (selectTab)
                 SelectTabForWebView(wv);
             return wv;
         }
 
-        wv = await RestoreDesignWebViewAsync(bundle, selectTab, ensureThread);
+        wv = await RestoreDesignWebViewAsync(bundle, selectTab, ensureThread, preserveCurrentPage);
         if (wv is not null)
             _designWebView = wv;
 
         return wv;
+    }
+
+    private async Task WireDesignWebViewWithoutNavigationAsync(WebView2 wv)
+    {
+        if (wv.CoreWebView2 is null && _chatWebViewEnvironment is not null)
+            await wv.EnsureCoreWebView2Async(_chatWebViewEnvironment);
+
+        GetOrRegisterAdventureBridge(wv);
+        WireProjectServices(wv);
     }
 
     private async Task ApplyDesignWebViewNavigationAsync(
@@ -169,7 +198,8 @@ public partial class MainWindow
     private async Task<WebView2?> RestoreDesignWebViewAsync(
         AdventureBundle bundle,
         bool selectTab,
-        bool ensureThread)
+        bool ensureThread,
+        bool preserveCurrentPage = false)
     {
         WebView2? wv = GetActiveWebView();
         if (wv is null)
@@ -198,7 +228,10 @@ public partial class MainWindow
         if (wv.CoreWebView2 is null && _chatWebViewEnvironment is not null)
             await wv.EnsureCoreWebView2Async(_chatWebViewEnvironment);
 
-        await ApplyDesignWebViewNavigationAsync(bundle, wv, ensureThread);
+        if (preserveCurrentPage)
+            await WireDesignWebViewWithoutNavigationAsync(wv);
+        else
+            await ApplyDesignWebViewNavigationAsync(bundle, wv, ensureThread);
 
         if (selectTab)
             SelectTabForWebView(wv);
@@ -330,6 +363,7 @@ public partial class MainWindow
 
         var designTabForReuse = _designWebView ?? ResolveDesignWebView(bundle);
 
+        ProjectChatDraftService.BeginDesignDraft(bundle);
         DesignThreadRotationService.ReleaseDesignThread(bundle);
         DesignThreadRotationService.PersistRelease(bundle);
 
@@ -394,20 +428,6 @@ public partial class MainWindow
         var reloaded = AdventureStore.Load(adventureId);
         if (reloaded is null)
             return;
-
-        if (PlayTabPinService.IsSameTabAsPlayPin(reloaded, wv, ChatTabs))
-        {
-            MessageBox.Show(
-                this,
-                "This tab is pinned for play. Open a different browser tab for design.\n\n"
-                + "1. Click + to open a new ChatGPT tab.\n"
-                + "2. Open your Project and click New chat.\n"
-                + "3. Return here and click Start new design thread… again.",
-                "Start new design thread",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-            return;
-        }
 
         var projectUrl = ChatGptUrls.BuildProjectUrl(gizmoId);
         if (!AdventureNavigationService.IsOnLinkedProjectPage(core.Source, reloaded))
@@ -620,7 +640,13 @@ public partial class MainWindow
                 "chat-download");
 
             if (result.Imported <= 0)
+            {
+                _designView?.SetStatus(
+                    result.Messages.Count > 0
+                        ? result.Messages[0]
+                        : "Chat download could not be mapped to a source file.");
                 return;
+            }
 
             AdventureStore.Save(bundle);
             _designView?.RefreshAfterGenerationJob();

@@ -91,6 +91,18 @@ internal static class AdventurePlayContextService
             };
         }
 
+        if (!string.IsNullOrWhiteSpace(conversationId)
+            && ProjectChatDraftService.ShouldStayOnProjectPage(bundle, core.Source))
+        {
+            ProjectLinkDiagnostics.Log(
+                $"Play context draft mode on project page for {gizmoId}; skipping play thread navigation");
+            return new PlayContextResult
+            {
+                Status = PlayContextStatus.Ready,
+                ConversationId = conversationId,
+            };
+        }
+
         if (AdventureNavigationService.IsGenericHomepage(core.Source))
         {
             ProjectLinkDiagnostics.Log($"Play context recovering from homepage for project {gizmoId}");

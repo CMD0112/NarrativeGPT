@@ -46,11 +46,26 @@ public partial class MainWindow
         if (bundle is null)
             return null;
 
+        ProjectChatDraftService.BeginUtilityDraft(bundle);
+
+        var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
+        gizmoId = string.IsNullOrWhiteSpace(gizmoId) ? null : ChatGptUrls.NormalizeGizmoId(gizmoId);
+        if (gizmoId is not null && _projectApiService is not null)
+            await _projectApiService.EnsureProjectPageAsync(core, gizmoId, cancellationToken);
+
         var turnService = GetOrCreateTurnService(wv);
         var ui = await turnService.StartProjectChatAsync(core, cancellationToken);
         var conversationId = !string.IsNullOrWhiteSpace(ui.ConversationId)
             ? ui.ConversationId
             : await turnService.GetConversationIdAsync(core);
+
+        if (!string.IsNullOrWhiteSpace(conversationId) && gizmoId is not null
+            && !AdventurePlayContextService.IsOnPlayConversationPage(core.Source, conversationId, gizmoId))
+        {
+            var targetUrl = ChatGptUrls.ResolveProjectConversationUrl(conversationId, gizmoId, core.Source);
+            core.Navigate(targetUrl);
+            await WaitForChatGptNavigationAsync(core);
+        }
 
         if (!IsAcceptableUtilityUiConversation(bundle, core.Source, conversationId))
             return null;
@@ -146,10 +161,9 @@ public partial class MainWindow
     private static bool IsDesignGenerationJob(string jobId) =>
         jobId is GenerationJobId.DesignAdventure
             or GenerationJobId.DesignExtractStep
-            or GenerationJobId.DraftFramework;
-
-    private static bool UsesUtilityWebView(string jobId) =>
-        jobId is GenerationJobId.ProposeJsonImport or GenerationJobId.ProposeSourceEdits;
+            or GenerationJobId.DraftFramework
+            or GenerationJobId.ProposeJsonImport
+            or GenerationJobId.ProposeSourceEdits;
 
     private async Task<GenerationJobResult?> RunGenerationJobForActiveAdventureAsync(
         string jobId,
@@ -179,16 +193,20 @@ public partial class MainWindow
         }
 
         var isDesignJob = IsDesignGenerationJob(jobId);
-        var useUtilityWebView = UsesUtilityWebView(jobId);
+        var isDesignSourceJob = jobId is GenerationJobId.ProposeJsonImport or GenerationJobId.ProposeSourceEdits;
 
-        var usesInline = !isDesignJob && !useUtilityWebView && UtilityDeliveryModeService.UsesInlineDelivery(bundle);
+        var usesInline = !isDesignJob && UtilityDeliveryModeService.UsesInlineDelivery(bundle);
         WebView2 wv;
         CoreWebView2 core;
-        if ((isDesignJob || _appMode == AppMode.Design) && !useUtilityWebView)
+        if (isDesignJob || _appMode == AppMode.Design)
         {
             try
             {
-                wv = await ResolveDesignWebViewAsync(adventureId, selectTab: true, ensureThread: true)
+                // Design-source jobs carry a self-contained packet; skip pre-job design seeding.
+                wv = await ResolveDesignWebViewAsync(
+                    adventureId,
+                    selectTab: true,
+                    ensureThread: !isDesignSourceJob)
                      ?? throw new InvalidOperationException("Design WebView unavailable.");
             }
             catch (Exception ex)
@@ -383,8 +401,11 @@ public partial class MainWindow
         if (result.Success && result.ProposalCount > 0)
         {
             status = jobId == GenerationJobId.ProposeJsonImport
-                ? $"Queued {result.ProposalCount} JSON import proposal(s) — review in Sources."
+                ? $"Queued {result.ProposalCount} JSON import proposal(s)."
                 : $"Extracted {result.ProposalCount} proposal(s).";
+
+            if (jobId == GenerationJobId.ProposeJsonImport)
+                _designView.TryOpenJsonImportReviewDialog();
         }
         else if (!result.Success && result.SkippedReason is null)
             status = FormatDesignJobStatusError(jobId, result.Error);

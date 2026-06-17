@@ -67,6 +67,10 @@ public partial class AdventurePlayView : UserControl
 
     public Func<Task>? StartNewPlayThreadAsync { get; set; }
 
+    public Func<Task>? DraftNewProjectChatAsync { get; set; }
+
+    public Action? CancelProjectChatDraft { get; set; }
+
     public Func<string, Task>? RunSourceEditJobAsync { get; set; }
 
     public Func<Task>? RunDraftFrameworkAsync { get; set; }
@@ -986,6 +990,8 @@ public partial class AdventurePlayView : UserControl
         dlg.OpenUtilityThreadAsync = jobId => OpenUtilityThreadAsync?.Invoke(jobId) ?? Task.CompletedTask;
         dlg.RotateUtilityThreadAsync = jobId => RotateUtilityThreadAsync?.Invoke(jobId) ?? Task.CompletedTask;
         dlg.StartNewPlayThreadAsync = () => StartNewPlayThreadAsync?.Invoke() ?? Task.CompletedTask;
+        dlg.DraftNewProjectChatAsync = () => DraftNewProjectChatAsync?.Invoke() ?? Task.CompletedTask;
+        dlg.CancelProjectChatDraft = () => CancelProjectChatDraft?.Invoke();
         dlg.RunSourceEditJobAsync = (prompt, _) => RunSourceEditJobAsync?.Invoke(prompt) ?? Task.CompletedTask;
         dlg.ListThreadFilesAsync = () => ListThreadFilesAsync?.Invoke() ?? Task.FromResult<IReadOnlyList<ConversationFileRef>>([]);
         dlg.DownloadThreadFileAsync = file =>

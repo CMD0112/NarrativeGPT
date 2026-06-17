@@ -66,6 +66,7 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
     private readonly Func<bool> _getWrapperComposerEnabled;
     private ChatGptPageHost? _pageHost;
     private bool _standaloneRegistered;
+    private bool _nativePassthrough;
     private string _cachedText = "";
     private IReadOnlyList<ComposerAttachmentMetaDto> _lastAttachmentMeta = [];
 
@@ -455,6 +456,18 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
     public static Task ReapplyAsync(CoreWebView2 core, bool enabled) =>
         ApplyPreferenceAsync(core, enabled);
 
+    public static Task ApplyNativePassthroughAsync(CoreWebView2 core, bool passthrough) =>
+        core.ExecuteScriptAsync(BuildPassthroughScript(passthrough));
+
+    public async Task SetNativePassthroughAsync(bool passthrough)
+    {
+        _nativePassthrough = passthrough;
+        if (_webView.CoreWebView2 is { } core)
+            await ApplyNativePassthroughAsync(core, passthrough);
+    }
+
+    public bool NativePassthrough => _nativePassthrough;
+
     private readonly SemaphoreSlim _applyGate = new(1, 1);
 
     public async Task ApplyStateAsync(CoreWebView2 core, PlayComposeUiState state)
@@ -517,6 +530,8 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
 
         await core.ExecuteScriptAsync(script);
         await ApplyPreferenceAsync(core, _getWrapperComposerEnabled());
+        if (_nativePassthrough)
+            await ApplyNativePassthroughAsync(core, true);
     }
 
     private static Task ApplyPreferenceAsync(CoreWebView2 core, bool enabled) =>
@@ -539,6 +554,11 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
         "(function(){"
         + $"if(typeof globalThis.__cgwSetWrapperComposer==='function')globalThis.__cgwSetWrapperComposer({JsonSerializer.Serialize(enabled)});"
         + "if(typeof globalThis.__cgwPlayComposeEnsureHooks==='function')globalThis.__cgwPlayComposeEnsureHooks();"
+        + "})();";
+
+    private static string BuildPassthroughScript(bool passthrough) =>
+        "(function(){"
+        + $"if(typeof globalThis.__cgwSetNativeComposePassthrough==='function')globalThis.__cgwSetNativeComposePassthrough({JsonSerializer.Serialize(passthrough)});"
         + "})();";
 
     private static string GetScriptPayload()

@@ -3,7 +3,7 @@
 
   var kernel = globalThis.__cgwPageKernel;
   var composerDom = globalThis.__cgwComposerDom;
-  var COMPOSE_VERSION = 23;
+  var COMPOSE_VERSION = 24;
   var MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
   var MAX_ATTACHMENTS = 10;
   var DOM_FALLBACK_STASH_KEY = "__cgwDomFallbackAttachmentStash";
@@ -66,6 +66,19 @@
     if (cd) cd.restoreNativeFromOffscreen();
   }
 
+  function localSetNativeComposePassthrough(enabled) {
+    globalThis.__cgwNativeComposePassthrough = !!enabled;
+    var root = document.documentElement;
+    if (!root) return;
+    if (enabled) root.setAttribute("data-cgw-native-compose-passthrough", "1");
+    else root.removeAttribute("data-cgw-native-compose-passthrough");
+    if (enabled) {
+      sendInFlight = false;
+      globalThis.__cgwComposeSendInFlight = false;
+      syncNativeComposerSendLock();
+    }
+  }
+
   function localSetWrapperComposer(enabled) {
     globalThis.__cgwWrapperComposer = !!enabled;
     var root = document.documentElement;
@@ -94,6 +107,7 @@
   }
 
   function canInterceptNativeSend() {
+    if (globalThis.__cgwNativeComposePassthrough) return false;
     if (globalThis.__cgwWrapperComposer) return false;
     if (globalThis.__cgwBridgeAutomationActive) return false;
     var state = globalThis.__cgwPlayComposeState || {};
@@ -205,6 +219,7 @@
     document.addEventListener(
       "click",
       function (ev) {
+        if (globalThis.__cgwNativeComposePassthrough) return;
         if (globalThis.__cgwWrapperComposer) return;
         var btn =
           ev.target && ev.target.closest
@@ -243,6 +258,7 @@
     document.addEventListener(
       "input",
       function (ev) {
+        if (globalThis.__cgwNativeComposePassthrough) return;
         if (globalThis.__cgwWrapperComposer) return;
         if (!isNativeComposerElement(ev.target)) return;
         if (inputDebounce) clearTimeout(inputDebounce);
@@ -798,6 +814,7 @@
     document.addEventListener(
       "keydown",
       function (ev) {
+        if (globalThis.__cgwNativeComposePassthrough) return;
         if (globalThis.__cgwBridgeAutomationActive) return;
         if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing) return;
 
@@ -1381,6 +1398,7 @@
   globalThis.__cgwPlayComposeUnmount = unmountWrapperComposer;
   globalThis.__cgwPlayComposeVersion = COMPOSE_VERSION;
   globalThis.__cgwSetWrapperComposer = localSetWrapperComposer;
+  globalThis.__cgwSetNativeComposePassthrough = localSetNativeComposePassthrough;
 
   function applyPlaySurfaceActions() {
     var settings = globalThis.__cgwPlaySurfaceActions;

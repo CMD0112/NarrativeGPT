@@ -44,6 +44,9 @@
   var UTILITY_TAG_MARKER = "[[cgw:utility";
   var UTILITY_RESPONSE_TAG_MARKER = "[[cgw:utility-response";
   var STICK_TO_BOTTOM_THRESHOLD_PX = 48;
+  var userDetachedFromBottom = false;
+  var containerScrollIntentTarget = null;
+  var containerScrollIntentHandler = null;
 
   var CONTAINER_ID = "cgw-continuous-view";
   var SCROLL_ANCHOR_ID = "cgw-cv-scroll-anchor";
@@ -265,6 +268,48 @@
     containerScrollClampHandler = null;
   }
 
+  function disconnectContainerScrollIntent() {
+    if (containerScrollIntentTarget && containerScrollIntentHandler) {
+      containerScrollIntentTarget.removeEventListener(
+        "scroll",
+        containerScrollIntentHandler
+      );
+    }
+    containerScrollIntentTarget = null;
+    containerScrollIntentHandler = null;
+  }
+
+  function bindContainerScrollIntent(container) {
+    if (!container) return;
+    if (
+      containerScrollIntentTarget === container &&
+      containerScrollIntentHandler
+    ) {
+      return;
+    }
+    disconnectContainerScrollIntent();
+    containerScrollIntentTarget = container;
+    containerScrollIntentHandler = function () {
+      if (!globalThis.__cgwContinuousViewEnabled) return;
+      if (isNearBottom(container)) {
+        userDetachedFromBottom = false;
+      } else {
+        userDetachedFromBottom = true;
+      }
+    };
+    container.addEventListener("scroll", containerScrollIntentHandler, {
+      passive: true,
+    });
+  }
+
+  function shouldStickToBottom(scrollHost, container) {
+    var surface = getScrollSurface(scrollHost, container);
+    if (!surface) return false;
+    if (isNearBottom(surface)) return true;
+    if (isNativeStreaming() && !userDetachedFromBottom) return true;
+    return false;
+  }
+
   function bindContainerScrollClamp(container) {
     if (!container) return;
     if (
@@ -481,6 +526,8 @@
     disconnectScrollHostResizeObserver();
     disconnectScrollHostScrollLock();
     disconnectContainerScrollClamp();
+    disconnectContainerScrollIntent();
+    userDetachedFromBottom = false;
     cachedScrollHostForKey = null;
     applyRetryAttempts = 0;
     cancelDomReadyWait();
@@ -2121,7 +2168,7 @@
       syncOverlayGeometry(scrollHost, container, { preserveScroll: true });
       if (
         container &&
-        (scrollSurfaceNearBottom(scrollHost, container) || isNativeStreaming())
+        shouldStickToBottom(scrollHost, container)
       ) {
         applyScrollSurface(scrollHost, container, null, true);
       }
@@ -2145,10 +2192,7 @@
         return;
       }
       syncOverlayGeometry(scrollHost, container, { preserveScroll: true });
-      if (
-        scrollSurfaceNearBottom(scrollHost, container) ||
-        isNativeStreaming()
-      ) {
+      if (shouldStickToBottom(scrollHost, container)) {
         applyScrollSurface(scrollHost, container, null, true);
       }
     });
@@ -2253,10 +2297,7 @@
       applyRetryAttempts = 0;
       stopHrefPoll();
 
-      if (
-        scrollSurfaceNearBottom(scrollHost, container) ||
-        isNativeStreaming()
-      ) {
+      if (shouldStickToBottom(scrollHost, container)) {
         applyScrollSurface(scrollHost, container, null, true);
       }
     });
@@ -2566,10 +2607,7 @@
       if (containerResizeObserver) return;
       containerResizeObserver = new ResizeObserver(function () {
         if (!globalThis.__cgwContinuousViewEnabled) return;
-        if (
-          scrollSurfaceNearBottom(scrollHost, container) ||
-          isNativeStreaming()
-        ) {
+        if (shouldStickToBottom(scrollHost, container)) {
           applyScrollSurface(scrollHost, container, null, true);
         }
       });
@@ -3204,6 +3242,8 @@
     disconnectScrollHostWheelForward();
     disconnectScrollHostScrollLock();
     disconnectContainerScrollClamp();
+    disconnectContainerScrollIntent();
+    userDetachedFromBottom = false;
     activeConversationKey = null;
     targetConversationKey = null;
     transitionPhase = null;
@@ -3471,6 +3511,7 @@
     ensureComposerClearanceWatcher();
     ensureScrollHostResizeObserver(scrollHost, container);
     bindContainerScrollClamp(container);
+    bindContainerScrollIntent(container);
 
     trimTurnExtractCache(
       segments.map(function (s) {
@@ -3478,8 +3519,7 @@
       })
     );
 
-    var stickToBottom =
-      scrollSurfaceNearBottom(scrollHost, container) || isNativeStreaming();
+    var stickToBottom = shouldStickToBottom(scrollHost, container);
     unchanged =
       container.childElementCount > 0 &&
       fingerprint === prevFingerprint &&
@@ -3673,6 +3713,14 @@
   };
 
   globalThis.__cgwContinuousViewSchedule = schedule;
+
+  globalThis.__cgwShouldStickToBottom = shouldStickToBottom;
+  globalThis.__cgwResetContinuousScrollIntent = function () {
+    userDetachedFromBottom = false;
+  };
+  globalThis.__cgwNoteUserDetachedFromBottom = function (detached) {
+    userDetachedFromBottom = !!detached;
+  };
 
   globalThis.__cgwBenchmarkDecorateTurnBlocks = function (turnCount) {
     var blocks = [];

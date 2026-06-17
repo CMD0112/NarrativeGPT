@@ -166,6 +166,8 @@ During **Design with AI**, the pipeline order is:
 
 Draft lore sources first so you know your setting and cast — but **define boundaries yourself** in the Instructions designer. The refinement prompt will not invent portrayal rules from `cast.md` even if you leave fields empty.
 
+**Design UI (2026-06):** Brainstorm step tabs (Concept → World → Plot → Cast → …) follow a different order than the canonical **source draft pipeline**. A persistent **Source draft pipeline** checklist appears on every design step — use it for draft order, sent/on-disk state, and the **Next** recommendation. Click a row to jump to that file's step.
+
 You can draft instructions **before** linking a Project. **Generate instructions file** and the designer work offline. **Refine instructions with AI** requires a pinned design thread.
 
 ### Step 1 — Open the Instructions designer

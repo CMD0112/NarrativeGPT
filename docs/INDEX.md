@@ -70,7 +70,8 @@ flowchart TB
 | [Utility Job Orchestration](utility-job-orchestration.md) | Phase 2c utility pipeline (readiness, atomic send, errors) |
 | [UI Components](ui-components.md) | WPF views, dialogs, MainWindow partial-class map |
 | [Injected Assets](injected-assets.md) | `ChatGPT_files/` JS and CSS reference |
-| [Testing](testing.md) | Test tiers, fixtures, live diagnostics, CI recommendations |
+| [Testing](testing.md) | Test tiers, fixtures, live diagnostics, CI |
+| [Linear integration](linear-integration.md) | Issue workflow, PR linking, GitHub ↔ Linear setup |
 | [Build & Deploy](build-and-deploy.md) | Build, publish, distribution |
 | [AI Dungeon Phased Plan](AI-DUNGEON-PHASED-PLAN.md) | 70-feature roadmap and implementation status |
 

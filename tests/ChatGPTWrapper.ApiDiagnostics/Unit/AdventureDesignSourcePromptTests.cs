@@ -274,4 +274,65 @@ public sealed class AdventureDesignSourcePromptTests
         var message = AdventureDesignDomChatService.FormatPinError("design_tab_not_on_conversation");
         Assert.Contains("design thread", message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void BuildPipelineChecklist_marks_next_recommended_and_blocked_rows()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Checklist test");
+        AdventureDesignService.MarkSourceFilePromptSent(bundle, SectionSchema.CastFile);
+
+        var rows = AdventureDesignSourcePromptService.BuildPipelineChecklist(bundle);
+
+        Assert.Equal(6, rows.Count);
+        var cast = rows.Single(r => r.RelativePath == SectionSchema.CastFile);
+        var scenario = rows.Single(r => r.RelativePath == SectionSchema.ScenarioFile);
+        var world = rows.Single(r => r.RelativePath == SectionSchema.WorldFile);
+
+        Assert.True(cast.PromptSent);
+        Assert.False(cast.IsNextRecommended);
+        Assert.False(cast.IsBlocked);
+
+        Assert.True(scenario.IsNextRecommended);
+        Assert.False(scenario.IsBlocked);
+
+        Assert.True(world.IsBlocked);
+        Assert.Contains("scenario.md", world.BlockedReason!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildPipelineChecklist_reflects_on_disk_state()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Disk state test");
+        AdventureTestData.WriteLocalSources(bundle);
+
+        var rows = AdventureDesignSourcePromptService.BuildPipelineChecklist(bundle);
+
+        Assert.Contains(rows, r => r.RelativePath == SectionSchema.CastFile && r.PresentOnDisk);
+    }
+
+    [Fact]
+    public void GetCombinedSelectionWarning_requires_dependencies_in_selection_or_sent()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Combined warning test");
+
+        var warning = AdventureDesignSourcePromptService.GetCombinedSelectionWarning(
+            bundle,
+            [SectionSchema.WorldFile]);
+
+        Assert.NotNull(warning);
+        Assert.Contains("cast.md", warning, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("scenario.md", warning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GetCombinedSelectionWarning_allows_selection_when_dependencies_included()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Combined ok test");
+
+        var warning = AdventureDesignSourcePromptService.GetCombinedSelectionWarning(
+            bundle,
+            [SectionSchema.CastFile, SectionSchema.ScenarioFile, SectionSchema.WorldFile]);
+
+        Assert.Null(warning);
+    }
 }

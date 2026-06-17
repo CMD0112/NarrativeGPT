@@ -299,6 +299,8 @@ internal static class PlayTabPinService
 
         bundle.Metadata.PinnedUtilityTabKey = key;
         bundle.Metadata.PinnedUtilityTabTitle = GetTabTitle(webView, tabs);
+        if (ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id) == ProjectChatDraftKind.Utility)
+            ProjectChatDraftService.Complete(bundle);
         AdventureStore.Save(bundle);
     }
 

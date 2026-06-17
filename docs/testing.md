@@ -4,7 +4,7 @@ Test project: `tests/ChatGPTWrapper.ApiDiagnostics/` (xUnit, `net9.0-windows`).
 
 Also see: [tests/ChatGPTWrapper.ApiDiagnostics/README.md](../tests/ChatGPTWrapper.ApiDiagnostics/README.md)
 
-**CI status:** No GitHub Actions or other CI is configured. Recommended PR gate below.
+**CI status:** GitHub Actions on `main` and pull requests — see [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) and [Linear integration](linear-integration.md).
 
 ---
 
@@ -184,9 +184,9 @@ Requires `CGW_RUN_LIVE_API_TESTS=1` and ChatGPT login in app profile.
 
 ---
 
-## Recommended CI (not yet configured)
+## Recommended CI
 
-Example GitHub Actions job:
+Configured in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). PR gate runs **unit** tests (`Category=Unit`). Integration, live, and performance tiers are local-only — see commands below.
 
 ```yaml
 - name: Test

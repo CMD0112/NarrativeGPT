@@ -1,0 +1,105 @@
+<Window x:Class="ChatGPTWrapper.Views.JsonImportReviewDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Review JSON import proposals"
+        Height="640"
+        Width="920"
+        MinHeight="480"
+        MinWidth="720"
+        ResizeMode="CanResizeWithGrip"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource DialogBgBrush}"
+        Foreground="{StaticResource TextBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,8"
+                   Foreground="{StaticResource MutedTextBrush}"
+                   Text="Review AI-proposed updates to scenario.json and entities.json before accepting. Compare full files, check source conflicts, then accept or reject individual changes."/>
+
+        <TextBlock x:Name="StatusLine" Grid.Row="1" Margin="0,0,0,8"
+                   Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"/>
+
+        <Grid Grid.Row="2" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="240"/>
+                <ColumnDefinition Width="2*" MinWidth="320"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrushDark}"
+                    BorderThickness="1" Background="{StaticResource PanelBgBrush}" Padding="4">
+                <ListBox x:Name="ProposalList" BorderThickness="0"
+                         Background="Transparent"
+                         SelectionChanged="ProposalList_SelectionChanged"/>
+            </Border>
+
+            <Border Grid.Column="1" Margin="12,0,0,0"
+                    BorderBrush="{StaticResource BorderBrushDark}"
+                    BorderThickness="1" Background="{StaticResource PanelBgBrush}" Padding="12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="DetailPanel">
+                        <TextBlock x:Name="DetailPlaceholder"
+                                   Text="Select a proposal to inspect conflicts and source excerpts."
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock x:Name="DetailSummary" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                        <TextBlock x:Name="DetailConflict" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                        <TextBlock x:Name="DetailProposedLabel" Text="Proposed" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBox x:Name="DetailProposed" IsReadOnly="True" TextWrapping="Wrap"
+                                 AcceptsReturn="True" MinHeight="48" MaxHeight="120"
+                                 VerticalScrollBarVisibility="Auto" Margin="0,0,0,8"/>
+                        <TextBlock x:Name="DetailPriorLabel" Text="Current" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBox x:Name="DetailPrior" IsReadOnly="True" TextWrapping="Wrap"
+                                 AcceptsReturn="True" MinHeight="48" MaxHeight="120"
+                                 VerticalScrollBarVisibility="Auto" Margin="0,0,0,8"/>
+                        <TextBlock x:Name="DetailDeterministicLabel" Text="Deterministic re-import" FontWeight="SemiBold"
+                                   Margin="0,0,0,4" Visibility="Collapsed"/>
+                        <TextBox x:Name="DetailDeterministic" IsReadOnly="True" TextWrapping="Wrap"
+                                 AcceptsReturn="True" MinHeight="48" MaxHeight="96"
+                                 VerticalScrollBarVisibility="Auto" Margin="0,0,0,8" Visibility="Collapsed"/>
+                        <TextBlock x:Name="DetailSourceLabel" FontWeight="SemiBold" Margin="0,0,0,4" Visibility="Collapsed"/>
+                        <TextBox x:Name="DetailSourceExcerpt" IsReadOnly="True" TextWrapping="Wrap"
+                                 AcceptsReturn="True" MinHeight="64" MaxHeight="160"
+                                 VerticalScrollBarVisibility="Auto" Margin="0,0,0,8" Visibility="Collapsed"/>
+                        <TextBlock x:Name="DetailRationaleLabel" Text="Rationale" FontWeight="SemiBold" Margin="0,0,0,4" Visibility="Collapsed"/>
+                        <TextBox x:Name="DetailRationale" IsReadOnly="True" TextWrapping="Wrap"
+                                 AcceptsReturn="True" MinHeight="40" MaxHeight="96"
+                                 VerticalScrollBarVisibility="Auto" Visibility="Collapsed"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <ItemsControl x:Name="PreviewWarningsPanel" Grid.Row="3" Margin="0,0,0,8"/>
+
+        <Grid Grid.Row="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <WrapPanel Grid.Column="0">
+                <Button x:Name="PreviewScenarioButton" Content="Preview scenario.json…"
+                        Padding="12,6" Margin="0,0,8,4" Click="PreviewScenario_Click"/>
+                <Button x:Name="PreviewEntitiesButton" Content="Preview entities.json…"
+                        Padding="12,6" Margin="0,0,8,4" Click="PreviewEntities_Click"/>
+            </WrapPanel>
+            <WrapPanel Grid.Column="1" HorizontalAlignment="Right">
+                <Button x:Name="AcceptSelectedButton" Content="Accept selected"
+                        Padding="12,6" Margin="0,0,8,4" Click="AcceptSelected_Click"/>
+                <Button x:Name="RejectSelectedButton" Content="Reject selected"
+                        Padding="12,6" Margin="0,0,8,4" Click="RejectSelected_Click"/>
+                <Button x:Name="AcceptAllButton" Content="Accept all"
+                        Padding="12,6" Margin="0,0,8,4" Click="AcceptAll_Click"/>
+                <Button x:Name="RejectAllButton" Content="Reject all"
+                        Padding="12,6" Margin="0,0,8,4" Click="RejectAll_Click"/>
+                <Button Content="Close" Padding="12,6" IsCancel="True" Click="Close_Click"/>
+            </WrapPanel>
+        </Grid>
+    </Grid>
+</Window>

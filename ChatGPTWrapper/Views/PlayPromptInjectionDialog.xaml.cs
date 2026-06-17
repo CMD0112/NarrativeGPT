@@ -54,6 +54,10 @@ public partial class PlayPromptInjectionDialog : Window
 
     public Func<Task>? StartNewPlayThreadAsync { get; set; }
 
+    public Func<Task>? DraftNewProjectChatAsync { get; set; }
+
+    public Action? CancelProjectChatDraft { get; set; }
+
     public Func<string, Task<UtilityStoryContextBuildResult>>? PreviewLiveStoryContextAsync { get; set; }
 
     public Func<string, string, Task>? RunSourceEditJobAsync { get; set; }
@@ -153,6 +157,16 @@ public partial class PlayPromptInjectionDialog : Window
         ClearPinButton.IsEnabled = pinned;
         OpenPinnedPlayTabButton.IsEnabled = pinned;
         StartNewPlayThreadButton.IsEnabled = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
+        DraftNewProjectChatButton.IsEnabled = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
+        CancelProjectChatDraftButton.Visibility = ProjectChatDraftService.IsActive(_bundle)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        CancelProjectChatDraftButton.IsEnabled = ProjectChatDraftService.IsActive(_bundle);
+        var draftLine = ProjectChatDraftService.FormatStatusLine(_bundle);
+        ProjectChatDraftStatusBlock.Text = draftLine;
+        ProjectChatDraftStatusBlock.Visibility = string.IsNullOrWhiteSpace(draftLine)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
 
         var utilityPinned = PlayTabPinService.HasUtilityPin(_bundle);
         UtilityTabStatusBlock.Text = utilityPinned
@@ -748,6 +762,32 @@ public partial class PlayPromptInjectionDialog : Window
         }
     }
 
+    private async void DraftNewProjectChat_Click(object sender, RoutedEventArgs e)
+    {
+        if (DraftNewProjectChatAsync is null)
+            return;
+
+        DraftNewProjectChatButton.IsEnabled = false;
+        try
+        {
+            await DraftNewProjectChatAsync();
+            _bundle = AdventureStore.Load(_bundle.Metadata.Id) ?? _bundle;
+            UpdateSessionStatusUi();
+        }
+        finally
+        {
+            DraftNewProjectChatButton.IsEnabled =
+                !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
+        }
+    }
+
+    private void CancelProjectChatDraft_Click(object sender, RoutedEventArgs e)
+    {
+        CancelProjectChatDraft?.Invoke();
+        _bundle = AdventureStore.Load(_bundle.Metadata.Id) ?? _bundle;
+        UpdateSessionStatusUi();
+    }
+
     private void PinUtilityTab_Click(object sender, RoutedEventArgs e) =>
         PinUtilityTabRequested?.Invoke(this, EventArgs.Empty);
 
@@ -968,17 +1008,16 @@ public partial class PlayPromptInjectionDialog : Window
             return;
 
         var mirrorPath = ProjectSourceProbeService.MirrorFilePath(_bundle.Metadata.Id, row.RelativePath);
-        new SourceCompareDialog(
+        var dialog = SourceCompareDialog.FromPaths(
             row.AbsolutePath,
             mirrorPath,
             "Canonical",
             "Project mirror",
             row.Entry.EffectiveLocalSha256,
             row.Entry.LastRemoteProbeSha256,
-            row.Entry.ManuallyPublishedSha256)
-        {
-            Owner = this,
-        }.ShowDialog();
+            row.Entry.ManuallyPublishedSha256);
+        dialog.Owner = Window.GetWindow(this);
+        dialog.ShowDialog();
     }
 
     private void RefreshExport_Click(object sender, RoutedEventArgs e)

@@ -101,7 +101,11 @@ public partial class MainWindow
         WebView2 wv;
         try
         {
-            wv = await ResolveDesignWebViewAsync(adventureId, selectTab: true, ensureThread: false)
+            wv = await ResolveDesignWebViewAsync(
+                     adventureId,
+                     selectTab: true,
+                     ensureThread: false,
+                     preserveCurrentPage: true)
                  ?? throw new InvalidOperationException("Design browser tab unavailable.");
         }
         catch (Exception ex)
@@ -327,7 +331,11 @@ public partial class MainWindow
         WebView2 wv;
         try
         {
-            wv = await ResolveDesignWebViewAsync(adventureId, selectTab: true, ensureThread: false)
+            wv = await ResolveDesignWebViewAsync(
+                     adventureId,
+                     selectTab: true,
+                     ensureThread: false,
+                     preserveCurrentPage: true)
                  ?? throw new InvalidOperationException("Design browser tab unavailable.");
         }
         catch (Exception ex)
@@ -340,11 +348,22 @@ public partial class MainWindow
 
         if (!AdventureDesignDomChatService.TryGetDesignConversationId(bundle, core, out _, out var pinError))
         {
-            return new DesignSourcePullResult
+            var targetUrl = DesignTabPinService.GetDesignTargetUrl(bundle)
+                            ?? DesignTabPinService.GetDesignBrowseUrl(bundle);
+            if (!string.IsNullOrWhiteSpace(targetUrl))
             {
-                Success = false,
-                Error = AdventureDesignDomChatService.FormatPinError(pinError),
-            };
+                core.Navigate(targetUrl);
+                await WaitForChatGptNavigationAsync(core);
+            }
+
+            if (!AdventureDesignDomChatService.TryGetDesignConversationId(bundle, core, out _, out pinError))
+            {
+                return new DesignSourcePullResult
+                {
+                    Success = false,
+                    Error = AdventureDesignDomChatService.FormatPinError(pinError),
+                };
+            }
         }
 
         GetOrRegisterAdventureBridge(wv);

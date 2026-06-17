@@ -42,4 +42,15 @@ public sealed class ProcessTurnResponseTests
             GenerationJobId.ExtractEntities,
             GenerationJobHandlers.GetUtilityJobId(GenerationJobId.ExpandEntity));
     }
+
+    [Fact]
+    public void GetUtilityJobId_keeps_design_source_jobs_on_own_session_keys()
+    {
+        Assert.Equal(
+            GenerationJobId.ProposeJsonImport,
+            GenerationJobHandlers.GetUtilityJobId(GenerationJobId.ProposeJsonImport));
+        Assert.Equal(
+            GenerationJobId.ProposeSourceEdits,
+            GenerationJobHandlers.GetUtilityJobId(GenerationJobId.ProposeSourceEdits));
+    }
 }

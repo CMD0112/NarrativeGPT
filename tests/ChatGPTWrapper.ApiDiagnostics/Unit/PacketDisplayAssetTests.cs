@@ -396,6 +396,8 @@ public sealed class PacketDisplayAssetTests
 
         Assert.Contains("cgw-cv-scroll-anchor", css);
 
+        Assert.Contains("flex: 0 0 0", css);
+
         Assert.Contains("bindScrollHostWheelForward", js);
 
         Assert.Contains("maxScrollTop", js);
@@ -411,6 +413,28 @@ public sealed class PacketDisplayAssetTests
         Assert.Contains("max-width: none", css);
 
         Assert.DoesNotContain(".cgw-continuous-view {\r\n  max-width", css);
+
+    }
+
+
+
+    [Fact]
+
+    public void Continuous_view_stick_to_bottom_respects_user_scroll_away()
+
+    {
+
+        var js = WrapperAssetTestHelpers.ReadAsset("continuous-transcript-view.js");
+
+        Assert.Contains("function shouldStickToBottom", js);
+
+        Assert.Contains("userDetachedFromBottom", js);
+
+        Assert.Contains("bindContainerScrollIntent", js);
+
+        Assert.Contains("globalThis.__cgwShouldStickToBottom = shouldStickToBottom", js);
+
+        Assert.DoesNotContain("scrollSurfaceNearBottom(scrollHost, container) || isNativeStreaming()", js);
 
     }
 

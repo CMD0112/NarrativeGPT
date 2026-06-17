@@ -308,17 +308,16 @@ public partial class SourceManagerDialog : Window
             return;
 
         var mirrorPath = ProjectSourceProbeService.MirrorFilePath(_adventureId, SelectedRow.RelativePath);
-        new SourceCompareDialog(
+        var compareDialog = SourceCompareDialog.FromPaths(
             SelectedRow.AbsolutePath,
             mirrorPath,
             "Canonical",
             "Project mirror",
             SelectedRow.Entry.EffectiveLocalSha256,
             SelectedRow.Entry.LastRemoteProbeSha256,
-            SelectedRow.Entry.ManuallyPublishedSha256)
-        {
-            Owner = this,
-        }.ShowDialog();
+            SelectedRow.Entry.ManuallyPublishedSha256);
+        compareDialog.Owner = this;
+        compareDialog.ShowDialog();
     }
 
     private void ViewHistory_Click(object sender, RoutedEventArgs e)
@@ -381,16 +380,15 @@ public partial class SourceManagerDialog : Window
             return;
 
         var archivePath = SourceFileHistoryService.ResolveArchiveAbsolutePath(_adventureId, historyRow.Entry);
-        new SourceCompareDialog(
+        var compareDialog = SourceCompareDialog.FromPaths(
             archivePath,
             SelectedRow.AbsolutePath,
             "Archive",
             "Current canonical",
             historyRow.Entry.Sha256,
-            SelectedRow.Entry.EffectiveLocalSha256)
-        {
-            Owner = this,
-        }.ShowDialog();
+            SelectedRow.Entry.EffectiveLocalSha256);
+        compareDialog.Owner = this;
+        compareDialog.ShowDialog();
     }
 
     private void DesignInstructions_Click(object sender, RoutedEventArgs e)
@@ -514,10 +512,9 @@ public partial class SourceManagerDialog : Window
         {
             File.WriteAllText(tempCurrent, current);
             File.WriteAllText(tempSynth, synthesized);
-            new SourceCompareDialog(tempCurrent, tempSynth, "Current", "Synthesized")
-            {
-                Owner = this,
-            }.ShowDialog();
+            var compareDialog = SourceCompareDialog.FromPaths(tempCurrent, tempSynth, "Current", "Synthesized");
+            compareDialog.Owner = this;
+            compareDialog.ShowDialog();
 
             if (MessageBox.Show(
                     this,

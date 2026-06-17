@@ -240,7 +240,7 @@ Tabbed editor for play configuration and injected prompt content:
 - **Next send** — continuation queue, fallback player line, live merged preview, copy/view/start packet actions
 - **World** — rolling summary, location, objectives, author's note (saved on OK)
 - **AI Actions** — per-job utility instruction editor (built-in defaults, customize, reset); per-job response length/detail overrides; story context feed
-- **Session** — dual-pin setup: **play tab** (Send automation) and **utility tab** (AI jobs); thread and sources status; **Start new play thread…** (releases stale conversation/pin, copies start packet); per-job utility thread status; open / rotate utility thread; utility parse archive; link to Sources tab
+- **Session** — dual-pin setup: **play tab** (Send automation) and **utility tab** (AI jobs); thread and sources status; **Start new play thread…** (releases stale conversation/pin, copies start packet); **Draft new project chat…** (pause redirect while drafting on Project page); per-job utility thread status; open / rotate utility thread; utility parse archive; link to Sources tab
 - **Play surface** — attachment context mode (`Auto` / `Full` / `Minimal`), attachment-only placeholder, inject guidance toggle; play quick-action visibility (`Visible` / `Hidden` / `InjectedOnly`); side-panel tab placement (`Left` / `Hidden`)
 - **Settings** — max packet size, automation, force fat packets, perspective, global content boundaries, character portrayal rules, instruction addendum; **Auto-extract entities** (requires linked Project). See [instruction-contract-guide.md](instruction-contract-guide.md).
 - **Memory & cards** — pinned memory and keyword-triggered story cards included in packets
@@ -1161,6 +1161,10 @@ What it does (`PlayThreadRotationService.ReleasePlayThread`):
 3. **Send** in ChatGPT (or use wrapper **Send** on the next player line once the thread binds).
 
 The conversation id binds after the first message on the new thread. Turn 1 on the new thread should again show `turn="1"` with no stale transcript.
+
+**Draft new project chat…** (Play settings → Session) enters **drafting mode** without releasing your stored play thread. The wrapper pauses auto-redirect to the pinned play thread while you stay on the linked **Project page** — use this to create a **utility tab** (New chat → pin as utility) or to draft a secondary chat without **Start new play thread…**. Drafting also **auto-activates** when you open the Project page (or start typing in its composer) while a play or design thread is already bound. **Cancel drafting** restores prior bindings if you exit without pinning.
+
+Design thread rotation uses the same draft guard: **Start new design thread…** enables drafting on the Project page until you pin the new tab with **Use this tab as design thread**.
 
 #### Phase 6 — Ongoing play
 

@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
+using ChatGPTWrapper.ChatGptApi;
 using Microsoft.Win32;
 
 namespace ChatGPTWrapper.Views;
@@ -117,6 +118,7 @@ public partial class AdventureDesignView : UserControl
         var isReview = step == AdventureDesignStep.Review;
 
         RebuildDraftPanel(step);
+        RefreshPipelineChecklist();
         RefreshProposalsPanel(step);
 
         ContinueButton.Visibility = isReview ? Visibility.Collapsed : Visibility.Visible;
@@ -133,6 +135,109 @@ public partial class AdventureDesignView : UserControl
 
         if (isReview)
             ShowReviewSummary();
+    }
+
+    private void RefreshPipelineChecklist()
+    {
+        PipelineChecklistPanel.Children.Clear();
+        if (_bundle is null)
+        {
+            PipelineChecklistBorder.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        PipelineChecklistBorder.Visibility = Visibility.Visible;
+        var muted = (System.Windows.Media.Brush)FindResource("MutedTextBrush");
+        var accent = (System.Windows.Media.Brush)FindResource("AccentBrush");
+        var warning = (System.Windows.Media.Brush)FindResource("WarningBrush");
+        var success = (System.Windows.Media.Brush)FindResource("SuccessBrush");
+        var panelBg = (System.Windows.Media.Brush)FindResource("PanelBgBrush");
+        var accentSubtle = (System.Windows.Media.Brush)FindResource("AccentSubtleBrush");
+
+        foreach (var row in AdventureDesignSourcePromptService.BuildPipelineChecklist(_bundle))
+        {
+            var prefix = row.IsLoreFile
+                ? $"{row.Position}. "
+                : "→ ";
+            var sentLabel = row.PromptSent ? "✓ sent" : "○ not sent";
+            var diskLabel = row.PresentOnDisk ? "✓ on disk" : "○ missing";
+            var statusText = $"{sentLabel} · {diskLabel}";
+            if (row.IsNextRecommended)
+                statusText += " · Next";
+            if (row.IsBlocked && !string.IsNullOrWhiteSpace(row.BlockedReason))
+                statusText += $" · {row.BlockedReason}";
+
+            var rowPanel = new Border
+            {
+                Padding = new Thickness(6, 4, 6, 4),
+                Margin = new Thickness(0, 0, 0, 2),
+                Background = row.IsNextRecommended ? accentSubtle : panelBg,
+                BorderThickness = new Thickness(0),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Tag = row.RelativePath,
+            };
+            rowPanel.MouseLeftButtonUp += PipelineChecklistRow_Click;
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var title = new TextBlock
+            {
+                Text = $"{prefix}{row.RelativePath}",
+                FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                FontSize = 11,
+                FontWeight = row.IsNextRecommended ? FontWeights.SemiBold : FontWeights.Normal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            grid.Children.Add(title);
+
+            var status = new TextBlock
+            {
+                Text = statusText,
+                FontSize = 10,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = row.IsBlocked ? warning : row.IsNextRecommended ? accent : muted,
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Grid.SetColumn(status, 1);
+            grid.Children.Add(status);
+
+            if (row.PromptSent && row.PresentOnDisk)
+                title.Foreground = success;
+
+            rowPanel.Child = grid;
+            PipelineChecklistPanel.Children.Add(rowPanel);
+        }
+    }
+
+    private void PipelineChecklistRow_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (_bundle is null || sender is not Border { Tag: string relativePath })
+            return;
+
+        NavigateToPipelineFile(relativePath);
+    }
+
+    private void NavigateToPipelineFile(string relativePath)
+    {
+        if (_bundle is null)
+            return;
+
+        AdventureDesignStep step;
+        if (string.Equals(relativePath, InstructionContractService.InstructionsSnippetFile, StringComparison.OrdinalIgnoreCase))
+            step = AdventureDesignStep.Instructions;
+        else if (AdventureDesignSourcePromptService.TryGetDefinition(relativePath, out var def) && def.PrimaryStep is { } primary)
+            step = primary;
+        else
+            step = AdventureDesignStep.Sources;
+
+        AdventureDesignService.GoToStep(_bundle, step);
+        Save();
+        SyncTabToStep();
+        RefreshUi();
+        SetStatus($"Jumped to {AdventureDesignService.GetStepDisplayName(step)} for {relativePath}.");
     }
 
     private void RebuildDraftPanel(AdventureDesignStep step)
@@ -260,6 +365,27 @@ public partial class AdventureDesignView : UserControl
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 4),
         });
+
+        if (lorePrompts.Count == 1 && step != AdventureDesignStep.Sources)
+        {
+            var only = lorePrompts[0];
+            var pipelineIndex = AdventureDesignSourcePromptService.PromptPipelineOrder
+                .ToList()
+                .FindIndex(p => string.Equals(p, only.RelativePath, StringComparison.OrdinalIgnoreCase));
+            if (pipelineIndex >= 0)
+            {
+                var loreTotal = AdventureDesignSourcePromptService.PromptPipelineOrder.Count(p =>
+                    !string.Equals(p, InstructionContractService.InstructionsSnippetFile, StringComparison.OrdinalIgnoreCase));
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"Source draft {pipelineIndex + 1} of {loreTotal}: {only.RelativePath}",
+                    Foreground = muted,
+                    FontSize = 11,
+                    Margin = new Thickness(0, 0, 0, 4),
+                });
+            }
+        }
+
         panel.Children.Add(new TextBlock
         {
             Text = step == AdventureDesignStep.Sources
@@ -286,21 +412,20 @@ public partial class AdventureDesignView : UserControl
             });
         }
 
-        if (step == AdventureDesignStep.Sources)
+        var outOfOrderPaths = lorePrompts
+            .Where(p => AdventureDesignSourcePromptService.IsOutOfOrder(_bundle, p.RelativePath))
+            .Select(p => p.RelativePath)
+            .ToList();
+        if (outOfOrderPaths.Count > 0)
         {
-            var nextPath = AdventureDesignSourcePromptService.GetNextRecommendedPath(_bundle);
-            if (nextPath is not null
-                && AdventureDesignSourcePromptService.TryGetDefinition(nextPath, out var nextDef))
+            panel.Children.Add(new TextBlock
             {
-                panel.Children.Add(new TextBlock
-                {
-                    Text = $"Suggested next: {nextDef.ButtonLabel} ({nextPath})",
-                    TextWrapping = TextWrapping.Wrap,
-                    Foreground = muted,
-                    FontSize = 11,
-                    Margin = new Thickness(0, 0, 0, 8),
-                });
-            }
+                Text = $"Out of pipeline order: {string.Join(", ", outOfOrderPaths)} — send earlier files first, or confirm when drafting.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (System.Windows.Media.Brush)FindResource("WarningBrush"),
+                FontSize = 11,
+                Margin = new Thickness(0, 0, 0, 8),
+            });
         }
 
         if (DesignTabPinService.GetDesignConversationId(_bundle) is null
@@ -566,7 +691,6 @@ public partial class AdventureDesignView : UserControl
         var muted = (System.Windows.Media.Brush)FindResource("MutedTextBrush");
         var borderBrush = (System.Windows.Media.Brush)FindResource("BorderBrushSubtle");
         var sourcesDir = AdventureSourceFileService.SourcesDirectory(_bundle);
-        var statuses = AdventureSourceFileService.GetPipelineStatuses(_bundle);
 
         var panel = new StackPanel();
         panel.Children.Add(new TextBlock
@@ -577,24 +701,12 @@ public partial class AdventureDesignView : UserControl
         });
         panel.Children.Add(new TextBlock
         {
-            Text = $"Saved under adventures/{{id}}/sources/ — downloads from the design chat are mapped by filename (e.g. \"{_bundle.Metadata.Title} - scenario.md\" → scenario.md).",
+            Text = $"Saved under adventures/{{id}}/sources/ — use the pipeline checklist above for draft progress. Downloads map by filename (e.g. \"{_bundle.Metadata.Title} - scenario.md\" → scenario.md).",
             TextWrapping = TextWrapping.Wrap,
             Foreground = muted,
             FontSize = 11,
             Margin = new Thickness(0, 0, 0, 8),
         });
-
-        foreach (var status in statuses)
-        {
-            panel.Children.Add(new TextBlock
-            {
-                Text = $"{(status.Present ? "✓" : "○")} {status.RelativePath}",
-                FontFamily = new System.Windows.Media.FontFamily("Consolas"),
-                FontSize = 11,
-                Foreground = status.Present ? muted : System.Windows.Media.Brushes.OrangeRed,
-                Margin = new Thickness(0, 0, 0, 2),
-            });
-        }
 
         var actions = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
 
@@ -662,7 +774,7 @@ public partial class AdventureDesignView : UserControl
             Padding = new Thickness(8, 4, 8, 4),
             Margin = new Thickness(0, 0, 6, 6),
             Opacity = 0.92,
-            ToolTip = "Fallback when canonical markdown cannot be parsed — runs a utility job to propose scenario.json / entities.json updates",
+            ToolTip = "Fallback when canonical markdown cannot be parsed — runs on the pinned design thread and proposes scenario.json / entities.json updates from project source references",
         };
         aiImportBtn.Click += ProposeJsonImport_Click;
         aiImportBtn.IsEnabled = hasLore
@@ -672,7 +784,7 @@ public partial class AdventureDesignView : UserControl
 
         panel.Children.Add(actions);
 
-        AppendJsonImportReviewPanel(panel);
+        AppendJsonImportReviewBanner(panel);
 
         DraftPanel.Children.Add(new Border
         {
@@ -746,7 +858,21 @@ public partial class AdventureDesignView : UserControl
         if (result.Imported > 0)
             AdventureStore.Save(_bundle);
         RefreshUi();
-        SetStatus(FormatImportStatus(result));
+        var status = FormatImportStatus(result);
+        SetStatus(status);
+        if (result.Imported == 0)
+        {
+            var detail = result.Messages.Count > 0
+                ? string.Join(Environment.NewLine, result.Messages)
+                : status;
+            MessageBox.Show(
+                Window.GetWindow(this),
+                detail + Environment.NewLine + Environment.NewLine
+                + $"Folder: {ChatGptWebViewFileDiagnostics.DownloadsDirectory}",
+                "Import chat downloads",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
     }
 
     private void RegenerateJsonFromSources_Click(object sender, RoutedEventArgs e)
@@ -1050,6 +1176,18 @@ public partial class AdventureDesignView : UserControl
             return;
         }
 
+        var selectionWarning = AdventureDesignSourcePromptService.GetCombinedSelectionWarning(_bundle, selected);
+        if (!string.IsNullOrWhiteSpace(selectionWarning)
+            && MessageBox.Show(
+                selectionWarning + Environment.NewLine + Environment.NewLine + "Send anyway?",
+                "Source draft order",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning)
+            != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
         SetSourcePromptButtonsEnabled(false);
         try
         {
@@ -1110,6 +1248,21 @@ public partial class AdventureDesignView : UserControl
             || sender is not Button { Tag: string relativePath })
         {
             return;
+        }
+
+        if (AdventureDesignSourcePromptService.IsOutOfOrder(_bundle, relativePath))
+        {
+            var reason = AdventureDesignSourcePromptService.GetOutOfOrderTooltip(_bundle, relativePath)
+                         ?? "Earlier pipeline files should be drafted first.";
+            if (MessageBox.Show(
+                    reason + Environment.NewLine + Environment.NewLine + "Send this draft anyway?",
+                    "Source draft order",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning)
+                != MessageBoxResult.Yes)
+            {
+                return;
+            }
         }
 
         SetSourcePromptButtonsEnabled(false);
@@ -1255,7 +1408,10 @@ public partial class AdventureDesignView : UserControl
             }
 
             if (result.Success && result.ProposalCount > 0)
-                SetStatus($"Queued {result.ProposalCount} JSON import proposal(s) — review below.");
+            {
+                SetStatus($"Queued {result.ProposalCount} JSON import proposal(s).");
+                ShowJsonImportReviewDialog();
+            }
             else
                 SetStatus(result.Error ?? "No JSON import proposals returned.");
             RefreshUi();
@@ -1266,184 +1422,81 @@ public partial class AdventureDesignView : UserControl
         }
     }
 
-    private void AppendJsonImportReviewPanel(StackPanel panel)
+    public bool TryOpenJsonImportReviewDialog() =>
+        _bundle is not null
+        && _bundle.Scenario.JsonImportReviewQueue.Count > 0
+        && ShowJsonImportReviewDialog();
+
+    private bool ShowJsonImportReviewDialog()
+    {
+        if (_bundle is null || _bundle.Scenario.JsonImportReviewQueue.Count == 0)
+            return false;
+
+        var dialog = new JsonImportReviewDialog(_bundle.Metadata.Id)
+        {
+            Owner = Window.GetWindow(this),
+        };
+        dialog.ShowDialog();
+
+        _bundle = AdventureStore.Load(_bundle.Metadata.Id);
+        RefreshUi();
+        if (dialog.ChangesSaved)
+            SetStatus("JSON import review updated.");
+
+        return dialog.ChangesSaved;
+    }
+
+    private void AppendJsonImportReviewBanner(StackPanel panel)
     {
         if (_bundle is null)
             return;
 
-        var queue = _bundle.Scenario.JsonImportReviewQueue;
-        if (queue.Count == 0)
+        var count = _bundle.Scenario.JsonImportReviewQueue.Count;
+        if (count == 0)
             return;
 
         var muted = (System.Windows.Media.Brush)FindResource("MutedTextBrush");
         var borderBrush = (System.Windows.Media.Brush)FindResource("BorderBrushSubtle");
+        var unsupported = JsonImportConflictService.AnalyzeQueue(_bundle)
+            .Count(a => a.Severity == JsonImportConflictSeverity.Unsupported);
 
-        var review = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
-        review.Children.Add(new TextBlock
+        var summary = count == 1
+            ? "1 JSON import proposal awaiting review"
+            : $"{count} JSON import proposals awaiting review";
+        if (unsupported > 0)
+            summary += $" ({unsupported} unsupported)";
+
+        var banner = new Grid { Margin = new Thickness(0, 8, 0, 0) };
+        banner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        banner.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        banner.Children.Add(new TextBlock
         {
-            Text = $"{queue.Count} JSON import proposal(s) awaiting review",
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 6),
+            Text = summary,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = muted,
         });
 
-        foreach (var item in queue.ToList())
+        var reviewBtn = new Button
         {
-            var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var summary = FormatJsonImportProposalSummary(item);
-            row.Children.Add(new TextBlock
-            {
-                Text = summary,
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-
-            var acceptBtn = new Button
-            {
-                Content = "Accept",
-                Padding = new Thickness(8, 2, 8, 2),
-                Margin = new Thickness(6, 0, 0, 0),
-                Tag = item.Id,
-            };
-            acceptBtn.Click += AcceptJsonImportProposal_Click;
-            Grid.SetColumn(acceptBtn, 1);
-            row.Children.Add(acceptBtn);
-
-            var rejectBtn = new Button
-            {
-                Content = "Reject",
-                Padding = new Thickness(8, 2, 8, 2),
-                Margin = new Thickness(4, 0, 0, 0),
-                Tag = item.Id,
-            };
-            rejectBtn.Click += RejectJsonImportProposal_Click;
-            Grid.SetColumn(rejectBtn, 2);
-            row.Children.Add(rejectBtn);
-
-            review.Children.Add(row);
-        }
-
-        var bulk = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
-        var acceptAll = new Button
-        {
-            Content = "Accept all",
+            Content = "Review JSON import…",
             Padding = new Thickness(8, 4, 8, 4),
-            Margin = new Thickness(0, 0, 6, 0),
+            Margin = new Thickness(8, 0, 0, 0),
         };
-        acceptAll.Click += AcceptAllJsonImportProposals_Click;
-        bulk.Children.Add(acceptAll);
-
-        var rejectAll = new Button
-        {
-            Content = "Reject all",
-            Padding = new Thickness(8, 4, 8, 4),
-        };
-        rejectAll.Click += RejectAllJsonImportProposals_Click;
-        bulk.Children.Add(rejectAll);
-        review.Children.Add(bulk);
+        reviewBtn.Click += (_, _) => ShowJsonImportReviewDialog();
+        Grid.SetColumn(reviewBtn, 1);
+        banner.Children.Add(reviewBtn);
 
         panel.Children.Add(new Border
         {
             BorderBrush = borderBrush,
             BorderThickness = new Thickness(1),
             Padding = new Thickness(8),
-            Margin = new Thickness(0, 8, 0, 0),
             Background = (System.Windows.Media.Brush)FindResource("PanelBgBrush"),
-            Child = review,
+            Child = banner,
         });
-    }
-
-    private static string FormatJsonImportProposalSummary(JsonImportReviewItem item)
-    {
-        if (string.Equals(item.Kind, SourceJsonImportService.KindScenarioField, StringComparison.OrdinalIgnoreCase))
-        {
-            var preview = PreviewProposalText(item.Value);
-            var prior = string.IsNullOrWhiteSpace(item.PriorValue) ? "" : $" (was: {PreviewProposalText(item.PriorValue)})";
-            return $"scenario.{item.Field} → {preview}{prior}";
-        }
-
-        var entityPreview = PreviewProposalText(item.Value);
-        return $"{item.Action} {item.EntityType} \"{item.Name}\" → {entityPreview}";
-    }
-
-    private static string PreviewProposalText(string value)
-    {
-        var trimmed = value.Trim().ReplaceLineEndings(" ");
-        return trimmed.Length <= 64 ? trimmed : trimmed[..61] + "…";
-    }
-
-    private void AcceptJsonImportProposal_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null || sender is not Button { Tag: Guid id })
-            return;
-
-        var item = _bundle.Scenario.JsonImportReviewQueue.FirstOrDefault(q => q.Id == id);
-        if (item is null)
-            return;
-
-        if (!SourceJsonImportService.ApplyAccepted(_bundle, item))
-        {
-            SetStatus("Could not apply JSON import proposal.");
-            return;
-        }
-
-        _bundle.Scenario.JsonImportReviewQueue.Remove(item);
-        AdventureDesignService.HydrateFromScenario(_bundle);
-        Save();
-        RefreshUi();
-        SetStatus("Applied JSON import proposal.");
-    }
-
-    private void RejectJsonImportProposal_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null || sender is not Button { Tag: Guid id })
-            return;
-
-        var item = _bundle.Scenario.JsonImportReviewQueue.FirstOrDefault(q => q.Id == id);
-        if (item is null)
-            return;
-
-        _bundle.Scenario.JsonImportReviewQueue.Remove(item);
-        Save();
-        RefreshUi();
-        SetStatus("Rejected JSON import proposal.");
-    }
-
-    private void AcceptAllJsonImportProposals_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null || _bundle.Scenario.JsonImportReviewQueue.Count == 0)
-            return;
-
-        var applied = 0;
-        foreach (var item in _bundle.Scenario.JsonImportReviewQueue.ToList())
-        {
-            if (SourceJsonImportService.ApplyAccepted(_bundle, item))
-                applied++;
-        }
-
-        _bundle.Scenario.JsonImportReviewQueue.Clear();
-        AdventureDesignService.HydrateFromScenario(_bundle);
-        Save();
-        RefreshUi();
-        SetStatus(applied > 0
-            ? $"Applied {applied} JSON import proposal(s)."
-            : "No JSON import proposals could be applied.");
-    }
-
-    private void RejectAllJsonImportProposals_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null || _bundle.Scenario.JsonImportReviewQueue.Count == 0)
-            return;
-
-        var count = _bundle.Scenario.JsonImportReviewQueue.Count;
-        _bundle.Scenario.JsonImportReviewQueue.Clear();
-        Save();
-        RefreshUi();
-        SetStatus($"Rejected {count} JSON import proposal(s).");
     }
 
     private void PersistFieldsFromUi()

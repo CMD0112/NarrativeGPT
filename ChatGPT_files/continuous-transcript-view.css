@@ -87,9 +87,11 @@ html[data-cgw-continuous-view="1"] #cgw-continuous-view {
 }
 
 html[data-cgw-continuous-view="1"] #cgw-cv-scroll-anchor {
-  flex: 1 0 auto;
+  flex: 0 0 0;
+  height: 0;
   min-height: 0;
   width: 100%;
+  overflow: hidden;
   pointer-events: none;
 }
 

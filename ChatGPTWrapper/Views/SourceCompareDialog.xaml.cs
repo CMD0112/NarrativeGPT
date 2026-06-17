@@ -6,9 +6,26 @@ namespace ChatGPTWrapper.Views;
 
 public partial class SourceCompareDialog : Window
 {
-    public SourceCompareDialog(
+    public static SourceCompareDialog FromPaths(
         string leftPath,
         string rightPath,
+        string leftLabel,
+        string rightLabel,
+        string? canonicalSha = null,
+        string? compareSha = null,
+        string? publishedSha = null) =>
+        new(
+            File.Exists(leftPath) ? File.ReadAllText(leftPath) : "",
+            File.Exists(rightPath) ? File.ReadAllText(rightPath) : "",
+            leftLabel,
+            rightLabel,
+            canonicalSha,
+            compareSha,
+            publishedSha);
+
+    public SourceCompareDialog(
+        string leftText,
+        string rightText,
         string leftLabel,
         string rightLabel,
         string? canonicalSha = null,
@@ -17,8 +34,6 @@ public partial class SourceCompareDialog : Window
     {
         InitializeComponent();
 
-        var leftText = File.Exists(leftPath) ? File.ReadAllText(leftPath) : "";
-        var rightText = File.Exists(rightPath) ? File.ReadAllText(rightPath) : "";
         var diff = TextDiffService.ComputeLineDiff(leftText, rightText);
         DiffBox.Text = TextDiffService.FormatUnifiedDiff(diff, leftLabel, rightLabel);
 

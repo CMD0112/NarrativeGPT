@@ -10,6 +10,31 @@ internal readonly record struct DesignSourcePromptDefinition(
     string Summary,
     AdventureDesignStep? PrimaryStep);
 
+internal sealed class SourcePipelineChecklistRow
+{
+    public int Position { get; init; }
+
+    public int LoreTotal { get; init; }
+
+    public required string RelativePath { get; init; }
+
+    public required string Label { get; init; }
+
+    public bool PromptSent { get; init; }
+
+    public bool PresentOnDisk { get; init; }
+
+    public bool IsNextRecommended { get; init; }
+
+    public bool IsBlocked { get; init; }
+
+    public string? BlockedReason { get; init; }
+
+    public AdventureDesignStep? PrimaryStep { get; init; }
+
+    public bool IsLoreFile { get; init; }
+}
+
 internal static class AdventureDesignSourcePromptService
 {
     public static IReadOnlyList<DesignSourcePromptDefinition> AllDefinitions { get; } =
@@ -140,6 +165,70 @@ internal static class AdventureDesignSourcePromptService
         return missing.Count == 0
             ? null
             : $"Recommended after: {string.Join(", ", missing)}";
+    }
+
+    public static IReadOnlyList<SourcePipelineChecklistRow> BuildPipelineChecklist(AdventureBundle bundle)
+    {
+        AdventureDesignService.EnsureWorkspace(bundle);
+        var onDisk = AdventureSourceFileService.GetPipelineStatuses(bundle)
+            .ToDictionary(s => s.RelativePath, s => s.Present, StringComparer.OrdinalIgnoreCase);
+        var next = GetNextRecommendedPath(bundle);
+        var loreCount = PromptPipelineOrder.Count(p =>
+            !string.Equals(p, InstructionContractService.InstructionsSnippetFile, StringComparison.OrdinalIgnoreCase));
+
+        var rows = new List<SourcePipelineChecklistRow>();
+        var lorePosition = 0;
+        for (var i = 0; i < PromptPipelineOrder.Count; i++)
+        {
+            var path = PromptPipelineOrder[i];
+            TryGetDefinition(path, out var def);
+            onDisk.TryGetValue(path, out var present);
+            var blocked = IsOutOfOrder(bundle, path);
+            var isLore = !string.Equals(path, InstructionContractService.InstructionsSnippetFile, StringComparison.OrdinalIgnoreCase);
+            if (isLore)
+                lorePosition++;
+
+            rows.Add(new SourcePipelineChecklistRow
+            {
+                Position = isLore ? lorePosition : 0,
+                LoreTotal = loreCount,
+                RelativePath = path,
+                Label = def.ButtonLabel ?? path,
+                PromptSent = AdventureDesignService.IsSourceFilePromptSent(bundle, path),
+                PresentOnDisk = present,
+                IsNextRecommended = string.Equals(path, next, StringComparison.OrdinalIgnoreCase),
+                IsBlocked = blocked,
+                BlockedReason = blocked ? GetOutOfOrderTooltip(bundle, path) : null,
+                PrimaryStep = def.PrimaryStep,
+                IsLoreFile = isLore,
+            });
+        }
+
+        return rows;
+    }
+
+    public static string? GetCombinedSelectionWarning(AdventureBundle bundle, IReadOnlyList<string> selectedPaths)
+    {
+        AdventureDesignService.EnsureWorkspace(bundle);
+        var normalized = NormalizeSelectedPaths(selectedPaths);
+        if (normalized.Count == 0)
+            return null;
+
+        var selected = normalized.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in normalized)
+        {
+            var missing = GetPipelineDependencies(path)
+                .Where(dep =>
+                    !AdventureDesignService.IsSourceFilePromptSent(bundle, dep)
+                    && !selected.Contains(dep))
+                .ToList();
+            if (missing.Count > 0)
+            {
+                return $"{path} needs prior prompts sent or included in selection: {string.Join(", ", missing)}.";
+            }
+        }
+
+        return null;
     }
 
     public static bool TryGetDefinition(string relativePath, out DesignSourcePromptDefinition definition)
