@@ -464,19 +464,11 @@ Play sends **auto-log** narrator responses to `log.json` via `TurnTimelineServic
 
 **Review gates** apply to **AI job proposals** (memories, entities, cards, summary, source edits), not narrator text. Use continuous-view surrogate edit to correct logged text.
 
-`ResponseReviewDialog` is retained for manual/debug fallback only; it is not shown on the automated send path.
-
 ---
 
 ### ContextViewerDialog
 
 Read-only packet preview + **Copy packet** button. Meta line shows diagnostics passed from caller.
-
----
-
-### EditTurnDialog
-
-Edits turn player/narrator text (internal/legacy). Prefer continuous-view surrogate edit for play corrections.
 
 ---
 

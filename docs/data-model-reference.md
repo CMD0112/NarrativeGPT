@@ -79,7 +79,7 @@ ChatGPTWrapper/
 
 On Send, `TurnTimelineService.AcceptTurn` appends to `log.json` after capture. When entering play with a linked thread, `ThreadLogSyncService` compares filtered thread pairs to `log.json` and **always prompts** before applying a sync. Utility and injected-context messages are excluded via `TranscriptFilterService`. Skipping sync sets `AdventureSettings.ThreadLogDriftHint` for the footer status line.
 
-Legacy manual review (`ResponseReviewDialog`) exists for debug/fallback only. Correct logged text via continuous-view surrogate edit (`TurnInvalidationService`), not local-only Undo/Edit turn menu actions.
+Correct logged text via continuous-view surrogate edit (`TurnInvalidationService`), not legacy edit-turn dialogs (removed).
 
 ---
 

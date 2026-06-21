@@ -395,14 +395,21 @@
                     <StackPanel>
                         <TextBlock Text="Max packet characters" Margin="0,0,0,4"/>
                         <TextBox x:Name="MaxPacketBox" Margin="0,0,0,12"/>
-                        <CheckBox x:Name="AutomationCheck" Content="Enable WebView automation" Margin="0,0,0,4"/>
-                        <CheckBox x:Name="PreferDomPlaySendCheck"
-                                  Content="Prefer DOM composer send (skip conversation API)"
-                                  Margin="0,0,0,4"/>
-                        <TextBlock x:Name="PreferDomPlaySendHint"
-                                   Text="When enabled, play and utility messages submit through the native ChatGPT composer. Project source sync and file upload/download still use the API."
-                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
-                        <CheckBox x:Name="ForceFatPacketsCheck" Content="Force fat packets (ignore thin Project mode)" Margin="0,0,0,12"/>
+                        <CheckBox x:Name="AutomationCheck" Content="Enable WebView automation" Margin="0,0,0,12"/>
+                        <Expander x:Name="AdvancedAutomationExpander"
+                                  Header="Advanced automation (developer)"
+                                  IsExpanded="False"
+                                  Margin="0,0,0,12">
+                            <StackPanel Margin="0,8,0,0">
+                                <CheckBox x:Name="PreferDomPlaySendCheck"
+                                          Content="Prefer DOM composer send (skip conversation API)"
+                                          Margin="0,0,0,4"/>
+                                <TextBlock x:Name="PreferDomPlaySendHint"
+                                           Text="When enabled, play and utility messages submit through the native ChatGPT composer. Project source sync and file upload/download still use the API."
+                                           Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                <CheckBox x:Name="ForceFatPacketsCheck" Content="Force fat packets (ignore thin Project mode)"/>
+                            </StackPanel>
+                        </Expander>
                         <TextBlock Text="Perspective" Margin="0,0,0,4"/>
                         <TextBox x:Name="PerspectiveBox" Margin="0,0,0,12"/>
                         <TextBlock Text="Global content boundaries (one per line)" Margin="0,0,0,4"/>

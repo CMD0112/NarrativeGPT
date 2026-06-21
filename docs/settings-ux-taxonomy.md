@@ -88,7 +88,7 @@ UI removed or dead; **JSON fields retained** for backward compatibility unless a
 | `LegacyContinuousViewEnabled` | No UI | Migrated to `transcriptViewMode` |
 | `SourcePublishMode.ApiSync` | No UI | Forced Manual |
 | `UtilityDeliveryMode.SeparateThread` | No UI | Migrated InlinePlayThread |
-| `ResponseReviewDialog`, `EditTurnDialog` | Dead | No callers; may delete in future pass |
+| `ResponseReviewDialog`, `EditTurnDialog` | Files deleted | Superseded by continuous-view surrogate edit + automated review |
 
 ---
 
@@ -98,11 +98,11 @@ UI removed or dead; **JSON fields retained** for backward compatibility unless a
 |--------|--------|------|------------------------|
 | **A** Inventory & audits | CMD-255, CMD-256–261 | W0–W1 | **Done** (docs) |
 | **B** Taxonomy ADR | CMD-262 | W2 | **Done** (this doc) |
-| **C** Deprecation cleanup | CMD-263 | W2–W3 | **Partial** (UI subset) |
-| **D** Format/fonts/colors | CMD-178, CMD-146, CMD-176 | W3 | Verify in session |
+| **C** Deprecation cleanup | CMD-263 | W2–W3 | **In progress** (advanced automation expander; dead dialogs removed) |
+| **D** Format/fonts/colors | CMD-178, CMD-146, CMD-176 | W3 | CMD-178/176 Done; CMD-146 In Review |
 | **E** Preferences hub v2 | CMD-264, CMD-20 | W5 | Deferred |
 | **F** Dashboard revamp | CMD-110, CMD-214–218 | W6 | Deferred |
-| **G** Theme / Weave wave 2 | CMD-111, CMD-156, CMD-158 | W3–W4 | Deferred |
+| **G** Theme / Weave wave 2 | CMD-111, CMD-156, CMD-158 | W3–W4 | CMD-158 In Progress |
 
 ---
 

@@ -43,7 +43,7 @@ Settings persist in `%LocalAppData%\ChatGPTWrapper\ui-chrome.json`.
 ### Enable
 
 - **View** menu → **Native**, **Continuous**, or **Weave**
-- Or open **Format…** (toolbar gear or Preferences) to configure continuous/weave typography
+- **View** menu → **Format…** (or **Preferences…** → **Continuous view & format…**) to configure transcript typography
 
 The legacy toolbar **Continuous view** checkbox is hidden; use the View menu instead.
 
@@ -104,7 +104,7 @@ Highlight specific words or phrases in the continuous transcript (e.g. character
 
 ### Configure
 
-1. Enable **Phrase highlights** in the Format dialog (or standalone **Highlights…** if exposed in toolbar)
+1. Open **Format…** → **Highlights** tab
 2. Add rules in `PhraseHighlightsEditorControl`:
    - **Phrase** — text to match (case-sensitive option available)
    - **Color** — highlight color (preset swatches or **Pick…** for full color picker)

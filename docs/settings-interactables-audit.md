@@ -137,7 +137,9 @@ flowchart LR
 | `LegacyContinuousViewEnabled` | Document only |
 | `ApiSync`, `SeparateThread` | Document only (already migrated) |
 
-**Deferred to CMD-264:** Full Preferences hub v2 IA, play settings tab regrouping, narrator Advanced merge, advanced automation expander polish.
+**Deferred to CMD-264:** Full Preferences hub v2 IA, play settings tab regrouping, narrator Advanced merge.
+
+**Done in W3 (CMD-263):** Advanced automation expander (Force fat packets, Prefer DOM send) in Play settings → Settings tab.
 
 ---
 
