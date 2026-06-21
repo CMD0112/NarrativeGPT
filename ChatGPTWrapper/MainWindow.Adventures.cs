@@ -3,8 +3,10 @@ using System.Text.Json;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Adventure.Services.PlayLayout;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
 using ChatGPTWrapper.Views;
@@ -27,6 +29,8 @@ public partial class MainWindow
     private AdventureDashboardView? _dashboardView;
     private AdventurePlayView? _playView;
     private AdventureNotesPanel? _notesPanel;
+    private bool _notesPanelWired;
+    private PlayRightCompanionHost? _rightCompanionHost;
     private readonly Dictionary<WebView2, ChatGptApiBridgeInjection> _apiBridges = new();
     private ChatGptApiBridgeInjection? _apiBridge;
     private WebView2? _projectApiWebView;
@@ -39,6 +43,9 @@ public partial class MainWindow
     private AdventureTurnService? _turnService;
     private Guid? _activeAdventureId;
     private readonly SemaphoreSlim _playContextGate = new(1, 1);
+
+    private Guid? ResolveActiveAdventureIdForFormatImport() =>
+        _activeAdventureId is { } id && _appMode is AppMode.Play or AppMode.Design ? id : null;
 
     public async Task<BridgeHealthStatus?> GetAdventureBridgeHealthAsync()
     {
@@ -76,15 +83,13 @@ public partial class MainWindow
 
         AdventureNavigationService.SyncLinkedFields(bundle);
         var project = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
-        var linked = bundle.Metadata.LinkedConversationId;
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var threadStatus = AdventureThreadRegistryService.FormatThreadStatus(bundle, AdventureThreadKind.Play);
         var sourceReadiness = ProjectSourceInjectionService.Evaluate(bundle);
         var sourcesLine = ProjectSourceInjectionService.FormatLinkStatusSources(sourceReadiness);
 
         if (!string.IsNullOrWhiteSpace(project))
         {
-            var thread = string.IsNullOrWhiteSpace(linked)
-                ? "Thread: missing — will create on Send"
-                : $"Thread: c/{linked}";
             var duplicateHint = bundle.SourceManifest.LastKnownDuplicateRemotes > 0
                 ? $" ({bundle.SourceManifest.LastKnownDuplicateRemotes} duplicate remote(s))"
                 : "";
@@ -92,24 +97,29 @@ public partial class MainWindow
             var sourcesWithInstructions = string.IsNullOrWhiteSpace(instructionsLine)
                 ? $"{sourcesLine}{duplicateHint}"
                 : $"{sourcesLine} | {instructionsLine}{duplicateHint}";
+            var canonStatus = CanonReconciliationPromptService.FormatUnresolvedStatus(bundle);
+            if (!string.IsNullOrWhiteSpace(canonStatus))
+                sourcesWithInstructions += " | " + canonStatus;
             _playView.SetSessionLinkDetails(
-                $"Project: {project} · {thread}",
+                $"Project: {project} · {threadStatus}",
                 $"Sources: {sourcesWithInstructions}");
         }
         else
         {
             var packet = sourceReadiness.CanDelegateStaticContent ? "source-delegated packets" : "fat packets";
-            _playView.SetSessionLinkDetails(
-                string.IsNullOrWhiteSpace(linked)
-                    ? "No ChatGPT thread linked — link a Project or play to bind a thread."
-                    : $"Thread: chatgpt.com/c/{linked}",
-                $"No Project — {packet}");
+            var sourcesSuffix = $"No Project — {packet}";
+            var canonStatus = CanonReconciliationPromptService.FormatUnresolvedStatus(bundle);
+            if (!string.IsNullOrWhiteSpace(canonStatus))
+                sourcesSuffix += " | " + canonStatus;
+            _playView.SetSessionLinkDetails(threadStatus, sourcesSuffix);
         }
 
         _playView.SetPlayTabPinStatus(
             !string.IsNullOrWhiteSpace(bundle.Metadata.PinnedPlayTabKey),
             bundle.Metadata.PinnedPlayTabTitle);
         _playView.UpdateJobButtonStates();
+        RefreshAllChatTabHeaders();
+        UpdateShellStatusBar();
     }
 
     public WebView2? GetAdventureWebView() => GetPlayWebView();
@@ -341,7 +351,6 @@ public partial class MainWindow
                 AdventureColumn.Width = new GridLength(clamped);
                 settings.PlaySidePanelWidth = clamped;
                 changed = true;
-                _playView?.UpdateResponsiveLayout(clamped);
             }
         }
 
@@ -361,11 +370,38 @@ public partial class MainWindow
 
         if (changed)
             AdventureStore.Save(bundle);
+
+        ApplyPlayPanelResponsiveLayouts(bundle);
     }
 
     private void BrowseModeButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_appMode == AppMode.Play && _activeAdventureId is { } prevAdventureId)
+        if (_appMode is AppMode.Play or AppMode.Design)
+            LeaveActiveAdventureSession();
+
+        SetAppMode(AppMode.Browse);
+    }
+
+    private void AdventuresModeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_appMode is AppMode.Play or AppMode.Design)
+            LeaveActiveAdventureSession();
+
+        SetAppMode(AppMode.Adventures);
+    }
+
+    /// <summary>
+    /// Clears the active adventure session when leaving Play or Design (library, Browse, or shell back).
+    /// </summary>
+    private void LeaveActiveAdventureSession(bool refreshDashboardList = false)
+    {
+        if (_appMode == AppMode.Design)
+        {
+            ChatGptWebViewFileDiagnostics.DownloadCompleted -= OnDesignChatDownloadCompleted;
+            _designWebView = null;
+        }
+
+        if (_activeAdventureId is { } prevAdventureId)
         {
             PlayContextSessionCache.Invalidate(prevAdventureId);
             AdventureLinkedNavigationGuard.Reset(prevAdventureId);
@@ -375,10 +411,12 @@ public partial class MainWindow
         ClearPlayComposePrompt();
         PlayPromptComposer?.SetMergedPreview(null);
         SetPlayComposeStatus("");
-        SetAppMode(AppMode.Browse);
-    }
 
-    private void AdventuresModeButton_Click(object sender, RoutedEventArgs e) => SetAppMode(AppMode.Adventures);
+        ScheduleStaleInjectionComposerCleanupOnAllTabs();
+
+        if (refreshDashboardList)
+            _dashboardView?.RefreshList();
+    }
 
     private void ShowProjectBrowserPane(Guid? adventureId)
     {
@@ -409,6 +447,7 @@ public partial class MainWindow
         _appMode = mode;
         UpdatePlayPromptComposerVisibility();
         UpdateModeButtonStyles();
+        UpdateShellContext();
         UpdateTranscriptSettingsVisibility();
 
         switch (mode)
@@ -462,13 +501,14 @@ public partial class MainWindow
         }
 
         UpdateAdventureNavigationWatchdog();
+        UpdateShellStatusBar();
     }
 
     private void UpdateTranscriptSettingsVisibility()
     {
-        TranscriptSettingsPanel.Visibility =
-            _appMode == AppMode.Adventures ? Visibility.Collapsed : Visibility.Visible;
-        CloseTabButton.IsEnabled = _appMode != AppMode.Adventures && ChatTabs.Items.Count > 0;
+        var showChatChrome = _appMode != AppMode.Adventures;
+        ChatTabs.Visibility = showChatChrome ? Visibility.Visible : Visibility.Collapsed;
+        ShellViewMenu.Visibility = showChatChrome ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateModeButtonStyles()
@@ -476,8 +516,49 @@ public partial class MainWindow
         var selected = (Style)FindResource("ModeButtonSelectedStyle");
         var normal = (Style)FindResource("ModeButtonStyle");
 
+        if (_appMode is AppMode.Play or AppMode.Design)
+        {
+            BrowseModeButton.Style = normal;
+            AdventuresModeButton.Style = normal;
+            return;
+        }
+
         BrowseModeButton.Style = _appMode == AppMode.Browse ? selected : normal;
         AdventuresModeButton.Style = _appMode == AppMode.Adventures ? selected : normal;
+    }
+
+    private void UpdateShellContext()
+    {
+        if (_appMode is AppMode.Play or AppMode.Design)
+        {
+            ShellContextPanel.Visibility = Visibility.Visible;
+            var title = "Adventure";
+            if (_activeAdventureId is { } id)
+            {
+                var bundle = AdventureStore.Load(id);
+                if (!string.IsNullOrWhiteSpace(bundle?.Metadata.Title))
+                    title = bundle.Metadata.Title;
+            }
+
+            ShellContextTitle.Text = $"Adventures › {title}";
+            UpdateAdventureSessionToggleStyles();
+            _playView?.SetShellChromeState(true);
+            return;
+        }
+
+        ShellContextPanel.Visibility = Visibility.Collapsed;
+        ShellContextTitle.Text = string.Empty;
+        _playView?.SetShellChromeState(false);
+    }
+
+    private void ShellBackButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_appMode is AppMode.Play or AppMode.Design)
+            LeaveActiveAdventureSession();
+
+        SetAppMode(AppMode.Adventures);
+        if (_dashboardView is not null)
+            _ = _dashboardView.RefreshOnEnterAsync();
     }
 
     private void EnsureDashboard()
@@ -500,6 +581,11 @@ public partial class MainWindow
             await OpenContinueDesignWizardAsync(adventureId);
         _dashboardView.OpenDesignWizardFromDialogAsync = () => OpenAdventureDesignWizardAsync();
         _dashboardView.RenameCompleted += OnAdventureRenamed;
+        _dashboardView.PreferencesRequested += (_, _) =>
+        {
+            OpenPreferencesHub();
+            _dashboardView.RefreshAfterPreferencesClosed();
+        };
     }
 
     private void OnAdventureRenamed(object? sender, Guid adventureId) =>
@@ -514,13 +600,23 @@ public partial class MainWindow
         ReloadPlayAdventure(adventureId);
         if (_designView?.AdventureId == adventureId)
             _designView.LoadAdventure(adventureId);
+        if (_activeAdventureId == adventureId)
+            UpdateShellContext();
     }
 
     private void ReloadPlayAdventure(Guid adventureId)
     {
         _playView?.LoadAdventure(adventureId);
-        if (_activeAdventureId == adventureId)
-            _notesPanel?.LoadAdventure(adventureId);
+        if (_activeAdventureId != adventureId)
+            return;
+
+        _notesPanel?.LoadAdventure(adventureId);
+        var bundle = AdventureStore.Load(adventureId);
+        if (bundle is null)
+            return;
+
+        ApplyPlayTabHostsLayout(bundle);
+        UpdatePlayNotesRailTooltip(bundle);
     }
 
     private void RefreshPlayProjectLinkUi(Guid adventureId)
@@ -537,100 +633,20 @@ public partial class MainWindow
         _activeAdventureId = adventureId;
         SetAppMode(AppMode.Play);
 
-        _playView ??= new AdventurePlayView();
-        _playView.ResolvePreviewComposerText = () => GetPlayPlayerLineText();
-        _playView.ResolvePreviewAttachmentContext = () =>
-            GetActivePlayComposeInjection()?.GetLastAttachmentContext();
-        _playView.BackRequested -= OnPlayBack;
-        _playView.BackRequested += OnPlayBack;
-        _playView.LinkProjectRequested -= OnPlayLinkProjectRequested;
-        _playView.LinkProjectRequested += OnPlayLinkProjectRequested;
-        _playView.PinPlayTabRequested -= OnPinPlayTabRequested;
-        _playView.PinPlayTabRequested += OnPinPlayTabRequested;
-        _playView.OpenPinnedPlayTabRequested -= OnOpenPinnedPlayTabRequested;
-        _playView.OpenPinnedPlayTabRequested += OnOpenPinnedPlayTabRequested;
-        _playView.ClearPlayTabPinRequested -= OnClearPlayTabPinRequested;
-        _playView.ClearPlayTabPinRequested += OnClearPlayTabPinRequested;
-        _playView.PinUtilityTabRequested -= OnPinUtilityTabRequested;
-        _playView.PinUtilityTabRequested += OnPinUtilityTabRequested;
-        _playView.OpenPinnedUtilityTabRequested -= OnOpenPinnedUtilityTabRequested;
-        _playView.OpenPinnedUtilityTabRequested += OnOpenPinnedUtilityTabRequested;
-        _playView.ClearUtilityTabPinRequested -= OnClearUtilityTabPinRequested;
-        _playView.ClearUtilityTabPinRequested += OnClearUtilityTabPinRequested;
-        _playView.PlaySettingsSaved -= OnPlaySettingsSaved;
-        _playView.PlaySettingsSaved += OnPlaySettingsSaved;
-        _playView.TitleRenamed -= OnPlayTitleRenamed;
-        _playView.TitleRenamed += OnPlayTitleRenamed;
-        _playView.RollIntoPlayerLineRequested -= OnRollIntoPlayerLineRequested;
-        _playView.RollIntoPlayerLineRequested += OnRollIntoPlayerLineRequested;
-        _playView.ExpandPlaySidePanelRequested -= OnExpandPlaySidePanelRequested;
-        _playView.ExpandPlaySidePanelRequested += OnExpandPlaySidePanelRequested;
-        _playView.OpenSourceManagerAsync = () => OpenSourceManagerDialogAsync(adventureId);
-        _playView.ProbeSourcesAsync = () => ProbeProjectSourcesAsync(adventureId);
-        _playView.RefreshSourcesStatusAsync = () => RefreshPlaySourcesStatusAsync(adventureId);
-        _playView.ReconcileDuplicatesAsync = () => ReconcilePlaySourcesAsync(adventureId);
-        _playView.SuggestEntitiesAsync = () => RunEntityExtractionForActiveAdventureAsync();
-        _playView.SuggestMemoriesAsync = () => RunProposeMemoriesAsync();
-        _playView.RefreshSummaryAsync = () => RunUpdateSummaryAsync();
-        _playView.GenerateCardsAsync = () =>
-        {
-            var b = AdventureStore.Load(adventureId);
-            return b?.Metadata.Settings.UseSectionInjection == true
-                ? RunBootstrapSectionsAsync()
-                : RunBootstrapLoreAsync();
-        };
-        _playView.ExpandStoryCardAsync = cardId =>
-        {
-            var b = AdventureStore.Load(adventureId);
-            if (b?.Metadata.Settings.UseSectionInjection == true)
-            {
-                var card = b.Cards.Cards.FirstOrDefault(c => c.Id == cardId);
-                var entity = card is not null
-                    ? b.Entities.Characters.FirstOrDefault(c =>
-                        string.Equals(c.Name, card.Name, StringComparison.OrdinalIgnoreCase))
-                    : null;
-                if (entity is not null)
-                    return RunExpandSectionAsync(entity.Id);
-            }
-
-            return RunExpandStoryCardAsync(cardId);
-        };
-        _playView.RunContinuityCheckAsync = () => RunContinuityCheckAsync();
-        _playView.ProcessLastExchangeAsync = includeSummary => RunProcessLastExchangeAsync(includeSummary);
-        _playView.ExpandEntityAsync = (kind, id) => RunExpandEntityAsync(kind, id);
-        _playView.SyncInstructionsAsync = async () =>
-        {
-            var b = AdventureStore.Load(adventureId);
-            if (b is not null)
-                await SyncProjectInstructionsIfEnabledAsync(b);
-        };
-        _playView.OpenUtilityThreadAsync = jobId => OpenUtilityThreadAsync(jobId);
-        _playView.RotateUtilityThreadAsync = jobId => RotateUtilityThreadAsync(jobId);
-        _playView.StartNewPlayThreadAsync = () => StartNewPlayThreadAsync(adventureId);
-        _playView.DraftNewProjectChatAsync = () => DraftNewProjectChatAsync(adventureId);
-        _playView.CancelProjectChatDraft = () => CancelProjectChatDraft(adventureId);
-        _playView.RunSourceEditJobAsync = prompt => RunSourceEditJobAsync(prompt);
-        _playView.RunDraftFrameworkAsync = () => RunDraftFrameworkAsync();
-        _playView.ContinueDesignAsync = () => OpenContinueDesignWizardAsync(adventureId);
-        _playView.ListThreadFilesAsync = () => ListPlayThreadFilesAsync(adventureId);
-        _playView.DownloadThreadFileAsync = file => DownloadPlayThreadFileAsync(adventureId, file);
-        _playView.OpenProjectSettingsAsync = () => OpenProjectSettingsAsync();
-        _playView.PreviewLiveStoryContextAsync = jobId => BuildLiveStoryContextPreviewAsync(adventureId, jobId);
-        _notesPanel ??= new AdventureNotesPanel();
-        _playView.SaveNotesAction = () => _notesPanel.SaveConfiguration();
-        NotesHost.Content = _notesPanel;
-        AdventureHost.Content = _playView;
+        var playView = EnsurePlayViewWired(adventureId);
+        EnsurePlayCompanionHosts();
         ReloadPlayAdventure(adventureId);
 
         ApplyAllPlayPanelLayouts();
         SyncPlayComposerFromAdventurePanel();
-        _playView.SetSessionLoading(true, "Preparing play session…");
+        playView.SetSessionLoading(true, "Preparing play session…");
         try
         {
             await BrowserTabsReadyTask;
             await EnsurePlaySessionAsync(adventureId);
             ApplyPlaySurfaceActionsToPlayTab();
             _ = ApplyThreadOrdinalMapToPlayTabAsync();
+            await CheckThreadLogDriftOnLoadAsync(adventureId);
         }
         catch (Exception ex)
         {
@@ -643,11 +659,11 @@ public partial class MainWindow
                         Error = ex.Message,
                     })
                 : $"Session error: {ex.Message}";
-            _playView.SetSessionError(message);
+            playView.SetSessionError(message);
         }
         finally
         {
-            _playView.SetSessionLoading(false);
+            playView.SetSessionLoading(false);
         }
 
         UpdatePlayLinkStatus();
@@ -669,18 +685,8 @@ public partial class MainWindow
 
     private void OnPlayBack(object? sender, EventArgs e)
     {
-        if (_activeAdventureId is { } prevAdventureId)
-        {
-            PlayContextSessionCache.Invalidate(prevAdventureId);
-            AdventureLinkedNavigationGuard.Reset(prevAdventureId);
-        }
-
-        _activeAdventureId = null;
-        ClearPlayComposePrompt();
-        PlayPromptComposer?.SetMergedPreview(null);
-        SetPlayComposeStatus("");
+        LeaveActiveAdventureSession(refreshDashboardList: true);
         SetAppMode(AppMode.Adventures);
-        _dashboardView?.RefreshList();
     }
 
     private ChatGptApiBridgeInjection GetOrRegisterApiBridge(WebView2 wv)
@@ -785,61 +791,6 @@ public partial class MainWindow
         return _designWebView;
     }
 
-    private WebView2? FindUtilityApiWebView()
-    {
-        if (_activeAdventureId is { } activeId)
-        {
-            var bundle = AdventureStore.Load(activeId);
-            if (bundle is not null && PlayTabPinService.PreferPinnedUtilityWebView(bundle))
-            {
-                var pinned = PlayTabPinService.FindWebViewByUtilityPinKey(
-                    ChatTabs,
-                    bundle.Metadata.PinnedUtilityTabKey);
-                if (pinned is not null)
-                    return pinned;
-            }
-        }
-
-        if (HiddenUtilityWebView.CoreWebView2 is not null)
-            return HiddenUtilityWebView;
-
-        return null;
-    }
-
-    private bool IsUtilityCandidateWebView(AdventureBundle? bundle, WebView2 wv, CoreWebView2 core)
-    {
-        if (bundle is null || string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
-            return false;
-
-        var playPinKey = bundle.Metadata.PinnedPlayTabKey;
-        if (!string.IsNullOrWhiteSpace(playPinKey))
-        {
-            var tabKey = PlayTabPinService.GetTabKey(wv, ChatTabs);
-            if (string.Equals(tabKey, playPinKey, StringComparison.OrdinalIgnoreCase))
-                return false;
-        }
-
-        return PlayTabPinService.TryResolveUtilityConversationId(bundle, core, out _, out _);
-    }
-
-    private static string? FormatUtilityPinConversationHint(AdventureBundle bundle)
-    {
-        if (!PlayTabPinService.HasUtilityPin(bundle))
-            return null;
-
-        if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
-            return "link a Project first";
-
-        var gizmoId = ChatGptUrls.NormalizeGizmoId(bundle.Metadata.LinkedProjectId);
-        foreach (var session in bundle.Metadata.UtilitySessions.Values)
-        {
-            if (!string.IsNullOrWhiteSpace(session.ConversationId))
-                return $"c/{session.ConversationId[..Math.Min(8, session.ConversationId.Length)]}…";
-        }
-
-        return "open pinned tab on a /c/ conversation page";
-    }
-
     private void SelectTabForWebView(WebView2 wv)
     {
         foreach (var item in ChatTabs.Items)
@@ -887,6 +838,14 @@ public partial class MainWindow
             return;
 
         await RunLinkProjectFlowAsync(adventureId);
+    }
+
+    private void OnPlayManageThreadsRequested(object? sender, EventArgs e)
+    {
+        if (_activeAdventureId is not { } adventureId)
+            return;
+
+        OpenThreadManagerDialog(adventureId, AdventureThreadKind.Play);
     }
 
     private async Task RunLinkProjectFlowAsync(Guid adventureId)
@@ -1058,8 +1017,8 @@ public partial class MainWindow
             ? NarrowMinChatColumnWidth
             : MinChatColumnWidth;
     }
-    private const double SplitterColumnWidth = 10;
-    private const double ExpandColumnWidth = 22;
+    private const double SplitterColumnWidth = 12;
+    private const double ExpandColumnWidth = 12;
 
     private void ResetSidePanelLayoutForNonPlay()
     {
@@ -1152,7 +1111,136 @@ public partial class MainWindow
         }
 
         ApplyPlaySidePanelLayout(bundle);
+        ApplyPlayTabHostsLayout(bundle);
         ApplyPlayNotesPanelLayout(bundle);
+        ApplyPlayPanelResponsiveLayouts(bundle);
+    }
+
+    private void ApplyPlayPanelResponsiveLayouts(AdventureBundle bundle)
+    {
+        var shellWidth = 0.0;
+        if (!bundle.Metadata.Settings.PlaySidePanelCollapsed
+            && AdventureColumn.Width.IsAbsolute
+            && AdventureColumn.Width.Value > 0)
+        {
+            shellWidth = AdventureColumn.Width.Value;
+        }
+
+        var companionWidth = 0.0;
+        if (!bundle.Metadata.Settings.PlayNotesPanelCollapsed
+            && NotesColumn.Width.IsAbsolute
+            && NotesColumn.Width.Value > 0)
+        {
+            companionWidth = NotesColumn.Width.Value;
+        }
+
+        var snapshot = PlayLayoutCoordinator.CreateSnapshot(shellWidth, companionWidth);
+
+        if (shellWidth > 0)
+            _playView?.ApplyLayout(snapshot);
+
+        if (companionWidth > 0)
+            _rightCompanionHost?.ApplyLayout(snapshot.Companion);
+    }
+
+    private void EnsurePlayCompanionHosts()
+    {
+        _notesPanel ??= new AdventureNotesPanel();
+        _rightCompanionHost ??= new PlayRightCompanionHost();
+        NotesHost.Content = _rightCompanionHost;
+        _playView?.SetRightTabControl(_rightCompanionHost.RightTabControl);
+        WireNotesPanel();
+    }
+
+    private void WireNotesPanel()
+    {
+        if (_notesPanel is null || _playView is null)
+            return;
+
+        if (!_notesPanelWired)
+        {
+            _notesPanelWired = true;
+            _notesPanel.NotesContentChanged += OnNotesContentChanged;
+            _playView.FocusNotesEditor = () => _notesPanel.FocusEditor();
+            _playView.SaveNotesAction = () => _notesPanel.SaveConfiguration();
+            _notesPanel.ResolveNotesInsertContext = ResolveNotesInsertContext;
+        }
+
+        if (AdventureHost.Content != _playView)
+            AdventureHost.Content = _playView;
+    }
+
+    private void OnNotesContentChanged(object? sender, EventArgs e)
+    {
+        if (_activeAdventureId is not { } id)
+            return;
+
+        var bundle = AdventureStore.Load(id);
+        if (bundle is not null)
+            UpdatePlayNotesRailTooltip(bundle);
+    }
+
+    private NotesInsertContext ResolveNotesInsertContext()
+    {
+        if (_activeAdventureId is not { } id)
+            return new NotesInsertContext(0, null);
+
+        var bundle = AdventureStore.Load(id);
+        if (bundle is null)
+            return new NotesInsertContext(0, null);
+
+        var accepted = bundle.Log.Turns.Count(t => t.Status == TurnStatus.Accepted);
+        return new NotesInsertContext(accepted, _playView?.GetSelectedEntityName());
+    }
+
+    private void ApplyPlayTabHostsLayout(AdventureBundle bundle)
+    {
+        EnsurePlayCompanionHosts();
+        var settings = bundle.Metadata.Settings;
+        var notesSide = PlayPanelLayoutService.ResolveTabPlacement(settings, "Notes");
+
+        _playView?.SetRightTabControl(_rightCompanionHost!.RightTabControl);
+        _playView?.ApplyTabPlacementFromSettings();
+
+        if (notesSide == PlayPanelSide.Hidden)
+        {
+            _rightCompanionHost!.NotesSlot.Content = null;
+        }
+        else
+        {
+            _rightCompanionHost!.NotesSlot.Content = _notesPanel;
+        }
+
+        var hasRightTabs = _rightCompanionHost!.RightTabControl.Items.Count > 0;
+        _rightCompanionHost.SetRightTabsVisible(hasRightTabs);
+        UpdatePlayNotesRailTooltip(bundle);
+    }
+
+    private static bool ShouldShowRightCompanionColumn(AdventureBundle bundle)
+    {
+        var settings = bundle.Metadata.Settings;
+        if (PlayPanelLayoutService.ResolveTabPlacement(settings, "Notes") == PlayPanelSide.Right)
+            return true;
+
+        foreach (var tab in new[] { "Reference", "Warnings", "State" })
+        {
+            if (PlayPanelLayoutService.ResolveTabPlacement(settings, tab) == PlayPanelSide.Right)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void UpdatePlayNotesRailTooltip(AdventureBundle bundle)
+    {
+        var notesSide = PlayPanelLayoutService.ResolveTabPlacement(bundle.Metadata.Settings, "Notes");
+        if (notesSide == PlayPanelSide.Hidden)
+        {
+            ExpandPlayNotesPanelButton.ToolTip = "Notes hidden — Play settings → Play surface";
+            return;
+        }
+
+        ExpandPlayNotesPanelButton.ToolTip = _notesPanel?.GetNotesPreviewLine() ?? "Show notes panel";
     }
 
     private void ApplyPlaySidePanelLayout(AdventureBundle bundle)
@@ -1184,14 +1272,75 @@ public partial class MainWindow
         }
 
         _playView?.SetSidePanelCollapsed(collapsed);
-        if (!collapsed && _playView is not null)
-            _playView.UpdateResponsiveLayout(AdventureColumn.ActualWidth);
+    }
+
+    private void SnapPlaySidePanelToOptimalWidth()
+    {
+        if (_activeAdventureId is not { } id || _appMode != AppMode.Play)
+            return;
+
+        var bundle = AdventureStore.Load(id);
+        if (bundle is null)
+            return;
+
+        if (bundle.Metadata.Settings.PlaySidePanelCollapsed)
+            bundle.Metadata.Settings.PlaySidePanelCollapsed = false;
+
+        var optimal = PlayPanelOptimalWidthCalculator.Resolve(
+            bundle.Metadata.Settings,
+            GetMaxPlaySidePanelWidth(bundle.Metadata.Settings),
+            GetMaxPlayNotesPanelWidth(bundle.Metadata.Settings));
+
+        var width = Math.Clamp(
+            optimal.LeftWidth,
+            MinPlaySidePanelWidth,
+            GetMaxPlaySidePanelWidth(bundle.Metadata.Settings));
+        bundle.Metadata.Settings.PlaySidePanelWidth = width;
+        AdventureStore.Save(bundle);
+        ApplyAllPlayPanelLayouts();
+    }
+
+    private void SnapPlayNotesPanelToOptimalWidth()
+    {
+        if (_activeAdventureId is not { } id || _appMode != AppMode.Play)
+            return;
+
+        var bundle = AdventureStore.Load(id);
+        if (bundle is null || !ShouldShowRightCompanionColumn(bundle))
+            return;
+
+        if (bundle.Metadata.Settings.PlayNotesPanelCollapsed)
+            bundle.Metadata.Settings.PlayNotesPanelCollapsed = false;
+
+        var optimal = PlayPanelOptimalWidthCalculator.Resolve(
+            bundle.Metadata.Settings,
+            GetMaxPlaySidePanelWidth(bundle.Metadata.Settings),
+            GetMaxPlayNotesPanelWidth(bundle.Metadata.Settings));
+
+        var width = Math.Clamp(
+            optimal.RightWidth,
+            MinPlayNotesPanelWidth,
+            GetMaxPlayNotesPanelWidth(bundle.Metadata.Settings));
+        bundle.Metadata.Settings.PlayNotesPanelWidth = width;
+        AdventureStore.Save(bundle);
+        ApplyAllPlayPanelLayouts();
     }
 
     private void ApplyPlayNotesPanelLayout(AdventureBundle bundle)
     {
+        if (!ShouldShowRightCompanionColumn(bundle))
+        {
+            SetPlayNotesColumnCollapsed(collapsed: true);
+            return;
+        }
+
         var collapsed = bundle.Metadata.Settings.PlayNotesPanelCollapsed;
 
+        SetPlayNotesColumnCollapsed(collapsed);
+    }
+
+    private void SetPlayNotesColumnCollapsed(bool collapsed)
+    {
         if (collapsed)
         {
             NotesColumn.MinWidth = 0;
@@ -1205,9 +1354,17 @@ public partial class MainWindow
         }
         else
         {
-            var width = GetPlayNotesPanelWidth(bundle.Metadata.Settings);
-            NotesColumn.MinWidth = MinPlayNotesPanelWidth;
-            NotesColumn.Width = new GridLength(width);
+            if (_activeAdventureId is { } id)
+            {
+                var bundle = AdventureStore.Load(id);
+                if (bundle is not null)
+                {
+                    var width = GetPlayNotesPanelWidth(bundle.Metadata.Settings);
+                    NotesColumn.MinWidth = MinPlayNotesPanelWidth;
+                    NotesColumn.Width = new GridLength(width);
+                }
+            }
+
             PlayNotesPanelSplitterColumn.MinWidth = SplitterColumnWidth;
             PlayNotesPanelSplitterColumn.Width = new GridLength(SplitterColumnWidth);
             NotesHost.Visibility = Visibility.Visible;
@@ -1215,7 +1372,29 @@ public partial class MainWindow
             CollapsePlayNotesPanelButton.Visibility = Visibility.Visible;
             ExpandPlayNotesPanelButton.Visibility = Visibility.Collapsed;
         }
+
+        if (!collapsed
+            && NotesColumn.Width.IsAbsolute
+            && NotesColumn.Width.Value > 0
+            && _activeAdventureId is { } notesLayoutId)
+        {
+            var notesBundle = AdventureStore.Load(notesLayoutId);
+            if (notesBundle is not null)
+                ApplyPlayPanelResponsiveLayouts(notesBundle);
+        }
     }
+
+    private void PlaySidePanelSplitter_MouseDoubleClick(object sender, MouseButtonEventArgs e) =>
+        SnapPlaySidePanelToOptimalWidth();
+
+    private void PlayNotesPanelSplitter_MouseDoubleClick(object sender, MouseButtonEventArgs e) =>
+        SnapPlayNotesPanelToOptimalWidth();
+
+    private void ExpandPlaySidePanelButton_MouseDoubleClick(object sender, MouseButtonEventArgs e) =>
+        SnapPlaySidePanelToOptimalWidth();
+
+    private void ExpandPlayNotesPanelButton_MouseDoubleClick(object sender, MouseButtonEventArgs e) =>
+        SnapPlayNotesPanelToOptimalWidth();
 
     private void PlaySidePanelSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
@@ -1233,7 +1412,7 @@ public partial class MainWindow
         if (Math.Abs(AdventureColumn.Width.Value - width) > 0.5)
             AdventureColumn.Width = new GridLength(width);
 
-        _playView?.UpdateResponsiveLayout(width);
+        ApplyPlayPanelResponsiveLayouts(bundle);
     }
 
     private void PlaySidePanelSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
@@ -1252,7 +1431,7 @@ public partial class MainWindow
         bundle.Metadata.Settings.PlaySidePanelWidth = width;
         AdventureStore.Save(bundle);
         AdventureColumn.Width = new GridLength(width);
-        _playView?.UpdateResponsiveLayout(width);
+        ApplyPlayPanelResponsiveLayouts(bundle);
     }
 
     private void PlayNotesPanelSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
@@ -1270,6 +1449,8 @@ public partial class MainWindow
             GetMaxPlayNotesPanelWidth(bundle.Metadata.Settings));
         if (Math.Abs(NotesColumn.Width.Value - width) > 0.5)
             NotesColumn.Width = new GridLength(width);
+
+        ApplyPlayPanelResponsiveLayouts(bundle);
     }
 
     private void PlayNotesPanelSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
@@ -1288,6 +1469,7 @@ public partial class MainWindow
         bundle.Metadata.Settings.PlayNotesPanelWidth = width;
         AdventureStore.Save(bundle);
         NotesColumn.Width = new GridLength(width);
+        ApplyPlayPanelResponsiveLayouts(bundle);
     }
 
     private void CollapsePlaySidePanelButton_Click(object sender, RoutedEventArgs e) =>
@@ -1320,6 +1502,21 @@ public partial class MainWindow
             return;
 
         TogglePlaySidePanelCollapsed(collapse: false);
+    }
+
+    private void OnExpandPlayNotesPanelRequested(object? sender, EventArgs e)
+    {
+        if (_activeAdventureId is null)
+            return;
+
+        var bundle = AdventureStore.Load(_activeAdventureId.Value);
+        if (bundle is null || !ShouldShowRightCompanionColumn(bundle))
+            return;
+
+        if (!bundle.Metadata.Settings.PlayNotesPanelCollapsed)
+            return;
+
+        TogglePlayNotesPanelCollapsed(collapse: false);
     }
 
     private void CollapsePlayNotesPanelButton_Click(object sender, RoutedEventArgs e) =>
@@ -1361,16 +1558,6 @@ public partial class MainWindow
                 MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
-    private void OnOpenPinnedUtilityTabRequested(object? sender, EventArgs e)
-    {
-        if (_activeAdventureId is not { } id)
-            return;
-
-        if (!SelectPinnedUtilityTab(id))
-            MessageBox.Show(this, "No pinned utility tab found. Link the active browser tab first.", "Utility tab",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-    }
-
     private void OnClearPlayTabPinRequested(object? sender, EventArgs e)
     {
         if (_activeAdventureId is not { } id)
@@ -1380,31 +1567,23 @@ public partial class MainWindow
         ReloadPlayAdventure(id);
     }
 
-    private void OnPinUtilityTabRequested(object? sender, EventArgs e)
-    {
-        if (_activeAdventureId is not { } id)
-            return;
-
-        if (PinActiveTabForUtility(id))
-            ReloadPlayAdventure(id);
-    }
-
-    private void OnClearUtilityTabPinRequested(object? sender, EventArgs e)
-    {
-        if (_activeAdventureId is not { } id)
-            return;
-
-        ClearUtilityTabPin(id);
-        ReloadPlayAdventure(id);
-    }
-
     private void OnPlaySettingsSaved(object? sender, EventArgs e)
     {
         ApplyWrapperComposerToPlayTab(_appMode == AppMode.Play);
         ApplyInlineUtilityToPlayTab();
         ApplyContextTagsToPlayTab();
         ApplyPlaySurfaceActionsToPlayTab();
+        if (_activeAdventureId is { } id)
+        {
+            ApplyAllPlayPanelLayouts();
+            ReloadPlayAdventure(id);
+            UpdatePlayMergedPreview();
+            UpdatePlayLinkStatus();
+        }
     }
+
+    private void OnPlayStatusRefreshRequested(object? sender, EventArgs e) =>
+        UpdatePlayLinkStatus();
 
     private async Task RefreshPlaySourcesStatusAsync(Guid adventureId)
     {
@@ -1497,4 +1676,15 @@ public partial class MainWindow
 
         AppendPlayPlayerLineText(rollText);
     }
+
+    private void OnReplacePlayerLineRequested(object? sender, string rollText)
+    {
+        if (string.IsNullOrWhiteSpace(rollText))
+            return;
+
+        SetPlayPlayerLineText(rollText);
+    }
+
+    private void OnPlayBranchCreated(object? sender, Guid branchId) =>
+        _ = StartPlayModeAsync(branchId);
 }

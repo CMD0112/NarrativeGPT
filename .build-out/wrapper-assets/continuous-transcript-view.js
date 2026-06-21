@@ -12,7 +12,12 @@
   refreshInjectedCss();
 
   if (globalThis.__cgwContinuousViewBooted) {
-    if (typeof globalThis.__cgwSetContinuousView === "function") {
+    if (typeof globalThis.__cgwSetTranscriptViewMode === "function") {
+      globalThis.__cgwSetTranscriptViewMode(
+        globalThis.__cgwTranscriptViewMode ||
+          (globalThis.__cgwContinuousViewEnabled ? "continuous" : "native")
+      );
+    } else if (typeof globalThis.__cgwSetContinuousView === "function") {
       globalThis.__cgwSetContinuousView(!!globalThis.__cgwContinuousViewEnabled);
     } else if (globalThis.__cgwContinuousViewEnabled) {
       if (typeof globalThis.__cgwContinuousViewNavigate === "function") {
@@ -29,6 +34,50 @@
     globalThis.__cgwContinuousViewEnabled = false;
   }
 
+  if (globalThis.__cgwTranscriptViewMode === undefined) {
+    globalThis.__cgwTranscriptViewMode = globalThis.__cgwContinuousViewEnabled
+      ? "continuous"
+      : "native";
+  }
+
+  function normalizeTranscriptViewMode(mode) {
+    var m = String(mode || "native").toLowerCase();
+    if (m === "continuous" || m === "weave") return m;
+    return "native";
+  }
+
+  function getTranscriptViewMode() {
+    return normalizeTranscriptViewMode(globalThis.__cgwTranscriptViewMode);
+  }
+
+  function isOverlayTranscriptMode() {
+    return getTranscriptViewMode() !== "native";
+  }
+
+  function isContinuousTranscriptMode() {
+    return getTranscriptViewMode() === "continuous";
+  }
+
+  function syncTranscriptViewDom(mode) {
+    var root = document.documentElement;
+    if (!root) return;
+    root.setAttribute("data-cgw-transcript-mode", mode);
+    if (mode === "native") {
+      root.removeAttribute("data-cgw-continuous-view");
+    } else {
+      root.setAttribute("data-cgw-continuous-view", "1");
+    }
+  }
+
+  var transcriptRenderers = Object.create(null);
+
+  function registerTranscriptRenderer(id, renderer) {
+    if (!id || !renderer) return;
+    transcriptRenderers[id] = renderer;
+  }
+
+  globalThis.__cgwRegisterTranscriptRenderer = registerTranscriptRenderer;
+
   if (globalThis.__cgwProseEnhancementsEnabled === undefined) {
     globalThis.__cgwProseEnhancementsEnabled = false;
   }
@@ -44,6 +93,9 @@
   var UTILITY_TAG_MARKER = "[[cgw:utility";
   var UTILITY_RESPONSE_TAG_MARKER = "[[cgw:utility-response";
   var STICK_TO_BOTTOM_THRESHOLD_PX = 48;
+  var userDetachedFromBottom = false;
+  var containerScrollIntentTarget = null;
+  var containerScrollIntentHandler = null;
 
   var CONTAINER_ID = "cgw-continuous-view";
   var SCROLL_ANCHOR_ID = "cgw-cv-scroll-anchor";
@@ -265,6 +317,48 @@
     containerScrollClampHandler = null;
   }
 
+  function disconnectContainerScrollIntent() {
+    if (containerScrollIntentTarget && containerScrollIntentHandler) {
+      containerScrollIntentTarget.removeEventListener(
+        "scroll",
+        containerScrollIntentHandler
+      );
+    }
+    containerScrollIntentTarget = null;
+    containerScrollIntentHandler = null;
+  }
+
+  function bindContainerScrollIntent(container) {
+    if (!container) return;
+    if (
+      containerScrollIntentTarget === container &&
+      containerScrollIntentHandler
+    ) {
+      return;
+    }
+    disconnectContainerScrollIntent();
+    containerScrollIntentTarget = container;
+    containerScrollIntentHandler = function () {
+      if (!globalThis.__cgwContinuousViewEnabled) return;
+      if (isNearBottom(container)) {
+        userDetachedFromBottom = false;
+      } else {
+        userDetachedFromBottom = true;
+      }
+    };
+    container.addEventListener("scroll", containerScrollIntentHandler, {
+      passive: true,
+    });
+  }
+
+  function shouldStickToBottom(scrollHost, container) {
+    var surface = getScrollSurface(scrollHost, container);
+    if (!surface) return false;
+    if (isNearBottom(surface)) return true;
+    if (isNativeStreaming() && !userDetachedFromBottom) return true;
+    return false;
+  }
+
   function bindContainerScrollClamp(container) {
     if (!container) return;
     if (
@@ -481,6 +575,8 @@
     disconnectScrollHostResizeObserver();
     disconnectScrollHostScrollLock();
     disconnectContainerScrollClamp();
+    disconnectContainerScrollIntent();
+    userDetachedFromBottom = false;
     cachedScrollHostForKey = null;
     applyRetryAttempts = 0;
     cancelDomReadyWait();
@@ -1130,13 +1226,41 @@
   }
 
   function finalizeContinuousViewFormatting(container, changedTurnIds) {
-    if (!container || !globalThis.__cgwContinuousViewEnabled) return;
+    if (!container || !isOverlayTranscriptMode()) return;
     var changedSet = null;
     if (changedTurnIds && changedTurnIds.length) {
       changedSet = {};
       changedTurnIds.forEach(function (id) {
         changedSet[String(id)] = true;
       });
+    }
+
+    var mode = getTranscriptViewMode();
+    if (mode === "weave") {
+      container.querySelectorAll(".cgw-weave-body, .cgw-weave-embed").forEach(function (seg) {
+        if (seg.getAttribute("data-cgw-streaming") === "1") return;
+        var tid = seg.getAttribute("data-cgw-turn-id") || "";
+        if (changedSet && tid && !changedSet[tid]) {
+          var hlFpW = seg.getAttribute("data-cgw-phrase-hl-fp");
+          var curFpW =
+            (globalThis.__cgwPhraseHighlightStyleFp || "off") +
+            phraseHighlightFingerprintSuffix();
+          if (hlFpW === curFpW) return;
+        }
+        seg.normalize();
+        if (globalThis.__cgwProseEnhancementsEnabled) {
+          seg.classList.add("cgw-weave--formatted");
+        } else {
+          seg.classList.remove("cgw-weave--formatted");
+        }
+        decoratePhraseHighlights(seg);
+        seg.setAttribute(
+          "data-cgw-phrase-hl-fp",
+          (globalThis.__cgwPhraseHighlightStyleFp || "off") +
+            phraseHighlightFingerprintSuffix()
+        );
+      });
+      return;
     }
 
     container.querySelectorAll(".cgw-continuous-segment").forEach(function (seg) {
@@ -2121,7 +2245,7 @@
       syncOverlayGeometry(scrollHost, container, { preserveScroll: true });
       if (
         container &&
-        (scrollSurfaceNearBottom(scrollHost, container) || isNativeStreaming())
+        shouldStickToBottom(scrollHost, container)
       ) {
         applyScrollSurface(scrollHost, container, null, true);
       }
@@ -2145,10 +2269,7 @@
         return;
       }
       syncOverlayGeometry(scrollHost, container, { preserveScroll: true });
-      if (
-        scrollSurfaceNearBottom(scrollHost, container) ||
-        isNativeStreaming()
-      ) {
+      if (shouldStickToBottom(scrollHost, container)) {
         applyScrollSurface(scrollHost, container, null, true);
       }
     });
@@ -2253,10 +2374,7 @@
       applyRetryAttempts = 0;
       stopHrefPoll();
 
-      if (
-        scrollSurfaceNearBottom(scrollHost, container) ||
-        isNativeStreaming()
-      ) {
+      if (shouldStickToBottom(scrollHost, container)) {
         applyScrollSurface(scrollHost, container, null, true);
       }
     });
@@ -2566,10 +2684,7 @@
       if (containerResizeObserver) return;
       containerResizeObserver = new ResizeObserver(function () {
         if (!globalThis.__cgwContinuousViewEnabled) return;
-        if (
-          scrollSurfaceNearBottom(scrollHost, container) ||
-          isNativeStreaming()
-        ) {
+        if (shouldStickToBottom(scrollHost, container)) {
           applyScrollSurface(scrollHost, container, null, true);
         }
       });
@@ -2829,7 +2944,9 @@
         if (!globalThis.__cgwContinuousViewEnabled || peekState.turnId || surrogateEditState.open) {
           return;
         }
-        var segment = e.target.closest(".cgw-continuous-segment");
+        var segment = e.target.closest(
+          ".cgw-continuous-segment, .cgw-weave-embed, .cgw-weave-body"
+        );
         if (!segment || !container.contains(segment)) return;
         e.preventDefault();
         e.stopPropagation();
@@ -3135,7 +3252,7 @@
     streamApplyFrameId = requestAnimationFrame(function () {
       streamApplyFrameId = null;
       streamApplyQueued = false;
-      applyContinuousView();
+      applyActiveTranscriptView();
     });
   }
 
@@ -3204,6 +3321,8 @@
     disconnectScrollHostWheelForward();
     disconnectScrollHostScrollLock();
     disconnectContainerScrollClamp();
+    disconnectContainerScrollIntent();
+    userDetachedFromBottom = false;
     activeConversationKey = null;
     targetConversationKey = null;
     transitionPhase = null;
@@ -3219,6 +3338,7 @@
     }
     composerClearanceBound = false;
     disconnectTranscriptObserver();
+    document.documentElement.removeAttribute("data-cgw-transcript-mode");
     document.documentElement.removeAttribute("data-cgw-continuous-view");
     document.documentElement.removeAttribute("data-cgw-continuous-peek");
     document.documentElement.removeAttribute("data-cgw-surrogate-edit");
@@ -3298,53 +3418,90 @@
     applyContainerScroll(scrollHost, container, scrollTop, stickToBottom);
   }
 
-  function applyContinuousView() {
-    if (!globalThis.__cgwContinuousViewEnabled) {
+  function applyActiveTranscriptView() {
+    if (!isOverlayTranscriptMode()) {
       teardown();
       return;
     }
+    var mode = getTranscriptViewMode();
+    if (mode === "weave") {
+      if (typeof globalThis.__cgwApplyWeaveView === "function") {
+        globalThis.__cgwApplyWeaveView();
+        return;
+      }
+      if (
+        transcriptRenderers.weave &&
+        typeof transcriptRenderers.weave.apply === "function"
+      ) {
+        transcriptRenderers.weave.apply();
+        return;
+      }
+    }
+    if (mode === "continuous") {
+      if (
+        transcriptRenderers.continuous &&
+        typeof transcriptRenderers.continuous.apply === "function"
+      ) {
+        transcriptRenderers.continuous.apply();
+        return;
+      }
+      applyContinuousViewCore();
+    }
+  }
 
+  function activateOverlayTranscriptMode(mode) {
+    syncTranscriptViewDom(mode);
+    if (typeof globalThis.__cgwApplyContextTagDisplay === "function") {
+      globalThis.__cgwApplyContextTagDisplay();
+    }
+    var pd = globalThis.__cgwPacketDisplay;
+    if (pd && typeof pd.teardownAllPacketShells === "function") {
+      pd.teardownAllPacketShells();
+    }
+    ensureNavigationWatcher();
+    var key = getConversationKey();
+    if (canResumeContinuousViewWithoutTransition(key)) {
+      resumeContinuousView(key);
+    } else if (shouldEnterTransitionForKey(key)) {
+      enterConversationTransition(key, { force: true });
+    }
+  }
+
+  function collectSegmentsFromTurns() {
     ensureNavigationWatcher();
     noteConversationKeyChange();
     loadRevisionHideQueue();
     loadUtilityHideQueue();
 
     if (!isConversationUrl(location.href)) {
-      hideContinuousOverlay();
-      bindTranscriptObserver(document.querySelector("main") || document.body);
-      scheduleApplyRetry(400);
-      return;
+      return { notReady: true, reason: "url" };
     }
 
-    if (peekState.turnId || surrogateEditState.open) return;
+    if (peekState.turnId || surrogateEditState.open) {
+      return { notReady: true, reason: "interactive" };
+    }
 
     if (!isConversationKeyStable()) {
-      handleApplyNotReady(document.querySelector("main") || document.body);
-      return;
+      return { notReady: true, reason: "key" };
     }
 
     if (
       transitionPhase === TRANSITION_PHASE_TRANSITIONING &&
       !isTranscriptDomReady()
     ) {
-      if (findTurnRoots().length > 0 && Date.now() - domReadyLastMutation >= TRANSITION_MIN_HOLD_MS) {
-        /* turns already in DOM — skip async wait */
+      if (
+        findTurnRoots().length > 0 &&
+        Date.now() - domReadyLastMutation >= TRANSITION_MIN_HOLD_MS
+      ) {
+        /* turns already in DOM */
       } else {
-        waitForTranscriptDomReady(function (ready) {
-          if (!globalThis.__cgwContinuousViewEnabled) return;
-          if (ready) schedule({ immediate: true });
-          else handleApplyNotReady(document.querySelector("main") || document.body);
-        });
-        return;
+        return { notReady: true, reason: "dom" };
       }
     }
 
-    ensureStyles();
-
     var turns = findTurnRoots();
     if (!turns.length) {
-      handleApplyNotReady(document.querySelector("main") || document.body);
-      return;
+      return { notReady: true, reason: "turns" };
     }
 
     var registry = {};
@@ -3397,17 +3554,57 @@
     });
 
     if (!segments.length) {
-      handleApplyNotReady(document.querySelector("main") || document.body);
-      return;
+      return { notReady: true, reason: "segments" };
     }
 
     globalThis.__cgwTurnRegistry = registry;
 
     var scrollHost = findScrollHost(turns);
     if (!scrollHost) {
-      handleApplyNotReady(document.querySelector("main") || document.body);
+      return { notReady: true, reason: "scroll" };
+    }
+
+    return {
+      segments: segments,
+      registry: registry,
+      hiddenWraps: hiddenWraps,
+      scrollHost: scrollHost,
+      streamingTurnId: streamingTurnId,
+    };
+  }
+
+  function applyContinuousViewCore() {
+    if (!isContinuousTranscriptMode()) {
       return;
     }
+
+    var collected = collectSegmentsFromTurns();
+    if (!collected) {
+      return;
+    }
+    if (collected.notReady) {
+      if (collected.reason === "url") {
+        hideContinuousOverlay();
+        bindTranscriptObserver(document.querySelector("main") || document.body);
+        scheduleApplyRetry(400);
+      } else if (collected.reason === "dom") {
+        waitForTranscriptDomReady(function (ready) {
+          if (!isOverlayTranscriptMode()) return;
+          if (ready) schedule({ immediate: true });
+          else handleApplyNotReady(document.querySelector("main") || document.body);
+        });
+      } else {
+        handleApplyNotReady(document.querySelector("main") || document.body);
+      }
+      return;
+    }
+
+    ensureStyles();
+
+    var segments = collected.segments;
+    var registry = collected.registry;
+    var hiddenWraps = collected.hiddenWraps;
+    var scrollHost = collected.scrollHost;
 
     bindTranscriptObserver(scrollHost);
 
@@ -3471,6 +3668,7 @@
     ensureComposerClearanceWatcher();
     ensureScrollHostResizeObserver(scrollHost, container);
     bindContainerScrollClamp(container);
+    bindContainerScrollIntent(container);
 
     trimTurnExtractCache(
       segments.map(function (s) {
@@ -3478,8 +3676,7 @@
       })
     );
 
-    var stickToBottom =
-      scrollSurfaceNearBottom(scrollHost, container) || isNativeStreaming();
+    var stickToBottom = shouldStickToBottom(scrollHost, container);
     unchanged =
       container.childElementCount > 0 &&
       fingerprint === prevFingerprint &&
@@ -3567,7 +3764,7 @@
 
   function schedule(opts) {
     opts = opts || {};
-    if (!globalThis.__cgwContinuousViewEnabled) {
+    if (!isOverlayTranscriptMode()) {
       teardown();
       return;
     }
@@ -3598,7 +3795,7 @@
       if (scheduled != null) cancelAnimationFrame(scheduled);
       scheduled = requestAnimationFrame(function () {
         scheduled = null;
-        applyContinuousView();
+        applyActiveTranscriptView();
       });
     }, delay);
   }
@@ -3621,9 +3818,14 @@
     return true;
   }
 
-  globalThis.__cgwSetContinuousView = function (enabled) {
-    globalThis.__cgwContinuousViewEnabled = !!enabled;
-    if (!enabled) {
+  globalThis.__cgwSetTranscriptViewMode = function (mode) {
+    mode = normalizeTranscriptViewMode(mode);
+    var prev = getTranscriptViewMode();
+    globalThis.__cgwTranscriptViewMode = mode;
+    globalThis.__cgwContinuousViewEnabled = mode !== "native";
+    syncTranscriptViewDom(mode);
+
+    if (mode === "native") {
       cancelPendingApply();
       teardown();
       if (typeof globalThis.__cgwApplyContextTagDisplay === "function") {
@@ -3631,25 +3833,25 @@
       }
       return;
     }
-    if (typeof globalThis.__cgwApplyContextTagDisplay === "function") {
-      globalThis.__cgwApplyContextTagDisplay();
+
+    if (prev !== mode) {
+      cancelPendingApply();
+      delete globalThis.__cgwContinuousViewFingerprint;
+      delete globalThis.__cgwSegmentFingerprints;
+      delete globalThis.__cgwSegmentBlockFingerprints;
+      invalidateTurnExtractCache();
     }
-    var pd = globalThis.__cgwPacketDisplay;
-    if (pd && typeof pd.teardownAllPacketShells === "function") {
-      pd.teardownAllPacketShells();
-    }
-    ensureNavigationWatcher();
-    var key = getConversationKey();
-    if (canResumeContinuousViewWithoutTransition(key)) {
-      resumeContinuousView(key);
-    } else if (shouldEnterTransitionForKey(key)) {
-      enterConversationTransition(key, { force: true });
-    }
+
+    activateOverlayTranscriptMode(mode);
     schedule({ immediate: true });
   };
 
+  globalThis.__cgwSetContinuousView = function (enabled) {
+    globalThis.__cgwSetTranscriptViewMode(enabled ? "continuous" : "native");
+  };
+
   globalThis.__cgwContinuousViewNavigate = function () {
-    if (!globalThis.__cgwContinuousViewEnabled) return;
+    if (!isOverlayTranscriptMode()) return;
     ensureNavigationWatcher();
     var key = getConversationKey();
     if (shouldEnterTransitionForKey(key)) {
@@ -3672,7 +3874,72 @@
     if (globalThis.__cgwContinuousViewEnabled) schedule({ immediate: true });
   };
 
+  registerTranscriptRenderer("continuous", {
+    apply: applyContinuousViewCore,
+  });
+
+  globalThis.__cgwTranscriptKernel = {
+    CONTAINER_ID: CONTAINER_ID,
+    SCROLL_ANCHOR_ID: SCROLL_ANCHOR_ID,
+    INTERACTIVE_SEGMENT_CLASS: INTERACTIVE_SEGMENT_CLASS,
+    collectSegmentsFromTurns: collectSegmentsFromTurns,
+    ensureStyles: ensureStyles,
+    ensureScrollAnchor: ensureScrollAnchor,
+    appendRichBlock: appendRichBlock,
+    patchStreamingProseBlock: patchStreamingProseBlock,
+    syncPacketContextExpandState: syncPacketContextExpandState,
+    computeSegmentsFingerprint: computeSegmentsFingerprint,
+    blocksFingerprint: blocksFingerprint,
+    blockFingerprint: blockFingerprint,
+    bindContextMenuOnContainer: bindContextMenuOnContainer,
+    ensureContextMenu: ensureContextMenu,
+    ensureSurrogateEditPanel: ensureSurrogateEditPanel,
+    bindTranscriptObserver: bindTranscriptObserver,
+    markScrollHost: markScrollHost,
+    bindScrollHostScrollLock: bindScrollHostScrollLock,
+    ensureTransitionShell: ensureTransitionShell,
+    ensureOverlayInScrollHost: ensureOverlayInScrollHost,
+    applyScrollSurface: applyScrollSurface,
+    readScrollTop: readScrollTop,
+    shouldStickToBottom: shouldStickToBottom,
+    bindContainerScrollClamp: bindContainerScrollClamp,
+    bindContainerScrollIntent: bindContainerScrollIntent,
+    ensureComposerClearanceWatcher: ensureComposerClearanceWatcher,
+    ensureScrollHostResizeObserver: ensureScrollHostResizeObserver,
+    trimTurnExtractCache: trimTurnExtractCache,
+    turnExtractCacheKey: turnExtractCacheKey,
+    isNativeStreaming: isNativeStreaming,
+    isContinuousViewStableActive: isContinuousViewStableActive,
+    setTransitionAttributes: setTransitionAttributes,
+    commitConversationOverlay: commitConversationOverlay,
+    applyTurnSuppressions: applyTurnSuppressions,
+    finalizeContinuousViewFormatting: finalizeContinuousViewFormatting,
+    stabilizeContinuousLayout: stabilizeContinuousLayout,
+    syncOverlayGeometry: syncOverlayGeometry,
+    updateStreamingStickObserver: updateStreamingStickObserver,
+    noteStreamingLifecycle: noteStreamingLifecycle,
+    disconnectScrollHostScrollLock: disconnectScrollHostScrollLock,
+    handleApplyNotReady: handleApplyNotReady,
+    hideContinuousOverlay: hideContinuousOverlay,
+    scheduleApplyRetry: scheduleApplyRetry,
+    waitForTranscriptDomReady: waitForTranscriptDomReady,
+    isOverlayTranscriptMode: isOverlayTranscriptMode,
+    getTranscriptViewMode: getTranscriptViewMode,
+    segmentHasPacketContextBlock: segmentHasPacketContextBlock,
+    isPacketContextUiVisible: isPacketContextUiVisible,
+  };
+
+  globalThis.__cgwApplyActiveTranscriptView = applyActiveTranscriptView;
+
   globalThis.__cgwContinuousViewSchedule = schedule;
+
+  globalThis.__cgwShouldStickToBottom = shouldStickToBottom;
+  globalThis.__cgwResetContinuousScrollIntent = function () {
+    userDetachedFromBottom = false;
+  };
+  globalThis.__cgwNoteUserDetachedFromBottom = function (detached) {
+    userDetachedFromBottom = !!detached;
+  };
 
   globalThis.__cgwBenchmarkDecorateTurnBlocks = function (turnCount) {
     var blocks = [];

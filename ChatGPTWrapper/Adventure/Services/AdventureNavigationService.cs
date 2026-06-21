@@ -106,19 +106,8 @@ internal static class AdventureNavigationService
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(conversationId)
-            && !string.IsNullOrWhiteSpace(gizmoId)
-            && IsOnLinkedProjectPage(source, bundle))
-        {
+        if (!string.IsNullOrWhiteSpace(gizmoId) && IsOnLinkedProjectPage(source, bundle))
             return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(gizmoId)
-            && IsOnLinkedProjectPage(source, bundle)
-            && ProjectChatDraftService.ShouldStayOnProjectPage(bundle, source))
-        {
-            return false;
-        }
 
         if (IsGenericHomepage(source))
             return true;
@@ -136,20 +125,8 @@ internal static class AdventureNavigationService
         if (IsGenericHomepage(source))
             return true;
 
-        if (!string.IsNullOrWhiteSpace(DesignTabPinService.GetDesignConversationId(bundle))
-            && IsOnLinkedProjectPage(source, bundle))
-        {
-            if (ProjectChatDraftService.ShouldStayOnProjectPage(bundle, source))
-                return false;
-
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(DesignTabPinService.GetDesignConversationId(bundle))
-            && IsOnLinkedProjectPage(source, bundle))
-        {
+        if (IsOnLinkedProjectPage(source, bundle))
             return false;
-        }
 
         return !string.Equals(source, targetUrl, StringComparison.OrdinalIgnoreCase);
     }
@@ -240,6 +217,9 @@ internal static class AdventureNavigationService
                 return true;
 
             if (ProjectChatDraftService.IsValidDraftTarget(bundle, source, intent))
+                return true;
+
+            if (IsOnLinkedProjectPage(source, bundle))
                 return true;
 
             if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))

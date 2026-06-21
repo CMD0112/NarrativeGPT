@@ -107,7 +107,7 @@ internal sealed class PlayThreadTranscriptService(
         CoreWebView2? playCore,
         CancellationToken cancellationToken)
     {
-        var conversationId = bundle.Metadata.LinkedConversationId;
+        var conversationId = ResolveActivePlayConversationId(bundle);
         if (string.IsNullOrWhiteSpace(conversationId) || playCore is null)
             return new StoryContextCaptureResult { Error = "play_thread_unavailable" };
 
@@ -136,7 +136,7 @@ internal sealed class PlayThreadTranscriptService(
         CoreWebView2? playCore,
         CancellationToken cancellationToken)
     {
-        var conversationId = bundle.Metadata.LinkedConversationId;
+        var conversationId = ResolveActivePlayConversationId(bundle);
         if (string.IsNullOrWhiteSpace(conversationId) || playCore is null)
             return new StoryContextCaptureResult { Error = "play_thread_unavailable" };
 
@@ -251,5 +251,20 @@ internal sealed class PlayThreadTranscriptService(
 
         return ChatGptUrls.TryParseConversationId(uri, out var parsed)
                && string.Equals(parsed, conversationId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ResolveActivePlayConversationId(AdventureBundle bundle)
+    {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var legacy = bundle.Metadata.LinkedConversationId;
+        var fromRegistry = AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Play);
+
+        if (!string.IsNullOrWhiteSpace(legacy)
+            && !string.Equals(legacy, fromRegistry, StringComparison.OrdinalIgnoreCase))
+        {
+            return legacy;
+        }
+
+        return fromRegistry ?? legacy;
     }
 }

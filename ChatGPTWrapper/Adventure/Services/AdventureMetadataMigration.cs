@@ -40,9 +40,43 @@ internal static class AdventureMetadataMigration
         metadata.EntityUtilityArchive.Clear();
     }
 
-    public static void EnsureSettingsDefaults(AdventureMetadata metadata)
-    {
+    public static void EnsureSettingsDefaults(AdventureMetadata metadata) =>
         UtilityStoryContextSettingsService.EnsureDefaults(metadata);
+
+    /// <summary>CMD-263: legacy wrapper composer UI removed; force false on load.</summary>
+    public static bool MigrateDeprecatedPlaySettings(AdventureMetadata metadata)
+    {
+        if (!metadata.Settings.UseWrapperComposer)
+            return false;
+
+        metadata.Settings.UseWrapperComposer = false;
+        return true;
+    }
+
+    /// <summary>CMD-248: dedicated utility threads retired — migrate to play-inline delivery.</summary>
+    public static bool MigrateUtilityDeliveryMode(AdventureMetadata metadata)
+    {
+        const int utilityDeliveryPivotSchema = 5;
+
+        if (metadata.SchemaVersion >= utilityDeliveryPivotSchema)
+            return false;
+
+        if (metadata.Settings.UtilityDeliveryMode == UtilityDeliveryMode.SeparateThread)
+            metadata.Settings.UtilityDeliveryMode = UtilityDeliveryMode.InlinePlayThread;
+
+        metadata.PinnedUtilityTabKey = null;
+        metadata.PinnedUtilityTabTitle = null;
+
+        if (metadata.UtilitySessions is not null)
+        {
+            var designOnly = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase);
+            if (metadata.UtilitySessions.TryGetValue(GenerationJobId.DesignAdventure, out var designSession))
+                designOnly[GenerationJobId.DesignAdventure] = designSession;
+            metadata.UtilitySessions = designOnly;
+        }
+
+        metadata.SchemaVersion = utilityDeliveryPivotSchema;
+        return true;
     }
 
     public static bool MigrateProjectLinkFields(AdventureMetadata metadata)
@@ -101,6 +135,16 @@ internal static class AdventureMetadataMigration
         }
 
         MigrateSectionInjection(metadata);
+    }
+
+    /// <summary>Migrate singleton pin fields into <see cref="AdventureMetadata.ThreadRegistry"/> (CMD-221).</summary>
+    public static bool MigrateThreadRegistry(AdventureMetadata metadata)
+    {
+        if (metadata.ThreadRegistryMigratedAt is not null)
+            return false;
+
+        var bundle = new AdventureBundle { Metadata = metadata };
+        return AdventureThreadRegistryService.EnsureMigrated(bundle);
     }
 
     private static void MigrateSectionInjection(AdventureMetadata metadata)

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -33,6 +34,10 @@ internal sealed class SourcePipelineChecklistRow
     public AdventureDesignStep? PrimaryStep { get; init; }
 
     public bool IsLoreFile { get; init; }
+
+    public bool IsReferenceFile { get; init; }
+
+    public bool IsPublishedToProject { get; init; }
 }
 
 internal static class AdventureDesignSourcePromptService
@@ -69,6 +74,15 @@ internal static class AdventureDesignSourcePromptService
             "Refine instructions with AI",
             "Refine the generated narrator contract (deterministic base + optional AI polish)",
             AdventureDesignStep.Instructions),
+    ];
+
+    public static IReadOnlyList<DesignSourcePromptDefinition> ReferenceDefinitions { get; } =
+    [
+        new(
+            SectionSchema.CanonFormatFile,
+            "Canon format reference",
+            "Section templates, field labels, party/NPC rules — auto-generated; upload to Project Files",
+            AdventureDesignStep.Sources),
     ];
 
     public static IReadOnlyList<string> PromptPipelineOrder { get; } =
@@ -177,6 +191,31 @@ internal static class AdventureDesignSourcePromptService
             !string.Equals(p, InstructionContractService.InstructionsSnippetFile, StringComparison.OrdinalIgnoreCase));
 
         var rows = new List<SourcePipelineChecklistRow>();
+        foreach (var refDef in ReferenceDefinitions)
+        {
+            var refPath = refDef.RelativePath;
+            var absolutePath = AdventureSourceFileService.ResolveAbsolutePath(bundle, refPath);
+            var present = File.Exists(absolutePath);
+            var entry = bundle.SourceManifest.Entries.FirstOrDefault(e =>
+                string.Equals(e.RelativePath, refPath, StringComparison.OrdinalIgnoreCase));
+
+            rows.Add(new SourcePipelineChecklistRow
+            {
+                Position = 0,
+                LoreTotal = loreCount,
+                RelativePath = refPath,
+                Label = refDef.ButtonLabel,
+                PromptSent = true,
+                PresentOnDisk = present,
+                IsNextRecommended = false,
+                IsBlocked = false,
+                PrimaryStep = refDef.PrimaryStep,
+                IsLoreFile = false,
+                IsReferenceFile = true,
+                IsPublishedToProject = entry?.IsManuallyCurrent() ?? false,
+            });
+        }
+
         var lorePosition = 0;
         for (var i = 0; i < PromptPipelineOrder.Count; i++)
         {
@@ -201,6 +240,7 @@ internal static class AdventureDesignSourcePromptService
                 BlockedReason = blocked ? GetOutOfOrderTooltip(bundle, path) : null,
                 PrimaryStep = def.PrimaryStep,
                 IsLoreFile = isLore,
+                IsReferenceFile = false,
             });
         }
 
@@ -233,15 +273,26 @@ internal static class AdventureDesignSourcePromptService
 
     public static bool TryGetDefinition(string relativePath, out DesignSourcePromptDefinition definition)
     {
-        var match = AllDefinitions.FirstOrDefault(d =>
+        if (SectionSchema.IsReferenceSourceFile(relativePath))
+        {
+            var match = ReferenceDefinitions.FirstOrDefault(d =>
+                string.Equals(d.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
+            if (match.RelativePath is not null)
+            {
+                definition = match;
+                return true;
+            }
+        }
+
+        var loreMatch = AllDefinitions.FirstOrDefault(d =>
             string.Equals(d.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
-        if (match.RelativePath is null)
+        if (loreMatch.RelativePath is null)
         {
             definition = default;
             return false;
         }
 
-        definition = match;
+        definition = loreMatch;
         return true;
     }
 
@@ -585,6 +636,7 @@ internal static class AdventureDesignSourcePromptService
             - Align with scenario opening and plot essentials in the context below.
 
             **Format hint:** {template.InlineHint}
+            {BuildCanonFormatCitation(bundle)}
 
             **Current world step draft**
             {worldDraft}
@@ -617,6 +669,7 @@ internal static class AdventureDesignSourcePromptService
             - Do not write prose narration — write reference material for the narrator.
 
             **Format hint:** {template.InlineHint}
+            {BuildCanonFormatCitation(bundle)}
 
             **Current plot step draft**
             {plotDraft}
@@ -654,6 +707,7 @@ internal static class AdventureDesignSourcePromptService
             - NPCs should be playable: motives, relationship to player, and status when known.
 
             **Format hint:** {template.InlineHint}
+            {BuildCanonFormatCitation(bundle)}
 
             **Cast step draft**
             {castDraft}
@@ -755,4 +809,7 @@ internal static class AdventureDesignSourcePromptService
         sb.AppendLine(summary);
         sb.AppendLine();
     }
+
+    private static string BuildCanonFormatCitation(AdventureBundle bundle) =>
+        CanonFormatReferenceService.BuildSpecificationCitation(bundle);
 }

@@ -7,8 +7,8 @@
         MinHeight="400"
         MinWidth="480"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource DialogBgBrush}"
-        Foreground="{StaticResource TextBrush}">
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -16,7 +16,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Review before accepting into the adventure log." Margin="0,0,0,8" Foreground="{StaticResource MutedTextBrush}"/>
+        <TextBlock Grid.Row="0" Text="Review before accepting into the adventure log." Margin="0,0,0,8" Foreground="{StaticResource TextMutedBrush}"/>
         <TextBox x:Name="ResponseBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
         <TextBlock x:Name="ErrorLine" Grid.Row="2" Margin="0,8,0,8" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap"/>
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">

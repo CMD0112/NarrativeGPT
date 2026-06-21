@@ -40,6 +40,8 @@ internal sealed class ProjectChatDraftSnapshot
 
     public string? PriorPinnedDesignTabUrl { get; init; }
 
+    public Dictionary<string, Guid>? PriorActiveThreadIds { get; init; }
+
     public string? DraftTabKey { get; set; }
 }
 
@@ -53,6 +55,9 @@ internal static class ProjectChatDraftService
         new();
 
     public static bool IsActive(Guid adventureId) => Active.ContainsKey(adventureId);
+
+    public static bool HasActivePlayDraft() =>
+        Active.Values.Any(s => s.Kind == ProjectChatDraftKind.Play);
 
     public static bool IsActive(AdventureBundle bundle) => IsActive(bundle.Metadata.Id);
 
@@ -105,33 +110,35 @@ internal static class ProjectChatDraftService
         TabControl? tabs,
         string? source = null)
     {
-        if (bundle is null || !IsActive(bundle.Metadata.Id))
+        if (bundle is null)
             return false;
 
         source ??= webView?.CoreWebView2?.Source;
         var kind = GetActiveKind(bundle.Metadata.Id);
 
-        if (kind == ProjectChatDraftKind.Play)
+        if (kind is ProjectChatDraftKind.Utility or ProjectChatDraftKind.Design
+            && webView is not null
+            && tabs is not null
+            && IsDraftTab(bundle, webView, tabs))
         {
-            if (webView is not null
-                && tabs is not null
-                && PlayTabPinService.IsSameTabAsPlayPin(bundle, webView, tabs))
-            {
-                return false;
-            }
-
-            return AdventureNavigationService.IsOnLinkedProjectPage(source, bundle);
+            return true;
         }
 
-        if (kind is ProjectChatDraftKind.Utility or ProjectChatDraftKind.Design)
-        {
-            if (webView is not null && tabs is not null && IsDraftTab(bundle, webView, tabs))
-                return true;
+        if (!AdventureNavigationService.IsOnLinkedProjectPage(source, bundle))
+            return false;
 
-            return AdventureNavigationService.IsOnLinkedProjectPage(source, bundle);
+        // Fresh play rotation: wrapper send may inject the start packet from the Project composer.
+        if (kind == ProjectChatDraftKind.Play
+            && string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
+        {
+            return false;
         }
 
-        return false;
+        if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
+            return false;
+
+        // Stored play thread: never hijack the Project page composer for play packets.
+        return true;
     }
 
     public static bool IsValidDraftTarget(AdventureBundle bundle, string? source, AdventureNavigationIntent intent)
@@ -164,7 +171,15 @@ internal static class ProjectChatDraftService
             _ => "project",
         };
 
-        return $"Drafting new {kind} chat on Project page — auto-redirect paused; play send disabled on this tab.";
+        return $"Drafting new {kind} chat on Project page — redirect paused. ChatGPT composer sends plain messages here; use the adventure panel composer on your play thread for injected packets.";
+    }
+
+    private static Dictionary<string, Guid>? CopyActiveThreadIds(AdventureMetadata metadata)
+    {
+        AdventureThreadRegistryService.EnsureMigrated(new AdventureBundle { Metadata = metadata });
+        return metadata.ActiveThreadIds?.Count > 0
+            ? new Dictionary<string, Guid>(metadata.ActiveThreadIds, StringComparer.OrdinalIgnoreCase)
+            : null;
     }
 
     public static void BeginPlayDraft(AdventureBundle bundle)
@@ -180,6 +195,7 @@ internal static class ProjectChatDraftService
             PriorPinnedPlayTabTitle = metadata.PinnedPlayTabTitle,
             PriorPinnedPlayTabUrl = metadata.PinnedPlayTabUrl,
             PriorProjectLinkPlayConversationId = metadata.ProjectLink?.PlayConversationId,
+            PriorActiveThreadIds = CopyActiveThreadIds(metadata),
         };
     }
 
@@ -195,6 +211,7 @@ internal static class ProjectChatDraftService
             PriorPinnedDesignTabKey = metadata.PinnedDesignTabKey,
             PriorPinnedDesignTabTitle = metadata.PinnedDesignTabTitle,
             PriorPinnedDesignTabUrl = metadata.PinnedDesignTabUrl,
+            PriorActiveThreadIds = CopyActiveThreadIds(metadata),
         };
     }
 
@@ -218,6 +235,7 @@ internal static class ProjectChatDraftService
             PriorPinnedDesignTabKey = metadata.PinnedDesignTabKey,
             PriorPinnedDesignTabTitle = metadata.PinnedDesignTabTitle,
             PriorPinnedDesignTabUrl = metadata.PinnedDesignTabUrl,
+            PriorActiveThreadIds = CopyActiveThreadIds(metadata),
         };
     }
 
@@ -317,6 +335,14 @@ internal static class ProjectChatDraftService
 
             case ProjectChatDraftKind.Utility:
                 break;
+        }
+
+        if (snapshot.PriorActiveThreadIds is { Count: > 0 })
+        {
+            metadata.ActiveThreadIds = new Dictionary<string, Guid>(
+                snapshot.PriorActiveThreadIds,
+                StringComparer.OrdinalIgnoreCase);
+            AdventureThreadRegistryService.SyncLegacyFields(metadata);
         }
     }
 }

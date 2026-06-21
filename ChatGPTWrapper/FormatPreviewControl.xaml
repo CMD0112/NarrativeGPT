@@ -1,0 +1,49 @@
+<UserControl x:Class="ChatGPTWrapper.FormatPreviewControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             MinHeight="160">
+    <StackPanel>
+        <Border x:Name="UserSegment"
+                Padding="10,8"
+                Margin="0,0,0,8"
+                BorderThickness="3,0,0,0"
+                CornerRadius="6"
+                Background="{StaticResource BgInsetBrush}">
+            <StackPanel>
+                <TextBlock x:Name="UserLabel"
+                           Text="YOU"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           Margin="0,0,0,4"
+                           Visibility="Collapsed"/>
+                <TextBlock x:Name="UserSampleText"
+                           Text="I examine the ancient door carefully."
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+        <Border x:Name="AssistantSegment"
+                Padding="10,8"
+                BorderThickness="3,0,0,0"
+                CornerRadius="6"
+                Background="{StaticResource BgInsetBrush}">
+            <StackPanel>
+                <TextBlock x:Name="AssistantLabel"
+                           Text="ASSISTANT"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           Margin="0,0,0,4"
+                           Visibility="Collapsed"/>
+                <TextBlock x:Name="AssistantSampleText"
+                           TextWrapping="Wrap">
+                    <Run Text="The hinges groan as you lean closer. See also "/>
+                    <Run x:Name="AssistantLinkRun" Text="the archive notes" TextDecorations="Underline"/>
+                    <Run Text=" and inline "/>
+                    <Run x:Name="AssistantCodeRun" Text="rune" Background="#333333" FontFamily="Consolas"/>
+                    <Run Text=" markings."/>
+                </TextBlock>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

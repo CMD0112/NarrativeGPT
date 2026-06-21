@@ -2,6 +2,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -50,6 +51,10 @@ internal static class ProjectSourceExportService
 
         WriteIfNotEmpty(adventureId, dir, "instructions-snippet.md",
             InstructionSourcesPolicy.BuildInstructionsSnippet(bundle),
+            manifest, existingByPath, newEntries, mode, sections: null);
+
+        WriteIfNotEmpty(adventureId, dir, SectionSchema.CanonFormatFile,
+            CanonFormatGenerator.Generate(),
             manifest, existingByPath, newEntries, mode, sections: null);
 
         WriteIfNotEmpty(adventureId, dir, SectionSchema.LexiconFile,

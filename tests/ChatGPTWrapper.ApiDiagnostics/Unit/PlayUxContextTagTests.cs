@@ -37,6 +37,31 @@ public sealed class ContextTagFormatTests
     }
 
     [Fact]
+    public void FormatStructuredPreview_shows_meta_attributes_when_body_empty()
+    {
+        var packet = ContextTagFormat.WrapMeta(PacketMode.Fat, 3)
+                     + "\n\n"
+                     + ContextTagFormat.WrapBlock("instructions", "Be vivid.")
+                     + "\n\nlook around";
+
+        var preview = ContextTagFormat.FormatStructuredPreview(packet);
+        Assert.Contains("[meta]", preview);
+        Assert.Contains("turn=3", preview);
+        Assert.Contains("mode=fat", preview);
+        Assert.Contains("[instructions]", preview);
+        Assert.Contains("[user]", preview);
+    }
+
+    [Fact]
+    public void ExtractTagAttributes_reads_meta_turn_and_mode()
+    {
+        var packet = ContextTagFormat.WrapMeta(PacketMode.Thin, 7);
+        var attrs = ContextTagFormat.ExtractTagAttributes(packet, "meta");
+        Assert.Equal("7", attrs["turn"]);
+        Assert.Equal("thin", attrs["mode"]);
+    }
+
+    [Fact]
     public void FormatStructuredPreview_shows_legacy_player_tag()
     {
         var packet = ContextTagFormat.WrapBlock("instructions", "Be vivid.")

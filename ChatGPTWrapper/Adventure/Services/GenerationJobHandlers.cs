@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.Adventure.Services;
@@ -528,10 +529,12 @@ internal static class GenerationJobHandlers
     private static string BuildBootstrapSectionsPrompt(AdventureBundle bundle)
     {
         var s = bundle.Scenario;
+        var formatReference = CanonFormatReferenceService.BuildPromptBlock(bundle);
         return $"""
             === BOOTSTRAP SECTIONS JOB ===
             Generate 3-6 canon entity sections (NPCs, places, or concepts) from the scenario. JSON array only.
             Each object must include name, entityType (person|place|concept), description, and aliases array.
+            {formatReference}
 
             Title: {bundle.Metadata.Title}
             Genre: {s.Genre}
@@ -1064,6 +1067,9 @@ internal static class GenerationJobHandlers
         bundle.Continuity.Warnings.Clear();
         foreach (var local in ContinuityService.Analyze(bundle))
         {
+            if (ContinuityWarningDismissalService.IsDismissed(bundle.Continuity, local.Message))
+                continue;
+
             bundle.Continuity.Warnings.Add(new ContinuityWarningEntry
             {
                 Message = local.Message,
@@ -1088,6 +1094,9 @@ internal static class GenerationJobHandlers
                             continue;
 
                         var severity = JsonElementParsing.GetStringProperty(w, "severity") ?? "warning";
+                        if (ContinuityWarningDismissalService.IsDismissed(bundle.Continuity, message))
+                            continue;
+
                         bundle.Continuity.Warnings.Add(new ContinuityWarningEntry
                         {
                             Message = message,

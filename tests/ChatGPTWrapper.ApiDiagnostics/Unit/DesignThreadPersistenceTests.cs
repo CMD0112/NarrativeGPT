@@ -105,6 +105,24 @@ public sealed class DesignThreadPersistenceTests
     }
 
     [Fact]
+    public void TryResolveDesignConversationFromSource_rejects_play_thread_from_registry_only()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Registry play guard");
+        bundle.Metadata.LinkedProjectId = "g-p-design";
+        bundle.Metadata.LinkedConversationId = null;
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var playEntry = AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play);
+        AdventureThreadRegistryService.UpdateConversationId(bundle, playEntry.Id, "play-from-registry");
+        AdventureThreadRegistryService.SetActivePin(bundle, playEntry.Id, notifyPlayThreadChanged: false);
+        AdventureThreadRegistryService.SyncLegacyFields(bundle.Metadata);
+
+        var playUrl = ChatGptUrls.BuildProjectConversationUrl("play-from-registry", "g-p-design");
+        Assert.False(
+            DesignTabPinService.TryResolveDesignConversationFromSource(bundle, playUrl, out _, out var error));
+        Assert.Equal("design_same_as_play_thread", error);
+    }
+
+    [Fact]
     public void FormatDesignThreadStatus_shows_pin_instructions_when_not_ready()
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Pin hint");
@@ -112,7 +130,8 @@ public sealed class DesignThreadPersistenceTests
 
         var status = DesignTabPinService.FormatDesignThreadStatus(bundle);
 
-        Assert.Contains("Pin design tab", status, StringComparison.Ordinal);
+        Assert.Contains("design thread", status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pin", status, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -60,6 +60,13 @@ internal static class ProjectSourceFileTemplates
             Summary = "RAG mirror of narrator contract (perspective, tone, boundaries)",
             InlineHint = "Narrator contract: perspective, tense, detail, tone, author's note, content boundaries, character portrayal, addendum.",
         },
+        new()
+        {
+            RelativePath = SectionSchema.CanonFormatFile,
+            Role = "Format reference",
+            Summary = "Model-facing section/field templates — upload to Project Files with lore",
+            InlineHint = "Section headers, ### entries, Id slugs, labeled fields, party vs npc rules.",
+        },
     ];
 
     private static readonly Dictionary<string, SourceFileTemplate> ByPath =

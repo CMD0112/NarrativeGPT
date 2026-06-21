@@ -7,15 +7,15 @@
         MinHeight="320"
         MinWidth="420"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource DialogBgBrush}"
-        Foreground="{StaticResource TextBrush}">
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock x:Name="StatusLine" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+        <TextBlock x:Name="StatusLine" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
         <ListView x:Name="FilesList" Grid.Row="1" Margin="0,0,0,8">
             <ListView.View>
                 <GridView>

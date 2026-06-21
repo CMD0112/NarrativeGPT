@@ -6,6 +6,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using ChatGPTWrapper.Adventure.Stores;
+using ChatGPTWrapper.Format;
+using ChatGPTWrapper.Theme;
+using ChatGPTWrapper.Views;
 
 namespace ChatGPTWrapper;
 
@@ -13,28 +17,24 @@ public partial class PhraseHighlightsEditorControl : UserControl
 {
     private const int MaxRules = 50;
     private const string DefaultColor = "#FFD166";
+    private const double SwatchSize = 28;
+    private const double SwatchRadius = 5;
+    private const int AutoColorPreviewCount = 18;
 
-    private static readonly string[] PresetColors =
-    [
-        "#FFD166",
-        "#FF6B6B",
-        "#4ECDC4",
-        "#95E1D3",
-        "#F38181",
-        "#AA96DA",
-        "#FCBAD3",
-        "#FFFFD2",
-        "#A8E6CF",
-        "#DCE775",
-        "#ECECEC",
-        "#FFB347",
-    ];
+    private static readonly string[] PresetColors = PhraseHighlightPresetColors.ManualPicker;
 
     private readonly ObservableCollection<RuleRow> _rows = [];
     private bool _suppressEditorEvents;
     private bool _suppressRulesNotify;
 
     public event EventHandler? RulesChanged;
+
+    public event EventHandler? ColorAssignmentChanged;
+
+    public Func<Guid?>? ResolveActiveAdventureId { get; set; }
+
+    private UiChromeSettings? _workingChrome;
+    private bool _suppressProfileEvents;
 
     public PhraseHighlightsEditorControl()
     {
@@ -44,6 +44,134 @@ public partial class PhraseHighlightsEditorControl : UserControl
         BuildSwatches(BackgroundColorSwatchesPanel, "background");
 
         RulesListView.ItemsSource = _rows;
+        Loaded += (_, _) => RefreshImportAvailability();
+    }
+
+    public void AttachChromeSettings(UiChromeSettings working)
+    {
+        _workingChrome = working;
+        HighlightColorAssignmentService.Normalize(working);
+        RefreshAutoColorProfileCombo();
+    }
+
+    public void ApplyColorAssignmentTo(UiChromeSettings settings)
+    {
+        if (_workingChrome is null)
+            return;
+
+        settings.ActiveHighlightColorProfileId = _workingChrome.ActiveHighlightColorProfileId;
+        settings.HighlightColorCustomOptions = _workingChrome.HighlightColorCustomOptions.Clone();
+    }
+
+    private void RefreshAutoColorProfileCombo()
+    {
+        if (_workingChrome is null || AutoColorProfileCombo is null)
+            return;
+
+        _suppressProfileEvents = true;
+        try
+        {
+            var profiles = _workingChrome.HighlightColorProfiles
+                .Where(p => p.IsBuiltIn)
+                .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                .Concat(
+                [
+                    new HighlightColorAssignmentProfile
+                    {
+                        Id = HighlightColorProfileIds.Custom,
+                        Name = "Custom",
+                        IsBuiltIn = false,
+                    },
+                ])
+                .ToList();
+
+            AutoColorProfileCombo.ItemsSource = profiles;
+            var activeId = HighlightColorAssignmentService.ResolveInitialProfileId(_workingChrome);
+            AutoColorProfileCombo.SelectedItem = profiles.FirstOrDefault(p =>
+                p.Id.Equals(activeId, StringComparison.OrdinalIgnoreCase));
+
+            UpdateAutoColorProfileDescription();
+            RefreshAutoColorPalettePreview();
+        }
+        finally
+        {
+            _suppressProfileEvents = false;
+        }
+    }
+
+    private void AutoColorProfileCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressProfileEvents || _workingChrome is null)
+            return;
+
+        if (AutoColorProfileCombo.SelectedItem is not HighlightColorAssignmentProfile profile)
+            return;
+
+        _workingChrome.ActiveHighlightColorProfileId = profile.Id;
+        UpdateAutoColorProfileDescription();
+        RefreshAutoColorPalettePreview();
+        ColorAssignmentChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void CustomizeAutoColorButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_workingChrome is null)
+            return;
+
+        var owner = Window.GetWindow(this) ?? Application.Current.MainWindow as Window;
+        if (HighlightColorAssignmentDialog.Show(owner, _workingChrome, out var profileId, out var options) != true)
+            return;
+
+        _workingChrome.ActiveHighlightColorProfileId = profileId;
+        if (profileId.Equals(HighlightColorProfileIds.Custom, StringComparison.OrdinalIgnoreCase))
+            _workingChrome.HighlightColorCustomOptions = options.Clone();
+
+        RefreshAutoColorProfileCombo();
+        ColorAssignmentChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void UpdateAutoColorProfileDescription()
+    {
+        if (AutoColorProfileDescriptionText is null || _workingChrome is null)
+            return;
+
+        var activeId = HighlightColorAssignmentService.ResolveInitialProfileId(_workingChrome);
+        if (activeId.Equals(HighlightColorProfileIds.Custom, StringComparison.OrdinalIgnoreCase))
+        {
+            AutoColorProfileDescriptionText.Text =
+                "Custom palette and assignment options — open Customize to edit.";
+            return;
+        }
+
+        AutoColorProfileDescriptionText.Text =
+            HighlightColorProfileLibrary.Find(_workingChrome.HighlightColorProfiles, activeId)?.Description
+            ?? string.Empty;
+    }
+
+    private void RefreshAutoColorPalettePreview()
+    {
+        if (AutoColorPalettePreviewPanel is null)
+            return;
+
+        AutoColorPalettePreviewPanel.Children.Clear();
+        if (_workingChrome is null)
+            return;
+
+        var options = HighlightColorAssignmentService.ResolveEffectiveOptions(_workingChrome);
+        var theme = ThemeRuntime.Current;
+        var canvas = ResolveHighlightCanvasBackground();
+
+        foreach (var color in HighlightColorAssignmentEngine.BuildPalette(options, theme, canvas).Take(AutoColorPreviewCount))
+            AutoColorPalettePreviewPanel.Children.Add(CreatePaletteSwatch(color, selectable: false));
+    }
+
+    public void RefreshImportAvailability()
+    {
+        var canImport = ResolveActiveAdventureId?.Invoke() is not null;
+        ImportFromAdventureButton.IsEnabled = canImport;
+        ImportFromAdventureButton.ToolTip = canImport
+            ? "Import player, party, and cast names from the active adventure."
+            : "Open an adventure in Play or Design mode to import cast names.";
     }
 
     public void LoadRules(IEnumerable<PhraseHighlightRule> existingRules)
@@ -56,6 +184,8 @@ public partial class PhraseHighlightsEditorControl : UserControl
             RulesListView.SelectedIndex = 0;
         else
             ClearEditor();
+
+        UpdateRulesEmptyState();
     }
 
     public IReadOnlyList<PhraseHighlightRule> GetRules()
@@ -66,6 +196,56 @@ public partial class PhraseHighlightsEditorControl : UserControl
             .Select(r => r.ToRule())
             .Take(MaxRules)
             .ToList();
+    }
+
+    private void ImportFromAdventureButton_Click(object sender, RoutedEventArgs e)
+    {
+        var owner = Window.GetWindow(this) ?? Application.Current.MainWindow as Window;
+        var adventureId = ResolveActiveAdventureId?.Invoke();
+        if (adventureId is null)
+        {
+            MessageBox.Show(owner, "Open an adventure in Play or Design mode to import cast names.", "Import from adventure");
+            return;
+        }
+
+        var bundle = AdventureStore.Load(adventureId.Value);
+        if (bundle is null)
+        {
+            MessageBox.Show(
+                owner,
+                "Could not load the active adventure. Try reopening it from the dashboard.",
+                "Import from adventure",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        if (CastPhraseImportDialog.Show(
+                owner,
+                bundle,
+                out var imported,
+                _workingChrome is not null
+                    ? HighlightColorAssignmentService.ResolveEffectiveOptions(_workingChrome)
+                    : null,
+                ResolveHighlightCanvasBackground(),
+                GetRules()) != true)
+            return;
+
+        foreach (var rule in imported)
+        {
+            if (_rows.Count >= MaxRules)
+                break;
+
+            if (_rows.Any(r => string.Equals(r.Phrase, rule.Phrase, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            _rows.Add(RuleRow.FromRule(rule));
+        }
+
+        if (_rows.Count > 0)
+            RulesListView.SelectedIndex = 0;
+        NotifyRulesChanged();
+        UpdateRulesEmptyState();
     }
 
     public bool TryValidate(out string? errorMessage)
@@ -103,21 +283,31 @@ public partial class PhraseHighlightsEditorControl : UserControl
         panel.Children.Clear();
         foreach (var color in PresetColors)
         {
-            var swatch = new Button
-            {
-                Width = 22,
-                Height = 22,
-                Margin = new Thickness(0, 0, 6, 6),
-                Padding = new Thickness(0),
-                Background = CreateBrush(color),
-                BorderBrush = SwatchBorderBrush,
-                BorderThickness = new Thickness(1),
-                Tag = color,
-                ToolTip = color,
-            };
-            swatch.Click += (_, _) => OnSwatchClicked(kind, color);
+            var swatch = CreatePaletteSwatch(color, selectable: true);
+            swatch.MouseLeftButtonUp += (_, _) => OnSwatchClicked(kind, color);
             panel.Children.Add(swatch);
         }
+    }
+
+    private Border CreatePaletteSwatch(string color, bool selectable)
+    {
+        var swatch = new Border
+        {
+            Width = SwatchSize,
+            Height = SwatchSize,
+            Margin = new Thickness(0, 0, 8, 8),
+            CornerRadius = new CornerRadius(SwatchRadius),
+            Background = CreateBrush(color),
+            BorderBrush = SwatchBorderBrush,
+            BorderThickness = new Thickness(1),
+            Tag = color,
+            ToolTip = color,
+        };
+
+        if (selectable)
+            swatch.Cursor = Cursors.Hand;
+
+        return swatch;
     }
 
     private static SolidColorBrush CreateBrush(string hex)
@@ -154,6 +344,36 @@ public partial class PhraseHighlightsEditorControl : UserControl
         UpdateSwatchSelection();
         UpdatePreview();
         NotifyRulesChanged();
+    }
+
+    private void PickTextColorButton_Click(object sender, RoutedEventArgs e) =>
+        PickColorForField("text");
+
+    private void PickBackgroundColorButton_Click(object sender, RoutedEventArgs e) =>
+        PickColorForField("background");
+
+    private void PickColorForField(string kind)
+    {
+        if (RulesListView.SelectedItem is not RuleRow)
+            return;
+
+        var current = kind == "text"
+            ? ColorTextBox.Text.Trim()
+            : BackgroundColorTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(current))
+            current = DefaultColor;
+
+        var owner = Window.GetWindow(this);
+        if (owner is null)
+            return;
+
+        if (!ColorPickerWorkflow.TryPickHex(owner, current, out var selected))
+            return;
+
+        if (kind == "text")
+            ColorTextBox.Text = selected;
+        else
+            BackgroundColorTextBox.Text = selected;
     }
 
     private void RulesListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -224,13 +444,19 @@ public partial class PhraseHighlightsEditorControl : UserControl
             return;
 
         row.Phrase = PhraseTextBox.Text.Trim();
-        row.Color = NormalizeColor(ColorTextBox.Text, DefaultColor);
+        var textColor = NormalizeColor(ColorTextBox.Text, DefaultColor);
         var bg = BackgroundColorTextBox.Text.Trim();
-        row.BackgroundColor = string.IsNullOrWhiteSpace(bg)
+        var backgroundColor = string.IsNullOrWhiteSpace(bg)
             ? null
             : NormalizeColor(bg, bg);
+        var effectiveBackground = backgroundColor ?? ResolveHighlightCanvasBackground();
+        row.Color = ThemeContrast.EnsureReadable(textColor, effectiveBackground);
+        row.BackgroundColor = backgroundColor;
         row.Bold = BoldCheckBox.IsChecked == true;
         row.Italic = ItalicCheckBox.IsChecked == true;
+
+        if (!string.Equals(row.Color, textColor, StringComparison.OrdinalIgnoreCase))
+            ColorTextBox.Text = row.Color;
 
         UpdateSwatchSelection();
         UpdatePreview();
@@ -265,17 +491,26 @@ public partial class PhraseHighlightsEditorControl : UserControl
     {
         foreach (var child in panel.Children)
         {
-            if (child is not Button button)
+            if (child is not Border border || border.Tag is not string swatchColor)
                 continue;
 
-            var swatchColor = button.Tag as string;
             var selected = !string.IsNullOrWhiteSpace(selectedColor)
                 && string.Equals(swatchColor, selectedColor, StringComparison.OrdinalIgnoreCase);
-            button.BorderBrush = selected
+            border.BorderBrush = selected
                 ? new SolidColorBrush(Colors.White)
                 : SwatchBorderBrush;
-            button.BorderThickness = selected ? new Thickness(2) : new Thickness(1);
+            border.BorderThickness = selected ? new Thickness(2) : new Thickness(1);
         }
+    }
+
+    private void UpdateRulesEmptyState()
+    {
+        if (RulesEmptyStateBorder is null || RulesListView is null)
+            return;
+
+        var isEmpty = _rows.Count == 0;
+        RulesEmptyStateBorder.Visibility = isEmpty ? Visibility.Visible : Visibility.Collapsed;
+        RulesListView.Visibility = isEmpty ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void UpdatePreview()
@@ -284,12 +519,18 @@ public partial class PhraseHighlightsEditorControl : UserControl
             ? "Sample phrase"
             : PhraseTextBox.Text.Trim();
         PreviewTextBlock.Text = phrase;
-        PreviewTextBlock.Foreground = CreateBrush(NormalizeColor(ColorTextBox.Text, DefaultColor));
 
+        var textColor = NormalizeColor(ColorTextBox.Text, DefaultColor);
         var bg = BackgroundColorTextBox.Text.Trim();
+        var backgroundColor = string.IsNullOrWhiteSpace(bg)
+            ? ResolveHighlightCanvasBackground()
+            : NormalizeColor(bg, bg);
+        var readableText = ThemeContrast.EnsureReadable(textColor, backgroundColor);
+
+        PreviewTextBlock.Foreground = CreateBrush(readableText);
         PreviewTextBlock.Background = string.IsNullOrWhiteSpace(bg)
             ? Brushes.Transparent
-            : CreateBrush(NormalizeColor(bg, bg));
+            : CreateBrush(backgroundColor);
 
         PreviewTextBlock.FontWeight = BoldCheckBox.IsChecked == true
             ? FontWeights.Bold
@@ -319,6 +560,7 @@ public partial class PhraseHighlightsEditorControl : UserControl
         PhraseTextBox.Focus();
         PhraseTextBox.SelectAll();
         NotifyRulesChanged();
+        UpdateRulesEmptyState();
     }
 
     private void DuplicateButton_Click(object sender, RoutedEventArgs e)
@@ -345,6 +587,7 @@ public partial class PhraseHighlightsEditorControl : UserControl
         _rows.Add(row);
         RulesListView.SelectedIndex = _rows.Count - 1;
         NotifyRulesChanged();
+        UpdateRulesEmptyState();
     }
 
     private void RemoveButton_Click(object sender, RoutedEventArgs e)
@@ -359,11 +602,13 @@ public partial class PhraseHighlightsEditorControl : UserControl
         {
             ClearEditor();
             NotifyRulesChanged();
+            UpdateRulesEmptyState();
             return;
         }
 
         RulesListView.SelectedIndex = Math.Min(index, _rows.Count - 1);
         NotifyRulesChanged();
+        UpdateRulesEmptyState();
     }
 
     private void CommitEditorToSelection()
@@ -387,6 +632,14 @@ public partial class PhraseHighlightsEditorControl : UserControl
         || !string.IsNullOrWhiteSpace(row.BackgroundColor)
         || row.Bold
         || row.Italic;
+
+    private string ResolveHighlightCanvasBackground()
+    {
+        if (Application.Current?.Resources["BgBaseBrush"] is SolidColorBrush brush)
+            return $"#{brush.Color.R:X2}{brush.Color.G:X2}{brush.Color.B:X2}";
+
+        return ThemeRuntime.Current.GetHex("BgBase");
+    }
 
     private static string NormalizeColor(string value, string fallback)
     {

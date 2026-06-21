@@ -100,7 +100,19 @@ Accept/reject turns, branch, remove pending, timeline mutations.
 
 ### PlayTabPinService
 
-Resolve/create pinned play and utility WebView tabs.
+Resolve/create pinned play and utility WebView tabs. Delegates pin state to `AdventureThreadRegistryService` (active play/utility entries) while retaining WPF tab-key helpers.
+
+### AdventureThreadRegistryService
+
+**Role:** Source of truth for adventure thread slots (Play, Design, Utility) after migration.
+
+- `EnsureMigrated` — idempotent migration from singleton pin fields + `PlayThreadArchive`
+- `GetActiveEntry` / `GetActiveConversationId` / `ListEntries` — resolve and list threads
+- `RegisterEntry` / `SetActivePin` / `UpdatePinFromWebView` / `ArchiveEntry` / `ReleaseActiveThread` / `BeginNewActiveThread`
+- `SyncLegacyFields` — push active entries → `LinkedConversationId`, pinned tab fields, `UtilitySessions[design_adventure]`
+- `GetTargetUrl` / `GetEntryTargetUrl` / `FormatThreadStatus` — navigation and UI status strings
+
+See [adventure-thread-registry.md](adventure-thread-registry.md).
 
 ### DebouncedAdventureSaver
 
@@ -258,6 +270,34 @@ Migrates enabled story cards into entities, aliases, and `context-index.json`; e
 ### SectionDiffService
 
 Compares section body hashes vs last manual publish for Source Manager republish hints.
+
+### EntityEditSourceSyncService
+
+Central auto-sync after entity edit or one-click repair. **TrySyncAfterEntityEdit** builds an **EntityChangePlan** (via **EntityChangePlanBuilder**), applies export + cross-canon text + rename reconciliation, sets notify flags, and returns **RequiresManualReconcile** when drift remains. **RepairFromJson** re-runs sync from current JSON (session status click). See [entity-canon-change-paradigm.md](entity-canon-change-paradigm.md).
+
+### EntityChangePlanBuilder / EntityChangePlanQueueService
+
+**EntityChangePlanBuilder** — builds plans from edit context (Update, Rename, Delete, Merge, Retire). **EntityChangePlanQueueService** — persists staged plans on adventure metadata when hand-edited sources require review before apply.
+
+### CanonMentionIndexService
+
+Scans core lore files, lexicon, JSON string fields, and context-index targets for entity name/alias/trigger hits. Powers workspace Mentions tab and **EntityRenameWizardDialog**.
+
+### CanonTextReplacement
+
+Whole-word replace helper used during rename apply: **ReplaceWholeWord**, **ReplaceInScenario**, **ReplaceInEntities**.
+
+### EntitySyncStatusService
+
+Per-entity sync badge: InSync, SourcesStale, NeedsPublish, UnresolvedDrift — used on entity list rows.
+
+### CanonInboxService
+
+Aggregates entity/source review queues, unresolved drift, staged change plans, and republish hints into a single inbox list.
+
+### CanonReconciliationService
+
+Detects drift between local JSON (`entities.json`, `scenario.json`) and projected `sources/*.md` exports. Entity saves auto-sync first; **CanonReconcileDialog** opens only when **RequiresManualReconcile** or user defers. **SetNotifyFlag** persists hints on `SourceManifest.CanonChangeNotify`; **AppendNotifyBlock** adds a one-shot `=== CANON UPDATE (check sources) ===` section to the next play packet; **ClearNotify** consumes the flag on successful send (preserves **UnresolvedDrift** when the user deferred). **RenameReconciliationService** updates aliases, context-index targets, and optional phrase highlights after a rename push.
 
 ### ProjectSourceInjectionService
 
@@ -445,5 +485,5 @@ flowchart TB
 - [Architecture](architecture.md)
 - [ChatGPT API Integration](chatgpt-api-integration.md)
 - [WebView Bridges](webview-bridges.md)
-- [Adventure Panel §13](adventure-panel.md#13-services-and-code-map)
+- [Adventure Developer Reference §9](adventure-developer-reference.md#9-key-play-path-services)
 - [Instruction vs Sources Paradigm](instruction-sources-paradigm.md)

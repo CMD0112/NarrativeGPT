@@ -6,6 +6,8 @@ public sealed class ContinuityDocument
 
     public List<ContinuityWarningEntry> Warnings { get; set; } = [];
 
+    public List<string> DismissedWarningHashes { get; set; } = [];
+
     public DateTimeOffset? LastCheckedAt { get; set; }
 }
 

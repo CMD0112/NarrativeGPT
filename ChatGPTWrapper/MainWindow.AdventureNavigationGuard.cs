@@ -130,18 +130,13 @@ public partial class MainWindow
         if (wv.CoreWebView2 is not { } core)
             return;
 
-        if (ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, core.Source, wv, ChatTabs))
-        {
-            if (_appMode == AppMode.Play)
-                UpdatePlayLinkStatus();
-            else if (_appMode == AppMode.Design)
-                UpdateDesignLinkStatus();
-        }
-
         if (ProjectChatDraftService.IsActive(bundle)
             && (ProjectChatDraftService.ShouldStayOnProjectPage(bundle, core.Source)
                 || ProjectChatDraftService.IsDraftTab(bundle, wv, ChatTabs)))
         {
+            if (_appMode == AppMode.Play)
+                RefreshPlayComposeNavigationState(wv, bundle);
+
             return;
         }
 
@@ -155,6 +150,8 @@ public partial class MainWindow
             && !await AdventureNavigationRecoveryProbe.RequiresRecoveryAsync(core, bundle, intent))
         {
             ClearAdventureNavigationRecoveryError();
+            if (_appMode == AppMode.Play)
+                RefreshPlayComposeNavigationState(wv, bundle);
             return;
         }
 

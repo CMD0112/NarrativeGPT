@@ -1,0 +1,119 @@
+[
+  {
+    "id": "CMD-75",
+    "labels": [
+      "Navigation",
+      "WPF",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-76",
+    "labels": [
+      "Navigation",
+      "WPF",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-77",
+    "labels": [
+      "Navigation",
+      "C#",
+      "Projects",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-78",
+    "labels": [
+      "Bug",
+      "Navigation",
+      "Docs",
+      "Has Tests",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-80",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "Continuous View",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-81",
+    "labels": [
+      "Continuous View",
+      "JavaScript",
+      "Play",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-82",
+    "labels": [
+      "Continuous View",
+      "JavaScript",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-84",
+    "labels": [
+      "Sources",
+      "WPF",
+      "Design",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-85",
+    "labels": [
+      "ChatGPT Fragile",
+      "Navigation",
+      "WPF",
+      "Design",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-86",
+    "labels": [
+      "Improvement",
+      "Architecture",
+      "C#",
+      "Management"
+    ]
+  },
+  {
+    "id": "CMD-87",
+    "labels": [
+      "Bug",
+      "Design",
+      "Sources",
+      "WPF",
+      "Has Tests"
+    ]
+  },
+  {
+    "id": "CMD-89",
+    "labels": [
+      "Spike",
+      "Sources",
+      "C#"
+    ]
+  }
+]

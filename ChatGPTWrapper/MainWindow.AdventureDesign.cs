@@ -29,7 +29,12 @@ public partial class MainWindow
         _dashboardView?.RefreshList();
 
         if (wizard.ContinueToDesign)
-            await StartDesignModeAsync(wizard.AdventureId);
+        {
+            if (_appMode is AppMode.Play or AppMode.Design && _activeAdventureId == wizard.AdventureId)
+                await SwitchToDesignSessionCoreAsync(wizard.AdventureId, DesignModeEntryIntent.Default);
+            else
+                await StartDesignModeAsync(wizard.AdventureId);
+        }
     }
 
     public async Task OpenContinueDesignWizardAsync(Guid adventureId)
@@ -37,6 +42,12 @@ public partial class MainWindow
         var bundle = AdventureStore.Load(adventureId);
         if (bundle is null)
             return;
+
+        if (_appMode is AppMode.Play or AppMode.Design && _activeAdventureId == adventureId)
+        {
+            await SwitchToDesignSessionAsync();
+            return;
+        }
 
         if (bundle.Metadata.Status != AdventureStatus.Designing)
         {
@@ -443,6 +454,11 @@ public partial class MainWindow
         }
 
         if (startPlay)
-            await StartPlayModeAsync(adventureId);
+        {
+            if (_appMode == AppMode.Design && _activeAdventureId == adventureId)
+                await SwitchToPlaySessionAsync();
+            else
+                await StartPlayModeAsync(adventureId);
+        }
     }
 }

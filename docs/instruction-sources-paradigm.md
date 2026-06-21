@@ -4,7 +4,9 @@ This document is the canonical reference for **what belongs in ChatGPT Project c
 
 **Documentation hub:** [INDEX.md](INDEX.md)
 
-Related docs: [adventure-panel.md](adventure-panel.md) (§9–11) · [instruction-contract-guide.md](instruction-contract-guide.md) · [user-projects-and-sync.md](user-projects-and-sync.md) · [data-model-reference.md](data-model-reference.md) · [services-reference.md](services-reference.md) · [AI-DUNGEON-PHASED-PLAN.md](AI-DUNGEON-PHASED-PLAN.md) (architecture v2)
+> **Read order:** 1. This paradigm (theory) → 2. [Instruction Contract Guide](instruction-contract-guide.md) (authoring) → 3. [Prompt Construction Guide](prompt-construction-guide.md) (implementation) → 4. [Narrator Settings](narrator-settings.md) (runtime overrides)
+
+Related docs: [adventure-panel.md](adventure-panel.md) · [adventure-developer-reference.md](adventure-developer-reference.md) · [instruction-contract-guide.md](instruction-contract-guide.md) · [user-projects-and-sync.md](user-projects-and-sync.md) · [data-model-reference.md](data-model-reference.md) · [services-reference.md](services-reference.md) · [architecture.md](architecture.md) · [INDEX.md — Adventures roadmap](INDEX.md#adventures-roadmap-phase-status)
 
 ---
 
@@ -28,9 +30,9 @@ flowchart TB
         Packets[Play packets state memory transcript]
     end
 
-    subgraph utility [Per-job threads - inline instructions]
-        Seeds[Utility thread seed prompt]
-        InlineGuides[Job packet inline guide]
+    subgraph utility [Generation jobs - inline instructions]
+        Seeds[Design thread seed prompt]
+        InlineGuides[Play/design job packets]
     end
 
     ProjInstr --> PlayThread[Play thread narrator]
@@ -38,11 +40,13 @@ flowchart TB
     LoreSources --> PlayThread
     Packets --> PlayThread
 
-    Seeds --> UtilThread[Utility threads]
-    InlineGuides --> UtilThread
-    Packets --> UtilThread
+    Seeds --> DesignThread[Design thread]
+    InlineGuides --> PlayThread
+    InlineGuides --> DesignThread
+    Packets --> DesignThread
     PlayThread --> StoryContext[Story context feed]
-    StoryContext --> UtilThread
+    StoryContext --> PlayThread
+    StoryContext --> DesignThread
 ```
 
 | Channel | Change rate | Purpose |
@@ -50,7 +54,8 @@ flowchart TB
 | **Project custom instructions** | Rare — when the narrator *contract* changes (perspective, tone, boundaries, style note) | Always-on play behavior; kept small enough for the instruction box |
 | **Project source files** | Often — after scenario edits, entity/card review, lore expansion | Canonical world lore for RAG (not utility job schemas) |
 | **Play packets** | Every send | Session delta only: rolling summary cache, state, pinned memory, transcript tail, resolved section pointers (`[[cgw:sources v="2"]]`) |
-| **Utility threads** | Per job type, rotated on saturation or instruction change | Built-in instruction defaults (code) with optional per-adventure overrides; always inlined in seed + job packet |
+| **Play inline jobs** | On the pinned play thread | Built-in instruction defaults (code) with optional per-adventure overrides; inlined in job packet |
+| **Design thread jobs** | On the pinned design thread | Seed on thread start/rotation; job packets for design/source work |
 
 **Rule of thumb:**
 
@@ -83,16 +88,16 @@ flowchart TB
 | Pinned memory | No | No | Yes | Yes |
 | Transcript tail | No | No | Yes (last 6 turns) | Yes (last 6 turns) |
 
-Thin packet behavior is documented in [adventure-panel.md §9](adventure-panel.md#9-prompt-packets-source-delegated-vs-fat-fallback). Fat fallback inlines static lore when the Project is missing or sources are out of sync.
+Thin packet behavior is documented in [adventure-developer-reference.md §5](adventure-developer-reference.md#5-prompt-packets-source-delegated-vs-fat-fallback). Fat fallback inlines static lore when the Project is missing or sources are out of sync.
 
 ---
 
 ## Generation jobs delegation matrix (target)
 
-Utility jobs use **inline instructions** inside the same linked Project — no `*-guide.md` source files:
+Utility jobs use **inline instructions** on the play or design thread — no separate utility tabs and no `*-guide.md` source files:
 
-1. **Utility thread seed** — full instruction body when the thread is created or reconciled (`GenerationJobHandlers.BuildSeedPrompt` via `GenerationJobGuideService.ResolveInstructionBody`).
-2. **Job packet** — adventure-specific payload per run plus the same instruction body inlined (`=== JOB GUIDE (inline) ===`).
+1. **Design thread seed** — full instruction body when the design thread is first used or rotated (`GenerationJobHandlers.BuildSeedPrompt` via `GenerationJobGuideService.ResolveInstructionBody`).
+2. **Job packet** — adventure-specific payload per run plus the same instruction body inlined (`=== JOB GUIDE (inline) ===`), sent on the play thread (inline) or design thread (design jobs).
 
 Built-in defaults live in `GenerationJobGuideService`. Users may customize per job in **Play settings → AI Actions**; **Reset to default** clears overrides. Publish mode (Manual vs ApiSync) does not affect utility jobs.
 
@@ -174,6 +179,7 @@ Open folders quickly: **Source Manager → Open canonical folder** / **Open hist
 Typical files after export:
 
 - `scenario.md`, `world.md`, `plot.md`, `cast.md` — play RAG lore (sectioned canon)
+- `canon-format.md` — model-facing section/field reference (local + design prompts; optional Project upload). See [canon-schema.md](canon-schema.md).
 - `instructions-snippet.md` — mirror of narrator contract (optional upload; copy instructions to the settings box is the primary path)
 
 ### Pull sources into your ChatGPT Project
@@ -183,13 +189,15 @@ Use **Source Manager** (expand **How to publish** at the top for the same steps 
 1. **Link a Project** (dashboard → Link Project) if you have not already.
 2. **Refresh export** — writes/updates all `sources/*.md` from local JSON (older canonical copies are archived under `.history/` automatically).
 3. **Instructions** — **Design instructions…** → define contract → **Generate instructions file** → **Copy instructions** → paste into ChatGPT Project → **Custom instructions** → **Mark instructions pasted** in Source Manager. See [instruction-contract-guide.md § Tutorial](instruction-contract-guide.md#tutorial-drafting-narrator-instructions).
-4. **Files** — drag or copy each source file to ChatGPT Project → **Files** → **Mark uploaded** (or check **Published**).
+4. **Files** — upload **`canon-format.md`** first (format reference), then lore files — drag or copy each source to ChatGPT Project → **Files** → **Mark uploaded** (or check **Published**).
 5. **Optional verify** — **Probe project** downloads remote copies to `.project-mirror/`; **Compare with project** shows a line diff if **Project match** is Differ.
 6. Readiness banner turns green when all lore files are published; play uses **source-delegated** (thin) packets. A probe differ warning is informational only — it does not block delegation.
 
 ### When local content changes
 
-Edit scenario/world/entities in the wrapper → **Refresh export** (previous canonical is backed up under `.history/`) → re-upload changed files to ChatGPT → mark **Published** again (row shows **Needs republish** until confirmed).
+**Play / Reference edits:** Saving an entity runs **auto-sync** to local `sources/*.md` (export + cross-canon rename when applicable). When sync succeeds, a green banner offers **View diff** and **Open Source Manager**; the session status line shows **Sources out of sync — click to repair** only when drift remains. **Reconcile canon** opens when auto-sync cannot resolve drift (hand-edited sources, pull needed) — choose **Push to sources**, **Pull from sources**, or **Defer**. After push or pull, the next real play **Send** appends a one-shot canon-update block so the narrator re-retrieves affected sections; the flag clears on successful send. Manual Project upload is unchanged — mark **Published** in Source Manager after uploading. Full pipeline: [entity-canon-change-paradigm.md](entity-canon-change-paradigm.md) (CMD-232).
+
+**Design / bulk:** Edit scenario/world/entities in the wrapper → **Refresh export** (previous canonical is backed up under `.history/`) → re-upload changed files to ChatGPT → mark **Published** again (row shows **Needs republish** until confirmed).
 
 **Restore:** Source Manager → select file → **Version history** → **Restore version…** copies an archive back to canonical and clears Published for that file.
 

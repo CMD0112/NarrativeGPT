@@ -95,7 +95,7 @@ Most play-related text flows through **`PromptPacketBuilder`**.
 
 Pointers with `Source == Baseline` always land in **ALWAYS RETRIEVE**. All other qualifying pointers land in **THIS TURN**.
 
-**Start packet implication:** `BuildStartPacket` passes the full opening hook as `playerInput`. Alias matching against that long prose can fan out many THIS TURN pointers on turn 1 — same pipeline as a normal send, not a dedicated bootstrap builder.
+**Start packet implication:** `BuildStartPacket` uses a source-directed player line listing all core lore files. With `freshNarrativeBootstrap: true`, **ALWAYS RETRIEVE** includes every indexed section in `scenario.md`, `world.md`, `plot.md`, `cast.md`, and `lexicon.md`. Canon-update notify blocks are **not** appended to the start packet.
 
 Key files:
 
@@ -138,20 +138,25 @@ Key files:
 
 ```csharp
 // AdventureBootstrapService.cs — simplified
-var opening = GetOpeningPlayerLine(bundle.Scenario);  // OpeningSituation → Setting fallback
-var prompt = thinMode
-    ? "Begin the adventure using the Project scenario source…\n\nOpening hook: {opening}"
-    : "Begin the adventure. Open with vivid narration…\n\nOpening hook: {opening}";
-return PromptPacketBuilder.Build(bundle, prompt).Text;
+var prompt = BuildStartPlayerDirective(bundle);  // source-directed; no pre-written opening prose
+return PromptPacketBuilder.Build(bundle, prompt, freshNarrativeBootstrap: true).Text;
 ```
 
-**Important:** There is no separate bootstrap builder. The start packet uses the **same** `PromptPacketBuilder.Build` path as normal play sends. Canonical user workflow: [adventure-panel.md § G. Canonical begin-play workflow](adventure-panel.md#g-canonical-begin-play-workflow-design--first-turn).
+**Player line (turn 1):** Directs ChatGPT to retrieve and review **every** adventure source file, open with narration, and treat **its reply as the opening scene**.
 
-**Opening player line precedence:**
+**Optional `scenario.OpeningSituation`:** Author guidance in Design → Concept, exported to `scenario.md`. The model reads it from sources; it is not pasted into the player line.
 
-1. `scenario.OpeningSituation`
-2. `"The story begins. {Setting}"`
-3. `"Begin the adventure."`
+### Start packet vs opening scene
+
+| Piece | Source | Who builds it |
+|-------|--------|---------------|
+| **Opening scene** (play) | ChatGPT's first reply after the start packet | Model (from all sources + directive) |
+| **Opening note** (optional) | `scenario.OpeningSituation` in Design → Concept | Author → `scenario.md` via Sync canon |
+| **Start packet** (infrastructure) | `AdventureBootstrapService.BuildStartPacket` | Wrapper — meta, full-source pointers, contract |
+
+**Workflow:** Sync canon → **Preview narrative start packet** → **Start narrative from sources…** → paste → Send.
+
+**Anti-pattern:** Pasting a ChatGPT-generated full packet (with `[[cgw:meta]]`, pointers, etc.) as turn 1 on an unbound thread. `PromptInjectionService.PreparePrebuiltPacket` uses that text as-is and skips re-injection (`MainWindow.PlayInjection.cs`).
 
 ---
 
@@ -268,6 +273,58 @@ These are thin wrappers around structured job instructions plus bundle context s
 | `AdventureDesignDomChatService` | Resolves design conversation ID and delegates send |
 | `ChatGptAdventureBridgeInjection.InvokeSendPromptAsync` | DOM/API transport |
 | Project custom instructions | Published separately via `InstructionContractService` — not part of play packet text in thin mode (except optional `[[cgw:instructions]]` snippet) |
+
+---
+
+## Preview/send parity (CMD-56 / CMD-60)
+
+Architecture review of preview/send parity, turn meta visibility, and session scoping.
+
+```mermaid
+flowchart LR
+  composer[Composer_or_preview_line] --> prepare[PromptInjectionService.PrepareSend]
+  prepare --> build[PromptPacketBuilder.Build]
+  build --> merge[AssembleWithUser]
+  merge --> send[ChatGPT_send]
+  prepare --> preview[Play_settings_preview]
+```
+
+| Stage | Service | Output |
+|-------|---------|--------|
+| Prepare | `PromptInjectionService.PrepareSend` | `MergedText`, hash, pointers, mode |
+| Context | `PromptPacketBuilder.BuildContext` | Tagged context blocks + `[[cgw:meta]]` |
+| Merge | `PromptPacketBuilder.AssembleWithUser` | Context + untagged player suffix |
+| Preview | `PlayPromptInjectionDialog.RefreshMergedPreview` | `FormatStructuredPreview` + `PacketMetaLine` |
+| Send | `MainWindow.PlayInjection` | Same `PrepareSend` path as preview |
+
+### Fixed findings
+
+| Topic | Resolution |
+|-------|------------|
+| **Preview fidelity (CMD-60)** | `FormatStructuredPreview` emits `[meta] turn=N mode=…` from tag attributes even when `[[cgw:meta]]` body is empty |
+| **Turn index visibility (CMD-60)** | `PacketMetaLine` shows `Turn: N (scoped accepted: M)` via `PlayTurnScopeService` |
+| **Session scoping (CMD-58)** | Packet meta, transcript, and accepted counts use `GetPacketContextTurns` / `GetPacketAcceptedTurns` |
+
+### Known exceptions
+
+- **Live send vs preview:** Send may pass `priorThreadUserMessageCount` from DOM when the thread has user messages not yet logged locally (`ResolveNextPacketTurnIndex`). Preview uses `0` — acceptable for author preview; turn meta line documents the computed next index.
+- **Start packet:** `PreparePrebuiltPacket` does not rebuild from settings. Authors should verify turn meta in View full after paste. Normal Send always uses `PrepareSend`.
+
+### Key files
+
+- `ChatGPTWrapper/Adventure/Services/PromptInjectionService.cs`
+- `ChatGPTWrapper/Adventure/Services/PromptPacketBuilder.cs`
+- `ChatGPTWrapper/Adventure/Services/PlayTurnScopeService.cs`
+- `ChatGPTWrapper/Adventure/Services/ContextTagFormat.cs`
+- `ChatGPTWrapper/Views/PlayPromptInjectionDialog.xaml.cs`
+- `ChatGPTWrapper/MainWindow.PlayInjection.cs`
+
+### Test coverage
+
+- `PlayUxContextTagTests` — meta preview attributes
+- `PromptInjectionServiceTests` — prepare/hash parity
+- `PlayTurnScopeServiceTests` — session scoping
+- `PromptPacketBuilderTagTests` — tag assembly
 
 ---
 

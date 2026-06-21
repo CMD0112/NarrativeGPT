@@ -6,6 +6,9 @@ public sealed class AdventureMetadata
 {
     public int SchemaVersion { get; set; } = AdventureJson.SchemaVersion;
 
+    /// <summary>Canon schema registry version applied to this adventure (CMD-205).</summary>
+    public int CanonSchemaVersion { get; set; }
+
     public Guid Id { get; set; } = Guid.NewGuid();
 
     public string Title { get; set; } = "Untitled adventure";
@@ -60,6 +63,9 @@ public sealed class AdventureMetadata
 
     public List<GenerationUtilitySessionArchive> UtilitySessionArchive { get; set; } = [];
 
+    /// <summary>Prior play thread conversation ids archived after handoff to a new thread.</summary>
+    public List<PlayThreadArchiveEntry> PlayThreadArchive { get; set; } = [];
+
     /// <summary>Legacy — migrated to UtilitySessions on load.</summary>
     public EntityUtilitySession? EntityUtility { get; set; }
 
@@ -89,6 +95,16 @@ public sealed class AdventureMetadata
     public AdventureSettings Settings { get; set; } = new();
 
     public DateTimeOffset? SectionInjectionMigratedAt { get; set; }
+
+    /// <summary>Registered play/design/utility thread instances (CMD-221).</summary>
+    public List<AdventureThreadEntry> ThreadRegistry { get; set; } = [];
+
+    /// <summary>Active thread entry id per kind name (<see cref="AdventureThreadKind"/>).</summary>
+    public Dictionary<string, Guid> ActiveThreadIds { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>When set, legacy singleton pins were migrated into <see cref="ThreadRegistry"/>.</summary>
+    public DateTimeOffset? ThreadRegistryMigratedAt { get; set; }
 }
 
 public sealed class UtilityJobGuideOverride
@@ -96,6 +112,66 @@ public sealed class UtilityJobGuideOverride
     public string InstructionBody { get; set; } = "";
 
     public UtilityStoryContextSettings? Context { get; set; }
+}
+
+public sealed class PlayThreadArchiveEntry
+{
+    public string ConversationId { get; set; } = "";
+
+    public DateTimeOffset ArchivedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public int AcceptedTurnCountAtArchive { get; set; }
+}
+
+public sealed class PlayTurnOverrideSettings
+{
+    public string? ResponseLength { get; set; }
+
+    public string? DetailLevel { get; set; }
+
+    public string? Tone { get; set; }
+
+    public string? Difficulty { get; set; }
+
+    /// <summary>Freeform one-shot directive for the next play send only.</summary>
+    public string? TurnDirective { get; set; }
+
+    public bool EmphasizeBoundaries { get; set; }
+
+    public bool EmphasizePortrayalRules { get; set; }
+}
+
+/// <summary>Session-scoped narrator overrides for the active play session.</summary>
+public sealed class PlaySessionNarratorOverrides
+{
+    public string? ResponseLength { get; set; }
+
+    public string? DetailLevel { get; set; }
+
+    public string? Tone { get; set; }
+
+    public string? Difficulty { get; set; }
+
+    public string? TemporaryAddendum { get; set; }
+
+    public bool EmphasizeBoundaries { get; set; }
+
+    public bool EmphasizePortrayalRules { get; set; }
+}
+
+public enum NarratorOverrideScope
+{
+    Turn,
+    Session,
+    Adventure,
+}
+
+public enum NarratorParameter
+{
+    ResponseLength,
+    DetailLevel,
+    Tone,
+    Difficulty,
 }
 
 public sealed class UtilityJobOverrideSettings
@@ -201,8 +277,18 @@ public sealed class AdventureSettings
 
     public AttachmentContextMode AttachmentContextMode { get; set; } = AttachmentContextMode.Auto;
 
-    /// <summary>Per-tab placement: Reference, Warnings, State → Left, Right, Hidden.</summary>
+    /// <summary>Per-tab placement: Reference, Warnings, State, Notes → Left, Right, Hidden.</summary>
     public Dictionary<string, string> PlayTabPlacement { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Active layout preset id (writer, gm, minimal) or null for custom.</summary>
+    public string? PlayLayoutPresetId { get; set; }
+
+    /// <summary>One-shot overrides injected into the next play packet.</summary>
+    public PlayTurnOverrideSettings PlayTurnOverrides { get; set; } = new();
+
+    /// <summary>Session-scoped narrator overrides keyed by <see cref="PlaySession.Id"/>.</summary>
+    public Dictionary<string, PlaySessionNarratorOverrides> SessionNarratorOverrides { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Per-job utility overrides (response length, detail).</summary>
     public Dictionary<string, UtilityJobOverrideSettings> UtilityJobOverrides { get; set; } =
@@ -220,7 +306,7 @@ public sealed class AdventureSettings
     public UtilityStoryContextSettings UtilityStoryContext { get; set; } = new();
 
     /// <summary>Where AI utility jobs run: separate utility thread or inline in the play thread.</summary>
-    public UtilityDeliveryMode UtilityDeliveryMode { get; set; } = UtilityDeliveryMode.SeparateThread;
+    public UtilityDeliveryMode UtilityDeliveryMode { get; set; } = UtilityDeliveryMode.InlinePlayThread;
 
     /// <summary>When inline delivery is used, hide utility traffic in the play reading UI.</summary>
     public bool HideInlineUtilityDuringPlay { get; set; } = true;
@@ -236,6 +322,12 @@ public sealed class AdventureSettings
 
     /// <summary>Export reviewed rolling summary to optional summary.md.</summary>
     public bool ExportSummarySource { get; set; }
+
+    /// <summary>Footer hint when log.json diverges from the play thread and sync was skipped.</summary>
+    public string? ThreadLogDriftHint { get; set; }
+
+    /// <summary>Drift fingerprint the author dismissed; suppresses repeat sync prompts until drift changes.</summary>
+    public string? ThreadLogDriftDismissedHash { get; set; }
 }
 
 public sealed class CharacterPortrayalRule

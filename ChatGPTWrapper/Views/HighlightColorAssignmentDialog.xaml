@@ -1,0 +1,122 @@
+<Window x:Class="ChatGPTWrapper.Views.HighlightColorAssignmentDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Auto-color assignment"
+        Height="560"
+        Width="520"
+        MinHeight="480"
+        MinWidth="440"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Style="{StaticResource ShellSectionHintStyle}"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,12"
+                   Text="Configure how cast import and other automatic phrase colors are chosen. Presets are starting points — tweak options below and save as Custom."/>
+
+        <StackPanel Grid.Row="1" Margin="0,0,0,12">
+            <TextBlock Text="Preset" Margin="0,0,0,4"/>
+            <ComboBox x:Name="ProfileCombo"
+                      MinHeight="28"
+                      DisplayMemberPath="Name"
+                      SelectionChanged="ProfileCombo_SelectionChanged"/>
+            <TextBlock x:Name="ProfileDescriptionText"
+                       Margin="0,6,0,0"
+                       Foreground="{StaticResource TextMutedBrush}"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="Palette" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Source" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                    <ComboBox x:Name="PaletteSourceCombo" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" SelectionChanged="Option_Changed"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Hue anchor" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                    <ComboBox x:Name="HueAnchorCombo" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" SelectionChanged="Option_Changed"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Hue step (°)" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                    <TextBox x:Name="HueStepBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" LostFocus="Option_Changed"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Generated colors" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                    <TextBox x:Name="GeneratedCountBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" LostFocus="Option_Changed"/>
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Contrast canvas" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox x:Name="CanvasSourceCombo" Grid.Row="4" Grid.Column="1" SelectionChanged="Option_Changed"/>
+                </Grid>
+
+                <TextBlock Text="Assignment" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Strategy" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                    <ComboBox x:Name="StrategyCombo" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" SelectionChanged="Option_Changed"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Player color" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                    <ComboBox x:Name="PlayerColorCombo" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" SelectionChanged="Option_Changed"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Aliases" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                    <ComboBox x:Name="AliasColorCombo" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" SelectionChanged="Option_Changed"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Min contrast" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox x:Name="MinContrastBox" Grid.Row="3" Grid.Column="1" LostFocus="Option_Changed"/>
+                </Grid>
+
+                <CheckBox x:Name="AvoidDuplicatesCheck"
+                          Content="Avoid duplicate colors when possible"
+                          Margin="0,0,0,12"
+                          Checked="Option_Changed"
+                          Unchecked="Option_Changed"/>
+
+                <TextBlock Text="Palette preview (current theme)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <WrapPanel x:Name="PalettePreviewPanel" Margin="0,0,0,8"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <TextBlock x:Name="ValidationText"
+                   Grid.Row="3"
+                   Foreground="{StaticResource ErrorBrush}"
+                   TextWrapping="Wrap"
+                   Margin="0,8,0,0"
+                   Visibility="Collapsed"/>
+
+        <StackPanel Grid.Row="4"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel"
+                    Padding="12,6"
+                    MinWidth="80"
+                    Margin="0,0,8,0"
+                    IsCancel="True"/>
+            <Button Content="OK"
+                    Padding="12,6"
+                    MinWidth="80"
+                    IsDefault="True"
+                    Click="Ok_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

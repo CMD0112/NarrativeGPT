@@ -51,8 +51,10 @@ See [WebView Bridges](webview-bridges.md) for command reference.
 
 | File | Feature ID | Purpose |
 |------|------------|---------|
-| `continuous-transcript-view.js` | `continuous-view` | Collapse thread to prose |
+| `continuous-transcript-view.js` | `continuous-view` | Collapse thread to prose (Continuous mode) |
 | `continuous-transcript-view.css` | `continuous-view` | Transcript layout |
+| `weave-transcript-view.js` | `continuous-view` | Weave transcript layout |
+| `weave-transcript-view.css` | `continuous-view` | Weave typography |
 | `continuous-format.js` | `continuous-view` | Paragraph/speaker formatting |
 | `continuous-format-settings.js` | `continuous-view` | Format settings from C# JSON |
 | `chrome-preferences.js` | `continuous-view` | Unified preference apply from C# |
@@ -68,12 +70,14 @@ See [WebView Bridges](webview-bridges.md) for command reference.
 | `wrapper-overrides.css` | `style` | General ChatGPT UI tweaks |
 | `prose-enhancements.css` | `style` | Typography when prose enhancements on |
 
-### Third-party (vendored)
+### Third-party (optional runtime)
 
 | File | Used by | Purpose |
 |------|---------|---------|
-| `marked.min.js` | Packet/display | Markdown rendering |
-| `purify.min.js` | Packet/display | HTML sanitization |
+| `marked.min.js` | Packet/display | Markdown rendering — injected if present in `wrapper-assets/` |
+| `purify.min.js` | Packet/display | HTML sanitization — injected if present in `wrapper-assets/` |
+
+These files are **not** in the `ChatGPT_files/` source tree. `ChatGptContinuousViewInjection` includes them when they exist beside other bundled assets at runtime.
 
 ---
 
@@ -82,7 +86,7 @@ See [WebView Bridges](webview-bridges.md) for command reference.
 1. ChatGPT native styles
 2. `wrapper-overrides.css` (bundled)
 3. `prose-enhancements.css` (if enabled)
-4. Feature CSS (`continuous-transcript-view.css`, `cgw-play-compose.css`, `cgw-context-tags.css`)
+4. Feature CSS (`continuous-transcript-view.css`, `weave-transcript-view.css`, `cgw-play-compose.css`, `cgw-context-tags.css`)
 5. `user-overrides.css` (local app data)
 
 `ChatGptStyleInjection` injects bundled + user CSS on injectable pages.
@@ -134,6 +138,6 @@ Fixtures: `tests/ChatGPTWrapper.ApiDiagnostics/Fixtures/`
 ## Related documentation
 
 - [WebView Bridges](webview-bridges.md)
-- [User Guide — Continuous view](user-guide.md#continuous-transcript-view)
+- [User Guide — Transcript view modes](user-guide.md#transcript-view-modes)
 - [Architecture — Page integration](architecture.md#page-integration-layer)
 - [Build & Deploy](build-and-deploy.md)

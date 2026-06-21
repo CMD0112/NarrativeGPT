@@ -8,14 +8,38 @@ namespace ChatGPTWrapper.Adventure.Services;
 
 internal static class PlayTabPinService
 {
-    public static bool PreferPinnedPlayWebView(bool isPlayMode, AdventureBundle? bundle) =>
-        isPlayMode && !string.IsNullOrWhiteSpace(bundle?.Metadata.PinnedPlayTabKey);
+    public static bool PreferPinnedPlayWebView(bool isPlayMode, AdventureBundle? bundle)
+    {
+        if (!isPlayMode || bundle is null)
+            return false;
 
-    public static bool PreferPinnedUtilityWebView(AdventureBundle? bundle) =>
-        !string.IsNullOrWhiteSpace(bundle?.Metadata.PinnedUtilityTabKey);
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play);
+        return !string.IsNullOrWhiteSpace(entry?.PinnedTabKey)
+               || !string.IsNullOrWhiteSpace(bundle.Metadata.PinnedPlayTabKey);
+    }
 
-    public static bool HasUtilityPin(AdventureBundle? bundle) =>
-        !string.IsNullOrWhiteSpace(bundle?.Metadata.PinnedUtilityTabKey);
+    public static bool PreferPinnedUtilityWebView(AdventureBundle? bundle)
+    {
+        if (bundle is null)
+            return false;
+
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Utility);
+        return !string.IsNullOrWhiteSpace(entry?.PinnedTabKey)
+               || !string.IsNullOrWhiteSpace(bundle.Metadata.PinnedUtilityTabKey);
+    }
+
+    public static bool HasUtilityPin(AdventureBundle? bundle)
+    {
+        if (bundle is null)
+            return false;
+
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Utility);
+        return !string.IsNullOrWhiteSpace(entry?.PinnedTabKey)
+               || !string.IsNullOrWhiteSpace(bundle.Metadata.PinnedUtilityTabKey);
+    }
 
     public static string GetOrAssignTabKey(TabItem tab)
     {
@@ -74,6 +98,13 @@ internal static class PlayTabPinService
 
     public static string? GetPlayTargetUrl(AdventureBundle bundle)
     {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        return AdventureThreadRegistryService.GetTargetUrl(bundle, AdventureThreadKind.Play)
+               ?? LegacyGetPlayTargetUrl(bundle);
+    }
+
+    private static string? LegacyGetPlayTargetUrl(AdventureBundle bundle)
+    {
         var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
         var conversationId = bundle.Metadata.LinkedConversationId;
 
@@ -98,7 +129,11 @@ internal static class PlayTabPinService
 
     public static WebView2? TryFindWebViewForPlaySession(TabControl tabs, AdventureBundle bundle)
     {
-        if (FindWebViewByPinKey(tabs, bundle.Metadata.PinnedPlayTabKey) is { } pinned)
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var pinKey = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)?.PinnedTabKey
+                       ?? bundle.Metadata.PinnedPlayTabKey;
+
+        if (FindWebViewByPinKey(tabs, pinKey) is { } pinned)
             return pinned;
 
         return TryFindWebViewOnPlayTarget(tabs, bundle);
@@ -190,17 +225,35 @@ internal static class PlayTabPinService
 
     public static void PinTab(AdventureBundle bundle, WebView2 webView, TabControl tabs)
     {
-        var key = GetTabKey(webView, tabs)
-                  ?? throw new InvalidOperationException("Could not resolve tab key for WebView.");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
         TryBindProjectSessionFromWebView(bundle, webView);
-        bundle.Metadata.PinnedPlayTabKey = key;
-        bundle.Metadata.PinnedPlayTabTitle = GetTabTitle(webView, tabs);
-        bundle.Metadata.PinnedPlayTabUrl = webView.CoreWebView2?.Source;
+
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)
+                      ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play);
+
+        if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
+            entry.ConversationId = bundle.Metadata.LinkedConversationId;
+
+        AdventureThreadRegistryService.UpdatePinFromWebView(
+            bundle,
+            entry.Id,
+            webView,
+            tabs,
+            webView.CoreWebView2?.Source);
+        AdventureThreadRegistryService.SetActivePin(bundle, entry.Id);
         AdventureStore.Save(bundle);
     }
 
     public static void ClearPin(AdventureBundle bundle)
     {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        if (AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play) is { } entry)
+        {
+            entry.PinnedTabKey = null;
+            entry.PinnedTabTitle = null;
+            entry.PinnedTabUrl = null;
+        }
+
         bundle.Metadata.PinnedPlayTabKey = null;
         bundle.Metadata.PinnedPlayTabTitle = null;
         bundle.Metadata.PinnedPlayTabUrl = null;
@@ -257,15 +310,21 @@ internal static class PlayTabPinService
 
         var previous = bundle.Metadata.LinkedConversationId;
         PlayTurnScopeService.OnPlayThreadChanged(bundle, previous, conversationId);
-        bundle.Metadata.LinkedConversationId = conversationId;
-        if (bundle.Metadata.ProjectLink is not null)
-            bundle.Metadata.ProjectLink.PlayConversationId = conversationId;
+
+        var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play);
+        entry.ConversationId = conversationId;
+        AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
 
         return true;
     }
 
     private static string? GetTargetConversationId(AdventureBundle bundle)
     {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var fromRegistry = AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Play);
+        if (!string.IsNullOrWhiteSpace(fromRegistry))
+            return fromRegistry;
+
         if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
             return bundle.Metadata.LinkedConversationId;
 
@@ -282,23 +341,34 @@ internal static class PlayTabPinService
 
     public static bool IsSameTabAsPlayPin(AdventureBundle bundle, WebView2 webView, TabControl tabs)
     {
-        if (string.IsNullOrWhiteSpace(bundle.Metadata.PinnedPlayTabKey))
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var pinKey = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)?.PinnedTabKey
+                       ?? bundle.Metadata.PinnedPlayTabKey;
+        if (string.IsNullOrWhiteSpace(pinKey))
             return false;
 
         var key = GetTabKey(webView, tabs);
         return key is not null
-               && string.Equals(key, bundle.Metadata.PinnedPlayTabKey, StringComparison.OrdinalIgnoreCase);
+               && string.Equals(key, pinKey, StringComparison.OrdinalIgnoreCase);
     }
 
     public static void PinUtilityTab(AdventureBundle bundle, WebView2 webView, TabControl tabs)
     {
-        var key = GetTabKey(webView, tabs)
-                  ?? throw new InvalidOperationException("Could not resolve tab key for WebView.");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
         if (IsSameTabAsPlayPin(bundle, webView, tabs))
             throw new InvalidOperationException("Utility tab cannot be the same tab as the play tab.");
 
-        bundle.Metadata.PinnedUtilityTabKey = key;
-        bundle.Metadata.PinnedUtilityTabTitle = GetTabTitle(webView, tabs);
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Utility)
+                      ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Utility);
+
+        AdventureThreadRegistryService.UpdatePinFromWebView(
+            bundle,
+            entry.Id,
+            webView,
+            tabs,
+            webView.CoreWebView2?.Source);
+        AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
+
         if (ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id) == ProjectChatDraftKind.Utility)
             ProjectChatDraftService.Complete(bundle);
         AdventureStore.Save(bundle);
@@ -306,6 +376,13 @@ internal static class PlayTabPinService
 
     public static void ClearUtilityPin(AdventureBundle bundle)
     {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        if (AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Utility) is { } entry)
+        {
+            entry.PinnedTabKey = null;
+            entry.PinnedTabTitle = null;
+        }
+
         bundle.Metadata.PinnedUtilityTabKey = null;
         bundle.Metadata.PinnedUtilityTabTitle = null;
         AdventureStore.Save(bundle);
@@ -368,11 +445,12 @@ internal static class PlayTabPinService
         if (string.IsNullOrWhiteSpace(conversationId))
             return false;
 
-        if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId)
-            && string.Equals(
-                conversationId,
-                bundle.Metadata.LinkedConversationId,
-                StringComparison.OrdinalIgnoreCase))
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var playConversation = AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Play)
+                               ?? bundle.Metadata.LinkedConversationId;
+
+        if (!string.IsNullOrWhiteSpace(playConversation)
+            && string.Equals(conversationId, playConversation, StringComparison.OrdinalIgnoreCase))
             return false;
 
         return true;

@@ -1,8 +1,12 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Adventure.Services.PlayLayout;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
 using Microsoft.Win32;
@@ -15,19 +19,17 @@ public partial class AdventurePlayView : UserControl
 
     public event EventHandler? LinkProjectRequested;
 
+    public event EventHandler? ManageThreadsRequested;
+
     public event EventHandler? PinPlayTabRequested;
 
     public event EventHandler? OpenPinnedPlayTabRequested;
 
     public event EventHandler? ClearPlayTabPinRequested;
 
-    public event EventHandler? PinUtilityTabRequested;
-
-    public event EventHandler? OpenPinnedUtilityTabRequested;
-
-    public event EventHandler? ClearUtilityTabPinRequested;
-
     public event EventHandler? PlaySettingsSaved;
+
+    public event EventHandler? PlayStatusRefreshRequested;
 
     public event EventHandler<Guid>? TitleRenamed;
 
@@ -40,6 +42,8 @@ public partial class AdventurePlayView : UserControl
     public Func<Task>? ProbeSourcesAsync { get; set; }
 
     public Func<Task>? RefreshSourcesStatusAsync { get; set; }
+
+    public Func<IReadOnlyList<PhraseHighlightRule>>? GetPhraseHighlightRules { get; set; }
 
     public Func<Task>? ReconcileDuplicatesAsync { get; set; }
 
@@ -61,11 +65,7 @@ public partial class AdventurePlayView : UserControl
 
     public Func<Task>? SyncInstructionsAsync { get; set; }
 
-    public Func<string, Task>? OpenUtilityThreadAsync { get; set; }
-
-    public Func<string, Task>? RotateUtilityThreadAsync { get; set; }
-
-    public Func<Task>? StartNewPlayThreadAsync { get; set; }
+    public Func<PlayThreadStartRequest?, Task>? StartNewPlayThreadAsync { get; set; }
 
     public Func<Task>? DraftNewProjectChatAsync { get; set; }
 
@@ -73,9 +73,9 @@ public partial class AdventurePlayView : UserControl
 
     public Func<string, Task>? RunSourceEditJobAsync { get; set; }
 
-    public Func<Task>? RunDraftFrameworkAsync { get; set; }
-
     public Func<Task>? ContinueDesignAsync { get; set; }
+
+    public Func<Task>? PromptThreadLogSyncAsync { get; set; }
 
     public Func<Task<IReadOnlyList<ConversationFileRef>>>? ListThreadFilesAsync { get; set; }
 
@@ -87,21 +87,209 @@ public partial class AdventurePlayView : UserControl
 
     public Action? SaveNotesAction { get; set; }
 
+    public Action? FocusNotesEditor { get; set; }
+
     public event EventHandler<string>? RollIntoPlayerLineRequested;
+
+    public event EventHandler<string>? ReplacePlayerLineRequested;
+
+    public event EventHandler<Guid>? BranchCreated;
 
     public event EventHandler? ExpandPlaySidePanelRequested;
 
+    public event EventHandler? ExpandPlayNotesPanelRequested;
+
+    public TabControl LeftTabControl => PlaySideTabControl;
+
     private AdventureBundle? _bundle;
     private string _previewPlayerLine = "";
-    private string _entityFilter = "Characters";
+    private bool _shellBreadcrumbVisible;
+    private bool _showReferenceReviewQueue;
+    private DispatcherTimer? _canonSyncNoticeTimer;
+    private EntityEditSourceSyncResult? _lastCanonSyncResult;
+    private TabControl? _rightTabControl;
+    private PlayLayoutSnapshot _layoutSnapshot = new(
+        PlayLayoutContext.Empty(PlayPanelSide.Left),
+        PlayLayoutContext.Empty(PlayPanelSide.Right));
+
+    public void SetRightTabControl(TabControl? rightTabControl) =>
+        _rightTabControl = rightTabControl;
+
+    public TabItem? GetTabByName(string tabName) =>
+        tabName switch
+        {
+            "Reference" => ReferenceSideTab,
+            "Warnings" => WarningsSideTab,
+            "State" => StateSideTab,
+            _ => null,
+        };
+
+    public void ReparentTab(TabItem tab, TabControl target)
+    {
+        if (tab.Parent is TabControl current && !ReferenceEquals(current, target))
+            current.Items.Remove(tab);
+
+        if (!target.Items.Contains(tab))
+            target.Items.Add(tab);
+    }
+
+    public void ApplyTabPlacementFromSettings()
+    {
+        if (_bundle is null)
+            return;
+
+        EnsureTabsOnLeft();
+
+        foreach (var tabName in new[] { "Reference", "Warnings", "State" })
+        {
+            var tab = GetTabByName(tabName);
+            if (tab is null)
+                continue;
+
+            var side = PlayPanelLayoutService.ResolveTabPlacement(_bundle.Metadata.Settings, tabName);
+            tab.Visibility = side == PlayPanelSide.Hidden ? Visibility.Collapsed : Visibility.Visible;
+
+            if (side == PlayPanelSide.Right && _rightTabControl is not null)
+                ReparentTab(tab, _rightTabControl);
+            else
+                ReparentTab(tab, PlaySideTabControl);
+        }
+
+        if (_rightTabControl is not null)
+        {
+            _rightTabControl.Visibility = _rightTabControl.Items.Cast<TabItem>()
+                .Any(t => t.Visibility == Visibility.Visible)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+    }
+
+    private void EnsureTabsOnLeft()
+    {
+        foreach (var tabName in new[] { "Reference", "Warnings", "State" })
+        {
+            var tab = GetTabByName(tabName);
+            if (tab is not null)
+                ReparentTab(tab, PlaySideTabControl);
+        }
+    }
+
+    public bool NavigateToPlayTab(string tabName, bool scrollIntoView = true)
+    {
+        if (_bundle is null)
+            return false;
+
+        var side = PlayPanelLayoutService.ResolveTabPlacement(_bundle.Metadata.Settings, tabName);
+        if (side == PlayPanelSide.Hidden)
+        {
+            MessageBox.Show(
+                $"The {tabName} tab is hidden in Play settings → Play surface. "
+                    + "Set visibility to Left or Right to open it from the play companion.",
+                $"{tabName} tab hidden",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return false;
+        }
+
+        if (tabName.Equals("Notes", StringComparison.OrdinalIgnoreCase))
+        {
+            ExpandPlayNotesPanelRequested?.Invoke(this, EventArgs.Empty);
+            FocusNotesEditor?.Invoke();
+            return true;
+        }
+
+        if (side == PlayPanelSide.Right)
+        {
+            ExpandPlayNotesPanelRequested?.Invoke(this, EventArgs.Empty);
+            var tab = GetTabByName(tabName);
+            if (tab is not null && _rightTabControl is not null)
+            {
+                ReparentTab(tab, _rightTabControl);
+                _rightTabControl.SelectedItem = tab;
+            }
+        }
+        else
+        {
+            if (IsSidePanelCollapsed)
+                ExpandPlaySidePanelRequested?.Invoke(this, EventArgs.Empty);
+
+            var tab = GetTabByName(tabName);
+            if (tab is not null)
+            {
+                ReparentTab(tab, PlaySideTabControl);
+                PlaySideTabControl.SelectedItem = tab;
+            }
+        }
+
+        if (tabName.Equals("Reference", StringComparison.OrdinalIgnoreCase) && scrollIntoView)
+            FocusEntityReviewQueueInner(scrollOnly: true);
+
+        return true;
+    }
 
     public AdventurePlayView()
     {
         InitializeComponent();
-        EntityFilterBox.ItemsSource = new[] { "Characters", "Locations", "Things", "Factions", "Quests", "Concepts" };
-        EntityFilterBox.SelectedIndex = 0;
-        SizeChanged += (_, _) => UpdateResponsiveLayout(ActualWidth);
-        Loaded += (_, _) => UpdateResponsiveLayout(ActualWidth);
+        WireEntityReferencePanel();
+        WarningsList.PreviewMouseRightButtonDown += WarningsList_PreviewMouseRightButtonDown;
+        SizeChanged += (_, _) => ApplyLayout(
+            PlayLayoutCoordinator.CreateSnapshot(ActualWidth, _layoutSnapshot.Companion.PanelWidth));
+        Loaded += (_, _) => ApplyLayout(
+            PlayLayoutCoordinator.CreateSnapshot(ActualWidth, _layoutSnapshot.Companion.PanelWidth));
+    }
+
+    private void WireEntityReferencePanel()
+    {
+        EntityReferencePanel.Configure(
+            new EntityReferencePanelOptions { EditMode = EntityReferenceEditMode.Modal },
+            new EntityReferenceEditCallbacks
+            {
+                GetPhraseHighlightRules = () => GetPhraseHighlightRules?.Invoke(),
+                OpenSourceManagerAsync = () => OpenSourceManagerAsync?.Invoke() ?? Task.CompletedTask,
+                OnBundleReloaded = bundle =>
+                {
+                    _bundle = bundle;
+                    BindStateTable();
+                    BindReviewQueue();
+                    BindPendingReview();
+                    BindWarnings();
+                    EntityReferencePanel.LoadBundle(bundle);
+                    CanonCommitBar.Bind(bundle);
+                },
+                OnStatusRefreshRequested = () => PlayStatusRefreshRequested?.Invoke(this, EventArgs.Empty),
+                OnSourceSyncCompleted = result =>
+                {
+                    _lastCanonSyncResult = result;
+                    if ((result.Synced || result.Staged) && !string.IsNullOrWhiteSpace(result.Summary))
+                        ShowCanonSyncNotice(result.Summary!);
+                    CanonCommitBar.Bind(_bundle);
+                    PlayStatusRefreshRequested?.Invoke(this, EventArgs.Empty);
+                },
+            });
+        EntityReferencePanel.SelectionChanged += (_, _) => UpdateJobButtonStates();
+        EntityReferencePanel.EntitiesChanged += (_, _) =>
+        {
+            BindReviewQueue();
+            BindPendingReview();
+        };
+        EntityReferencePanel.SuggestEntitiesRequested += (_, _) =>
+            SuggestEntities_Click(EntityReferencePanel, new RoutedEventArgs());
+        EntityReferencePanel.ExpandEntityRequested += (_, row) => _ = ExpandEntityForRowAsync(row);
+    }
+
+    private async Task ExpandEntityForRowAsync(EntityReferenceRow row)
+    {
+        if (_bundle is null || ExpandEntityAsync is null)
+            return;
+
+        await RunJobButtonAsync(
+            () => ExpandEntityAsync(EntityReferencePanel.CurrentFilter, row.Id),
+            () =>
+            {
+                BindReviewQueue();
+                BindPendingReview();
+                EntityReferencePanel.RefreshList();
+            });
     }
 
     public Guid? AdventureId => _bundle?.Metadata.Id;
@@ -130,65 +318,191 @@ public partial class AdventurePlayView : UserControl
         BindReviewQueue();
         BindPendingReview();
         BindWarnings();
-        ApplyPlayTabPlacement();
+        UpdatePlayTabBadges();
+        ApplyTabPlacementFromSettings();
         UpdateLinkProjectUi();
+        BindNarratorControls();
         UpdateJobButtonStates();
-        UpdateResponsiveLayout(ActualWidth);
+        ApplyLayout(
+            PlayLayoutCoordinator.CreateSnapshot(ActualWidth, _layoutSnapshot.Companion.PanelWidth));
+        SetShellChromeState(_shellBreadcrumbVisible);
     }
 
-    private void ApplyPlayTabPlacement()
+    public void SetShellChromeState(bool shellBreadcrumbVisible)
     {
-        if (_bundle is null)
-            return;
+        _shellBreadcrumbVisible = shellBreadcrumbVisible;
+        BackButton.Visibility = shellBreadcrumbVisible ? Visibility.Collapsed : Visibility.Visible;
+        if (shellBreadcrumbVisible)
+            Grid.SetColumn(TitleBlock, 0);
+        else
+            Grid.SetColumn(TitleBlock, 1);
+        TitleBlock.Margin = shellBreadcrumbVisible ? new Thickness(0, 0, 8, 0) : new Thickness(0, 0, 8, 0);
+        if (_layoutSnapshot.Shell.IsUsable)
+            ApplyShellLayout(_layoutSnapshot.Shell);
+    }
 
-        var placement = _bundle.Metadata.Settings.PlayTabPlacement;
-        foreach (TabItem tab in PlaySideTabControl.Items)
+    private void ApplyPlayTabPlacement() => ApplyTabPlacementFromSettings();
+
+    private void UpdatePlayTabBadges()
+    {
+        var reviewCount = _bundle?.Entities.ReviewQueue.Count ?? 0;
+        var warningCount = _bundle is null
+            ? 0
+            : ContinuityWarningDismissalService.FilterActive(_bundle.Continuity).Count;
+        var pendingCount = _bundle is null ? 0 : PendingReviewService.GetCounts(_bundle).Total;
+
+        SetSideTabHeader(ReferenceSideTab, "Reference", reviewCount > 0 ? reviewCount : null);
+        SetSideTabHeader(WarningsSideTab, "Warnings", warningCount > 0 ? warningCount : null);
+        SetSideTabHeader(StateSideTab, "State", null);
+
+        var reviewsBadge = pendingCount > 0 ? pendingCount : reviewCount > 0 ? reviewCount : (int?)null;
+        SetExpanderHeader(ReviewsExpander, "Reviews", reviewsBadge);
+
+        ReviewsExpander.IsExpanded = pendingCount > 0 || reviewCount > 0;
+    }
+
+    private void SetExpanderHeader(Expander expander, string title, int? badgeCount)
+    {
+        if (badgeCount is null or 0)
         {
-            if (tab.Header is not string header)
-                continue;
+            expander.Header = title;
+            return;
+        }
 
-            if (!placement.TryGetValue(header, out var where) || string.IsNullOrWhiteSpace(where))
-                continue;
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        panel.Children.Add(new TextBlock
+        {
+            Text = title,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        panel.Children.Add(CreateBadgeBorder(badgeCount.Value));
+        expander.Header = panel;
+    }
 
-            tab.Visibility = string.Equals(where, "Hidden", StringComparison.OrdinalIgnoreCase)
-                ? Visibility.Collapsed
-                : Visibility.Visible;
+    private void SetSideTabHeader(TabItem tab, string title, int? badgeCount)
+    {
+        if (badgeCount is null or 0)
+        {
+            tab.Header = title;
+            return;
+        }
+
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        panel.Children.Add(new TextBlock
+        {
+            Text = title,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        panel.Children.Add(CreateBadgeBorder(badgeCount.Value));
+        tab.Header = panel;
+    }
+
+    private Border CreateBadgeBorder(int count)
+    {
+        var badge = new Border();
+        if (TryFindResource("ShellBadgeStyle") is Style badgeStyle)
+            badge.Style = badgeStyle;
+
+        badge.Margin = new Thickness(6, 0, 0, 0);
+        badge.Child = new TextBlock
+        {
+            Text = count.ToString(),
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TryFindResource("TextPrimaryBrush") as Brush ?? Brushes.White,
+        };
+        return badge;
+    }
+
+    public void ApplyLayout(PlayLayoutSnapshot snapshot)
+    {
+        _layoutSnapshot = snapshot;
+
+        if (snapshot.Shell.IsUsable)
+            ApplyShellLayout(snapshot.Shell);
+
+        if (_bundle is not null)
+        {
+            ApplyReferenceLayout(ResolveTabContext("Reference"));
+            ApplyWarningsLayout(ResolveTabContext("Warnings"));
+            ApplyStateLayout(ResolveTabContext("State"));
         }
     }
 
-    public void UpdateResponsiveLayout(double panelWidth)
+    /// <summary>Legacy entry point — prefer <see cref="ApplyLayout"/> with a full snapshot.</summary>
+    public void UpdateResponsiveLayout(double panelWidth) =>
+        ApplyLayout(PlayLayoutCoordinator.CreateSnapshot(panelWidth, _layoutSnapshot.Companion.PanelWidth));
+
+    private PlayLayoutContext ResolveTabContext(string tabName) =>
+        _bundle is null
+            ? _layoutSnapshot.Shell
+            : PlayLayoutCoordinator.ResolveTabContext(_layoutSnapshot, _bundle.Metadata.Settings, tabName);
+
+    private void ApplyShellLayout(PlayLayoutContext context)
     {
-        if (panelWidth <= 0)
-            return;
+        var cap = context.Capabilities;
+        RootGrid.Margin = new Thickness(context.Margin);
 
-        RootGrid.Margin = panelWidth < 264 ? new Thickness(8) : new Thickness(12);
-        var contentWidth = Math.Max(0, panelWidth - RootGrid.Margin.Left - RootGrid.Margin.Right);
+        BackButton.Content = cap.ShowFullBackLabel ? "← Dashboard" : "←";
+        BackButton.Visibility = _shellBreadcrumbVisible ? Visibility.Collapsed : Visibility.Visible;
 
-        BackButton.Content = contentWidth < 220 ? "←" : "← Dashboard";
-        PlaySettingsButton.Content = contentWidth switch
-        {
-            < 220 => "⚙",
-            < 260 => "Settings",
-            _ => "Play settings…",
-        };
-        PlaySettingsButton.Padding = contentWidth < 220 ? new Thickness(8, 4, 8, 4) : new Thickness(10, 4, 10, 4);
-        PlaySettingsButton.MinWidth = contentWidth < 220 ? 32 : 0;
+        PlaySettingsButton.Content = cap.ShowFullPlaySettingsLabel
+            ? "Play settings…"
+            : cap.ShowIntermediatePlaySettingsLabel
+                ? "Settings"
+                : "⚙";
+        PlaySettingsButton.Padding = cap.ShowFullBackLabel ? new Thickness(10, 4, 10, 4) : new Thickness(8, 4, 8, 4);
+        PlaySettingsButton.MinWidth = cap.ShowFullBackLabel ? 0 : 32;
 
-        SessionCockpit.Padding = contentWidth < 240 ? new Thickness(6) : new Thickness(8);
+        SourcesButton.Visibility = cap.ShowSourcesButton ? Visibility.Visible : Visibility.Collapsed;
+        HeaderMoreMenu.Visibility = Visibility.Visible;
 
-        EntityRoleColumn.Visibility = contentWidth >= 250 ? Visibility.Visible : Visibility.Collapsed;
-        EntityPinnedColumn.Visibility = contentWidth >= 290 ? Visibility.Visible : Visibility.Collapsed;
-        EntityDescriptionColumn.Visibility = contentWidth >= 330 ? Visibility.Visible : Visibility.Collapsed;
-        PinEntityButton.Visibility = contentWidth >= 290 ? Visibility.Visible : Visibility.Collapsed;
-        SuggestEntitiesButton.Visibility = contentWidth >= 360 ? Visibility.Visible : Visibility.Collapsed;
+        AiToolsFlyoutMenu.Visibility = cap.UseShellHeaderFlyouts ? Visibility.Visible : Visibility.Collapsed;
+        JobActionsPanel.Visibility = cap.UseShellHeaderFlyouts ? Visibility.Collapsed : Visibility.Visible;
 
-        StateFieldColumn.Width = contentWidth < 260
-            ? new DataGridLength(96)
-            : new DataGridLength(140);
+        NarratorFlyoutMenu.Visibility = cap.UseShellHeaderFlyouts ? Visibility.Visible : Visibility.Collapsed;
+        NarratorControlsPanel.Visibility = cap.UseShellHeaderFlyouts ? Visibility.Collapsed : Visibility.Visible;
+        NarratorExpander.Visibility = Visibility.Visible;
 
-        EditWorldButton.Content = contentWidth < 280
-            ? "Edit world in settings"
-            : "Edit in Play settings → World";
+        var footerPadding = cap.UseFullFooterLabels
+            ? new Thickness(10, 5, 10, 5)
+            : new Thickness(8, 5, 8, 5);
+        FooterSearchButton.Padding = footerPadding;
+        FooterExportButton.Padding = footerPadding;
+        MoreActionsButton.Padding = footerPadding;
+        FooterSearchButton.Content = cap.UseFullFooterLabels ? "Search…" : "Search";
+        FooterExportButton.Content = cap.UseFullFooterLabels ? "Export…" : "Export";
+        FooterExportButton.ToolTip = "Save adventure to a file — Markdown, HTML, JSON, or ZIP archive";
+        MoreActionsButton.Content = cap.UseCompactFooterMore ? "More…" : "More actions…";
+
+        SessionCockpit.Padding = cap.UseCompactSessionPadding ? new Thickness(6) : new Thickness(8);
+
+        EditWorldButton.Content = cap.UseFullFooterLabels
+            ? "Edit in Play settings → World"
+            : "Edit world in settings";
+    }
+
+    private void ApplyReferenceLayout(PlayLayoutContext context)
+    {
+        var cap = context.Capabilities;
+        ReferenceTabRoot.Margin = cap.UseCompactSessionPadding ? new Thickness(2) : new Thickness(4);
+        EntityReferencePanel.ApplyLayout(cap);
+    }
+
+    private void ApplyWarningsLayout(PlayLayoutContext context)
+    {
+        if (_bundle is not null)
+            BindWarnings(context);
+    }
+
+    private void ApplyStateLayout(PlayLayoutContext context)
+    {
+        var cap = context.Capabilities;
+        StateAllFieldsExpander.Visibility = cap.ShowStateAllFields
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        StateFieldColumn.Width = new DataGridLength(cap.StateFieldColumnWidth);
+        StatePreviewPanel.Columns = cap.UseWideStatePreview ? 2 : 1;
     }
 
     public void SetSidePanelCollapsed(bool collapsed)
@@ -200,6 +514,8 @@ public partial class AdventurePlayView : UserControl
     }
 
     public void SaveConfiguration() => SaveNotesAction?.Invoke();
+
+    public string? GetSelectedEntityName() => EntityReferencePanel.SelectedRow?.Name;
 
     public string GetPreviewPlayerLineText() => _previewPlayerLine;
 
@@ -234,27 +550,223 @@ public partial class AdventurePlayView : UserControl
         UpdateLinkProjectUi();
     }
 
+    public void ShowCanonSyncNotice(string message)
+    {
+        CanonSyncNoticeText.Text = message;
+        CanonSyncNoticeBanner.Visibility = Visibility.Visible;
+
+        _canonSyncNoticeTimer?.Stop();
+        _canonSyncNoticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(14) };
+        _canonSyncNoticeTimer.Tick += (_, _) => HideCanonSyncNotice();
+        _canonSyncNoticeTimer.Start();
+    }
+
+    private void HideCanonSyncNotice()
+    {
+        _canonSyncNoticeTimer?.Stop();
+        CanonSyncNoticeBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void DismissCanonSyncNotice_Click(object sender, RoutedEventArgs e) =>
+        HideCanonSyncNotice();
+
+    private void ViewLastCanonSyncDiff_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null || _lastCanonSyncResult is null)
+            return;
+
+        var dlg = new EntityChangePlanDiffPreviewDialog(_bundle, _lastCanonSyncResult)
+        {
+            Owner = Window.GetWindow(this),
+        };
+        dlg.ShowDialog();
+    }
+
+    private async void OpenSourceManagerFromBanner_Click(object sender, RoutedEventArgs e)
+    {
+        if (OpenSourceManagerAsync is not null)
+            await OpenSourceManagerAsync();
+        else
+            OpenPlaySettings(PlaySettingsTab.Sources);
+    }
+
+    private void CanonCommitBar_PlansChanged(object? sender, EventArgs e)
+    {
+        if (_bundle is not null)
+            _bundle = AdventureStore.Load(_bundle.Metadata.Id);
+        BindEntityGrid();
+        PlayStatusRefreshRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void CanonInbox_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null)
+            return;
+
+        var dlg = new CanonInboxDialog(_bundle) { Owner = Window.GetWindow(this) };
+        dlg.NavigateRequested += (_, item) => NavigateCanonInboxItem(item);
+        dlg.ShowDialog();
+    }
+
+    private async void NavigateCanonInboxItem(CanonInboxItem item)
+    {
+        switch (item.Destination)
+        {
+            case CanonInboxDestination.ReferenceTab:
+                PlaySideTabControl.SelectedItem = ReferenceSideTab;
+                break;
+            case CanonInboxDestination.SourcesSettings:
+            case CanonInboxDestination.SourceManager:
+                if (OpenSourceManagerAsync is not null)
+                    await OpenSourceManagerAsync();
+                else
+                    OpenPlaySettings(PlaySettingsTab.Sources);
+                break;
+            case CanonInboxDestination.CommitBar:
+                CanonCommitBar.Bind(_bundle);
+                break;
+            case CanonInboxDestination.JsonImportReview:
+                OpenPlaySettings(PlaySettingsTab.Sources);
+                break;
+        }
+    }
+
+    private bool _suppressNarratorControls;
+
+    private void BindNarratorControls()
+    {
+        if (_bundle is null)
+            return;
+
+        _suppressNarratorControls = true;
+        var scope = GetSelectedNarratorScope();
+
+        NarratorSceneProfileCombo.ItemsSource = new List<NarratorPresetComboItem>
+        {
+            NarratorPresetComboItem.Inherit(),
+        }.Concat(NarratorPresetLibrary.SceneProfiles.Select(p => new NarratorPresetComboItem(p.Id, p.DisplayName)))
+        .ToList();
+        NarratorSceneProfileCombo.DisplayMemberPath = nameof(NarratorPresetComboItem.DisplayName);
+        NarratorSceneProfileCombo.SelectedIndex = 0;
+
+        NarratorControlsService.PopulateCombo(ResponseLengthCombo, _bundle, NarratorParameter.ResponseLength, scope);
+        NarratorControlsService.PopulateCombo(DetailLevelCombo, _bundle, NarratorParameter.DetailLevel, scope);
+        NarratorControlsService.PopulateCombo(ToneQuickCombo, _bundle, NarratorParameter.Tone, scope, isEditable: true);
+        NarratorControlsService.PopulateCombo(DifficultyQuickCombo, _bundle, NarratorParameter.Difficulty, scope, isEditable: true);
+
+        UpdateNarratorOverrideChips();
+        _suppressNarratorControls = false;
+    }
+
+    private NarratorOverrideScope GetSelectedNarratorScope()
+    {
+        if (NarratorScopeSessionRadio.IsChecked == true)
+            return NarratorOverrideScope.Session;
+        if (NarratorScopeAdventureRadio.IsChecked == true)
+            return NarratorOverrideScope.Adventure;
+        return NarratorOverrideScope.Turn;
+    }
+
+    private void NarratorScope_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressNarratorControls)
+            return;
+
+        BindNarratorControls();
+    }
+
+    private void NarratorParameter_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressNarratorControls || _bundle is null)
+            return;
+
+        var scope = GetSelectedNarratorScope();
+        NarratorControlsService.SaveComboValue(_bundle, ResponseLengthCombo, NarratorParameter.ResponseLength, scope);
+        NarratorControlsService.SaveComboValue(_bundle, DetailLevelCombo, NarratorParameter.DetailLevel, scope);
+        NarratorControlsService.SaveComboValue(_bundle, ToneQuickCombo, NarratorParameter.Tone, scope);
+        NarratorControlsService.SaveComboValue(_bundle, DifficultyQuickCombo, NarratorParameter.Difficulty, scope);
+
+        UpdateNarratorOverrideChips();
+        AdventureStore.Save(_bundle);
+    }
+
+    private void NarratorSceneProfile_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressNarratorControls || _bundle is null)
+            return;
+
+        if (NarratorSceneProfileCombo.SelectedItem is not NarratorPresetComboItem item || item.IsInherit || item.Id is null)
+            return;
+
+        NarratorPresetLibrary.ApplySceneProfile(_bundle, item.Id, GetSelectedNarratorScope());
+        BindNarratorControls();
+        AdventureStore.Save(_bundle);
+    }
+
+    private void ResetNarratorScope_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null)
+            return;
+
+        NarratorOverrideResolver.ResetScope(_bundle, GetSelectedNarratorScope());
+        BindNarratorControls();
+        AdventureStore.Save(_bundle);
+    }
+
+    private void NarratorAdvanced_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null)
+            return;
+
+        var dialog = new NarratorAdvancedDialog(_bundle, GetSelectedNarratorScope())
+        {
+            Owner = Window.GetWindow(this),
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            BindNarratorControls();
+            AdventureStore.Save(_bundle);
+        }
+    }
+
+    private void NarratorFlyoutExpand_Click(object sender, RoutedEventArgs e)
+    {
+        NarratorExpander.IsExpanded = true;
+    }
+
+    private void UpdateNarratorOverrideChips()
+    {
+        if (_bundle is null)
+            return;
+
+        var chips = NarratorOverrideResolver.GetActiveOverrideChips(_bundle);
+        NarratorOverrideChips.Text = chips.Count == 0
+            ? "No active overrides."
+            : $"Active: {string.Join(" · ", chips)}";
+    }
+
     private void UpdateLinkProjectUi()
     {
         var showBanner = AdventureProjectBindingService.ShouldShowLinkProjectBanner(_bundle);
         LinkProjectBanner.Visibility = showBanner ? Visibility.Visible : Visibility.Collapsed;
         var hasProject = !showBanner;
-        LinkProjectButton.Visibility = Visibility.Visible;
-        LinkProjectButton.Content = hasProject ? "Change Project…" : "Link Project…";
-        LinkProjectButton.ToolTip = hasProject
+        HeaderLinkProjectMenuItem.Visibility = showBanner ? Visibility.Collapsed : Visibility.Visible;
+        HeaderLinkProjectMenuItem.Header = hasProject ? "Change Project…" : "Link Project…";
+        HeaderLinkProjectMenuItem.ToolTip = hasProject
             ? "Switch to a different ChatGPT Project or unlink"
             : "Connect this adventure to a ChatGPT Project";
+        LinkProjectButton.Visibility = Visibility.Collapsed;
         ThreadStatusBlock.Cursor = System.Windows.Input.Cursors.Hand;
         ThreadStatusBlock.ToolTip = hasProject
-            ? "Click to change or unlink the linked ChatGPT Project"
-            : "Click to link a ChatGPT Project";
+            ? "Click to manage play threads"
+            : "Click to manage play threads (link a Project first for new threads)";
     }
 
     private void LinkProject_Click(object sender, RoutedEventArgs e) =>
         LinkProjectRequested?.Invoke(this, EventArgs.Empty);
 
     private void ThreadStatus_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
-        LinkProjectRequested?.Invoke(this, EventArgs.Empty);
+        ManageThreadsRequested?.Invoke(this, EventArgs.Empty);
 
     public void SetSessionError(string message) =>
         ThreadStatusBlock.Text = message;
@@ -281,14 +793,13 @@ public partial class AdventurePlayView : UserControl
         if (_bundle is null)
         {
             ProcessLastExchangeButton.IsEnabled = false;
-            SuggestEntitiesButton.IsEnabled = false;
-            ExpandEntityButton.IsEnabled = false;
             SuggestMemoriesButton.IsEnabled = false;
             RefreshSummaryButton.IsEnabled = false;
             GenerateCardsButton.IsEnabled = false;
             SourcesButton.IsEnabled = false;
             GenerateRecapButton.IsEnabled = false;
             RunContinuityButton.IsEnabled = false;
+            AiToolsFlyoutButton.IsEnabled = false;
             return;
         }
 
@@ -297,24 +808,210 @@ public partial class AdventurePlayView : UserControl
                           || UtilityTranscriptScopeService.ResolveFallbackTurn(_bundle) is not null;
 
         ProcessLastExchangeButton.IsEnabled = hasProject && hasExchange;
-        SuggestEntitiesButton.IsEnabled = hasProject && hasExchange;
-        ExpandEntityButton.IsEnabled = hasProject && SelectedEntityRow is not null;
+        EntityReferencePanel.UpdateSecondaryActionStates(hasProject, hasExchange);
         SuggestMemoriesButton.IsEnabled = hasProject && hasExchange;
         RefreshSummaryButton.IsEnabled = hasProject;
         GenerateCardsButton.IsEnabled = hasProject;
         SourcesButton.IsEnabled = true;
         GenerateRecapButton.IsEnabled = hasProject;
         RunContinuityButton.IsEnabled = hasProject;
+        RunContinuityCockpitButton.IsEnabled = hasProject;
+
+        var aiEnabled = ProcessLastExchangeButton.IsEnabled
+                        || SuggestMemoriesButton.IsEnabled
+                        || RefreshSummaryButton.IsEnabled
+                        || GenerateCardsButton.IsEnabled
+                        || GenerateRecapButton.IsEnabled
+                        || RunContinuityCockpitButton.IsEnabled;
+        AiToolsFlyoutButton.IsEnabled = aiEnabled;
     }
 
     private void BindWarnings()
     {
+        BindWarnings(ResolveTabContext("Warnings"));
+    }
+
+    private void BindWarnings(PlayLayoutContext context)
+    {
         if (_bundle is null)
             return;
 
-        WarningsGrid.ItemsSource = _bundle.Continuity.Warnings
+        var warnings = ContinuityWarningDismissalService.FilterActive(_bundle.Continuity)
             .OrderByDescending(w => w.CreatedAt)
+            .Select(w => CreateWarningDisplayItem(w, context.ContentWidth))
             .ToList();
+
+        WarningsList.ItemsSource = warnings;
+        WarningsEmptyState.Visibility = warnings.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        WarningsList.Visibility = warnings.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+
+        if (_bundle.Continuity.LastCheckedAt is { } checkedAt)
+        {
+            WarningsLastCheckedBlock.Text = $"Last checked {FormatRelativeTime(checkedAt)}";
+            WarningsLastCheckedBlock.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            WarningsLastCheckedBlock.Visibility = Visibility.Collapsed;
+        }
+
+        UpdatePlayTabBadges();
+    }
+
+    private WarningDisplayItem CreateWarningDisplayItem(ContinuityWarningEntry entry, double contentWidth)
+    {
+        var (label, brushKey) = entry.Severity.ToLowerInvariant() switch
+        {
+            "high" or "error" => ("Error", "ErrorSubtleBrush"),
+            "info" => ("Info", "AccentSubtleBrush"),
+            _ => ("Warning", "WarningSubtleBrush"),
+        };
+
+        return new WarningDisplayItem
+        {
+            Entry = entry,
+            Message = entry.Message,
+            Source = entry.Source,
+            SeverityLabel = label,
+            SeverityBrush = TryFindResource(brushKey) as Brush ?? Brushes.Transparent,
+            SourceVisibility = PlayResponsiveTiers.ShowWarningSource(contentWidth)
+                ? Visibility.Visible
+                : Visibility.Collapsed,
+        };
+    }
+
+    private static string FormatRelativeTime(DateTimeOffset when)
+    {
+        var delta = DateTimeOffset.Now - when;
+        if (delta.TotalMinutes < 1)
+            return "just now";
+        if (delta.TotalHours < 1)
+            return $"{(int)delta.TotalMinutes} min ago";
+        if (delta.TotalDays < 1)
+            return $"{(int)delta.TotalHours} hr ago";
+        if (delta.TotalDays < 7)
+            return $"{(int)delta.TotalDays} days ago";
+        return when.LocalDateTime.ToString("MMM d, yyyy");
+    }
+
+    private void WarningsList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var element = e.OriginalSource as DependencyObject;
+        while (element is not null and not ListBoxItem)
+            element = VisualTreeHelper.GetParent(element);
+
+        if (element is ListBoxItem item)
+            WarningsList.SelectedItem = item.DataContext;
+    }
+
+    private WarningDisplayItem? ResolveWarningMenuItem(object sender)
+    {
+        if (SelectedWarningItem is { } selected)
+            return selected;
+
+        if (sender is MenuItem { Parent: ContextMenu { PlacementTarget: DependencyObject target } })
+        {
+            var container = ItemsControl.ContainerFromElement(WarningsList, target) as ListBoxItem;
+            return container?.DataContext as WarningDisplayItem;
+        }
+
+        return null;
+    }
+
+    private WarningDisplayItem? SelectedWarningItem => WarningsList.SelectedItem as WarningDisplayItem;
+
+    private void WarningDismiss_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null)
+            return;
+
+        var item = ResolveWarningMenuItem(sender);
+        if (item is null)
+            return;
+
+        ContinuityWarningDismissalService.Dismiss(_bundle.Continuity, item.Entry.Message);
+        AdventureStore.Save(_bundle);
+        BindWarnings();
+    }
+
+    private void WarningOpenInReference_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null)
+            return;
+
+        var item = ResolveWarningMenuItem(sender);
+        if (item is null)
+            return;
+
+        if (!TryResolveEntityFromWarning(item.Entry.Message, out var filter, out var entityId))
+        {
+            NavigateToPlayTab("Reference");
+            return;
+        }
+
+        NavigateToPlayTab("Reference");
+        EntityReferencePanel.SelectEntity(filter, entityId);
+    }
+
+    private bool TryResolveEntityFromWarning(string message, out string filter, out Guid entityId)
+    {
+        filter = "Characters";
+        entityId = Guid.Empty;
+        if (_bundle is null || string.IsNullOrWhiteSpace(message))
+            return false;
+
+        foreach (var loc in _bundle.Entities.Locations)
+        {
+            if (!string.IsNullOrWhiteSpace(loc.Name)
+                && message.Contains(loc.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                filter = "Locations";
+                entityId = loc.Id;
+                return true;
+            }
+        }
+
+        foreach (var character in _bundle.Entities.Characters)
+        {
+            if (!string.IsNullOrWhiteSpace(character.Name)
+                && message.Contains(character.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                filter = "Characters";
+                entityId = character.Id;
+                return true;
+            }
+        }
+
+        foreach (var item in _bundle.Entities.Inventory)
+        {
+            if (!string.IsNullOrWhiteSpace(item.Name)
+                && message.Contains(item.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                filter = "Things";
+                entityId = item.Id;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void StateLocationReference_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null)
+            return;
+
+        var locationName = _bundle.State.CurrentLocation?.Trim();
+        if (string.IsNullOrWhiteSpace(locationName))
+            return;
+
+        var match = _bundle.Entities.Locations.FirstOrDefault(l =>
+            l.Name.Equals(locationName, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+            return;
+
+        NavigateToPlayTab("Reference");
+        EntityReferencePanel.SelectEntity("Locations", match.Id);
     }
 
     public void SetPlayTabPinStatus(bool pinned, string? tabTitle)
@@ -345,7 +1042,7 @@ public partial class AdventurePlayView : UserControl
         if (AdventureBootstrapService.IsFreshAdventure(_bundle)
             && _bundle.Metadata.Settings.OfferStartOnPlay)
         {
-            _previewPlayerLine = AdventureBootstrapService.GetOpeningPlayerLine(_bundle.Scenario);
+            _previewPlayerLine = AdventureBootstrapService.BuildStartPlayerDirective(_bundle);
         }
     }
 
@@ -354,15 +1051,60 @@ public partial class AdventurePlayView : UserControl
         if (_bundle is null)
             return;
 
-        StateGrid.ItemsSource = StateTableHelper.BuildRows(_bundle);
+        var rows = StateTableHelper.BuildRows(_bundle);
+        StateGrid.ItemsSource = rows;
+        var summary = TruncatePreview(FindStateValue(rows, "Rolling summary"));
+        var location = TruncatePreview(FindStateValue(rows, "Location", "Scene location"));
+        var objectives = TruncatePreview(FindStateValue(rows, "Objectives"));
+        StateSummaryPreview.Text = summary;
+        StateLocationPreview.Text = location;
+        StateObjectivesPreview.Text = objectives;
+
+        var allUnset = summary == "(not set)" && location == "(not set)" && objectives == "(not set)";
+        StateEmptyStateCard.Visibility = allUnset ? Visibility.Visible : Visibility.Collapsed;
+
+        var locationName = _bundle.State.CurrentLocation?.Trim();
+        StateLocationReferenceButton.Visibility =
+            !string.IsNullOrWhiteSpace(locationName)
+            && _bundle.Entities.Locations.Any(l =>
+                l.Name.Equals(locationName, StringComparison.OrdinalIgnoreCase))
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        StateLocationReferenceMenuItem.Visibility = StateLocationReferenceButton.Visibility;
+
+        if (_bundle.Metadata.LastPlayedAt != default)
+        {
+            StateLastUpdatedBlock.Text = $"Last updated {FormatRelativeTime(_bundle.Metadata.LastPlayedAt)}";
+            StateLastUpdatedBlock.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            StateLastUpdatedBlock.Visibility = Visibility.Collapsed;
+        }
     }
+
+    private static string FindStateValue(IReadOnlyList<StateTableRow> rows, params string[] fields)
+    {
+        foreach (var field in fields)
+        {
+            var row = rows.FirstOrDefault(r => r.Field.Equals(field, StringComparison.OrdinalIgnoreCase));
+            if (row is not null && !string.IsNullOrWhiteSpace(row.Value))
+                return row.Value;
+        }
+
+        return "(not set)";
+    }
+
+    private static string TruncatePreview(string value) =>
+        value.Length <= 220 ? value : value[..217] + "…";
 
     private void BindEntityGrid()
     {
         if (_bundle is null)
             return;
 
-        EntityGrid.ItemsSource = BuildEntityRows(_entityFilter);
+        EntityReferencePanel.LoadBundle(_bundle);
+        CanonCommitBar.Bind(_bundle);
     }
 
     private PlayPromptInjectionDialog? _openPlaySettingsDialog;
@@ -390,10 +1132,13 @@ public partial class AdventurePlayView : UserControl
         var counts = PendingReviewService.GetCounts(_bundle);
         PendingReviewBanner.Visibility = counts.Total > 0 ? Visibility.Visible : Visibility.Collapsed;
         PendingReviewHeader.Text = PendingReviewService.FormatSummaryLine(counts);
+        PendingReviewPinnedRow.Visibility = counts.Total > 0 ? Visibility.Visible : Visibility.Collapsed;
+        PendingReviewPinnedText.Text = PendingReviewService.FormatSummaryLine(counts);
         ReviewMemoriesButton.Visibility = counts.Memories > 0 ? Visibility.Visible : Visibility.Collapsed;
         ReviewSummaryButton.Visibility = counts.Summary > 0 ? Visibility.Visible : Visibility.Collapsed;
         ReviewEntitiesButton.Visibility = counts.Entities > 0 ? Visibility.Visible : Visibility.Collapsed;
         ReviewCardsButton.Visibility = counts.Cards > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdatePlayTabBadges();
     }
 
     private void BindReviewQueue()
@@ -402,7 +1147,9 @@ public partial class AdventurePlayView : UserControl
             return;
 
         var queue = _bundle.Entities.ReviewQueue;
-        ReviewQueueBanner.Visibility = queue.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ReviewQueueBanner.Visibility = queue.Count > 0 && _showReferenceReviewQueue
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         ReviewQueueHeader.Text = queue.Count > 0
             ? $"{queue.Count} proposed entit{(queue.Count == 1 ? "y" : "ies")} awaiting review"
             : "";
@@ -411,291 +1158,11 @@ public partial class AdventurePlayView : UserControl
             .ToList();
         if (ReviewQueueList.Items.Count > 0)
             ReviewQueueList.SelectedIndex = 0;
+        UpdatePlayTabBadges();
     }
-
-    private List<EntityGridRow> BuildEntityRows(string filter)
-    {
-        if (_bundle is null)
-            return [];
-
-        return filter switch
-        {
-            "Locations" => _bundle.Entities.Locations
-                .Select(e => new EntityGridRow
-                {
-                    Id = e.Id,
-                    Kind = EntityKind.Location,
-                    Name = e.Name,
-                    RoleOrStatus = e.Status,
-                    Pinned = e.Pinned,
-                    DescriptionSnippet = Truncate(e.Description, 80),
-                })
-                .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList(),
-            "Quests" => _bundle.Entities.Quests
-                .Select(e => new EntityGridRow
-                {
-                    Id = e.Id,
-                    Kind = EntityKind.Quest,
-                    Name = e.Title,
-                    RoleOrStatus = e.Status.ToString(),
-                    Pinned = false,
-                    DescriptionSnippet = Truncate(e.Description, 80),
-                })
-                .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList(),
-            "Things" => _bundle.Entities.Inventory
-                .Select(e => new EntityGridRow
-                {
-                    Id = e.Id,
-                    Kind = EntityKind.Thing,
-                    Name = e.Name,
-                    RoleOrStatus = e.Status,
-                    Pinned = false,
-                    DescriptionSnippet = Truncate(e.Description, 80),
-                })
-                .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList(),
-            "Factions" => _bundle.Entities.Factions
-                .Select(e => new EntityGridRow
-                {
-                    Id = e.Id,
-                    Kind = EntityKind.Faction,
-                    Name = e.Name,
-                    RoleOrStatus = e.Reputation,
-                    Pinned = false,
-                    DescriptionSnippet = Truncate(e.Goals, 80),
-                })
-                .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList(),
-            "Concepts" => _bundle.Entities.Concepts
-                .Select(e => new EntityGridRow
-                {
-                    Id = e.Id,
-                    Kind = EntityKind.Concept,
-                    Name = e.Name,
-                    RoleOrStatus = e.Category,
-                    Pinned = e.Pinned,
-                    DescriptionSnippet = Truncate(e.Description, 80),
-                })
-                .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList(),
-            _ => _bundle.Entities.Characters
-                .Select(e => new EntityGridRow
-                {
-                    Id = e.Id,
-                    Kind = EntityKind.Character,
-                    Name = e.Name,
-                    RoleOrStatus = string.IsNullOrWhiteSpace(e.Role) ? e.Status : e.Role,
-                    Pinned = e.Pinned,
-                    DescriptionSnippet = Truncate(e.Description, 80),
-                })
-                .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList(),
-        };
-    }
-
-    private static string Truncate(string? text, int max)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return "";
-
-        var trimmed = text.Trim();
-        return trimmed.Length <= max ? trimmed : trimmed[..max] + "…";
-    }
-
-    private EntityGridRow? SelectedEntityRow => EntityGrid.SelectedItem as EntityGridRow;
 
     private EntityReviewItem? SelectedReviewItem =>
         (ReviewQueueList.SelectedItem as ReviewQueueListItem)?.Item;
-
-    private void EntityFilterBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (EntityFilterBox.SelectedItem is string filter)
-        {
-            _entityFilter = filter;
-            BindEntityGrid();
-        }
-    }
-
-    private void AddEntity_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null)
-            return;
-
-        var showPinned = _entityFilter != "Quests";
-        var dlg = new EntityEditDialog("", "", "", pinned: false, showPinned) { Owner = Window.GetWindow(this) };
-        if (dlg.ShowDialog() != true || string.IsNullOrWhiteSpace(dlg.EntityName))
-            return;
-
-        switch (_entityFilter)
-        {
-            case "Locations":
-                _bundle.Entities.Locations.Add(new LocationEntry
-                {
-                    Name = dlg.EntityName,
-                    Status = dlg.EntityRole,
-                    Description = dlg.EntityDescription,
-                    Pinned = dlg.EntityPinned,
-                });
-                break;
-            case "Quests":
-                _bundle.Entities.Quests.Add(new QuestEntry
-                {
-                    Title = dlg.EntityName,
-                    Description = dlg.EntityDescription,
-                    Notes = dlg.EntityRole,
-                });
-                break;
-            default:
-                _bundle.Entities.Characters.Add(new CharacterEntry
-                {
-                    Name = dlg.EntityName,
-                    Role = dlg.EntityRole,
-                    Description = dlg.EntityDescription,
-                    Pinned = dlg.EntityPinned,
-                });
-                break;
-        }
-
-        AdventureStore.Save(_bundle);
-        BindEntityGrid();
-    }
-
-    private void EditEntity_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null || SelectedEntityRow is not { } row)
-            return;
-
-        EditEntityRow(row);
-    }
-
-    private void EditEntityRow(EntityGridRow row)
-    {
-        if (_bundle is null)
-            return;
-
-        string name;
-        string role;
-        string description;
-        bool pinned;
-        var showPinned = row.Kind != EntityKind.Quest;
-
-        switch (row.Kind)
-        {
-            case EntityKind.Location:
-            {
-                var location = _bundle.Entities.Locations.First(e => e.Id == row.Id);
-                name = location.Name;
-                role = location.Status;
-                description = location.Description;
-                pinned = location.Pinned;
-                var dlg = new EntityEditDialog(name, role, description, pinned, showPinned)
-                {
-                    Owner = Window.GetWindow(this),
-                };
-                if (dlg.ShowDialog() != true || string.IsNullOrWhiteSpace(dlg.EntityName))
-                    return;
-
-                location.Name = dlg.EntityName;
-                location.Status = dlg.EntityRole;
-                location.Description = dlg.EntityDescription;
-                location.Pinned = dlg.EntityPinned;
-                break;
-            }
-            case EntityKind.Quest:
-            {
-                var quest = _bundle.Entities.Quests.First(e => e.Id == row.Id);
-                name = quest.Title;
-                role = quest.Notes;
-                description = quest.Description;
-                var dlg = new EntityEditDialog(name, role, description, pinned: false, showPinned: false)
-                {
-                    Owner = Window.GetWindow(this),
-                };
-                if (dlg.ShowDialog() != true || string.IsNullOrWhiteSpace(dlg.EntityName))
-                    return;
-
-                quest.Title = dlg.EntityName;
-                quest.Notes = dlg.EntityRole;
-                quest.Description = dlg.EntityDescription;
-                break;
-            }
-            default:
-            {
-                var character = _bundle.Entities.Characters.First(e => e.Id == row.Id);
-                name = character.Name;
-                role = string.IsNullOrWhiteSpace(character.Role) ? character.Status : character.Role;
-                description = character.Description;
-                pinned = character.Pinned;
-                var dlg = new EntityEditDialog(name, role, description, pinned, showPinned)
-                {
-                    Owner = Window.GetWindow(this),
-                };
-                if (dlg.ShowDialog() != true || string.IsNullOrWhiteSpace(dlg.EntityName))
-                    return;
-
-                character.Name = dlg.EntityName;
-                character.Role = dlg.EntityRole;
-                character.Description = dlg.EntityDescription;
-                character.Pinned = dlg.EntityPinned;
-                break;
-            }
-        }
-
-        AdventureStore.Save(_bundle);
-        BindEntityGrid();
-    }
-
-    private void DeleteEntity_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null || SelectedEntityRow is not { } row)
-            return;
-
-        if (MessageBox.Show(Window.GetWindow(this), $"Delete “{row.Name}”?", "Delete entity",
-                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-            return;
-
-        switch (row.Kind)
-        {
-            case EntityKind.Location:
-                _bundle.Entities.Locations.RemoveAll(e => e.Id == row.Id);
-                break;
-            case EntityKind.Quest:
-                _bundle.Entities.Quests.RemoveAll(e => e.Id == row.Id);
-                break;
-            default:
-                _bundle.Entities.Characters.RemoveAll(e => e.Id == row.Id);
-                break;
-        }
-
-        AdventureStore.Save(_bundle);
-        BindEntityGrid();
-    }
-
-    private void TogglePinEntity_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null || SelectedEntityRow is not { } row)
-            return;
-
-        if (row.Kind == EntityKind.Quest)
-            return;
-
-        switch (row.Kind)
-        {
-            case EntityKind.Location:
-                if (_bundle.Entities.Locations.FirstOrDefault(e => e.Id == row.Id) is { } location)
-                    location.Pinned = !location.Pinned;
-                break;
-            default:
-                if (_bundle.Entities.Characters.FirstOrDefault(e => e.Id == row.Id) is { } character)
-                    character.Pinned = !character.Pinned;
-                break;
-        }
-
-        AdventureStore.Save(_bundle);
-        BindEntityGrid();
-    }
 
     private void AcceptReviewItem_Click(object sender, RoutedEventArgs e)
     {
@@ -706,6 +1173,11 @@ public partial class AdventurePlayView : UserControl
             _bundle.Entities.ReviewQueue.Remove(item);
 
         AdventureStore.Save(_bundle);
+        TryPromptCanonReconcile(new CanonEditContext
+        {
+            Category = MapReviewEntityCategory(item.EntityType),
+            IsReviewAccept = true,
+        });
         BindEntityGrid();
         BindReviewQueue();
     }
@@ -729,8 +1201,31 @@ public partial class AdventurePlayView : UserControl
     private async void Sources_Click(object sender, RoutedEventArgs e) =>
         await OpenSourceManagerOrFallbackAsync();
 
-    private async void SourcesStatus_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
+    private async void SourcesStatus_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (_bundle is not null
+            && CanonReconciliationService.HasUnresolvedDrift(_bundle)
+            && MessageBox.Show(
+                Window.GetWindow(this),
+                "Local JSON and sources/ are out of sync.\n\n"
+                + "Sync now to rewrite sources/*.md from current JSON?\n"
+                + "(Use Source Manager if you need to pull from sources instead.)",
+                "Repair source files",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question) == MessageBoxResult.Yes)
+        {
+            var result = EntityEditSourceSyncService.RepairFromJson(_bundle);
+            AdventureStore.Save(_bundle);
+            if (result.Synced && !string.IsNullOrWhiteSpace(result.Summary))
+                ShowCanonSyncNotice(result.Summary!);
+            PlayStatusRefreshRequested?.Invoke(this, EventArgs.Empty);
+            _bundle = AdventureStore.Load(_bundle.Metadata.Id);
+            BindEntityGrid();
+            return;
+        }
+
         await OpenSourceManagerOrFallbackAsync();
+    }
 
     private async Task OpenSourceManagerOrFallbackAsync()
     {
@@ -754,20 +1249,6 @@ public partial class AdventurePlayView : UserControl
         await RunJobButtonAsync(
             () => ProcessLastExchangeAsync?.Invoke(false) ?? Task.CompletedTask,
             RefreshAfterGenerationJob);
-
-    private async void ExpandEntity_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null || SelectedEntityRow is not { } row || ExpandEntityAsync is null)
-            return;
-
-        await RunJobButtonAsync(
-            () => ExpandEntityAsync(_entityFilter, row.Id),
-            () =>
-            {
-                BindReviewQueue();
-                BindPendingReview();
-            });
-    }
 
     private async void RunContinuityCheck_Click(object sender, RoutedEventArgs e) =>
         await RunJobButtonAsync(RunContinuityCheckAsync, BindWarnings);
@@ -812,6 +1293,11 @@ public partial class AdventurePlayView : UserControl
             _bundle.Entities.ReviewQueue.Remove(item);
 
         AdventureStore.Save(_bundle);
+        TryPromptCanonReconcile(new CanonEditContext
+        {
+            Category = MapReviewEntityCategory(item.EntityType),
+            IsReviewAccept = true,
+        });
         BindEntityGrid();
         BindReviewQueue();
 
@@ -819,11 +1305,20 @@ public partial class AdventurePlayView : UserControl
                    ?? (object?)_bundle.Entities.Locations.LastOrDefault()
                    ?? _bundle.Entities.Quests.LastOrDefault();
         if (last is CharacterEntry character)
-            EditEntityRow(BuildEntityRows("Characters").First(r => r.Id == character.Id));
+        {
+            EntityReferencePanel.SelectEntity("Characters", character.Id);
+            EntityReferencePanel.TryOpenEditor(EntityReferencePanel.SelectedRow);
+        }
         else if (last is LocationEntry location)
-            EditEntityRow(BuildEntityRows("Locations").First(r => r.Id == location.Id));
+        {
+            EntityReferencePanel.SelectEntity("Locations", location.Id);
+            EntityReferencePanel.TryOpenEditor(EntityReferencePanel.SelectedRow);
+        }
         else if (last is QuestEntry quest)
-            EditEntityRow(BuildEntityRows("Quests").First(r => r.Id == quest.Id));
+        {
+            EntityReferencePanel.SelectEntity("Quests", quest.Id);
+            EntityReferencePanel.TryOpenEditor(EntityReferencePanel.SelectedRow);
+        }
     }
 
     private void OpenSessionSettings_Click(object sender, RoutedEventArgs e) =>
@@ -879,7 +1374,8 @@ public partial class AdventurePlayView : UserControl
             return;
 
         SaveNotesAction?.Invoke();
-        var dlg = new PlayPromptInjectionDialog(_bundle, _previewPlayerLine, tab)
+        var fresh = AdventureStore.Load(_bundle.Metadata.Id) ?? _bundle;
+        var dlg = new PlayPromptInjectionDialog(fresh, _previewPlayerLine, tab)
         {
             Owner = Window.GetWindow(this),
         };
@@ -893,6 +1389,9 @@ public partial class AdventurePlayView : UserControl
             PlaySettingsSaved?.Invoke(this, EventArgs.Empty);
         }
     }
+
+    private void PendingReviewPinnedRow_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
+        OpenPlaySettingsForFirstPending();
 
     private void ReviewProposals_Click(object sender, RoutedEventArgs e) =>
         OpenPlaySettingsForFirstPending();
@@ -927,22 +1426,6 @@ public partial class AdventurePlayView : UserControl
     private void ReviewEntities_Click(object sender, RoutedEventArgs e) =>
         FocusEntityReviewQueue();
 
-    private bool IsReferenceTabHidden()
-    {
-        foreach (TabItem tab in PlaySideTabControl.Items)
-        {
-            if (tab.Header is not string header
-                || !string.Equals(header, "Reference", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            return tab.Visibility != Visibility.Visible;
-        }
-
-        return false;
-    }
-
     private void FocusReferenceTab() => FocusEntityReviewQueue(scrollOnly: false);
 
     private void FocusEntityReviewQueue(bool scrollOnly = true)
@@ -950,23 +1433,15 @@ public partial class AdventurePlayView : UserControl
         if (_bundle is null || _bundle.Entities.ReviewQueue.Count == 0)
             return;
 
-        if (IsReferenceTabHidden())
-        {
-            MessageBox.Show(
-                "The Reference tab is hidden in Play settings → Layout. "
-                    + "Set Reference visibility to Visible to review entities from the play surface.",
-                "Reference tab hidden",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+        if (!NavigateToPlayTab("Reference", scrollIntoView: false))
             return;
-        }
 
-        if (IsSidePanelCollapsed)
-            ExpandPlaySidePanelRequested?.Invoke(this, EventArgs.Empty);
+        FocusEntityReviewQueueInner(scrollOnly);
+    }
 
-        if (PlaySideTabControl.Items.Count > 0)
-            PlaySideTabControl.SelectedIndex = 0;
-
+    private void FocusEntityReviewQueueInner(bool scrollOnly)
+    {
+        _showReferenceReviewQueue = true;
         BindReviewQueue();
         if (ReviewQueueList.Items.Count > 0)
         {
@@ -978,6 +1453,69 @@ public partial class AdventurePlayView : UserControl
             ReviewQueueBanner.BringIntoView();
     }
 
+    private void TryPromptCanonReconcile(CanonEditContext context)
+    {
+        if (_bundle is null)
+            return;
+
+        var adventureId = _bundle.Metadata.Id;
+        var owner = Window.GetWindow(this);
+        var phraseRules = GetPhraseHighlightRules?.Invoke();
+        var syncResult = EntityEditSourceSyncService.TrySyncAfterEntityEdit(_bundle, context, phraseRules);
+        AdventureStore.Save(_bundle);
+
+        if (syncResult.Synced && !string.IsNullOrWhiteSpace(syncResult.Summary))
+            ShowCanonSyncNotice(syncResult.Summary!);
+
+        CanonReconcileResult? result = null;
+        if (syncResult.RequiresManualReconcile)
+        {
+            result = CanonReconciliationPromptService.TryPromptAfterSave(
+                owner,
+                _bundle,
+                context,
+                phraseRules,
+                OpenSourceManagerAsync);
+        }
+
+        if (result is CanonReconcileResult.Pushed or CanonReconcileResult.Pulled)
+        {
+            _bundle = AdventureStore.Load(adventureId);
+            if (_bundle is null)
+                return;
+
+            BindStateTable();
+            BindReviewQueue();
+            BindPendingReview();
+            BindWarnings();
+        }
+        else if (syncResult.Synced)
+        {
+            _bundle = AdventureStore.Load(adventureId);
+        }
+
+        BindEntityGrid();
+
+        if (result is not null
+            || syncResult.Synced
+            || (_bundle is not null && CanonReconciliationService.HasUnresolvedDrift(_bundle))
+            || (_bundle is not null && CanonReconciliationService.HasPendingNotify(_bundle)))
+        {
+            PlayStatusRefreshRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private static string MapReviewEntityCategory(string? entityType) =>
+        EntityTypeNormalizer.Normalize(entityType) switch
+        {
+            "person" => "Characters",
+            "place" => "Locations",
+            "concept" => "Concepts",
+            "quest" => "Quests",
+            "faction" => "Factions",
+            _ => "Characters",
+        };
+
     public void WirePlaySettingsDialog(PlayPromptInjectionDialog dlg)
     {
         dlg.ResolvePreviewComposerText = ResolvePreviewComposerText;
@@ -987,9 +1525,8 @@ public partial class AdventurePlayView : UserControl
         dlg.RefreshSourcesStatusAsync = RefreshSourcesStatusAsync;
         dlg.ReconcileDuplicatesAsync = ReconcileDuplicatesAsync;
         dlg.SetSessionLinkDetails(ThreadStatusBlock.Text, SourcesStatusBlock.Text);
-        dlg.OpenUtilityThreadAsync = jobId => OpenUtilityThreadAsync?.Invoke(jobId) ?? Task.CompletedTask;
-        dlg.RotateUtilityThreadAsync = jobId => RotateUtilityThreadAsync?.Invoke(jobId) ?? Task.CompletedTask;
-        dlg.StartNewPlayThreadAsync = () => StartNewPlayThreadAsync?.Invoke() ?? Task.CompletedTask;
+        dlg.StartNewPlayThreadAsync = request => StartNewPlayThreadAsync?.Invoke(request) ?? Task.CompletedTask;
+        dlg.OpenPlayHandoffDialog = () => OpenPlayHandoffWizard();
         dlg.DraftNewProjectChatAsync = () => DraftNewProjectChatAsync?.Invoke() ?? Task.CompletedTask;
         dlg.CancelProjectChatDraft = () => CancelProjectChatDraft?.Invoke();
         dlg.RunSourceEditJobAsync = (prompt, _) => RunSourceEditJobAsync?.Invoke(prompt) ?? Task.CompletedTask;
@@ -1007,9 +1544,6 @@ public partial class AdventurePlayView : UserControl
         dlg.PinPlayTabRequested += (_, _) => PinPlayTabRequested?.Invoke(this, EventArgs.Empty);
         dlg.OpenPinnedPlayTabRequested += (_, _) => OpenPinnedPlayTabRequested?.Invoke(this, EventArgs.Empty);
         dlg.ClearPlayTabPinRequested += (_, _) => ClearPlayTabPinRequested?.Invoke(this, EventArgs.Empty);
-        dlg.PinUtilityTabRequested += (_, _) => PinUtilityTabRequested?.Invoke(this, EventArgs.Empty);
-        dlg.OpenPinnedUtilityTabRequested += (_, _) => OpenPinnedUtilityTabRequested?.Invoke(this, EventArgs.Empty);
-        dlg.ClearUtilityTabPinRequested += (_, _) => ClearUtilityTabPinRequested?.Invoke(this, EventArgs.Empty);
         dlg.ReviewQueueChanged += (_, _) =>
         {
             if (_bundle is null)
@@ -1039,31 +1573,18 @@ public partial class AdventurePlayView : UserControl
                 var sources = SourcesStatusBlock.Text;
                 if (!string.IsNullOrWhiteSpace(thread))
                     dlg.SetSessionLinkDetails(thread, sources);
-                dlg.BindUtilityJobs();
             }
 
             dlg.PinPlayTabRequested += (_, _) => RefreshDialogSessionStatus();
             dlg.OpenPinnedPlayTabRequested += (_, _) => RefreshDialogSessionStatus();
             dlg.ClearPlayTabPinRequested += (_, _) => RefreshDialogSessionStatus();
-            dlg.StartNewPlayThreadAsync = async () =>
+            dlg.StartNewPlayThreadAsync = async request =>
             {
                 if (StartNewPlayThreadAsync is not null)
-                    await StartNewPlayThreadAsync();
+                    await StartNewPlayThreadAsync(request);
                 RefreshDialogSessionStatus();
             };
-            dlg.PinUtilityTabRequested += (_, _) => RefreshDialogSessionStatus();
-            dlg.OpenPinnedUtilityTabRequested += (_, _) => RefreshDialogSessionStatus();
-            dlg.ClearUtilityTabPinRequested += (_, _) => RefreshDialogSessionStatus();
         }
-    }
-
-    private void Undo_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null)
-            return;
-
-        if (TurnTimelineService.UndoLast(_bundle))
-            AdventureStore.Save(_bundle);
     }
 
     private void Branch_Click(object sender, RoutedEventArgs e)
@@ -1077,17 +1598,14 @@ public partial class AdventurePlayView : UserControl
 
         var name = _bundle.Metadata.Title + " (branch)";
         var br = TurnTimelineService.BranchFrom(_bundle, last.Index, name);
-        MessageBox.Show(Window.GetWindow(this), $"Created branch: {br.Metadata.Title}", "Branch");
-    }
-
-    private void SaveState_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null)
-            return;
-
-        SaveConfiguration();
-        var path = TurnTimelineService.CreateSaveState(_bundle, "manual");
-        MessageBox.Show(Window.GetWindow(this), $"Save state:\n{path}", "Saved");
+        var result = MessageBox.Show(
+            Window.GetWindow(this),
+            $"Created branch: {br.Metadata.Title}\n\nOpen the new branch now?",
+            "Branch",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (result == MessageBoxResult.Yes)
+            BranchCreated?.Invoke(this, br.Metadata.Id);
     }
 
     private void Export_Click(object sender, RoutedEventArgs e)
@@ -1119,48 +1637,63 @@ public partial class AdventurePlayView : UserControl
         new SearchDialog(_bundle) { Owner = Window.GetWindow(this) }.ShowDialog();
     }
 
-    private void EditTurn_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null)
-            return;
-
-        var turn = _bundle.Log.Turns.Where(t => t.Status == TurnStatus.Accepted).OrderByDescending(t => t.Index).FirstOrDefault();
-        if (turn is null)
-            return;
-
-        var dlg = new EditTurnDialog(turn.PlayerText, turn.NarratorText ?? "") { Owner = Window.GetWindow(this) };
-        if (dlg.ShowDialog() != true)
-            return;
-
-        ThreadMetadataService.MarkTurnSuperseded(_bundle, turn.Id);
-        TurnTimelineService.EditTurn(turn, dlg.PlayerText, dlg.NarratorText);
-        ThreadMetadataService.RecordPlayTurnExchange(
-            _bundle,
-            turn,
-            turn.PlayerText,
-            turn.NarratorText);
-        _bundle.Summary.PendingReview = true;
-        AdventureStore.Save(_bundle);
-    }
-
     private void Roll_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new RandomTableDialog { Owner = Window.GetWindow(this) };
-        if (dlg.ShowDialog() == true && !string.IsNullOrWhiteSpace(dlg.LastRoll))
+        if (_bundle is null)
+            return;
+
+        var dlg = new RandomTableDialog(_bundle) { Owner = Window.GetWindow(this) };
+        if (dlg.ShowDialog() != true || string.IsNullOrWhiteSpace(dlg.LastRoll))
+            return;
+
+        if (dlg.AppendToComposer)
             RollIntoPlayerLineRequested?.Invoke(this, dlg.LastRoll);
+        else
+            ReplacePlayerLineRequested?.Invoke(this, dlg.LastRoll);
     }
 
-    private void MigrationCheckpoint_Click(object sender, RoutedEventArgs e)
+    private void PlayHandoff_Click(object sender, RoutedEventArgs e) =>
+        OpenPlayHandoffWizard();
+
+    private async void StartNarrativeFromSources_Click(object sender, RoutedEventArgs e)
+    {
+        if (StartNewPlayThreadAsync is null)
+            return;
+
+        await StartNewPlayThreadAsync(new PlayThreadStartRequest { Kind = PlayThreadStartKind.FreshStart });
+    }
+
+    private void SyncFromThread_Click(object sender, RoutedEventArgs e)
+    {
+        if (PromptThreadLogSyncAsync is null)
+            return;
+
+        _ = PromptThreadLogSyncAsync();
+    }
+
+    public void OpenPlayHandoffWizard()
     {
         if (_bundle is null)
             return;
 
-        var checkpoint = SummarizationMigrationService.BuildCheckpoint(_bundle);
-        SummarizationMigrationService.SaveCheckpointSidecar(_bundle, checkpoint);
-        new SummarizationMigrationDialog(checkpoint)
+        var snapshot = PlayHandoffService.CaptureSnapshot(_bundle);
+        var checkpoint = PlayHandoffService.BuildCheckpoint(_bundle, snapshot, new PlayHandoffOptions());
+        new PlayHandoffDialog(_bundle, snapshot, checkpoint)
         {
             Owner = Window.GetWindow(this),
-            CreateNewPlayThreadAsync = StartNewPlayThreadAsync,
+            StartNewPlayThreadAsync = request => StartNewPlayThreadAsync?.Invoke(request) ?? Task.CompletedTask,
+            RollbackHandoffAsync = () =>
+            {
+                var id = _bundle.Metadata.Id;
+                var reloaded = AdventureStore.Load(id);
+                if (reloaded is not null && PlayHandoffService.TryRollbackPendingHandoff(reloaded))
+                {
+                    LoadAdventure(id);
+                    PlayStatusRefreshRequested?.Invoke(this, EventArgs.Empty);
+                }
+
+                return Task.CompletedTask;
+            },
         }.ShowDialog();
     }
 
@@ -1172,37 +1705,19 @@ public partial class AdventurePlayView : UserControl
         _ = ContinueDesignAsync();
     }
 
-    private void DraftFramework_Click(object sender, RoutedEventArgs e)
+    private sealed class WarningDisplayItem
     {
-        if (RunDraftFrameworkAsync is null)
-            return;
+        public required ContinuityWarningEntry Entry { get; init; }
 
-        _ = RunDraftFrameworkAsync();
-    }
+        public string Message { get; init; } = "";
 
-    private enum EntityKind
-    {
-        Character,
-        Location,
-        Quest,
-        Thing,
-        Faction,
-        Concept,
-    }
+        public string Source { get; init; } = "";
 
-    private sealed class EntityGridRow
-    {
-        public Guid Id { get; init; }
+        public string SeverityLabel { get; init; } = "";
 
-        public EntityKind Kind { get; init; }
+        public Brush SeverityBrush { get; init; } = Brushes.Transparent;
 
-        public string Name { get; set; } = "";
-
-        public string RoleOrStatus { get; set; } = "";
-
-        public bool Pinned { get; set; }
-
-        public string DescriptionSnippet { get; set; } = "";
+        public Visibility SourceVisibility { get; init; } = Visibility.Visible;
     }
 
     private sealed class ReviewQueueListItem(EntityReviewItem item)

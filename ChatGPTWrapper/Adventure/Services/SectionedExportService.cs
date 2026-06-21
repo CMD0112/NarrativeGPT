@@ -1,5 +1,6 @@
 using System.Text;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -81,13 +82,12 @@ internal static class SectionedExportService
         }
 
         AppendEntitySection(sb, sections, "locations", "place", bundle.Entities.Locations,
-            l => l.Name, l => l.Id, l => l.Pinned, l => l.Description, l => [],
-            extra: l => JoinNonEmpty(l.Features, l.Dangers, l.ConnectedPlaces));
+            l => l.Name, l => l.Id, l => l.Pinned, _ => "", _ => [],
+            extra: l => CanonFieldMapper.BuildEntryBody(l, CanonSchemaRegistry.Location));
 
         AppendEntitySection(sb, sections, "factions", "faction", bundle.Entities.Factions,
-            f => f.Name, f => f.Id, _ => false,
-            f => JoinNonEmpty(f.Goals, f.Members, f.Relationships, f.Conflicts),
-            _ => []);
+            f => f.Name, f => f.Id, _ => false, _ => "", _ => [],
+            extra: f => CanonFieldMapper.BuildEntryBody(f, CanonSchemaRegistry.Faction));
 
         AppendEntitySection(sb, sections, "concepts", "concept", bundle.Entities.Concepts,
             c => c.Name, c => c.Id, c => c.Pinned, c => c.Description, c => c.Tags);
@@ -143,14 +143,7 @@ internal static class SectionedExportService
         var sb = new StringBuilder("# Cast\n");
         var p = bundle.Entities.Player;
 
-        var playerBody = JoinNonEmpty(
-            NameLine("Name", p.Name),
-            FieldLine("Background", p.Background),
-            FieldLine("Appearance", p.Appearance),
-            FieldLine("Personality", p.Personality),
-            FieldLine("Abilities", p.Abilities),
-            FieldLine("Weaknesses", p.Weaknesses),
-            FieldLine("Goals", p.Goals));
+        var playerBody = CanonFieldMapper.BuildFreeformBody(p, CanonSchemaRegistry.Player);
 
         if (!string.IsNullOrWhiteSpace(playerBody))
         {
@@ -173,7 +166,7 @@ internal static class SectionedExportService
             foreach (var c in bundle.Entities.Party)
             {
                 var slug = SectionSlugHelper.FromName(c.Name);
-                var body = JoinNonEmpty(c.Name, c.Condition, c.Relationship, c.Attitude, c.Goals);
+                var body = CanonFieldMapper.BuildEntryBody(c, CanonSchemaRegistry.Party);
                 AppendEntry(sb, slug, c.Name, [], body);
                 sections.Add(new SectionManifestEntry
                 {
@@ -199,17 +192,7 @@ internal static class SectionedExportService
                 var slug = SectionSlugHelper.UniqueSlug(c.Name, slugs);
                 slugs.Add(slug);
                 var aliases = BuildAliases(c.Name, c.Aliases);
-                var body = JoinNonEmpty(
-                    c.Description,
-                    FieldLine("Role", c.Role),
-                    FieldLine("Relationship", c.RelationshipToPlayer),
-                    FieldLine("Motives", c.Motives),
-                    FieldLine("Status", c.Status),
-                    FieldLine("Location", c.Location));
-
-                if (!string.IsNullOrWhiteSpace(c.Flavor))
-                    body += $"\n\n> Flavor: {c.Flavor.Trim()}";
-
+                var body = CanonFieldMapper.BuildEntryBody(c, CanonSchemaRegistry.Npc);
                 AppendEntry(sb, slug, c.Name, aliases, body);
                 sections.Add(new SectionManifestEntry
                 {
@@ -325,7 +308,7 @@ internal static class SectionedExportService
         {
             var slug = SectionSlugHelper.UniqueSlug(q.Title, slugs);
             slugs.Add(slug);
-            var body = JoinNonEmpty($"Status: {q.Status}", q.Description, q.Notes);
+            var body = CanonFieldMapper.BuildEntryBody(q, CanonSchemaRegistry.Quest);
             AppendEntry(sb, slug, q.Title, BuildAliases(q.Title, []), body);
             sections.Add(new SectionManifestEntry
             {
@@ -354,7 +337,7 @@ internal static class SectionedExportService
             var title = string.IsNullOrWhiteSpace(m.Question) ? "Mystery" : m.Question;
             var slug = SectionSlugHelper.UniqueSlug(title, slugs);
             slugs.Add(slug);
-            var body = JoinNonEmpty(m.Question, m.Clues, m.Theories);
+            var body = CanonFieldMapper.BuildEntryBody(m, CanonSchemaRegistry.Mystery);
             AppendEntry(sb, slug, title, [], body);
             sections.Add(new SectionManifestEntry
             {
@@ -381,7 +364,7 @@ internal static class SectionedExportService
         {
             var slug = SectionSlugHelper.UniqueSlug(c.Title, slugs);
             slugs.Add(slug);
-            var body = JoinNonEmpty($"Status: {c.Status}", c.Description);
+            var body = CanonFieldMapper.BuildEntryBody(c, CanonSchemaRegistry.Conflict);
             AppendEntry(sb, slug, c.Title, [], body);
             sections.Add(new SectionManifestEntry
             {
@@ -409,7 +392,7 @@ internal static class SectionedExportService
             var title = string.IsNullOrWhiteSpace(c.Trigger) ? "Consequence" : c.Trigger;
             var slug = SectionSlugHelper.UniqueSlug(title, slugs);
             slugs.Add(slug);
-            var body = JoinNonEmpty(c.Trigger, c.Effect, c.DueWhen);
+            var body = CanonFieldMapper.BuildEntryBody(c, CanonSchemaRegistry.Consequence);
             AppendEntry(sb, slug, title, [], body);
             sections.Add(new SectionManifestEntry
             {

@@ -39,20 +39,12 @@ public partial class PlayPromptInjectionDialog : Window
 
     public event EventHandler? ClearPlayTabPinRequested;
 
-    public event EventHandler? PinUtilityTabRequested;
-
-    public event EventHandler? OpenPinnedUtilityTabRequested;
-
-    public event EventHandler? ClearUtilityTabPinRequested;
-
     /// <summary>Raised when a review queue changes so the play surface can refresh badges immediately.</summary>
     public event EventHandler? ReviewQueueChanged;
 
-    public Func<string, Task>? OpenUtilityThreadAsync { get; set; }
+    public Func<PlayThreadStartRequest?, Task>? StartNewPlayThreadAsync { get; set; }
 
-    public Func<string, Task>? RotateUtilityThreadAsync { get; set; }
-
-    public Func<Task>? StartNewPlayThreadAsync { get; set; }
+    public Action? OpenPlayHandoffDialog { get; set; }
 
     public Func<Task>? DraftNewProjectChatAsync { get; set; }
 
@@ -104,24 +96,28 @@ public partial class PlayPromptInjectionDialog : Window
         PreviewPlayerLine = previewPlayerLine ?? "";
         PreviewPlayerLineBox.Text = PreviewPlayerLine;
 
-        var fresh = AdventureBootstrapService.IsFreshAdventure(bundle)
-                    && bundle.Metadata.Settings.OfferStartOnPlay;
-        PreviewStartPacketButton.Visibility = fresh ? Visibility.Visible : Visibility.Collapsed;
-        if (fresh && string.IsNullOrWhiteSpace(PreviewPlayerLineBox.Text))
-            PreviewPlayerLineBox.Text = AdventureBootstrapService.GetOpeningPlayerLine(bundle.Scenario);
+        var hasPlayHistory = !AdventureBootstrapService.IsFreshAdventure(bundle);
+        PreviewNarrativePacketButton.Visibility = Visibility.Visible;
+        PreviewHandoffPacketButton.Visibility = hasPlayHistory ? Visibility.Visible : Visibility.Collapsed;
+        HandOffToNewChatButton.Visibility = hasPlayHistory ? Visibility.Visible : Visibility.Collapsed;
+        if (!hasPlayHistory && string.IsNullOrWhiteSpace(PreviewPlayerLineBox.Text))
+            PreviewPlayerLineBox.Text = AdventureBootstrapService.BuildStartPlayerDirective(bundle);
 
         BindWorldPanel();
+        BindNextSendPanel();
         BindAdventureSettings();
         BindPlaySurfaceSettings();
+        BindTurnOverrideSettings();
         InitializeJobOverrideCombos();
         BindUtilityDeliverySettings();
         UpdateSessionStatusUi();
-        BindUtilityJobs();
         BindAiActions();
         BindMemoryAndCards();
         BindHistory();
-        _sourceAutosave = new DebouncedAdventureSaver(() => _bundle, at =>
-            SourceAutosaveLine.Text = $"Source changes saved automatically at {at.LocalDateTime:t}.");
+        _sourceAutosave = new DebouncedAdventureSaver(
+            () => _bundle,
+            at => SourceAutosaveLine.Text = $"Source changes saved automatically at {at.LocalDateTime:t}.",
+            save: AdventureStore.SaveSourceManifestOnly);
         Closed += (_, _) =>
         {
             _sourceAutosave?.Dispose();
@@ -156,7 +152,8 @@ public partial class PlayPromptInjectionDialog : Window
             : "Play tab: not linked — use Link to active browser tab before Send.";
         ClearPinButton.IsEnabled = pinned;
         OpenPinnedPlayTabButton.IsEnabled = pinned;
-        StartNewPlayThreadButton.IsEnabled = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
+        StartNarrativeFromSourcesButton.IsEnabled = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
+        HandOffToNewChatButton.IsEnabled = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
         DraftNewProjectChatButton.IsEnabled = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
         CancelProjectChatDraftButton.Visibility = ProjectChatDraftService.IsActive(_bundle)
             ? Visibility.Visible
@@ -168,61 +165,14 @@ public partial class PlayPromptInjectionDialog : Window
             ? Visibility.Collapsed
             : Visibility.Visible;
 
-        var utilityPinned = PlayTabPinService.HasUtilityPin(_bundle);
-        UtilityTabStatusBlock.Text = utilityPinned
-            ? FormatUtilityPinStatus(_bundle)
-            : "Utility chat: auto-managed in background. Link a browser tab here only to override or inspect threads.";
-        ClearUtilityPinButton.IsEnabled = utilityPinned;
-        OpenPinnedUtilityTabButton.IsEnabled = utilityPinned;
-        PinUtilityTabButton.IsEnabled = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
-        UpdateUtilityDeliveryUi();
+        PinPlayTabButton.IsEnabled = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
     }
 
     private void BindUtilityDeliverySettings()
     {
         var s = _bundle.Metadata.Settings;
-        SelectUtilityDeliveryCombo(s.UtilityDeliveryMode);
         HideInlineUtilityCheck.IsChecked = s.HideInlineUtilityDuringPlay;
         ShowInlineUtilityTrafficCheck.IsChecked = s.ShowInlineUtilityTraffic;
-        UpdateUtilityDeliveryUi();
-    }
-
-    private void SelectUtilityDeliveryCombo(UtilityDeliveryMode mode)
-    {
-        foreach (ComboBoxItem item in UtilityDeliveryModeCombo.Items)
-        {
-            if (item.Tag is string tag
-                && string.Equals(tag, mode.ToString(), StringComparison.OrdinalIgnoreCase))
-            {
-                UtilityDeliveryModeCombo.SelectedItem = item;
-                return;
-            }
-        }
-
-        UtilityDeliveryModeCombo.SelectedIndex = 0;
-    }
-
-    private void UpdateUtilityDeliveryUi()
-    {
-        var inline = _bundle.Metadata.Settings.UtilityDeliveryMode == UtilityDeliveryMode.InlinePlayThread;
-        var hideSection = inline;
-        UtilityBackgroundHeader.Visibility = hideSection ? Visibility.Collapsed : Visibility.Visible;
-        UtilityBackgroundHint.Visibility = hideSection ? Visibility.Collapsed : Visibility.Visible;
-        PinUtilityTabButton.Visibility = hideSection ? Visibility.Collapsed : Visibility.Visible;
-        OpenPinnedUtilityTabButton.Visibility = hideSection ? Visibility.Collapsed : Visibility.Visible;
-        ClearUtilityPinButton.Visibility = hideSection ? Visibility.Collapsed : Visibility.Visible;
-        UtilityTabStatusBlock.Visibility = hideSection ? Visibility.Collapsed : Visibility.Visible;
-        UtilityThreadsHeader.Visibility = hideSection ? Visibility.Collapsed : Visibility.Visible;
-        UtilityJobsList.Visibility = hideSection ? Visibility.Collapsed : Visibility.Visible;
-        OpenUtilityThreadButton.Visibility = hideSection ? Visibility.Collapsed : Visibility.Visible;
-        RotateUtilityThreadButton.Visibility = hideSection ? Visibility.Collapsed : Visibility.Visible;
-
-        HideInlineUtilityCheck.IsEnabled = inline;
-        ShowInlineUtilityTrafficCheck.IsEnabled = inline;
-
-        UtilityDeliveryStatusBlock.Text = inline
-            ? "Inline mode: AI jobs send on the play thread with [[cgw:utility]] tags. Utility traffic is hidden from the reading UI unless peek is enabled."
-            : "Separate thread mode: AI jobs use dedicated utility conversations (background or pinned utility tab).";
     }
 
     private void UtilityDeliverySettings_Changed(object sender, RoutedEventArgs e)
@@ -231,61 +181,20 @@ public partial class PlayPromptInjectionDialog : Window
             return;
 
         SaveUtilityDeliverySettings();
-        UpdateUtilityDeliveryUi();
     }
 
     private void SaveUtilityDeliverySettings()
     {
         var s = _bundle.Metadata.Settings;
-        if (UtilityDeliveryModeCombo.SelectedItem is ComboBoxItem item
-            && item.Tag is string tag
-            && Enum.TryParse<UtilityDeliveryMode>(tag, ignoreCase: true, out var mode))
-        {
-            s.UtilityDeliveryMode = mode;
-        }
-
         s.HideInlineUtilityDuringPlay = HideInlineUtilityCheck.IsChecked == true;
         s.ShowInlineUtilityTraffic = ShowInlineUtilityTrafficCheck.IsChecked == true;
-    }
-
-    private static string FormatUtilityPinStatus(AdventureBundle bundle)
-    {
-        var title = bundle.Metadata.PinnedUtilityTabTitle ?? "ChatGPT tab";
-        var convHint = "";
-        foreach (var session in bundle.Metadata.UtilitySessions.Values)
-        {
-            if (session.ConversationId is { Length: >= 8 } id)
-            {
-                convHint = $" · c/{id[..8]}…";
-                break;
-            }
-        }
-
-        if (string.Equals(
-                bundle.Metadata.PinnedUtilityTabKey,
-                bundle.Metadata.PinnedPlayTabKey,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return $"Pinned: {title} · warning: same tab as play pin{convHint}";
-        }
-
-        return $"Pinned: {title}{convHint}";
+        s.UtilityDeliveryMode = UtilityDeliveryMode.InlinePlayThread;
     }
 
     public void SetSessionLinkDetails(string threadLine, string sourcesLine)
     {
         ThreadStatusBlock.Text = threadLine;
         SourcesStatusBlock.Text = sourcesLine;
-    }
-
-    public void BindUtilityJobs()
-    {
-        var hasProject = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
-        UtilityJobsList.ItemsSource = GenerationJobId.All
-            .Select(jobId => new UtilityJobRowViewModel(_bundle, jobId))
-            .ToList();
-        OpenUtilityThreadButton.IsEnabled = hasProject;
-        RotateUtilityThreadButton.IsEnabled = hasProject;
     }
 
     private string? _selectedAiActionJobId;
@@ -481,8 +390,9 @@ public partial class PlayPromptInjectionDialog : Window
             UtilityStoryContextSettingsService.SetJobOverride(_bundle, jobId, null);
 
         _bundle.Metadata.Settings.UtilityStoryContext = new UtilityStoryContextSettings();
+        SaveStoryContextSettings();
+        AdventureStore.SavePlaySettingsFromDialog(_bundle);
         BindStoryContextPanel(jobId);
-        AdventureStore.Save(_bundle);
     }
 
     private void UpdateAiActionStatus(string jobId)
@@ -502,7 +412,7 @@ public partial class PlayPromptInjectionDialog : Window
             return;
 
         GenerationJobGuideService.SetInstructionOverride(_bundle, jobId, AiActionInstructionBox.Text);
-        AdventureStore.Save(_bundle);
+        AdventureStore.Save(_bundle, AdventureSaveScope.Metadata);
         UpdateAiActionStatus(jobId);
     }
 
@@ -513,7 +423,7 @@ public partial class PlayPromptInjectionDialog : Window
 
         GenerationJobGuideService.ResetInstructionOverride(_bundle, jobId);
         AiActionInstructionBox.Text = GenerationJobGuideService.BuildDefaultInstructionBody(jobId);
-        AdventureStore.Save(_bundle);
+        AdventureStore.Save(_bundle, AdventureSaveScope.Metadata);
         UpdateAiActionStatus(jobId);
     }
 
@@ -526,6 +436,10 @@ public partial class PlayPromptInjectionDialog : Window
         SaveStoryContextSettings();
     }
 
+    private void BindNextSendPanel()
+    {
+    }
+
     private void BindWorldPanel()
     {
         SummaryBox.Text = _bundle.Summary.RollingSummary;
@@ -536,6 +450,8 @@ public partial class PlayPromptInjectionDialog : Window
         SummaryReviewBanner.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
         ProposedSummaryBox.Text = pending ? _bundle.Summary.ProposedSummary ?? "" : "";
     }
+
+    private bool _suppressPresetChange;
 
     private void BindPlaySurfaceSettings()
     {
@@ -556,14 +472,88 @@ public partial class PlayPromptInjectionDialog : Window
             })
             .ToList();
 
-        var tabNames = new[] { "Reference", "Warnings", "State" };
-        PlayTabPlacementGrid.ItemsSource = tabNames
+        RebindPlayTabPlacementGrid();
+
+        _suppressPresetChange = true;
+        var presetItems = BuildPresetComboItems();
+        PlayLayoutPresetCombo.ItemsSource = presetItems;
+        PlayLayoutPresetCombo.DisplayMemberPath = nameof(PlayLayoutPresetComboItem.DisplayName);
+        PlayLayoutPresetCombo.SelectedItem = presetItems.FirstOrDefault(i =>
+            string.Equals(i.Id, s.PlayLayoutPresetId, StringComparison.OrdinalIgnoreCase))
+            ?? presetItems[0];
+        _suppressPresetChange = false;
+    }
+
+    private void RebindPlayTabPlacementGrid()
+    {
+        var s = _bundle.Metadata.Settings;
+        PlayTabPlacementGrid.ItemsSource = PlayPanelSide.PlayTabs
             .Select(tab => new PlayTabPlacementRow
             {
                 TabName = tab,
-                Placement = s.PlayTabPlacement.TryGetValue(tab, out var placement) ? placement : "Left",
+                Placement = PlayPanelLayoutService.ResolveTabPlacement(s, tab),
             })
             .ToList();
+    }
+
+    private static List<PlayLayoutPresetComboItem> BuildPresetComboItems()
+    {
+        var items = new List<PlayLayoutPresetComboItem> { new(null, "Custom") };
+        items.AddRange(PlayLayoutPresetLibrary.All.Select(p => new PlayLayoutPresetComboItem(p.Id, p.DisplayName)));
+        return items;
+    }
+
+    private void BindTurnOverrideSettings()
+    {
+        NarratorControlsService.PopulateCombo(
+            TurnOverrideResponseLengthCombo, _bundle, NarratorParameter.ResponseLength, NarratorOverrideScope.Turn);
+        NarratorControlsService.PopulateCombo(
+            TurnOverrideDetailLevelCombo, _bundle, NarratorParameter.DetailLevel, NarratorOverrideScope.Turn);
+        NarratorControlsService.PopulateCombo(
+            TurnOverrideToneCombo, _bundle, NarratorParameter.Tone, NarratorOverrideScope.Turn, isEditable: true);
+        NarratorControlsService.PopulateCombo(
+            TurnOverrideDifficultyCombo, _bundle, NarratorParameter.Difficulty, NarratorOverrideScope.Turn, isEditable: true);
+    }
+
+    private void SaveTurnOverrideSettings()
+    {
+        NarratorControlsService.SaveComboValue(
+            _bundle, TurnOverrideResponseLengthCombo, NarratorParameter.ResponseLength, NarratorOverrideScope.Turn);
+        NarratorControlsService.SaveComboValue(
+            _bundle, TurnOverrideDetailLevelCombo, NarratorParameter.DetailLevel, NarratorOverrideScope.Turn);
+        NarratorControlsService.SaveComboValue(
+            _bundle, TurnOverrideToneCombo, NarratorParameter.Tone, NarratorOverrideScope.Turn);
+        NarratorControlsService.SaveComboValue(
+            _bundle, TurnOverrideDifficultyCombo, NarratorParameter.Difficulty, NarratorOverrideScope.Turn);
+    }
+
+    private void TurnOverrideSettings_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded)
+            return;
+
+        SaveTurnOverrideSettings();
+        RefreshMergedPreview();
+    }
+
+    private void ResetTurnOverrides_Click(object sender, RoutedEventArgs e)
+    {
+        NarratorOverrideResolver.ClearTurnOverrides(_bundle.Metadata.Settings);
+        BindTurnOverrideSettings();
+        RefreshMergedPreview();
+    }
+
+    private void PlayLayoutPresetCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressPresetChange || !IsLoaded)
+            return;
+
+        if (PlayLayoutPresetCombo.SelectedItem is not PlayLayoutPresetComboItem item || item.Id is null)
+            return;
+
+        PlayPanelLayoutService.ApplyPreset(_bundle.Metadata.Settings, item.Id);
+        RebindPlayTabPlacementGrid();
+        SavePlaySurfaceSettings();
     }
 
     private void SavePlaySurfaceSettings()
@@ -591,8 +581,9 @@ public partial class PlayPromptInjectionDialog : Window
         {
             foreach (var row in tabRows)
             {
-                if (!string.Equals(row.Placement, "Left", StringComparison.OrdinalIgnoreCase))
-                    s.PlayTabPlacement[row.TabName] = row.Placement;
+                var placement = PlayPanelLayoutService.NormalizeTabPlacement(row.TabName, row.Placement);
+                if (!string.Equals(placement, PlayPanelSide.Left, StringComparison.OrdinalIgnoreCase))
+                    s.PlayTabPlacement[row.TabName] = placement;
             }
         }
     }
@@ -615,8 +606,19 @@ public partial class PlayPromptInjectionDialog : Window
         }), DispatcherPriority.Background);
     }
 
-    private void PlayTabPlacementGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e) =>
-        PlaySurfaceActionsGrid_CellEditEnding(sender, e);
+    private void PlayTabPlacementGrid_CellEditEnding(object sender, DataGridCellEditEndingEventArgs e)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            PlayPanelLayoutService.MarkCustom(_bundle.Metadata.Settings);
+            _suppressPresetChange = true;
+            if (PlayLayoutPresetCombo.ItemsSource is IEnumerable<PlayLayoutPresetComboItem> items)
+                PlayLayoutPresetCombo.SelectedItem = items.First();
+            _suppressPresetChange = false;
+            SavePlaySurfaceSettings();
+            RefreshMergedPreview();
+        }), DispatcherPriority.Background);
+    }
 
     private void InitializeJobOverrideCombos()
     {
@@ -671,7 +673,6 @@ public partial class PlayPromptInjectionDialog : Window
         MaxPacketBox.Text = s.MaxPacketChars.ToString();
         AutomationCheck.IsChecked = s.AdventureAutomationEnabled;
         PreferDomPlaySendCheck.IsChecked = s.PreferDomPlaySend;
-        UseWrapperComposerCheck.IsChecked = s.UseWrapperComposer;
         ForceFatPacketsCheck.IsChecked = s.ForceFatPackets;
         PerspectiveBox.Text = s.Perspective;
         BoundariesBox.Text = string.Join(Environment.NewLine, s.ContentBoundaries);
@@ -685,18 +686,14 @@ public partial class PlayPromptInjectionDialog : Window
         AutoSyncInstructionsCheck.IsChecked = s.AutoSyncProjectInstructions;
         s.SourcePublishMode = SourcePublishMode.Manual;
         var hasProject = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
-        var inlineDelivery = UtilityDeliveryModeService.UsesInlineDelivery(_bundle);
-        var autoEnabled = hasProject && !inlineDelivery;
-        AutoExtractEntitiesCheck.IsEnabled = autoEnabled;
-        AutoProposeMemoriesCheck.IsEnabled = autoEnabled;
-        AutoUpdateSummaryCheck.IsEnabled = autoEnabled;
-        AutoContinuityCheckCheck.IsEnabled = autoEnabled;
+        AutoExtractEntitiesCheck.IsEnabled = hasProject;
+        AutoProposeMemoriesCheck.IsEnabled = hasProject;
+        AutoUpdateSummaryCheck.IsEnabled = hasProject;
+        AutoContinuityCheckCheck.IsEnabled = hasProject;
         AutoSyncInstructionsCheck.IsEnabled = hasProject;
-        AutoExtractEntitiesHint.Text = inlineDelivery
-            ? "Auto AI is disabled in inline play-thread mode. Use Process last exchange (AI) on the play panel."
-            : hasProject
-                ? "Proposals appear in Reference → review queue after each accepted turn."
-                : "Link a Project to enable auto entity extraction.";
+        AutoExtractEntitiesHint.Text = hasProject
+            ? "Proposals appear in Reference → review queue after each accepted turn (inline on play thread)."
+            : "Link a Project to enable auto entity extraction.";
     }
 
     private void SaveWorldPanel()
@@ -714,7 +711,7 @@ public partial class PlayPromptInjectionDialog : Window
             s.MaxPacketChars = Math.Max(4000, max);
         s.AdventureAutomationEnabled = AutomationCheck.IsChecked == true;
         s.PreferDomPlaySend = PreferDomPlaySendCheck.IsChecked == true;
-        s.UseWrapperComposer = UseWrapperComposerCheck.IsChecked == true;
+        s.UseWrapperComposer = false;
         s.ForceFatPackets = ForceFatPacketsCheck.IsChecked == true;
         s.Perspective = PerspectiveBox.Text.Trim();
         s.ContentBoundaries = BoundariesBox.Text
@@ -743,24 +740,27 @@ public partial class PlayPromptInjectionDialog : Window
     private void ClearPin_Click(object sender, RoutedEventArgs e) =>
         ClearPlayTabPinRequested?.Invoke(this, EventArgs.Empty);
 
-    private async void StartNewPlayThread_Click(object sender, RoutedEventArgs e)
+    private async void StartNarrativeFromSources_Click(object sender, RoutedEventArgs e)
     {
         if (StartNewPlayThreadAsync is null)
             return;
 
-        StartNewPlayThreadButton.IsEnabled = false;
+        StartNarrativeFromSourcesButton.IsEnabled = false;
         try
         {
-            await StartNewPlayThreadAsync();
+            await StartNewPlayThreadAsync(new PlayThreadStartRequest { Kind = PlayThreadStartKind.FreshStart });
             _bundle = AdventureStore.Load(_bundle.Metadata.Id) ?? _bundle;
             UpdateSessionStatusUi();
         }
         finally
         {
-            StartNewPlayThreadButton.IsEnabled =
+            StartNarrativeFromSourcesButton.IsEnabled =
                 !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
         }
     }
+
+    private void HandOffToNewChat_Click(object sender, RoutedEventArgs e) =>
+        OpenPlayHandoffDialog?.Invoke();
 
     private async void DraftNewProjectChat_Click(object sender, RoutedEventArgs e)
     {
@@ -788,35 +788,8 @@ public partial class PlayPromptInjectionDialog : Window
         UpdateSessionStatusUi();
     }
 
-    private void PinUtilityTab_Click(object sender, RoutedEventArgs e) =>
-        PinUtilityTabRequested?.Invoke(this, EventArgs.Empty);
-
-    private void OpenPinnedUtilityTab_Click(object sender, RoutedEventArgs e) =>
-        OpenPinnedUtilityTabRequested?.Invoke(this, EventArgs.Empty);
-
-    private void ClearUtilityPin_Click(object sender, RoutedEventArgs e) =>
-        ClearUtilityTabPinRequested?.Invoke(this, EventArgs.Empty);
-
     private void GoToSourcesTab_Click(object sender, RoutedEventArgs e) =>
         SelectTab(PlaySettingsTab.Sources);
-
-    private async void OpenUtilityThread_Click(object sender, RoutedEventArgs e)
-    {
-        if (UtilityJobsList.SelectedItem is not UtilityJobRowViewModel row || OpenUtilityThreadAsync is null)
-            return;
-
-        await OpenUtilityThreadAsync(row.UtilityJobId);
-    }
-
-    private async void RotateUtilityThread_Click(object sender, RoutedEventArgs e)
-    {
-        if (UtilityJobsList.SelectedItem is not UtilityJobRowViewModel row || RotateUtilityThreadAsync is null)
-            return;
-
-        await RotateUtilityThreadAsync(row.UtilityJobId);
-        ReloadBundleFromStore();
-        BindUtilityJobs();
-    }
 
     private void BindMemoryAndCards()
     {
@@ -885,20 +858,76 @@ public partial class PlayPromptInjectionDialog : Window
 
     private void BindSourceEditReview()
     {
-        var before = _bundle.Scenario.SourceEditReviewQueue.Count;
+        var pruned = ProjectSourceImportService.PruneStaleImportRemovalProposals(_bundle);
         ProjectSourceImportService.DeduplicateSourceEditReviewQueue(_bundle);
-        if (_bundle.Scenario.SourceEditReviewQueue.Count != before)
+        if (pruned > 0)
             AdventureStore.Save(_bundle);
 
-        var queue = _bundle.Scenario.SourceEditReviewQueue;
-        SourceEditReviewHeader.Text = queue.Count > 0
-            ? $"{queue.Count} source edit proposal(s) awaiting review"
-            : "";
-        SourceEditReviewList.ItemsSource = queue
+        CanonCommitBar.Bind(_bundle);
+        BindCanonDriftBanner();
+
+        var visible = SourceEditReviewPresentationService.ListVisibleProposals(_bundle);
+        var staged = EntityChangePlanQueueService.GetPending(_bundle).Count;
+        var unresolved = CanonReconciliationService.HasUnresolvedDrift(_bundle);
+
+        SourceEditReviewHeader.Text = SourceEditReviewPresentationService.FormatHeader(
+            visible.Count,
+            staged,
+            unresolved);
+
+        SourceEditReviewList.ItemsSource = visible
             .Select(e => new SourceEditReviewListItem(e))
             .ToList();
         if (SourceEditReviewList.Items.Count > 0)
             SourceEditReviewList.SelectedIndex = 0;
+        else
+            SourceEditDiffPreviewBox.Text = "";
+    }
+
+    private void BindCanonDriftBanner()
+    {
+        if (!CanonReconciliationService.HasUnresolvedDrift(_bundle))
+        {
+            CanonDriftBanner.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        CanonDriftBanner.Visibility = Visibility.Visible;
+        CanonDriftBannerText.Text =
+            "entities.json / scenario.json differ from sources/*.md on disk. "
+            + "JSON is the profile source of truth — use Sync sources from JSON to update markdown, "
+            + "or Source Manager to pull from sources intentionally.";
+    }
+
+    private void CanonCommitBar_PlansChanged(object? sender, EventArgs e)
+    {
+        BindSourceEditReview();
+        ReviewQueueChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SyncSourcesFromJson_Click(object sender, RoutedEventArgs e)
+    {
+        var result = EntityEditSourceSyncService.RepairFromJson(_bundle);
+        AdventureStore.Save(_bundle);
+        ReloadBundleFromStore();
+        BindSourceEditReview();
+        RefreshMergedPreview();
+        MessageBox.Show(this,
+            result.Summary ?? (result.Synced ? "Sources updated from JSON." : "No changes applied."),
+            "Sync sources from JSON",
+            MessageBoxButton.OK,
+            result.Synced ? MessageBoxImage.Information : MessageBoxImage.Warning);
+    }
+
+    private void SourceEditReviewList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SourceEditReviewList.SelectedItem is not SourceEditReviewListItem row)
+        {
+            SourceEditDiffPreviewBox.Text = "";
+            return;
+        }
+
+        SourceEditDiffPreviewBox.Text = SourceEditDiffPreviewService.BuildPreview(_bundle, row.Item);
     }
 
     private void UpdatePublishModeUi()
@@ -1079,7 +1108,9 @@ public partial class PlayPromptInjectionDialog : Window
         var dlg = new TextPromptDialog(
             "Edit sources with AI",
             "Describe what to change in scenario, world, plot, or instructions:",
-            "Expand the world rules with more detail about magic.")
+            "Expand the world rules with more detail about magic.",
+            confirmButtonText: "Continue",
+            multiline: true)
         {
             Owner = this,
         };
@@ -1180,6 +1211,7 @@ public partial class PlayPromptInjectionDialog : Window
     public void RefreshReviewPanels()
     {
         BindWorldPanel();
+        BindNextSendPanel();
         BindMemoryAndCards();
         BindSourceEditReview();
         RefreshUtilityParseLog();
@@ -1247,7 +1279,17 @@ public partial class PlayPromptInjectionDialog : Window
             ? $" | Attachments: {attachmentContext.Attachments.Count} ({attachMode})"
             : "";
         var injectionNote = _bundle.Metadata.Settings.UseSectionInjection ? " | Section injection v2" : "";
+        var nextTurn = PlayTurnScopeService.GetNextPacketTurnIndex(_bundle);
+        var scopedAccepted = PlayTurnScopeService.GetPacketAcceptedTurns(_bundle).Count;
+        var metaAttrs = ContextTagFormat.ExtractTagAttributes(prepared.MergedText, "meta");
+        var metaTurn = metaAttrs.TryGetValue("turn", out var turnAttr) && !string.IsNullOrWhiteSpace(turnAttr)
+            ? turnAttr
+            : nextTurn.ToString();
+        var metaMode = metaAttrs.TryGetValue("mode", out var modeAttr) && !string.IsNullOrWhiteSpace(modeAttr)
+            ? modeAttr
+            : prepared.Mode == PacketMode.Thin ? "thin" : "fat";
         PacketMetaLine.Text =
+            $"Turn: {metaTurn} (scoped accepted: {scopedAccepted}) | Meta mode: {metaMode}\n" +
             $"Packet: {prepared.Mode} ({modePart}) | Chars: {prepared.MergedText.Length} | Hash: {prepared.Hash} | Trimmed: {prepared.WasTrimmed}{attachNote}{injectionNote}\n" +
             $"Project: {_bundle.Metadata.LinkedProjectId ?? "none"} | {pointerLabel}: {pointerText}";
     }
@@ -1335,17 +1377,39 @@ public partial class PlayPromptInjectionDialog : Window
         dlg.ShowDialog();
     }
 
-    private void PreviewStartPacket_Click(object sender, RoutedEventArgs e)
+    private void PreviewHandoffPacket_Click(object sender, RoutedEventArgs e)
     {
-        var packetText = AdventureBootstrapService.BuildStartPacket(_bundle);
-        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-            System.Text.Encoding.UTF8.GetBytes(packetText)))[..16];
-        var readiness = ProjectSourceInjectionService.Evaluate(_bundle);
+        var bundle = PlayThreadPacketService.ReloadFresh(_bundle.Metadata.Id) ?? _bundle;
+        var snapshot = PlayHandoffService.CaptureSnapshot(bundle);
+        var packetText = PlayHandoffService.BuildHandoffPacket(bundle, snapshot, new PlayHandoffOptions());
+        var hash = PlayHandoffService.ComputePacketHash(packetText)[..16];
+        var readiness = ProjectSourceInjectionService.Evaluate(bundle);
         var modeLabel = readiness.CanDelegateStaticContent ? "Source-delegated" : "Fat";
         var dlg = new ContextViewerDialog(
             packetText,
-            $"Start packet preview | Mode: {modeLabel} | Chars: {packetText.Length} | Hash: {hash}",
-            useStructuredPreview: _bundle.Metadata.Settings.UseContextTags)
+            $"Handoff packet preview | Mode: {modeLabel} | Adventure turns: {snapshot.AdventureTurnOrdinal} | Chars: {packetText.Length} | Hash: {hash}",
+            useStructuredPreview: bundle.Metadata.Settings.UseContextTags)
+        {
+            Owner = this,
+        };
+        dlg.ShowDialog();
+    }
+
+    private void PreviewNarrativePacket_Click(object sender, RoutedEventArgs e)
+    {
+        var bundle = PlayThreadPacketService.ReloadFresh(_bundle.Metadata.Id) ?? _bundle;
+        var packetText = PlayThreadPacketService.BuildStartPacket(bundle);
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(packetText)))[..16];
+        var readiness = ProjectSourceInjectionService.Evaluate(bundle);
+        var modeLabel = readiness.CanDelegateStaticContent ? "Source-delegated" : "Fat";
+        var openingNote = string.IsNullOrWhiteSpace(bundle.Scenario.OpeningSituation)
+            ? "Opening: (from sources)"
+            : $"Opening in scenario.md ({bundle.Scenario.OpeningSituation.Trim().Length} chars author note)";
+        var dlg = new ContextViewerDialog(
+            packetText,
+            $"Narrative start packet preview | Mode: {modeLabel} | {openingNote} | Chars: {packetText.Length} | Hash: {hash}",
+            useStructuredPreview: bundle.Metadata.Settings.UseContextTags)
         {
             Owner = this,
         };
@@ -1538,10 +1602,11 @@ public partial class PlayPromptInjectionDialog : Window
         SaveWorldPanel();
         SaveAdventureSettings();
         SavePlaySurfaceSettings();
+        SaveTurnOverrideSettings();
         SaveJobOverrideSettings();
         SaveAiActionGuides();
         SaveStoryContextSettings();
-        AdventureStore.Save(_bundle);
+        AdventureStore.SavePlaySettingsFromDialog(_bundle);
         if (AutoSyncInstructionsCheck.IsChecked == true && SyncInstructionsAsync is not null)
             await SyncInstructionsAsync();
         DialogResult = true;
@@ -1580,8 +1645,7 @@ public partial class PlayPromptInjectionDialog : Window
 
         public SourceEditReviewItem Item { get; }
 
-        public string DisplayLabel =>
-            $"{Item.TargetFile} · {Item.Operation}: {(Item.Content.Length <= 72 ? Item.Content : Item.Content[..72] + "…")}";
+        public string DisplayLabel => SourceEditReviewPresentationService.FormatListLabel(Item);
 
         public override string ToString() => DisplayLabel;
     }
@@ -1617,6 +1681,16 @@ public partial class PlayPromptInjectionDialog : Window
 
         public string Placement { get; set; } = "Left";
 
-        public IReadOnlyList<string> PlacementOptions { get; } = ["Left", "Hidden"];
+        public IReadOnlyList<string> PlacementOptions =>
+            TabName.Equals("Notes", StringComparison.OrdinalIgnoreCase)
+                ? PlayPanelSide.NotesPlacement
+                : PlayPanelSide.CompanionTabPlacement;
+    }
+
+    private sealed class PlayLayoutPresetComboItem(string? id, string displayName)
+    {
+        public string? Id { get; } = id;
+
+        public string DisplayName { get; } = displayName;
     }
 }

@@ -108,7 +108,7 @@ When ChatGPT UI deletes a project file but the manifest still references it:
 1. Sync plan shows **MissingRemote**
 2. **Apply safe** may re-upload local copy (ApiSync mode)
 3. Or clear stale `remoteFileId` via sync reconcile and re-push
-4. See [adventure-panel.md §11 — Recovering from browser-deleted files](adventure-panel.md#recovering-from-browser-deleted--404-project-files)
+4. See [adventure-developer-reference.md — Recovering from browser-deleted files](adventure-developer-reference.md#recovering-from-browser-deleted--404-project-files)
 
 ### ApiSync attach/upload errors
 

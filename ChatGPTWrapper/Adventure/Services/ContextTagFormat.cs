@@ -33,13 +33,24 @@ internal static partial class ContextTagFormat
         return $"{TagPrefix}{tagName}{attrText}]]{NormalizeLineBreaks(content)}[[/cgw:{tagName}]]";
     }
 
-    public static string WrapMeta(PacketMode mode, int? turnIndex = null)
+    public static string WrapMeta(
+        PacketMode mode,
+        int? turnIndex = null,
+        bool continuation = false,
+        int? adventureTurn = null)
     {
         var attrs = new Dictionary<string, string>
         {
             ["mode"] = mode == PacketMode.Thin ? "thin" : "fat",
             ["turn"] = turnIndex?.ToString() ?? "",
         };
+
+        if (continuation)
+            attrs["continuation"] = "true";
+
+        if (adventureTurn is > 0)
+            attrs["adventureTurn"] = adventureTurn.Value.ToString();
+
         var attrText = " " + string.Join(" ", attrs.Select(kv => $"{kv.Key}=\"{EscapeAttr(kv.Value)}\""));
         return $"{TagPrefix}meta{attrText}]] [[/cgw:meta]]";
     }
@@ -90,12 +101,37 @@ internal static partial class ContextTagFormat
         return string.IsNullOrWhiteSpace(remainder) ? null : remainder;
     }
 
+    public static IReadOnlyDictionary<string, string> ExtractTagAttributes(string text, string tagName)
+    {
+        if (string.IsNullOrEmpty(text))
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match match in BlockRegex.Matches(text))
+        {
+            if (!string.Equals(match.Groups["name"].Value, tagName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            return ParseAttributes(match.Groups["attrs"].Value);
+        }
+
+        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static string FormatTagAttributePreview(string tagName, IReadOnlyDictionary<string, string> attrs)
+    {
+        if (attrs.Count == 0)
+            return "";
+
+        return string.Join(" ", attrs.Select(kv => $"{kv.Key}={kv.Value}"));
+    }
+
     public static string FormatStructuredPreview(string packetText)
     {
         var blocks = ExtractAllBlocks(packetText);
         var suffix = ExtractUntaggedSuffix(packetText);
+        var metaAttrs = ExtractTagAttributes(packetText, "meta");
 
-        if (blocks.Count == 0 && string.IsNullOrWhiteSpace(suffix))
+        if (blocks.Count == 0 && metaAttrs.Count == 0 && string.IsNullOrWhiteSpace(suffix))
             return packetText;
 
         var sb = new StringBuilder();
@@ -108,13 +144,38 @@ internal static partial class ContextTagFormat
             })
             .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase);
 
+        var wroteMeta = false;
         foreach (var (name, body) in ordered)
         {
+            if (string.Equals(name, "meta", StringComparison.OrdinalIgnoreCase))
+            {
+                wroteMeta = true;
+                sb.Append("[meta]");
+                var attrPreview = FormatTagAttributePreview(name, metaAttrs);
+                if (!string.IsNullOrWhiteSpace(attrPreview))
+                    sb.Append(' ').Append(attrPreview);
+                sb.AppendLine();
+                if (!string.IsNullOrWhiteSpace(body))
+                {
+                    sb.AppendLine(NormalizeLineBreaks(body));
+                    sb.AppendLine();
+                }
+
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(body))
                 continue;
 
             sb.Append('[').Append(name).AppendLine("]");
             sb.AppendLine(NormalizeLineBreaks(body));
+            sb.AppendLine();
+        }
+
+        if (!wroteMeta && metaAttrs.Count > 0)
+        {
+            sb.Append("[meta] ");
+            sb.AppendLine(FormatTagAttributePreview("meta", metaAttrs));
             sb.AppendLine();
         }
 
@@ -131,6 +192,18 @@ internal static partial class ContextTagFormat
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    private static Dictionary<string, string> ParseAttributes(string attrsText)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(attrsText))
+            return map;
+
+        foreach (Match match in Regex.Matches(attrsText, @"\b([a-zA-Z_][\w-]*)=""([^""]*)""", RegexOptions.CultureInvariant))
+            map[match.Groups[1].Value] = match.Groups[2].Value;
+
+        return map;
     }
 
     private static string EscapeAttr(string value) =>

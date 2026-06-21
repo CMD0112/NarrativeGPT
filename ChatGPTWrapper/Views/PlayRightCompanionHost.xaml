@@ -1,0 +1,18 @@
+<UserControl x:Class="ChatGPTWrapper.Views.PlayRightCompanionHost"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource BgBaseBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition x:Name="RightTabsRow" Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <TabControl x:Name="PlayRightTabControl"
+                    Grid.Row="0"
+                    Background="{DynamicResource BgSurfaceBrush}"
+                    Margin="0,0,0,8"
+                    Visibility="Collapsed"/>
+        <ContentControl x:Name="NotesSlot"
+                        Grid.Row="1"/>
+    </Grid>
+</UserControl>

@@ -1,9 +1,12 @@
 <UserControl x:Class="ChatGPTWrapper.Views.AdventureDesignView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Background="{StaticResource DialogBgBrush}">
+             xmlns:local="clr-namespace:ChatGPTWrapper.Views"
+             Background="{StaticResource BgBaseBrush}">
     <Grid Margin="12">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -18,44 +21,74 @@
                 <ColumnDefinition Width="*" MinWidth="0"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Button x:Name="BackButton" Content="← Dashboard" Padding="10,4" Click="Back_Click"/>
+            <Button x:Name="BackButton" Content="← Dashboard" Padding="10,4" Margin="0,0,8,0"
+                    Click="Back_Click"/>
             <TextBlock x:Name="TitleBlock" Grid.Column="1" FontSize="{StaticResource FontSizeTitle}"
-                       FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0"
+                       FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"
                        TextTrimming="CharacterEllipsis"/>
-            <Button x:Name="LinkProjectButton" Grid.Column="2" Content="Change Project…" Padding="10,4"
-                    Click="LinkProject_Click"/>
+            <Menu Grid.Column="2" Background="Transparent" VerticalAlignment="Center">
+                <MenuItem x:Name="HeaderMoreMenu" Header="More…" Padding="10,4">
+                    <MenuItem x:Name="HeaderLinkProjectMenuItem"
+                              Header="Change Project…"
+                              Click="LinkProject_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="ManageThreadsMenuItem"
+                              Header="Manage threads…"
+                              Click="ManageThreads_Click"
+                              ToolTip="View, switch, and archive play and design thread slots"/>
+                    <MenuItem x:Name="OpenDesignThreadMenuItem"
+                              Header="Open Project"
+                              Click="OpenDesignThread_Click"/>
+                    <MenuItem x:Name="StartNewDesignThreadMenuItem"
+                              Header="Start new design thread…"
+                              Click="StartNewDesignThread_Click"
+                              ToolTip="Release stale design thread binding and open your Project for a fresh chat"/>
+                    <MenuItem x:Name="PinDesignTabMenuItem"
+                              Header="Use this tab as design thread"
+                              Click="PinDesignTab_Click"/>
+                    <MenuItem x:Name="ImportDraftMenuItem"
+                              Header="Import framework draft"
+                              Click="ImportDraft_Click"
+                              Visibility="Collapsed"/>
+                </MenuItem>
+            </Menu>
+            <Button x:Name="LinkProjectButton" Grid.Column="2" Visibility="Collapsed" Click="LinkProject_Click"/>
         </Grid>
 
-        <Border Grid.Row="1" Background="{StaticResource PanelBgBrush}"
-                BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1"
-                CornerRadius="{StaticResource RadiusCard}" Padding="8" Margin="0,0,0,8">
+        <Border x:Name="DraftModeBanner" Grid.Row="1" Visibility="Collapsed"
+                Background="{StaticResource AccentSubtleBrush}"
+                BorderBrush="{StaticResource AccentPrimaryBrush}" BorderThickness="1"
+                CornerRadius="{StaticResource RadiusCard}" Padding="8,6" Margin="0,0,0,8">
+            <TextBlock x:Name="DraftModeBannerText" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AccentLinkBrush}" FontWeight="SemiBold"
+                       FontSize="{StaticResource FontSizeBody}"/>
+        </Border>
+
+        <local:EntityCanonCommitBar x:Name="CanonHealthBar" Grid.Row="2" PlansChanged="CanonHealthBar_PlansChanged"/>
+
+        <Border Grid.Row="3" Style="{StaticResource ShellCardStyle}" Margin="0,0,0,8">
             <StackPanel>
-                <TextBlock x:Name="ThreadStatusBlock" Foreground="{StaticResource MutedTextBrush}"
-                           FontSize="{StaticResource FontSizeHint}" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                <WrapPanel Margin="0,0,0,6">
-                    <TextBox x:Name="BriefNoteBox" MinWidth="200" Padding="6,4" Margin="0,0,6,0"
-                             ToolTip="Optional note included with Send step brief"/>
-                </WrapPanel>
-                <WrapPanel>
-                    <Button x:Name="OpenDesignThreadButton" Content="Open Project" Padding="8,4"
-                            Margin="0,0,6,4" Click="OpenDesignThread_Click"/>
-                    <Button x:Name="StartNewDesignThreadButton" Content="Start new design thread…" Padding="8,4"
-                            Margin="0,0,6,4" Click="StartNewDesignThread_Click"
-                            ToolTip="Release stale design thread binding and open your Project for a fresh chat"/>
-                    <Button x:Name="PinDesignTabButton" Content="Use this tab as design thread" Padding="8,4"
-                            Margin="0,0,6,4" Click="PinDesignTab_Click"/>
-                    <Button x:Name="SendStepBriefButton" Content="Send step brief…" Padding="8,4"
-                            Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,6,4"
-                            Click="SendStepBrief_Click"/>
-                    <Button x:Name="ExtractButton" Content="Extract proposals" Padding="8,4"
-                            Margin="0,0,6,4" Click="Extract_Click"/>
-                    <Button x:Name="ImportDraftButton" Content="Import framework draft" Padding="8,4"
-                            Margin="0,0,6,4" Click="ImportDraft_Click" Visibility="Collapsed"/>
-                </WrapPanel>
+                <TextBlock x:Name="ThreadStatusBlock" Foreground="{StaticResource TextMutedBrush}"
+                           FontSize="{StaticResource FontSizeHint}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                <TextBox x:Name="BriefNoteBox" MinWidth="200" Padding="6,4" Margin="0,0,0,8"
+                         ToolTip="Optional note included with Send step brief"/>
+                <StackPanel Orientation="Horizontal">
+                    <StackPanel Style="{StaticResource ShellCommandBarStyle}">
+                        <Button x:Name="SendStepBriefButton"
+                                Content="Send step brief…"
+                                Style="{StaticResource ShellCommandBarPrimarySlot}"
+                                Margin="0,0,8,0"
+                                Click="SendStepBrief_Click"/>
+                        <Button x:Name="ExtractButton"
+                                Content="Extract proposals"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Click="Extract_Click"/>
+                    </StackPanel>
+                </StackPanel>
             </StackPanel>
         </Border>
 
-        <TabControl x:Name="StepTabs" Grid.Row="2" Margin="0,0,0,4" SelectionChanged="StepTabs_SelectionChanged">
+        <TabControl x:Name="StepTabs" Grid.Row="4" Margin="0,0,0,4" SelectionChanged="StepTabs_SelectionChanged">
             <TabItem Header="Concept" Tag="Concept"/>
             <TabItem Header="World" Tag="World"/>
             <TabItem Header="Plot" Tag="Plot"/>
@@ -66,41 +99,67 @@
             <TabItem Header="Review" Tag="Review"/>
         </TabControl>
 
-        <Border x:Name="PipelineChecklistBorder" Grid.Row="3"
-                Background="{StaticResource PanelBgBrush}"
-                BorderBrush="{StaticResource BorderBrushSubtle}" BorderThickness="1"
-                CornerRadius="{StaticResource RadiusCard}" Padding="8" Margin="0,0,0,8">
-            <StackPanel>
-                <TextBlock Text="Source draft pipeline" FontWeight="SemiBold" Margin="0,0,0,2"/>
-                <TextBlock Text="Brainstorm tabs follow a different order — use this checklist for canonical source drafts."
-                           TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}"
-                           FontSize="11" Margin="0,0,0,6"/>
-                <StackPanel x:Name="PipelineChecklistPanel"/>
-            </StackPanel>
-        </Border>
+        <Expander x:Name="PipelineChecklistExpander" Grid.Row="5" IsExpanded="False" Margin="0,0,0,8">
+            <Expander.Header>
+                <TextBlock Text="Source draft pipeline" FontWeight="SemiBold"/>
+            </Expander.Header>
+            <Border x:Name="PipelineChecklistBorder" Style="{StaticResource ShellCardStyle}" Margin="0,4,0,0">
+                <StackPanel>
+                    <TextBlock Text="Brainstorm tabs follow a different order — use this checklist for canonical source drafts."
+                               TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"
+                               Style="{StaticResource ShellSectionHintStyle}" Margin="0,0,0,8"/>
+                    <StackPanel x:Name="PipelineChecklistPanel"/>
+                </StackPanel>
+            </Border>
+        </Expander>
 
-        <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="6" VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="DraftPanel" Margin="4"/>
         </ScrollViewer>
+        <!-- Parking host when Cast step is not active (panel is reparented into DraftPanel on Cast). -->
+        <Grid x:Name="EntityReferenceHost" Grid.Row="6" Visibility="Collapsed">
+            <Border x:Name="EntityReferenceSection"
+                    Style="{StaticResource ShellCardStyle}"
+                    Margin="0,0,0,12"
+                    Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock Text="Canon entities"
+                               Style="{StaticResource ShellSectionHeaderStyle}"
+                               Margin="0,0,0,4"/>
+                    <TextBlock Text="Structured entries in entities.json — renames auto-sync to local sources when possible. Use Sync canon if the banner appears."
+                               TextWrapping="Wrap"
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               Margin="0,0,0,10"/>
+                    <local:EntityReferencePanel x:Name="EntityReferencePanel"
+                                                MinHeight="200"/>
+                </StackPanel>
+            </Border>
+        </Grid>
 
-        <Grid Grid.Row="5" Margin="0,10,0,0">
+        <Grid Grid.Row="7" Margin="0,8,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal">
-                <Button x:Name="AcceptProposalsButton" Content="Accept proposals" Padding="10,5"
-                        Margin="0,0,6,0" Click="AcceptProposals_Click" IsEnabled="False"/>
+                <Button x:Name="AcceptProposalsButton" Content="Accept proposals"
+                        Style="{StaticResource ShellCommandBarSecondarySlot}"
+                        Margin="0,0,8,0" Click="AcceptProposals_Click" IsEnabled="False"/>
                 <TextBlock x:Name="StatusLine" VerticalAlignment="Center" TextWrapping="Wrap"
-                           Foreground="{StaticResource MutedTextBrush}" FontSize="11"/>
+                           Style="{StaticResource ShellSectionHintStyle}"/>
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <Button x:Name="BackStepButton" Content="← Back" Padding="12,6" Margin="0,0,6,0"
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Style="{StaticResource ShellCommandBarStyle}">
+                <Button x:Name="BackStepButton" Content="← Back"
+                        Style="{StaticResource ShellCommandBarSecondarySlot}"
+                        Margin="0,0,8,0"
                         Click="BackStep_Click"/>
-                <Button x:Name="ContinueButton" Content="Continue →" Style="{StaticResource PrimaryButtonStyle}"
-                        Padding="12,6" Margin="0,0,6,0" Click="Continue_Click"/>
-                <Button x:Name="LaunchButton" Content="Launch adventure" Style="{StaticResource PrimaryButtonStyle}"
-                        Padding="12,6" Margin="0,0,6,0" Click="Launch_Click" Visibility="Collapsed"/>
+                <Button x:Name="ContinueButton" Content="Continue →"
+                        Style="{StaticResource ShellCommandBarPrimarySlot}"
+                        Margin="0,0,8,0"
+                        Click="Continue_Click"/>
+                <Button x:Name="LaunchButton" Content="Launch adventure"
+                        Style="{StaticResource ShellCommandBarPrimarySlot}"
+                        Click="Launch_Click" Visibility="Collapsed"/>
             </StackPanel>
         </Grid>
     </Grid>

@@ -92,10 +92,10 @@ internal static class AdventurePlayContextService
         }
 
         if (!string.IsNullOrWhiteSpace(conversationId)
-            && ProjectChatDraftService.ShouldStayOnProjectPage(bundle, core.Source))
+            && AdventureNavigationService.IsOnLinkedProjectPage(core.Source, bundle))
         {
             ProjectLinkDiagnostics.Log(
-                $"Play context draft mode on project page for {gizmoId}; skipping play thread navigation");
+                $"Play context stable on linked project page for {gizmoId}; skipping play thread navigation");
             return new PlayContextResult
             {
                 Status = PlayContextStatus.Ready,
@@ -295,6 +295,12 @@ internal static class AdventurePlayContextService
     {
         var previous = bundle.Metadata.LinkedConversationId;
         PlayTurnScopeService.OnPlayThreadChanged(bundle, previous, conversationId);
+
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var playEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)
+                          ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play);
+        AdventureThreadRegistryService.UpdateConversationId(bundle, playEntry.Id, conversationId);
+
         bundle.Metadata.LinkedConversationId = conversationId;
         if (bundle.Metadata.ProjectLink is not null)
             bundle.Metadata.ProjectLink.PlayConversationId = conversationId;
@@ -309,6 +315,7 @@ internal static class AdventurePlayContextService
             };
         }
 
+        AdventureThreadRegistryService.SyncLegacyFields(bundle.Metadata);
         AdventureStore.Save(bundle);
     }
 

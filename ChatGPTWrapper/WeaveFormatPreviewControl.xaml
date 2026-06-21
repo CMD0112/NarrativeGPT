@@ -1,0 +1,84 @@
+<UserControl x:Class="ChatGPTWrapper.WeaveFormatPreviewControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             MinHeight="200">
+    <StackPanel x:Name="WeavePreviewRoot">
+        <TextBlock Text="Narrator body"
+                   FontSize="10"
+                   FontWeight="SemiBold"
+                   Foreground="{StaticResource TextMutedBrush}"
+                   Margin="0,0,0,4"/>
+        <TextBlock x:Name="BodySampleText"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,12"
+                   Text="The corridor stretches ahead, torchlight flickering across damp stone."/>
+
+        <TextBlock Text="Player embed (blockquote)"
+                   FontSize="10"
+                   FontWeight="SemiBold"
+                   Foreground="{StaticResource TextMutedBrush}"
+                   Margin="0,0,0,4"/>
+        <Border x:Name="EmbedBlockquote"
+                BorderThickness="3,0,0,0"
+                Padding="10,8"
+                Margin="0,0,0,8"
+                Background="{StaticResource BgInsetBrush}">
+            <TextBlock x:Name="EmbedSampleText"
+                       Text="&quot;I examine the ancient door carefully.&quot;"
+                       TextWrapping="Wrap"/>
+        </Border>
+
+        <TextBlock Text="Aside / action"
+                   FontSize="10"
+                   FontWeight="SemiBold"
+                   Foreground="{StaticResource TextMutedBrush}"
+                   Margin="0,0,0,4"
+                   Visibility="Collapsed"/>
+        <Border x:Name="EmbedAside"
+                BorderThickness="3,0,0,0"
+                Padding="10,8"
+                Margin="0,0,0,8"
+                CornerRadius="6"
+                Background="{StaticResource BgInsetBrush}"
+                Visibility="Collapsed">
+            <TextBlock Text="*I run a hand along the carved glyphs.*"
+                       FontStyle="Italic"
+                       TextWrapping="Wrap"/>
+        </Border>
+
+        <Border x:Name="EmbedPullQuote"
+                BorderThickness="0,1,0,1"
+                Padding="12,10"
+                Margin="0,0,0,8"
+                Visibility="Collapsed">
+            <TextBlock Text="Open the archive"
+                       FontWeight="SemiBold"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"/>
+        </Border>
+
+        <Border x:Name="EmbedRunIn"
+                BorderThickness="1"
+                Padding="8,4"
+                CornerRadius="12"
+                HorizontalAlignment="Center"
+                Margin="0,0,0,8"
+                Visibility="Collapsed">
+            <TextBlock Text="Open the archive"
+                       TextAlignment="Center"/>
+        </Border>
+
+        <TextBlock Text="Narrator continuation"
+                   FontSize="10"
+                   FontWeight="SemiBold"
+                   Foreground="{StaticResource TextMutedBrush}"
+                   Margin="0,8,0,4"/>
+        <TextBlock TextWrapping="Wrap">
+            <Run Text="See also "/>
+            <Run Text="the archive notes" TextDecorations="Underline"/>
+            <Run Text=" and inline "/>
+            <Run Text="rune" Background="#333333" FontFamily="Consolas"/>
+            <Run Text=" markings."/>
+        </TextBlock>
+    </StackPanel>
+</UserControl>

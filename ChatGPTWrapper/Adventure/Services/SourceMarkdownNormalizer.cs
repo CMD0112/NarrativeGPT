@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using ChatGPTWrapper.Adventure.Services.Canon;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -10,28 +11,10 @@ internal static class SourceMarkdownNormalizer
     private static readonly string[] CastSectionIds = ["player", "party", "npcs"];
 
     private static readonly string[] PlayerFieldLabels =
-    [
-        "Name",
-        "Background",
-        "Family",
-        "Appearance",
-        "Personality",
-        "Abilities",
-        "Weaknesses",
-        "Goals",
-    ];
+        CanonSchemaRegistry.PlayerFieldLabels.ToArray();
 
     private static readonly string[] EntryFieldPrefixes =
-    [
-        "Id:",
-        "Aliases:",
-        "Role:",
-        "Relationship:",
-        "Motives:",
-        "Status:",
-        "Location:",
-        "Flavor:",
-    ];
+        CanonSchemaRegistry.EntryFieldPrefixes.ToArray();
 
     private static readonly Regex PlayerFieldLineRegex = new(
         @"^(?<label>Name|Background|Family|Appearance|Personality|Abilities|Weaknesses|Goals):\s*(?<value>.*)$",

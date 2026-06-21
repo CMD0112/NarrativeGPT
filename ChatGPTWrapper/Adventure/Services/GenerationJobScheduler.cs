@@ -9,9 +9,6 @@ internal static class GenerationJobScheduler
         if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
             return [];
 
-        if (UtilityDeliveryModeService.UsesInlineDelivery(bundle))
-            return [];
-
         var settings = bundle.Metadata.Settings;
         var jobs = new List<string>();
 

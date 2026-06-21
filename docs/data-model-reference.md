@@ -72,12 +72,14 @@ ChatGPTWrapper/
 
 | Source | Role |
 |--------|------|
-| `log.json` | **Authoritative** accepted play history (`TurnStatus.Accepted` turns with player/narrator text, packet hash, alternates) |
+| ChatGPT play thread | **Narrative source of truth** — live transcript the model sees |
+| `log.json` | **Derived cache** of accepted turn pairs; rebuilt on user-confirmed sync from thread |
 | `thread-metadata.json` | ChatGPT thread message ordinals and DOM slot mapping (`dom:N`, `turn:{id}:user/assistant`) |
-| ChatGPT thread | Live display and model-facing transcript; not the source of truth for accepted history |
 | `prompt-history.json` | Audit of merged packets sent (not a substitute for `log.json`) |
 
-On Send, `TurnTimelineService.AcceptTurn` appends to `log.json` automatically. Legacy manual review (`ResponseReviewDialog`) exists for debug/fallback only.
+On Send, `TurnTimelineService.AcceptTurn` appends to `log.json` after capture. When entering play with a linked thread, `ThreadLogSyncService` compares filtered thread pairs to `log.json` and **always prompts** before applying a sync. Utility and injected-context messages are excluded via `TranscriptFilterService`. Skipping sync sets `AdventureSettings.ThreadLogDriftHint` for the footer status line.
+
+Legacy manual review (`ResponseReviewDialog`) exists for debug/fallback only. Correct logged text via continuous-view surrogate edit (`TurnInvalidationService`), not local-only Undo/Edit turn menu actions.
 
 ---
 
@@ -117,6 +119,13 @@ On Send, `TurnTimelineService.AcceptTurn` appends to `log.json` automatically. L
 | `instructionsManuallyPublishedAt` | `DateTimeOffset?` | Manual publish time |
 | `instructionsManuallyPublishedHash` | `string?` | Manual publish hash |
 | `utilityJobGuideOverrides` | `dict<string, UtilityJobGuideOverride>` | Custom job instructions |
+| `threadRegistry` | `AdventureThreadEntry[]` | Registered play/design/utility threads (CMD-221) |
+| `activeThreadIds` | `dict<string, Guid>` | Active entry id per kind (`Play`, `Design`, `Utility`) |
+| `threadRegistryMigratedAt` | `DateTimeOffset?` | Legacy pin migration marker |
+| `pinnedDesignTabKey` | `string?` | Design tab key — synced from active design registry entry |
+| `pinnedDesignTabTitle` | `string?` | Design tab title |
+| `pinnedDesignTabUrl` | `string?` | Design tab URL |
+| `playThreadArchive` | `PlayThreadArchiveEntry[]` | Legacy archive — migrated into registry |
 | `settings` | `AdventureSettings` | Play/sync/automation settings |
 
 ### AdventureSettings
@@ -132,7 +141,8 @@ On Send, `TurnTimelineService.AcceptTurn` appends to `log.json` automatically. L
 | `contentBoundaries` | `[]` | Global content boundaries (one per line) |
 | `characterPortrayalRules` | `[]` | Per-subject portrayal rules (`CharacterPortrayalRule`: `subject`, `rule`) |
 | `instructionAddendum` | `""` | Optional extra narrator-contract text |
-| `promptPresetId` | null | Library preset reference |
+| `playTurnOverrides` | object | Next-send overrides (`responseLength`, `detailLevel`, `tone`, `difficulty`, `turnDirective`, emphasis flags) |
+| `sessionNarratorOverrides` | `dict<string, PlaySessionNarratorOverrides>` | Session-scoped overrides keyed by play session id |
 | `playSidePanelCollapsed` | false | Play UI layout |
 | `playSidePanelWidth` | 300 | Panel width (DIP) |
 | `autoExtractEntities` | false | Post-turn entity job |
@@ -254,6 +264,10 @@ Nested:
 
 ## EntitiesDocument
 
+**Schema version:** `EntitiesDocument.CurrentSchemaVersion` (2 as of CMD-194). Version 1 adventures migrate on load via `EntitiesDocumentMigration`. Each entry type may include `extendedFields` (`Dictionary<string, string>`) for schema-defined attributes beyond typed properties.
+
+**Canon schema version:** `AdventureMetadata.CanonSchemaVersion` (1 as of CMD-205). Bumped on adventure load when the bundled `canon-schema.json` registry version advances via `CanonSchemaMigrationService`.
+
 Structured trackers:
 
 | Collection | Entry type |
@@ -320,7 +334,7 @@ Records utility job exchanges (`UtilityExchangeRecord[]`) — job id, prompts, r
 
 | Field | Description |
 |-------|-------------|
-| `schemaVersion` | Current: 3 |
+| `schemaVersion` | Current: 5 (`SourceManifest.CurrentSchemaVersion`) |
 | `synced` | All entries `InSync` |
 | `lastRemoteSyncAt` | Last successful sync |
 | `apiProfileVersion` | API profile fingerprint |

@@ -1,5 +1,7 @@
 # Chat File I/O Feasibility
 
+**Status:** Spike complete — API upload/download proven for Projects; play attach uses native composer + DOM submit; chat download interception implemented. See executive summary below.
+
 This document records the feasibility study for **uploading files to chat messages** and **downloading files from chat threads** in ChatGPT Wrapper. It compares the existing API-bridge stack (proven for Project knowledge files) with DOM/WebView hooks.
 
 **Related:** [ChatGPT API Integration](chatgpt-api-integration.md) · [WebView Bridges](webview-bridges.md)

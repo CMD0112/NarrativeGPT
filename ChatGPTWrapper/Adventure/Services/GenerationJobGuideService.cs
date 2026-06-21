@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -75,19 +76,11 @@ internal static class GenerationJobGuideService
         GenerationJobId.ProposeSourceEdits => """
             You propose edits to adventure source files and narrator instructions.
             Respond with JSON only — array of objects:
-            { "targetFile": "world.md"|"plot.md"|"scenario.md"|"instructions", "operation": "replace"|"append", "content": string, "rationale": string }.
+            { "targetFile": "world.md"|"plot.md"|"scenario.md"|"cast.md"|"instructions", "operation": "replace"|"append", "content": string, "rationale": string }.
+            Follow section templates in sources/canon-format.md when editing cast, world, or plot entries (labeled fields, Id slugs, party vs npc buckets).
             Do not invent facts that contradict provided excerpts.
             """,
-        GenerationJobId.ProposeJsonImport => """
-            Parts 1–2 are required in one reply (downloadable files plus matching inline begin/end blocks).
-            Part 3 is optional plain JSON (no markdown fences) — if omitted, the wrapper diffs your proposed files.
-            scenarioFields: array of { "field": string, "value": string, "rationale": string }.
-            entities: array of { "action": "add"|"update"|"remove", "name": string, "entityType": "person"|"place"|"concept"|"faction", "description": string, "rationale": string }.
-            Allowed field keys: setting, playerRole, genre, tone, openingSituation, majorConflicts, startingConstraints, plotEssentials, worldRules, authorsNote, lexiconRules, lexiconPools, lexiconAvoid.
-            Every rationale MUST cite supporting sourceRef value(s) from the job packet verbatim (e.g. "plot.md#essentials").
-            Derive values from the referenced source material; do not invent facts absent from cited sources.
-            For remove actions, description may be omitted. If nothing to propose, return { "scenarioFields": [], "entities": [] }.
-            """,
+        GenerationJobId.ProposeJsonImport => ProposeJsonImportInstructionBody(),
         GenerationJobId.DesignAdventure => """
             You help design a new interactive fiction adventure before play begins.
             Work step-by-step with the author: ask clarifying questions, propose ideas, and refine drafts.
@@ -188,6 +181,25 @@ internal static class GenerationJobGuideService
         GenerationJobId.DesignAdventure,
         GenerationJobId.DesignExtractStep,
     ];
+
+    private static string ProposeJsonImportInstructionBody()
+    {
+        var labels = RegistryFieldLabelSummary();
+        return $$"""
+            Parts 1–2 are required in one reply (downloadable files plus matching inline begin/end blocks).
+            Part 3 is optional plain JSON (no markdown fences) — if omitted, the wrapper diffs your proposed files.
+            scenarioFields: array of { "field": string, "value": string, "rationale": string }.
+            entities: array of { "action": "add"|"update"|"remove", "name": string, "entityType": "person"|"place"|"concept"|"faction", "description": string, "rationale": string }.
+            Allowed field keys: setting, playerRole, genre, tone, openingSituation, majorConflicts, startingConstraints, plotEssentials, worldRules, authorsNote, lexiconRules, lexiconPools, lexiconAvoid.
+            Every rationale MUST cite supporting sourceRef value(s) from the job packet verbatim (e.g. "plot.md#essentials").
+            Use sources/canon-format.md and CanonSchemaRegistry field labels ({{labels}}) when mapping cast.md party/npc entries to entities.json.
+            Derive values from the referenced source material; do not invent facts absent from cited sources.
+            For remove actions, description may be omitted. If nothing to propose, return { "scenarioFields": [], "entities": [] }.
+            """;
+    }
+
+    private static string RegistryFieldLabelSummary() =>
+        string.Join(", ", CanonSchemaRegistry.EntryFieldPrefixes.Take(12));
 
     private static int StableInstructionHash(string body)
     {

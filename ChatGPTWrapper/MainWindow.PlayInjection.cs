@@ -648,6 +648,8 @@ public partial class MainWindow
                     composeInjection,
                     assistantBaseline);
 
+                PlayHandoffService.TryReconcileAfterFirstSend(bundle);
+
                 playWebView.Focus();
 
                 ReloadPlayAdventure(adventureId);
@@ -995,6 +997,8 @@ public partial class MainWindow
         }
 
         TurnTimelineService.AcceptTurn(turn, narratorText!);
+        NarratorOverrideResolver.ClearTurnOverrides(bundle.Metadata.Settings);
+        CanonReconciliationService.ClearNotify(bundle);
         ThreadMetadataService.RecordPlayTurnExchange(
             bundle,
             turn,

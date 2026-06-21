@@ -8,8 +8,8 @@
         MinWidth="720"
         ShowInTaskbar="True"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource DialogBgBrush}"
-        Foreground="{StaticResource TextBrush}">
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -26,23 +26,23 @@
                 <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
                            Text="2. Design instructions — define boundaries in the designer, Generate instructions file, then Copy instructions and paste into ChatGPT Project → Custom instructions. Mark instructions pasted when done."/>
                 <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
-                           Text="3. Open canonical folder (Explorer) and drag .md files onto ChatGPT Project → Files while this window stays open beside the browser. Or Copy from the grid. Mark Published when uploaded."/>
+                           Text="3. Upload canon-format.md first (format reference), then lore files — open canonical folder (Explorer) and drag .md files onto ChatGPT Project → Files while this window stays open beside the browser. Or Copy from the grid. Mark Published when uploaded."/>
                 <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
                            Text="4. Optional: Probe project to download remote copies for comparison. Compare if project match shows Differ."/>
-                <TextBlock x:Name="CanonicalPathLine" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedTextBrush}"/>
+                <TextBlock x:Name="CanonicalPathLine" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
             </StackPanel>
         </Expander>
 
         <TextBlock x:Name="RepublishHintLine" Grid.Row="1" TextWrapping="Wrap" FontSize="11"
-                   Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,8"/>
+                   Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,8"/>
 
         <Border Grid.Row="2" Padding="10,8" Margin="0,0,0,10" CornerRadius="{StaticResource RadiusControl}"
-                Background="{StaticResource PanelBgBrush}">
+                Background="{StaticResource BgSurfaceBrush}">
             <StackPanel>
                 <TextBlock Text="Project instructions" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                <TextBlock x:Name="InstructionStatusLine" Foreground="{StaticResource MutedTextBrush}" FontSize="11"
+                <TextBlock x:Name="InstructionStatusLine" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
                            TextWrapping="Wrap" Margin="0,0,0,6"/>
-                <TextBlock x:Name="InstructionDriftLine" Foreground="{StaticResource MutedTextBrush}" FontSize="11"
+                <TextBlock x:Name="InstructionDriftLine" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
                            TextWrapping="Wrap" Margin="0,0,0,8"/>
                 <WrapPanel>
                     <Button Content="Design instructions…" Padding="10,5" Margin="0,0,8,4" Click="DesignInstructions_Click"/>
@@ -58,17 +58,19 @@
         <Grid Grid.Row="3">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" MinWidth="200"/>
-                <ColumnDefinition Width="6"/>
+                <ColumnDefinition Width="8"/>
                 <ColumnDefinition Width="260" MinWidth="180" MaxWidth="420"/>
             </Grid.ColumnDefinitions>
             <GridSplitter Grid.Column="1"
                           Style="{StaticResource SidePanelGridSplitterStyle}"
                           ResizeBehavior="PreviousAndNext"
                           ResizeDirection="Columns"
-                          Width="6"/>
+                          Width="8"/>
             <DockPanel Grid.Column="0">
                 <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <Button Content="Refresh export" Padding="10,5" Margin="0,0,8,4" Click="RefreshExport_Click"/>
+                    <Button Content="Check canon" Padding="10,5" Margin="0,0,8,4" Click="CheckCanon_Click"
+                            ToolTip="Validate sectioned sources against the canon schema"/>
                     <Button Content="Open folder for drag" Padding="10,5" Margin="0,0,8,4" Click="OpenFolderForDrag_Click"
                             ToolTip="Opens Explorer so you can drag files to ChatGPT while this window stays open"/>
                     <Button Content="Open canonical folder" Padding="10,5" Margin="0,0,8,4" Click="OpenCanonicalFolder_Click"/>
@@ -109,7 +111,7 @@
         </Grid>
 
         <StackPanel Grid.Row="4" Margin="0,12,0,0">
-            <TextBlock x:Name="StatusLine" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <TextBlock x:Name="StatusLine" Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button x:Name="ApiSyncDiagnosticsButton" Content="API sync diagnostics…" Padding="12,6" Margin="0,0,8,0"
                         Click="ApiSyncDiagnostics_Click"/>

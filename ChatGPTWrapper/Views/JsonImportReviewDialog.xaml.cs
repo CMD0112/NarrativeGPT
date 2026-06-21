@@ -107,7 +107,7 @@ public partial class JsonImportReviewDialog : Window
             PreviewWarningsPanel.Items.Add(new TextBlock
             {
                 Text = warning,
-                Foreground = (Brush)FindResource("MutedTextBrush"),
+                Foreground = (Brush)FindResource("TextMutedBrush"),
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 11,
                 Margin = new Thickness(0, 0, 0, 4),
@@ -225,7 +225,7 @@ public partial class JsonImportReviewDialog : Window
         JsonImportConflictSeverity.Unsupported => (Brush)FindResource("ErrorBrush"),
         JsonImportConflictSeverity.Drift => (Brush)FindResource("WarningBrush"),
         JsonImportConflictSeverity.Supported => (Brush)FindResource("SuccessBrush"),
-        _ => (Brush)FindResource("MutedTextBrush"),
+        _ => (Brush)FindResource("TextMutedBrush"),
     };
 
     private void AcceptSelected_Click(object sender, RoutedEventArgs e)

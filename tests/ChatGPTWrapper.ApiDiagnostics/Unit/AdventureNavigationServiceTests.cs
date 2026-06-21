@@ -167,7 +167,25 @@ public sealed class AdventureNavigationServiceTests
     }
 
     [Fact]
-    public void ShouldNavigateToDesignTarget_true_from_project_page_when_design_session_exists()
+    public void ShouldNavigateToPlayTarget_false_on_project_page_when_stored_play_thread()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-nav",
+                LinkedConversationId = "conv-1",
+            },
+        };
+
+        var source = ChatGptUrls.BuildProjectUrl("g-p-nav");
+        var target = AdventureNavigationService.ResolvePlayBrowseUrl(bundle)!;
+
+        Assert.False(AdventureNavigationService.ShouldNavigateToPlayTarget(source, bundle, target));
+    }
+
+    [Fact]
+    public void ShouldNavigateToDesignTarget_false_on_project_page_when_design_session_exists()
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Design project page");
         bundle.Metadata.LinkedProjectId = "g-p-design";
@@ -185,7 +203,7 @@ public sealed class AdventureNavigationServiceTests
         var source = ChatGptUrls.BuildProjectUrl("g-p-design");
         var target = AdventureNavigationService.ResolveDesignBrowseUrl(bundle)!;
 
-        Assert.True(AdventureNavigationService.ShouldNavigateToDesignTarget(source, bundle, target));
+        Assert.False(AdventureNavigationService.ShouldNavigateToDesignTarget(source, bundle, target));
     }
 
     [Fact]
@@ -361,7 +379,7 @@ public sealed class AdventureNavigationServiceTests
     }
 
     [Fact]
-    public void IsOnValidAdventureWebTarget_false_on_project_page_when_play_thread_linked()
+    public void IsOnValidAdventureWebTarget_true_on_project_page_when_play_thread_linked()
     {
         var bundle = new AdventureBundle
         {
@@ -372,7 +390,7 @@ public sealed class AdventureNavigationServiceTests
             },
         };
 
-        Assert.False(
+        Assert.True(
             AdventureNavigationService.IsOnValidAdventureWebTarget(
                 ChatGptUrls.BuildProjectUrl("g-p-nav"),
                 bundle,

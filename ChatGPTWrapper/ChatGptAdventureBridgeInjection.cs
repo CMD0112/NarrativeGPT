@@ -167,6 +167,9 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
     public void SendFillComposerCommand(CoreWebView2 core, string text) =>
         SendCommand(core, new { action = "fillComposer", text });
 
+    public void SendClearStaleInjectionComposerCommand(CoreWebView2 core) =>
+        SendCommand(core, new { action = "clearComposerIfInjection" });
+
     public async Task<bool> InvokeSendPromptAsync(
         CoreWebView2 core,
         string text,

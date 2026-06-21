@@ -1,0 +1,106 @@
+[
+  {
+    "id": "CMD-129",
+    "labels": [
+      "Feature",
+      "Play",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-130",
+    "labels": [
+      "Feature",
+      "Play",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-131",
+    "labels": [
+      "Feature",
+      "Play",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-132",
+    "labels": [
+      "Improvement",
+      "Play",
+      "Docs"
+    ]
+  },
+  {
+    "id": "CMD-133",
+    "labels": [
+      "Feature",
+      "Play",
+      "C#",
+      "Architecture"
+    ]
+  },
+  {
+    "id": "CMD-135",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-136",
+    "labels": [
+      "Tech Debt",
+      "Play",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-137",
+    "labels": [
+      "Improvement",
+      "Play",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-138",
+    "labels": [
+      "Feature",
+      "Management",
+      "Metadata",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-141",
+    "labels": [
+      "Feature",
+      "Design",
+      "Sources",
+      "C#",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-142",
+    "labels": [
+      "Feature",
+      "Design",
+      "Sources",
+      "WPF",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-143",
+    "labels": [
+      "Play Packet",
+      "C#",
+      "Play",
+      "Feature",
+      "Verified"
+    ]
+  }
+]

@@ -1,0 +1,70 @@
+[
+  {
+    "id": "CMD-90",
+    "labels": [
+      "Feature",
+      "Projects",
+      "Navigation",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-91",
+    "labels": [
+      "Epic",
+      "Design",
+      "WPF",
+      "Improvement"
+    ]
+  },
+  {
+    "id": "CMD-94",
+    "labels": [
+      "Improvement",
+      "Instructions",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-96",
+    "labels": [
+      "Improvement",
+      "Tech Debt",
+      "WPF",
+      "Browse",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-97",
+    "labels": [
+      "Improvement",
+      "WPF",
+      "Architecture",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-98",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "WPF",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-99",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "Navigation",
+      "WPF",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  }
+]

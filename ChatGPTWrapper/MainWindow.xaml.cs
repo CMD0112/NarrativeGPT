@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using ChatGPTWrapper.Theme;
 using Microsoft.Web.WebView2.Wpf;
 
 namespace ChatGPTWrapper;
@@ -14,9 +15,12 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _chrome = UiChromeStore.Load();
+        ApplyThemeOnStartup();
         _suppressChromeEvents = true;
-        ContinuousViewCheckBox.IsChecked = _chrome.ContinuousViewEnabled;
+        UpdateTranscriptViewModeButtonStyles();
         _suppressChromeEvents = false;
+        ConfigureChatTabsChrome();
+        WireShellStatusBarHandlers();
         UpdateModeButtonStyles();
 
         Loaded += (_, _) =>
@@ -32,6 +36,7 @@ public partial class MainWindow : Window
             ApplyStyleToActiveTab();
             ApplyContinuousViewToActiveTab();
             UpdateModeButtonStyles();
+            UpdateTranscriptViewModeButtonStyles();
             if (_appMode == AppMode.Play && GetActiveWebView() is { } active)
             {
                 GetOrRegisterAdventureBridge(active);
@@ -52,19 +57,89 @@ public partial class MainWindow : Window
     private void CloseTabButton_Click(object sender, RoutedEventArgs e) =>
         CloseActiveChatTab();
 
+    private void SetTranscriptViewMode(TranscriptViewMode mode)
+    {
+        if (_suppressChromeEvents)
+            return;
+
+        _chrome.TranscriptViewMode = mode;
+        UiChromeStore.Save(_chrome);
+        ChromePreferencesApplier.ApplyChromeToTrustedTabs(this, _chrome, persist: true);
+
+        _suppressChromeEvents = true;
+        UpdateTranscriptViewModeButtonStyles();
+        ContinuousViewCheckBox.IsChecked = mode == TranscriptViewMode.Continuous;
+        _suppressChromeEvents = false;
+    }
+
+    private void NativeTranscriptModeButton_Click(object sender, RoutedEventArgs e) =>
+        SetTranscriptViewMode(TranscriptViewMode.Native);
+
+    private void ContinuousTranscriptModeButton_Click(object sender, RoutedEventArgs e) =>
+        SetTranscriptViewMode(TranscriptViewMode.Continuous);
+
+    private void WeaveTranscriptModeButton_Click(object sender, RoutedEventArgs e) =>
+        SetTranscriptViewMode(TranscriptViewMode.Weave);
+
+    private void UpdateTranscriptViewModeButtonStyles()
+    {
+        if (NativeTranscriptModeButton is null
+            || ContinuousTranscriptModeButton is null
+            || WeaveTranscriptModeButton is null)
+        {
+            return;
+        }
+
+        var selected = (Style)FindResource("ModeButtonSelectedStyle");
+        var normal = (Style)FindResource("ModeButtonStyle");
+
+        NativeTranscriptModeButton.Style =
+            _chrome.TranscriptViewMode == TranscriptViewMode.Native ? selected : normal;
+        ContinuousTranscriptModeButton.Style =
+            _chrome.TranscriptViewMode == TranscriptViewMode.Continuous ? selected : normal;
+        WeaveTranscriptModeButton.Style =
+            _chrome.TranscriptViewMode == TranscriptViewMode.Weave ? selected : normal;
+    }
+
     private void ContinuousViewCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         if (_suppressChromeEvents)
             return;
 
-        _chrome.ContinuousViewEnabled = ContinuousViewCheckBox.IsChecked == true;
-        UiChromeStore.Save(_chrome);
-        ChromePreferencesApplier.ApplyChromeToTrustedTabs(this, _chrome, persist: true);
+        var enabled = ContinuousViewCheckBox.IsChecked == true;
+        SetTranscriptViewMode(enabled ? TranscriptViewMode.Continuous : TranscriptViewMode.Native);
+    }
+
+    private void ContinuousViewMenuItem_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressChromeEvents)
+            return;
+
+        _suppressChromeEvents = true;
+        ContinuousViewCheckBox.IsChecked = ContinuousViewCheckBox.IsChecked;
+        _suppressChromeEvents = false;
+        ContinuousViewCheckBox_Changed(ContinuousViewCheckBox, e);
+    }
+
+    private void PreferencesMenuItem_Click(object sender, RoutedEventArgs e) =>
+        OpenPreferencesHub();
+
+    private void OpenPreferencesHub()
+    {
+        var dialog = new Views.PreferencesHubDialog(
+            _chrome,
+            ResolveActiveAdventureIdForFormatImport,
+            (settings, persist, preview) => ApplyDialogSettings(settings, persist, preview),
+            ApplyThemeSettings)
+        {
+            Owner = this,
+        };
+        dialog.ShowDialog();
     }
 
     private void FormatButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new ContinuousViewFormatDialog(_chrome, ApplyDialogSettings)
+        var dialog = new ContinuousViewFormatDialog(_chrome, ApplyDialogSettings, ResolveActiveAdventureIdForFormatImport)
         {
             Owner = this,
         };
@@ -77,19 +152,17 @@ public partial class MainWindow : Window
 
     private void ApplyDialogSettings(UiChromeSettings settings, bool persist, int? previewRevision = null)
     {
-        _chrome.ProseEnhancementsEnabled = settings.ProseEnhancementsEnabled;
-        _chrome.HideAssistantEditArtifacts = settings.HideAssistantEditArtifacts;
-        _chrome.HideContextTagsInThread = settings.HideContextTagsInThread;
-        _chrome.ExpandHiddenContextInThread = settings.ExpandHiddenContextInThread;
-        _chrome.PhraseHighlightsEnabled = settings.PhraseHighlightsEnabled;
-        _chrome.PhraseHighlightRules = (settings.PhraseHighlightRules ?? []).Select(r => r.Clone()).ToList();
-        _chrome.ContinuousViewFormat = (settings.ContinuousViewFormat ?? ContinuousViewFormatSettings.CreateDefaults()).Clone();
+        TranscriptViewModeSettingsExtensions.CopyAllModeSettings(settings, _chrome);
+        _chrome.ActiveHighlightColorProfileId = settings.ActiveHighlightColorProfileId;
+        _chrome.HighlightColorProfiles = (settings.HighlightColorProfiles ?? []).Select(p => p.Clone()).ToList();
+        _chrome.HighlightColorCustomOptions = (settings.HighlightColorCustomOptions ?? new HighlightColorAssignmentOptions()).Clone();
 
-        if (settings.ContinuousViewEnabled != _chrome.ContinuousViewEnabled)
+        if (settings.TranscriptViewMode != _chrome.TranscriptViewMode)
         {
             _suppressChromeEvents = true;
-            _chrome.ContinuousViewEnabled = settings.ContinuousViewEnabled;
-            ContinuousViewCheckBox.IsChecked = settings.ContinuousViewEnabled;
+            _chrome.TranscriptViewMode = settings.TranscriptViewMode;
+            ContinuousViewCheckBox.IsChecked = settings.TranscriptViewMode == TranscriptViewMode.Continuous;
+            UpdateTranscriptViewModeButtonStyles();
             _suppressChromeEvents = false;
         }
 

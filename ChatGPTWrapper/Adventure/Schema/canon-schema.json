@@ -1,0 +1,828 @@
+{
+  "schemaVersion": 1,
+  "kinds": [
+    {
+      "kindId": "player",
+      "collectionKey": "player",
+      "sectionId": "player",
+      "sourceFile": "cast.md",
+      "uiCategory": "Player",
+      "typeLabel": "Player",
+      "showInPlayGrid": true,
+      "isSingleton": true,
+      "titleProperty": "name",
+      "secondaryProperty": "background",
+      "snippetProperty": "goals",
+      "fields": [
+        {
+          "label": "Name",
+          "jsonKey": "name",
+          "format": "BoldLine",
+          "role": "Primary",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Background",
+          "jsonKey": "background",
+          "format": "BoldLine",
+          "role": "Secondary",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Appearance",
+          "jsonKey": "appearance",
+          "format": "BoldLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Personality",
+          "jsonKey": "personality",
+          "format": "BoldLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Abilities",
+          "jsonKey": "abilities",
+          "format": "BoldLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Weaknesses",
+          "jsonKey": "weaknesses",
+          "format": "BoldLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Goals",
+          "jsonKey": "goals",
+          "format": "BoldLine",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "party",
+      "collectionKey": "party",
+      "sectionId": "party",
+      "sourceFile": "cast.md",
+      "uiCategory": "Party",
+      "typeLabel": "Companion",
+      "showInPlayGrid": true,
+      "isSingleton": false,
+      "titleProperty": "name",
+      "secondaryProperty": "condition",
+      "snippetProperty": "goals",
+      "fields": [
+        {
+          "label": "Condition",
+          "jsonKey": "condition",
+          "format": "PlainLine",
+          "role": "Secondary",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": [
+            "Role"
+          ]
+        },
+        {
+          "label": "Relationship",
+          "jsonKey": "relationship",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Attitude",
+          "jsonKey": "attitude",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": [
+            "Status"
+          ]
+        },
+        {
+          "label": "Goals",
+          "jsonKey": "goals",
+          "format": "PlainLine",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Secrets",
+          "jsonKey": "secrets",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "npc",
+      "collectionKey": "characters",
+      "sectionId": "npcs",
+      "sourceFile": "cast.md",
+      "uiCategory": "Characters",
+      "typeLabel": "Character",
+      "showInPlayGrid": true,
+      "isSingleton": false,
+      "titleProperty": "name",
+      "secondaryProperty": "role",
+      "snippetProperty": "description",
+      "fields": [
+        {
+          "label": "Id",
+          "jsonKey": "id",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Aliases",
+          "jsonKey": "aliases",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "description",
+          "jsonKey": "description",
+          "format": "FreeformBody",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Role",
+          "jsonKey": "role",
+          "format": "PlainLine",
+          "role": "Secondary",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Relationship",
+          "jsonKey": "relationshipToPlayer",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Motives",
+          "jsonKey": "motives",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Status",
+          "jsonKey": "status",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Location",
+          "jsonKey": "location",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "History",
+          "jsonKey": "history",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Flavor",
+          "jsonKey": "flavor",
+          "format": "BlockquoteFlavor",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Pinned",
+          "jsonKey": "pinned",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "location",
+      "collectionKey": "locations",
+      "sectionId": "locations",
+      "sourceFile": "world.md",
+      "uiCategory": "Locations",
+      "typeLabel": "Location",
+      "showInPlayGrid": true,
+      "isSingleton": false,
+      "titleProperty": "name",
+      "secondaryProperty": "status",
+      "snippetProperty": "description",
+      "fields": [
+        {
+          "label": "Id",
+          "jsonKey": "id",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Aliases",
+          "jsonKey": "aliases",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "description",
+          "jsonKey": "description",
+          "format": "FreeformBody",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Features",
+          "jsonKey": "features",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Connected places",
+          "jsonKey": "connectedPlaces",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": [
+            "Connected Places"
+          ]
+        },
+        {
+          "label": "Dangers",
+          "jsonKey": "dangers",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Mysteries",
+          "jsonKey": "mysteries",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Status",
+          "jsonKey": "status",
+          "format": "PlainLine",
+          "role": "Secondary",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Pinned",
+          "jsonKey": "pinned",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "faction",
+      "collectionKey": "factions",
+      "sectionId": "factions",
+      "sourceFile": "world.md",
+      "uiCategory": "Factions",
+      "typeLabel": "Faction",
+      "showInPlayGrid": true,
+      "isSingleton": false,
+      "titleProperty": "name",
+      "secondaryProperty": "reputation",
+      "snippetProperty": "goals",
+      "fields": [
+        {
+          "label": "Id",
+          "jsonKey": "id",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Goals",
+          "jsonKey": "goals",
+          "format": "FreeformBody",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Members",
+          "jsonKey": "members",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Relationships",
+          "jsonKey": "relationships",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Reputation",
+          "jsonKey": "reputation",
+          "format": "PlainLine",
+          "role": "Secondary",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Conflicts",
+          "jsonKey": "conflicts",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "concept",
+      "collectionKey": "concepts",
+      "sectionId": "concepts",
+      "sourceFile": "world.md",
+      "uiCategory": "Concepts",
+      "typeLabel": "Concept",
+      "showInPlayGrid": true,
+      "isSingleton": false,
+      "titleProperty": "name",
+      "secondaryProperty": "category",
+      "snippetProperty": "description",
+      "fields": [
+        {
+          "label": "Id",
+          "jsonKey": "id",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "description",
+          "jsonKey": "description",
+          "format": "FreeformBody",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Category",
+          "jsonKey": "category",
+          "format": "PlainLine",
+          "role": "Secondary",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Pinned",
+          "jsonKey": "pinned",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "quest",
+      "collectionKey": "quests",
+      "sectionId": "quests",
+      "sourceFile": "plot.md",
+      "uiCategory": "Quests",
+      "typeLabel": "Quest",
+      "showInPlayGrid": true,
+      "isSingleton": false,
+      "titleProperty": "title",
+      "secondaryProperty": "notes",
+      "snippetProperty": "description",
+      "fields": [
+        {
+          "label": "Id",
+          "jsonKey": "id",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Status",
+          "jsonKey": "status",
+          "format": "PlainLine",
+          "role": "Secondary",
+          "multiline": false,
+          "controlType": "Enum",
+          "alternateLabels": []
+        },
+        {
+          "label": "description",
+          "jsonKey": "description",
+          "format": "FreeformBody",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Notes",
+          "jsonKey": "notes",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "mystery",
+      "collectionKey": "mysteries",
+      "sectionId": "mysteries",
+      "sourceFile": "plot.md",
+      "uiCategory": "Concepts",
+      "typeLabel": "Mystery",
+      "showInPlayGrid": false,
+      "isSingleton": false,
+      "titleProperty": "question",
+      "secondaryProperty": "",
+      "snippetProperty": "clues",
+      "fields": [
+        {
+          "label": "Id",
+          "jsonKey": "id",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Clues",
+          "jsonKey": "clues",
+          "format": "FreeformBody",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Theories",
+          "jsonKey": "theories",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "conflict",
+      "collectionKey": "conflicts",
+      "sectionId": "conflicts",
+      "sourceFile": "plot.md",
+      "uiCategory": "Concepts",
+      "typeLabel": "Conflict",
+      "showInPlayGrid": false,
+      "isSingleton": false,
+      "titleProperty": "title",
+      "secondaryProperty": "status",
+      "snippetProperty": "description",
+      "fields": [
+        {
+          "label": "Id",
+          "jsonKey": "id",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Status",
+          "jsonKey": "status",
+          "format": "PlainLine",
+          "role": "Secondary",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "description",
+          "jsonKey": "description",
+          "format": "FreeformBody",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "consequence",
+      "collectionKey": "consequences",
+      "sectionId": "consequences",
+      "sourceFile": "plot.md",
+      "uiCategory": "Concepts",
+      "typeLabel": "Consequence",
+      "showInPlayGrid": false,
+      "isSingleton": false,
+      "titleProperty": "trigger",
+      "secondaryProperty": "",
+      "snippetProperty": "effect",
+      "fields": [
+        {
+          "label": "Id",
+          "jsonKey": "id",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Effect",
+          "jsonKey": "effect",
+          "format": "FreeformBody",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Due when",
+          "jsonKey": "dueWhen",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": [
+            "DueWhen"
+          ]
+        }
+      ]
+    },
+    {
+      "kindId": "inventory",
+      "collectionKey": "inventory",
+      "sectionId": "inventory",
+      "sourceFile": "",
+      "uiCategory": "Things",
+      "typeLabel": "Thing",
+      "showInPlayGrid": true,
+      "isSingleton": false,
+      "titleProperty": "name",
+      "secondaryProperty": "status",
+      "snippetProperty": "description",
+      "fields": [
+        {
+          "label": "Source",
+          "jsonKey": "source",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Notes",
+          "jsonKey": "notes",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "scenario",
+      "collectionKey": "scenario",
+      "sectionId": "opening",
+      "sourceFile": "scenario.md",
+      "uiCategory": "Scenario",
+      "typeLabel": "Scenario",
+      "showInPlayGrid": false,
+      "isSingleton": true,
+      "titleProperty": "title",
+      "secondaryProperty": "genre",
+      "snippetProperty": "openingSituation",
+      "fields": [
+        {
+          "label": "Setting",
+          "jsonKey": "setting",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Genre",
+          "jsonKey": "genre",
+          "format": "PlainLine",
+          "role": "Secondary",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Tone",
+          "jsonKey": "tone",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Opening situation",
+          "jsonKey": "openingSituation",
+          "format": "PlainLine",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": [
+            "Opening Situation"
+          ]
+        }
+      ]
+    },
+    {
+      "kindId": "lexicon",
+      "collectionKey": "lexicon",
+      "sectionId": "rules",
+      "sourceFile": "lexicon.md",
+      "uiCategory": "Lexicon",
+      "typeLabel": "Lexicon",
+      "showInPlayGrid": false,
+      "isSingleton": true,
+      "titleProperty": "rules",
+      "secondaryProperty": "",
+      "snippetProperty": "pools",
+      "fields": [
+        {
+          "label": "Rules",
+          "jsonKey": "rules",
+          "format": "FreeformBody",
+          "role": "Primary",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Pools",
+          "jsonKey": "pools",
+          "format": "PlainLine",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Avoid",
+          "jsonKey": "avoid",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Text",
+          "alternateLabels": []
+        }
+      ]
+    },
+    {
+      "kindId": "custom",
+      "collectionKey": "custom",
+      "sectionId": "custom",
+      "sourceFile": "world.md",
+      "uiCategory": "Custom",
+      "typeLabel": "Custom",
+      "showInPlayGrid": false,
+      "isSingleton": false,
+      "titleProperty": "name",
+      "secondaryProperty": "category",
+      "snippetProperty": "description",
+      "fields": [
+        {
+          "label": "Id",
+          "jsonKey": "id",
+          "format": "PlainLine",
+          "role": "Shell",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "description",
+          "jsonKey": "description",
+          "format": "FreeformBody",
+          "role": "Snippet",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Category",
+          "jsonKey": "category",
+          "format": "PlainLine",
+          "role": "Secondary",
+          "multiline": false,
+          "controlType": "Text",
+          "alternateLabels": []
+        }
+      ]
+    }
+  ]
+}

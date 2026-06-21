@@ -1,33 +1,73 @@
 using System.Windows;
+using System.Windows.Controls;
+using ChatGPTWrapper.Adventure.Services;
 
 namespace ChatGPTWrapper.Views;
 
 public partial class EntityEditDialog : Window
 {
-    public string EntityName { get; private set; } = "";
+    public bool Deleted { get; private set; }
 
-    public string EntityRole { get; private set; } = "";
-
-    public string EntityDescription { get; private set; } = "";
-
-    public bool EntityPinned { get; private set; }
-
-    public EntityEditDialog(string name, string role, string description, bool pinned, bool showPinned)
+    public EntityEditDialog(EntityEditModel model)
     {
         InitializeComponent();
-        NameBox.Text = name;
-        RoleBox.Text = role;
-        DescriptionBox.Text = description;
-        PinnedCheck.IsChecked = pinned;
-        PinnedCheck.Visibility = showPinned ? Visibility.Visible : Visibility.Collapsed;
+        Title = model.IsNew ? $"New {model.TypeLabel.ToLowerInvariant()}" : model.TypeLabel;
+        HeaderTitleBlock.Text = model.IsNew
+            ? $"Add {model.TypeLabel.ToLowerInvariant()}"
+            : model.Name;
+        DeleteButton.Visibility = model.IsNew ? Visibility.Collapsed : Visibility.Visible;
+
+        BuildHeaderLabels(model);
+        FormHost.LoadModel(model);
+    }
+
+    private void BuildHeaderLabels(EntityEditModel model)
+    {
+        HeaderLabelsPanel.Children.Clear();
+        foreach (var label in model.HeaderLabels)
+        {
+            HeaderLabelsPanel.Children.Add(new Border
+            {
+                Style = (Style)FindResource("ShellBadgeStyle"),
+                Child = new TextBlock
+                {
+                    Text = label,
+                    FontSize = 10,
+                    FontWeight = FontWeights.SemiBold,
+                },
+            });
+        }
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
-        EntityName = NameBox.Text.Trim();
-        EntityRole = RoleBox.Text.Trim();
-        EntityDescription = DescriptionBox.Text.Trim();
-        EntityPinned = PinnedCheck.IsChecked == true;
+        if (!FormHost.TryHarvestModel(out var validationMessage))
+        {
+            MessageBox.Show(this, validationMessage, Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        DialogResult = true;
+        Close();
+    }
+
+    private void Delete_Click(object sender, RoutedEventArgs e)
+    {
+        var model = FormHost.Model;
+        if (model is null)
+            return;
+
+        if (MessageBox.Show(
+                this,
+                $"Delete “{model.Name}”? This cannot be undone.",
+                $"Delete {model.TypeLabel.ToLowerInvariant()}",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        Deleted = true;
         DialogResult = true;
         Close();
     }

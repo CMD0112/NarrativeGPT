@@ -147,7 +147,13 @@ $env:CGW_PERF_SKIP_ATTACH_SIDEBAR = "1"
 
 Live perf tests stay on `chatgpt.com` and use bridge APIs with `ensureProjectPage: false` so they do not wait on SPA project-page navigation unless you set `CGW_PERF_ENSURE_PROJECT_PAGE=1`.
 
-Exclude performance tests from default CI:
+GitHub Actions CI (see `docs/testing.md`) runs unit tests only:
+
+```powershell
+dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "Category=Unit"
+```
+
+For a broader local run excluding performance:
 
 ```powershell
 dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "Category!=Performance"

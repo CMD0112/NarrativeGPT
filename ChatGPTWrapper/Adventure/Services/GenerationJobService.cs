@@ -44,7 +44,7 @@ internal sealed class GenerationJobService
             };
         }
 
-        if (!IsDesignSourceJob(jobId) && UtilityDeliveryModeService.UsesInlineDelivery(bundle))
+        if (!IsDesignUtilityJob(jobId))
         {
             if (playCore is null || playTurnService is null)
             {
@@ -73,8 +73,38 @@ internal sealed class GenerationJobService
                 cancellationToken);
         }
 
+        return await RunDesignJobAsync(
+            core,
+            bundle,
+            jobId,
+            context,
+            turnService,
+            playCore,
+            playTurnService,
+            cancellationToken);
+    }
+
+    private async Task<GenerationJobResult> RunDesignJobAsync(
+        CoreWebView2 core,
+        AdventureBundle bundle,
+        string jobId,
+        GenerationJobContext context,
+        AdventureTurnService? turnService,
+        CoreWebView2? playCore,
+        AdventureTurnService? playTurnService,
+        CancellationToken cancellationToken)
+    {
+        if (!DesignTabPinService.PreferPinnedDesignWebView(bundle))
+        {
+            return new GenerationJobResult
+            {
+                Success = false,
+                Error = DesignTabPinService.DesignPinRequiredError,
+            };
+        }
+
         var utilityJobId = GenerationJobHandlers.GetUtilityJobId(jobId);
-        var session = await EnsureUtilityConversationAsync(
+        var session = await EnsureDesignConversationAsync(
             core,
             bundle,
             utilityJobId,
@@ -90,10 +120,37 @@ internal sealed class GenerationJobService
             };
         }
 
+        return await ExecuteUtilityThreadJobAsync(
+            core,
+            bundle,
+            jobId,
+            utilityJobId,
+            session,
+            context,
+            turnService,
+            playCore,
+            playTurnService,
+            skipStoryContext: IsDesignSourceJob(jobId),
+            cancellationToken);
+    }
+
+    private async Task<GenerationJobResult> ExecuteUtilityThreadJobAsync(
+        CoreWebView2 core,
+        AdventureBundle bundle,
+        string jobId,
+        string utilityJobId,
+        GenerationUtilitySession session,
+        GenerationJobContext context,
+        AdventureTurnService? turnService,
+        CoreWebView2? playCore,
+        AdventureTurnService? playTurnService,
+        bool skipStoryContext,
+        CancellationToken cancellationToken)
+    {
         var gizmoId = bundle.Metadata.LinkedProjectId;
 
         UtilityStoryContextBuildResult storyContext = new();
-        if (!IsDesignSourceJob(jobId))
+        if (!skipStoryContext)
         {
             var transcriptService = new PlayThreadTranscriptService(_conversationSend, playTurnService);
             var storyBuilder = new UtilityStoryContextBuilder(transcriptService);
@@ -297,7 +354,7 @@ internal sealed class GenerationJobService
         string jobId,
         AdventureTurnService? turnService = null,
         CancellationToken cancellationToken = default) =>
-        EnsureUtilityConversationAsync(
+        EnsureDesignConversationAsync(
             core,
             bundle,
             jobId,
@@ -305,7 +362,7 @@ internal sealed class GenerationJobService
             turnService,
             cancellationToken: cancellationToken);
 
-    public async Task<GenerationUtilitySession?> EnsureUtilityConversationAsync(
+    public async Task<GenerationUtilitySession?> EnsureDesignConversationAsync(
         CoreWebView2 core,
         AdventureBundle bundle,
         string jobId,
@@ -333,25 +390,6 @@ internal sealed class GenerationJobService
             metadata.UtilityConversationLastError = $"utility_prepare_failed: {ex.Message}";
             return null;
         }
-        if (PlayTabPinService.HasUtilityPin(bundle)
-            && !IsDesignUtilityJob(jobId))
-        {
-            var pinned = await EnsurePinnedUtilityConversationAsync(
-                core,
-                bundle,
-                jobId,
-                gizmoId,
-                forceRotate,
-                turnService,
-                cancellationToken);
-            if (pinned is not null)
-                return pinned;
-
-            ProjectLinkDiagnostics.Log(
-                "Utility pin invalid or stale; falling back to auto-managed utility WebView");
-            metadata.UtilityConversationLastError = null;
-        }
-
         var session = GenerationUtilitySessionService.GetSession(metadata, jobId);
 
         if (forceRotate && session is not null)
@@ -425,57 +463,13 @@ internal sealed class GenerationJobService
         var createdNew = false;
         if (session is null)
         {
-            var nextSequence = GenerationUtilitySessionService.GetNextSequence(metadata, jobId);
-            var createOptions = BuildCreateOptions();
-            var created = await _projectApi.CreateProjectConversationDetailedAsync(
-                core,
-                gizmoId,
-                createOptions,
-                cancellationToken);
-            var conversationId = created.ConversationId;
-            if (string.IsNullOrWhiteSpace(conversationId) && conversations.Count > 0)
-            {
-                var reconciled = GenerationUtilitySessionService.TryReconcileSession(bundle, jobId, conversations);
-                if (reconciled is not null)
-                {
-                    session = reconciled;
-                    metadata.UtilitySessions[jobId] = reconciled;
-                    AdventureStore.Save(bundle);
-                }
-            }
+            metadata.UtilityConversationLastError = DesignTabPinService.DesignPinRequiredError;
+            AdventureStore.Save(bundle);
+            return null;
+        }
 
-            if (string.IsNullOrWhiteSpace(conversationId))
-            {
-                metadata.UtilityConversationLastError = created.Error ?? "utility_create_failed";
-                return null;
-            }
-
-            if (created.ClientBootstrapped)
-            {
-                ProjectChatDraftService.BeginUtilityDraft(bundle);
-                var page = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
-                    core,
-                    conversationId,
-                    gizmoId,
-                    cancellationToken);
-                if (!page.Success)
-                {
-                    metadata.UtilityConversationLastError =
-                        page.Error ?? "utility_client_bootstrap_nav_failed";
-                    return null;
-                }
-
-                ProjectLinkDiagnostics.Log(
-                    $"Client-bootstrapped utility conversation {conversationId} navigated for {jobId}");
-            }
-
-            session = new GenerationUtilitySession
-            {
-                ConversationId = conversationId,
-                Sequence = nextSequence,
-                SeedVersion = GenerationUtilitySessionService.GetSeedVersion(bundle, jobId),
-                CreatedAt = DateTimeOffset.UtcNow,
-            };
+        if (!metadata.UtilitySessions.ContainsKey(jobId))
+        {
             metadata.UtilitySessions[jobId] = session;
             createdNew = true;
             AdventureStore.Save(bundle);
@@ -562,96 +556,6 @@ internal sealed class GenerationJobService
             ProjectChatDraftService.Complete(bundle);
         AdventureStore.Save(bundle);
         return session;
-    }
-
-    private async Task<GenerationUtilitySession?> EnsurePinnedUtilityConversationAsync(
-        CoreWebView2 core,
-        AdventureBundle bundle,
-        string jobId,
-        string gizmoId,
-        bool forceRotate,
-        AdventureTurnService? turnService,
-        CancellationToken cancellationToken)
-    {
-        var metadata = bundle.Metadata;
-        if (!PlayTabPinService.TryResolveUtilityConversationId(bundle, core, out var pinnedId, out var pinError))
-        {
-            metadata.UtilityConversationLastError = pinError switch
-            {
-                "utility_tab_not_on_conversation" =>
-                    "utility_pin_invalid: Pin utility tab on a Project /c/ conversation page",
-                "utility_same_as_play_thread" =>
-                    "utility_pin_invalid: Utility tab cannot be the play thread — create a new Project chat",
-                _ => $"utility_pin_invalid: {pinError ?? "unknown"}",
-            };
-            AdventureStore.Save(bundle);
-            return null;
-        }
-
-        await EnsureUtilityConversationPageAsync(core, pinnedId!, gizmoId, cancellationToken);
-
-        var session = GenerationUtilitySessionService.GetSession(metadata, jobId);
-        if (forceRotate && session is not null)
-        {
-            session.JobCount = 0;
-            session.ConsecutiveParseFailures = 0;
-            session.LastUsedAt = null;
-        }
-        else if (session is not null && GenerationUtilitySessionService.ShouldRotateSession(bundle, session, jobId))
-        {
-            session.JobCount = 0;
-            session.ConsecutiveParseFailures = 0;
-            session.SeedVersion = GenerationUtilitySessionService.GetSeedVersion(bundle, jobId);
-        }
-
-        var createdNew = session is null
-                         || !string.Equals(session.ConversationId, pinnedId, StringComparison.OrdinalIgnoreCase);
-        if (createdNew)
-        {
-            session = new GenerationUtilitySession
-            {
-                ConversationId = pinnedId!,
-                Sequence = GenerationUtilitySessionService.GetNextSequence(metadata, jobId),
-                SeedVersion = GenerationUtilitySessionService.GetSeedVersion(bundle, jobId),
-                CreatedAt = DateTimeOffset.UtcNow,
-            };
-            metadata.UtilitySessions[jobId] = session;
-            AdventureStore.Save(bundle);
-        }
-
-        var activeSession = session!;
-        if (createdNew || activeSession.JobCount == 0)
-        {
-            await EnsureUtilityParentReadyAsync(
-                core,
-                activeSession.ConversationId,
-                gizmoId,
-                invalidateCached: true,
-                cancellationToken);
-
-            var seed = GenerationJobHandlers.BuildSeedPrompt(bundle, jobId, activeSession.Sequence);
-            var seedResult = await SendUtilitySeedAsync(
-                core,
-                bundle,
-                activeSession.ConversationId,
-                gizmoId,
-                seed,
-                jobId,
-                turnService,
-                cancellationToken);
-
-            if (!seedResult.Success)
-            {
-                metadata.UtilityConversationLastError = FormatSeedFailure(seedResult.Error);
-                AdventureStore.Save(bundle);
-                return null;
-            }
-        }
-
-        metadata.UtilitySessions[jobId] = activeSession;
-        metadata.UtilityConversationLastError = null;
-        AdventureStore.Save(bundle);
-        return activeSession;
     }
 
     private sealed class UtilityCaptureResult

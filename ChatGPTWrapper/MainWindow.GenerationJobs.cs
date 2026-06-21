@@ -19,7 +19,7 @@ public partial class MainWindow
         if (_generationJobService is not null)
             return _generationJobService;
 
-        var wv = wireFrom ?? FindUtilityApiWebView() ?? GetPlayWebView();
+        var wv = wireFrom ?? GetPlayWebView();
         if (wv is not null)
             WireProjectServices(wv);
 
@@ -35,7 +35,7 @@ public partial class MainWindow
         CoreWebView2 core,
         CancellationToken cancellationToken)
     {
-        var wv = FindUtilityApiWebView();
+        var wv = GetPlayWebView();
         if (wv is null)
             return null;
 
@@ -195,10 +195,9 @@ public partial class MainWindow
         var isDesignJob = IsDesignGenerationJob(jobId);
         var isDesignSourceJob = jobId is GenerationJobId.ProposeJsonImport or GenerationJobId.ProposeSourceEdits;
 
-        var usesInline = !isDesignJob && UtilityDeliveryModeService.UsesInlineDelivery(bundle);
         WebView2 wv;
         CoreWebView2 core;
-        if (isDesignJob || _appMode == AppMode.Design)
+        if (isDesignJob)
         {
             try
             {
@@ -235,7 +234,7 @@ public partial class MainWindow
 
             core = designCore;
         }
-        else if (usesInline)
+        else
         {
             var playTab = GetPlayWebView();
             if (playTab is null)
@@ -246,37 +245,14 @@ public partial class MainWindow
             }
 
             wv = playTab;
-            if (wv.CoreWebView2 is not { } playCore)
+            if (wv.CoreWebView2 is not { } playCoreResolved)
             {
                 await Dispatcher.InvokeAsync(() =>
                     SetPlayComposeStatus($"{jobId}: play tab not ready — pin a play tab first."));
                 return null;
             }
 
-            core = playCore;
-        }
-        else
-        {
-            try
-            {
-                wv = await EnsureUtilityWebViewAsync()
-                     ?? throw new InvalidOperationException("Utility WebView unavailable.");
-            }
-            catch (Exception ex)
-            {
-                await Dispatcher.InvokeAsync(() =>
-                    SetPlayComposeStatus($"{jobId}: utility WebView not ready — {ex.Message}"));
-                return null;
-            }
-
-            if (wv.CoreWebView2 is not { } utilityCore)
-            {
-                await Dispatcher.InvokeAsync(() =>
-                    SetPlayComposeStatus($"{jobId}: utility WebView still initializing — try again shortly."));
-                return null;
-            }
-
-            core = utilityCore;
+            core = playCoreResolved;
         }
 
         if (!await _generationJobGate.WaitAsync(0))
@@ -285,6 +261,7 @@ public partial class MainWindow
             return null;
         }
 
+        await Dispatcher.InvokeAsync(() => SetShellJobActive(true));
         GenerationJobResult? jobResult = null;
         try
         {
@@ -365,6 +342,11 @@ public partial class MainWindow
         finally
         {
             _generationJobGate.Release();
+            await Dispatcher.InvokeAsync(() =>
+            {
+                SetShellJobActive(false);
+                UpdateShellStatusBar();
+            });
             await Dispatcher.InvokeAsync(async () =>
             {
                 await RestorePlayComposerAsync(GetActivePlayComposeInjection());
@@ -477,7 +459,7 @@ public partial class MainWindow
         if (bundle is null)
             return new UtilityStoryContextBuildResult { CaptureError = "adventure_not_found" };
 
-        var wv = FindUtilityApiWebView();
+        var wv = GetPlayWebView();
         if (wv is not null)
             WireProjectServices(wv);
 
@@ -592,95 +574,6 @@ public partial class MainWindow
             new GenerationJobContext { UserPrompt = prompt });
 
         return result?.DisplayText;
-    }
-
-    private async Task OpenUtilityThreadAsync(string jobId) =>
-        await OpenUtilityThreadCoreAsync(jobId);
-
-    private async Task OpenUtilityThreadCoreAsync(string jobId)
-    {
-        if (_activeAdventureId is not { } adventureId)
-            return;
-
-        var bundle = AdventureStore.Load(adventureId);
-        if (bundle is null)
-            return;
-
-        if (IsDesignGenerationJob(jobId) || _appMode == AppMode.Design)
-        {
-            await PrepareDesignBrowserAsync(adventureId);
-            if (_designWebView is not null)
-                SelectTabForWebView(_designWebView);
-            return;
-        }
-
-        var utilityJobId = GenerationJobHandlers.GetUtilityJobId(jobId);
-        string? conversationId = null;
-        if (PlayTabPinService.HasUtilityPin(bundle))
-        {
-            var wv = FindUtilityApiWebView();
-            if (wv?.CoreWebView2 is { } core
-                && PlayTabPinService.TryResolveUtilityConversationId(bundle, core, out var pinnedId, out _))
-                conversationId = pinnedId;
-        }
-
-        conversationId ??= GenerationUtilitySessionService.GetSession(bundle.Metadata, utilityJobId)?.ConversationId;
-        if (string.IsNullOrWhiteSpace(conversationId))
-        {
-            MessageBox.Show(this, $"No utility thread for {jobId} yet. Run the job first.", "Utility thread",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        await AddChatTabAsync(jobId, new Uri(ChatGptUrls.BuildConversationUrl(conversationId)));
-    }
-
-    private async Task RotateUtilityThreadAsync(string jobId)
-    {
-        if (_activeAdventureId is not { } adventureId)
-            return;
-
-        var bundle = AdventureStore.Load(adventureId);
-        if (bundle is null || string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
-            return;
-
-        if (MessageBox.Show(this,
-                $"Start a new utility thread for {jobId}? The current thread will be archived.",
-                "Rotate utility thread", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-            return;
-
-        WebView2 wv;
-        try
-        {
-            wv = await EnsureUtilityWebViewAsync()
-                 ?? throw new InvalidOperationException("Utility WebView unavailable.");
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this,
-                $"Utility WebView not ready: {ex.Message}",
-                "Rotate utility thread",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        if (wv.CoreWebView2 is not { } core)
-        {
-            MessageBox.Show(this,
-                "Utility WebView is still initializing — try again shortly.",
-                "Rotate utility thread",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        GetOrRegisterAdventureBridge(wv);
-        WireProjectServices(wv);
-        var turnService = GetOrCreateTurnService(wv);
-        var utilityJobId = GenerationJobHandlers.GetUtilityJobId(jobId);
-        await GetOrCreateGenerationJobService().ForceRotateAsync(core, bundle, utilityJobId, turnService);
-        UpdatePlayLinkStatus();
     }
 
     private async Task OpenProjectSettingsAsync()

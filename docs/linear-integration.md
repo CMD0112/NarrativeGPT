@@ -6,7 +6,7 @@ This repository is tracked in the **[ChatGPT Wrapper](https://linear.app/cmd0112
 |----------|-----|
 | Linear project | https://linear.app/cmd0112/project/chatgpt-wrapper-b2ae13366b93 |
 | GitHub repository | https://github.com/CMD0112/NarrativeGPT |
-| Issue taxonomy & workflow | [Linear doc](https://linear.app/cmd0112/document/issue-taxonomy-and-workflow-guide-1d30b366d19d) |
+| Issue taxonomy & workflow | [docs/linear-issue-reference.md](linear-issue-reference.md) *(workspace canon for agents)* · [Linear doc](https://linear.app/cmd0112/document/issue-taxonomy-and-workflow-guide-1d30b366d19d) |
 | Repository & git workflow | [Linear doc](https://linear.app/cmd0112/document/repository-and-git-workflow-870d25cea521) |
 
 The GitHub repo is named **NarrativeGPT**; the product and Linear project use **ChatGPT Wrapper**.
@@ -24,7 +24,7 @@ The GitHub repo is named **NarrativeGPT**; the product and Linear project use **
 
 See [Status lifecycle](#status-lifecycle) below for the full map including **Blocked**, **Backlog**, and **Icebox**.
 
-For label rules, status lanes, and epic policy, see the [Issue Taxonomy & Workflow Guide](https://linear.app/cmd0112/document/issue-taxonomy-and-workflow-guide-1d30b366d19d) in Linear (canonical).
+For label rules, status lanes, epic policy, and agent issue templates, see [linear-issue-reference.md](linear-issue-reference.md). The [Issue Taxonomy & Workflow Guide](https://linear.app/cmd0112/document/issue-taxonomy-and-workflow-guide-1d30b366d19d) in Linear is the human-facing mirror — keep both in sync when taxonomy changes.
 
 ---
 
@@ -148,7 +148,10 @@ Connect your personal GitHub account under **Connected accounts** so PR reviews 
 
 ### 4. Cursor / agents
 
-The Linear MCP plugin is enabled in Cursor for this workspace. When citing issues in chat, use `https://linear.app/cmd0112/issue/CMD-XX` links (clickable in the IDE).
+The Linear MCP plugin is enabled in Cursor for this workspace.
+
+- **Issue taxonomy & templates:** [linear-issue-reference.md](linear-issue-reference.md) (loaded via `.cursor/rules/linear-issues.mdc`)
+- **Issue links in chat:** `https://linear.app/cmd0112/issue/CMD-XX` (see `.cursor/rules/linear-issue-links.mdc`)
 
 ---
 
@@ -166,6 +169,7 @@ Several guides already cross-reference CMD issues (e.g. [adventure-panel.md](adv
 
 ## Related documentation
 
+- [Linear issue reference](linear-issue-reference.md) — label taxonomy, statuses, issue body templates, agent maintenance
 - [Testing](testing.md) — tiers, filters, CI
 - [Build & Deploy](build-and-deploy.md)
 - [docs/INDEX.md](INDEX.md) — documentation hub

@@ -1,28 +1,116 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using ChatGPTWrapper.Format;
+using ChatGPTWrapper.Theme;
 
 namespace ChatGPTWrapper;
 
 public sealed class UiChromeSettings
 {
-    public bool ContinuousViewEnabled { get; set; }
+    public TranscriptViewMode TranscriptViewMode { get; set; } = TranscriptViewMode.Native;
 
-    public bool ProseEnhancementsEnabled { get; set; }
+    /// <summary>Legacy JSON field — migrated to <see cref="TranscriptViewMode"/> on load; not written on save.</summary>
+    [JsonPropertyName("continuousViewEnabled")]
+    public bool LegacyContinuousViewEnabled { get; set; }
 
-    public bool HideAssistantEditArtifacts { get; set; }
+    [JsonIgnore]
+    public bool ContinuousViewEnabled
+    {
+        get => TranscriptViewMode == TranscriptViewMode.Continuous;
+        set => TranscriptViewMode = value ? TranscriptViewMode.Continuous : TranscriptViewMode.Native;
+    }
 
-    public bool HideContextTagsInThread { get; set; } = true;
+    [JsonIgnore]
+    public bool IsTranscriptOverlayActive => TranscriptViewMode.IsOverlayActive();
 
-    public bool ExpandHiddenContextInThread { get; set; } = true;
+    public TranscriptViewModeSettings NativeSettings { get; set; } = new();
 
-    public bool PhraseHighlightsEnabled { get; set; }
+    public TranscriptViewModeSettings ContinuousSettings { get; set; } = new();
 
-    public List<PhraseHighlightRule> PhraseHighlightRules { get; set; } = [];
+    public TranscriptViewModeSettings WeaveSettings { get; set; } = new();
 
-    public ContinuousViewFormatSettings ContinuousViewFormat { get; set; } =
-        ContinuousViewFormatSettings.CreateDefaults();
+    [JsonIgnore]
+    public bool ProseEnhancementsEnabled
+    {
+        get => this.ActiveModeSettings().ProseEnhancementsEnabled;
+        set => this.ActiveModeSettings().ProseEnhancementsEnabled = value;
+    }
+
+    [JsonIgnore]
+    public bool HideAssistantEditArtifacts
+    {
+        get => this.ActiveModeSettings().HideAssistantEditArtifacts;
+        set => this.ActiveModeSettings().HideAssistantEditArtifacts = value;
+    }
+
+    [JsonIgnore]
+    public bool HideContextTagsInThread
+    {
+        get => this.ActiveModeSettings().HideContextTagsInThread;
+        set => this.ActiveModeSettings().HideContextTagsInThread = value;
+    }
+
+    [JsonIgnore]
+    public bool ExpandHiddenContextInThread
+    {
+        get => this.ActiveModeSettings().ExpandHiddenContextInThread;
+        set => this.ActiveModeSettings().ExpandHiddenContextInThread = value;
+    }
+
+    [JsonIgnore]
+    public bool PhraseHighlightsEnabled
+    {
+        get => this.ActiveModeSettings().PhraseHighlightsEnabled;
+        set => this.ActiveModeSettings().PhraseHighlightsEnabled = value;
+    }
+
+    [JsonIgnore]
+    public List<PhraseHighlightRule> PhraseHighlightRules
+    {
+        get => this.ActiveModeSettings().PhraseHighlightRules;
+        set => this.ActiveModeSettings().PhraseHighlightRules = value;
+    }
+
+    [JsonIgnore]
+    public ContinuousViewFormatSettings ContinuousViewFormat
+    {
+        get => this.ActiveModeSettings().ContinuousViewFormat;
+        set => this.ActiveModeSettings().ContinuousViewFormat = value;
+    }
+
+    [JsonIgnore]
+    public string ActiveFormatProfileId
+    {
+        get => this.ActiveModeSettings().ActiveFormatProfileId;
+        set => this.ActiveModeSettings().ActiveFormatProfileId = value;
+    }
+
+    [JsonIgnore]
+    public List<FormatProfile> FormatProfiles
+    {
+        get => this.ActiveModeSettings().FormatProfiles;
+        set => this.ActiveModeSettings().FormatProfiles = value;
+    }
+
+    [JsonIgnore]
+    public bool AllowFormatValuesOutsideRecommendedRange
+    {
+        get => this.ActiveModeSettings().AllowFormatValuesOutsideRecommendedRange;
+        set => this.ActiveModeSettings().AllowFormatValuesOutsideRecommendedRange = value;
+    }
+
+    public string ActiveHighlightColorProfileId { get; set; } = HighlightColorProfileIds.ThemeHarmony;
+
+    public List<HighlightColorAssignmentProfile> HighlightColorProfiles { get; set; } = [];
+
+    public HighlightColorAssignmentOptions HighlightColorCustomOptions { get; set; } = new();
 
     public int ChromePreferencesRevision { get; set; }
+
+    public int ThemeRevision { get; set; }
+
+    public ThemeSettings Theme { get; set; } = ThemeApplicationService.CreateDefaultSettings();
 }
 
 internal static class UiChromeStore
@@ -49,8 +137,12 @@ internal static class UiChromeStore
 
             var settings = JsonSerializer.Deserialize<UiChromeSettings>(json, JsonOptions)
                    ?? new UiChromeSettings();
-            settings.PhraseHighlightRules ??= [];
-            settings.ContinuousViewFormat ??= ContinuousViewFormatSettings.CreateDefaults();
+            TranscriptViewModeMigration.ApplyFromJson(settings, json);
+            TranscriptViewModeMigration.Normalize(settings);
+            PerModeSettingsMigration.Apply(settings, json);
+            NormalizeModeSettings(settings);
+            HighlightColorAssignmentService.Normalize(settings);
+            settings.Theme = ThemeApplicationService.NormalizeSettings(settings.Theme);
             return settings;
         }
         catch
@@ -75,5 +167,15 @@ internal static class UiChromeStore
         {
             /* ignore */
         }
+    }
+
+    private static void NormalizeModeSettings(UiChromeSettings settings)
+    {
+        settings.NativeSettings ??= new TranscriptViewModeSettings();
+        settings.ContinuousSettings ??= new TranscriptViewModeSettings();
+        settings.WeaveSettings ??= new TranscriptViewModeSettings();
+        settings.NativeSettings.Normalize();
+        settings.ContinuousSettings.Normalize();
+        settings.WeaveSettings.Normalize();
     }
 }

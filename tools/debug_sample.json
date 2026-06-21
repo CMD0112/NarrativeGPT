@@ -1,0 +1,40 @@
+{
+  "archivedAt": null,
+  "assignee": "christianmdevine@gmail.com",
+  "assigneeId": "e12757fd-1a41-4699-8864-6e75a92176e7",
+  "canceledAt": null,
+  "completedAt": null,
+  "createdAt": "2026-06-18T03:13:58.255Z",
+  "createdBy": "christianmdevine@gmail.com",
+  "createdById": "e12757fd-1a41-4699-8864-6e75a92176e7",
+  "description": "## Summary\n\nLet power users tune **Continuous view & format** numeric settings **beyond current slider min/max clamps** \u2014 either by widening ranges substantially or by offering an **advanced numeric entry** path (text input / \"no clamp\") so imported or hand-typed values are not silently truncated.\n\nToday every control in `ContinuousViewFormatDialog` is a `Slider` with hard-coded minimum and maximum in `BuildSliders()`; values outside those bound\u2026 (truncated, use `get_issue` for full description)",
+  "dueDate": null,
+  "gitBranchName": "christianmdevine/cmd-148-format-settings-unbounded-or-liberal-numeric-bounds-advanced",
+  "id": "CMD-148",
+  "labels": [
+    "Continuous View",
+    "WPF",
+    "Browse",
+    "Improvement",
+    "Feature"
+  ],
+  "priority": {
+    "value": 3,
+    "name": "Medium"
+  },
+  "project": "ChatGPT Wrapper",
+  "projectId": "51a9b872-4321-490c-9ecf-e5742354d244",
+  "slaBreachesAt": null,
+  "slaHighRiskAt": null,
+  "slaMediumRiskAt": null,
+  "slaStartedAt": null,
+  "slaType": "all",
+  "startedAt": "2026-06-18T03:23:33.661Z",
+  "status": "In Review",
+  "statusType": "started",
+  "team": "CMD0112",
+  "teamId": "26fa3a8a-0d24-4e09-afdb-c251db5ec177",
+  "title": "Format settings: unbounded or liberal numeric bounds (advanced entry)",
+  "updatedAt": "2026-06-18T03:23:33.688Z",
+  "url": "https://linear.app/cmd0112/issue/CMD-148/format-settings-unbounded-or-liberal-numeric-bounds-advanced-entry"
+}

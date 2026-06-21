@@ -32,6 +32,8 @@ public sealed class SourceJsonImportTests
         Assert.Contains("Import proposal object", prompt, StringComparison.Ordinal);
         Assert.Contains("CRITICAL:", prompt, StringComparison.Ordinal);
         Assert.Contains("Downloadable files alone are NOT enough", prompt, StringComparison.Ordinal);
+        Assert.Contains("=== CANON FORMAT REFERENCE (canon-format.md) ===", prompt, StringComparison.Ordinal);
+        Assert.Contains("## Quick rules", prompt, StringComparison.Ordinal);
     }
 
     [Fact]

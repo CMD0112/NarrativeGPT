@@ -38,8 +38,16 @@ internal static class AdventureDesignContextService
     public static bool CanOpenLocalSourcesEdit(AdventureBundle bundle) =>
         AdventureSourceFileService.HasLocalLoreSourceFiles(bundle);
 
-    public static string? GetDesignConversationId(AdventureBundle bundle) =>
-        GenerationUtilitySessionService.GetSession(bundle.Metadata, GenerationJobId.DesignAdventure)?.ConversationId;
+    public static string? GetDesignConversationId(AdventureBundle bundle)
+    {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var fromRegistry = AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Design);
+        if (!string.IsNullOrWhiteSpace(fromRegistry))
+            return fromRegistry;
+
+        return GenerationUtilitySessionService.GetSession(bundle.Metadata, GenerationJobId.DesignAdventure)
+            ?.ConversationId;
+    }
 
     public static string FormatDesignModeOpenStatus(AdventureBundle bundle)
     {
@@ -115,38 +123,34 @@ internal static class AdventureDesignContextService
             };
         }
 
-        var session = await jobService.EnsureUtilityConversationAsync(
-            core,
-            bundle,
-            GenerationJobId.DesignAdventure,
-            turnService: turnService,
-            seedIfNeeded: false,
-            cancellationToken: cancellationToken);
-
-        if (session is null || string.IsNullOrWhiteSpace(session.ConversationId))
+        var conversationId = GetDesignConversationId(bundle);
+        if (string.IsNullOrWhiteSpace(conversationId))
         {
             return new DesignContextResult
             {
                 Status = DesignContextStatus.NoConversation,
-                Error = bundle.Metadata.UtilityConversationLastError
-                         ?? DesignTabPinService.DesignPinRequiredError,
+                Error = DesignTabPinService.DesignPinRequiredError,
             };
         }
 
         var gizmoId = ChatGptUrls.NormalizeGizmoId(bundle.Metadata.LinkedProjectId);
-        var targetUrl = ChatGptUrls.BuildProjectConversationUrl(session.ConversationId, gizmoId);
-        bundle.Metadata.PinnedDesignTabUrl = targetUrl;
-        AdventureStore.Save(bundle);
+        var targetUrl = ChatGptUrls.BuildProjectConversationUrl(conversationId, gizmoId);
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var designEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)
+                            ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
+        designEntry.PinnedTabUrl = targetUrl;
+        AdventureThreadRegistryService.SyncLegacyFields(bundle.Metadata);
+        AdventureStore.Save(bundle, AdventureSaveScope.Metadata);
 
-        if (!AdventurePlayContextService.IsOnProjectConversationPage(core.Source, session.ConversationId, gizmoId))
+        if (!AdventurePlayContextService.IsOnProjectConversationPage(core.Source, conversationId, gizmoId))
         {
             core.Navigate(targetUrl);
-            if (!await WaitForDesignNavigationAsync(core, session.ConversationId, gizmoId, cancellationToken))
+            if (!await WaitForDesignNavigationAsync(core, conversationId, gizmoId, cancellationToken))
             {
                 return new DesignContextResult
                 {
                     Status = DesignContextStatus.NavigationFailed,
-                    ConversationId = session.ConversationId,
+                    ConversationId = conversationId,
                     Error = "Timed out waiting for the design thread to load.",
                 };
             }
@@ -155,7 +159,7 @@ internal static class AdventureDesignContextService
         return new DesignContextResult
         {
             Status = DesignContextStatus.Ready,
-            ConversationId = session.ConversationId,
+            ConversationId = conversationId,
         };
     }
 

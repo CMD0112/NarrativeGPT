@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.Adventure.Services;
@@ -37,6 +38,11 @@ internal static class AdventureSourceFileService
         @"---\s*begin\s+(.+?)\s*---\s*\r?\n([\s\S]*?)\r?\n---\s*end\s+\1\s*---",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    /// <summary>Fallback when assistant replies were truncated before the closing <c>--- end … ---</c> line.</summary>
+    private static readonly Regex TruncatedBeginBlockRegex = new(
+        @"---\s*begin\s+(.+?)\s*---\s*\r?\n([\s\S]*?)(?=\r?\n---\s*begin\s+|\z)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     public static string SourcesDirectory(AdventureBundle bundle) =>
         AppDirectories.AdventureSourcesDirectory(bundle.Metadata.Id);
 
@@ -44,6 +50,25 @@ internal static class AdventureSourceFileService
     {
         Directory.CreateDirectory(bundle.DirectoryPath);
         Directory.CreateDirectory(SourcesDirectory(bundle));
+
+        EnsureCanonFormatFile(bundle);
+    }
+
+    private static void EnsureCanonFormatFile(AdventureBundle bundle)
+    {
+        var canonFormatPath = ResolveAbsolutePath(bundle, SectionSchema.CanonFormatFile);
+        var generated = CanonFormatGenerator.Generate();
+        if (!File.Exists(canonFormatPath))
+        {
+            File.WriteAllText(canonFormatPath, generated, Encoding.UTF8);
+            return;
+        }
+
+        var existing = File.ReadAllText(canonFormatPath);
+        var existingHash = ProjectSourceExportService.ComputeSha256Bytes(Encoding.UTF8.GetBytes(existing));
+        var generatedHash = ProjectSourceExportService.ComputeSha256Bytes(Encoding.UTF8.GetBytes(generated));
+        if (!string.Equals(existingHash, generatedHash, StringComparison.OrdinalIgnoreCase))
+            File.WriteAllText(canonFormatPath, generated, Encoding.UTF8);
     }
 
     public static string ResolveAbsolutePath(AdventureBundle bundle, string relativePath)
@@ -135,7 +160,12 @@ internal static class AdventureSourceFileService
             .ToList();
     }
 
-    public static void ReconcileManifest(AdventureBundle bundle)
+    /// <summary>
+    /// Aligns manifest entries with on-disk <c>sources/*</c> files and re-parses sectioned lore when
+    /// content changed or sections are missing.
+    /// </summary>
+    /// <returns>True when manifest entries, sections, or imported bundle fields were updated.</returns>
+    public static bool ReconcileManifest(AdventureBundle bundle)
     {
         EnsureLayout(bundle);
         var sourcesDir = SourcesDirectory(bundle);
@@ -143,6 +173,7 @@ internal static class AdventureSourceFileService
         var known = bundle.SourceManifest.Entries
             .Select(e => e.RelativePath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var changed = false;
 
         foreach (var relativePath in onDisk)
         {
@@ -158,6 +189,7 @@ internal static class AdventureSourceFileService
             };
             entry.Sha256 = entry.LocalSha256;
             bundle.SourceManifest.Entries.Add(entry);
+            changed = true;
         }
 
         foreach (var entry in bundle.SourceManifest.Entries)
@@ -167,31 +199,40 @@ internal static class AdventureSourceFileService
                 continue;
 
             var hash = ProjectSourceExportService.ComputeSha256(absolutePath);
-            if (!string.Equals(entry.EffectiveLocalSha256, hash, StringComparison.OrdinalIgnoreCase))
+            var hashChanged = !string.Equals(entry.EffectiveLocalSha256, hash, StringComparison.OrdinalIgnoreCase);
+            if (hashChanged)
             {
                 entry.LocalSha256 = hash;
                 entry.Sha256 = hash;
                 entry.RemoteProbeMatch = RemoteProbeMatch.Unknown;
                 if (entry.SyncState == SourceSyncState.InSync)
                     entry.SyncState = SourceSyncState.LocalNewer;
+                changed = true;
             }
 
-            if (entry.Sections.Count == 0
-                && ProjectSourceImportService.IsSectionedLoreFile(entry.RelativePath))
-            {
-                var markdown = File.ReadAllText(absolutePath);
-                if (!string.IsNullOrWhiteSpace(markdown))
-                    ProjectSourceImportService.RefreshManifestSectionsFromMarkdown(
-                        bundle,
-                        entry.RelativePath,
-                        markdown);
-            }
+            if (!ProjectSourceImportService.IsSectionedLoreFile(entry.RelativePath))
+                continue;
+
+            if (!hashChanged && entry.Sections.Count > 0)
+                continue;
+
+            var markdown = File.ReadAllText(absolutePath);
+            if (string.IsNullOrWhiteSpace(markdown))
+                continue;
+
+            ProjectSourceImportService.RefreshManifestSectionsFromMarkdown(
+                bundle,
+                entry.RelativePath,
+                markdown,
+                importStructuredCanon: false);
+            changed = true;
         }
 
         bundle.SourceManifest.Entries = bundle.SourceManifest.Entries
             .OrderBy(e => e.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ToList();
         bundle.SourceManifest.RefreshSyncedFlag();
+        return changed;
     }
 
     public static IReadOnlyList<AdventureSourceFileStatus> GetPipelineStatuses(AdventureBundle bundle)
@@ -200,6 +241,7 @@ internal static class AdventureSourceFileService
         ReconcileManifest(bundle);
 
         return AdventureDesignSourcePromptService.PromptPipelineOrder
+            .Concat(SectionSchema.ReferenceSourceFiles)
             .Select(path =>
             {
                 AdventureDesignSourcePromptService.TryGetDefinition(path, out var def);
@@ -224,6 +266,9 @@ internal static class AdventureSourceFileService
             return null;
 
         if (AdventureDesignSourcePromptService.TryGetDefinition(name, out _))
+            return name;
+
+        if (SectionSchema.IsReferenceSourceFile(name))
             return name;
 
         if (MapBlockNameToCanonical(bundle, name, expectedPaths: null) is { } mapped)
@@ -357,20 +402,14 @@ internal static class AdventureSourceFileService
 
         foreach (Match match in BeginEndBlockRegex.Matches(assistantText))
         {
-            var blockName = match.Groups[1].Value.Trim();
-            var content = match.Groups[2].Value.Trim();
-            if (string.IsNullOrWhiteSpace(content))
+            if (!TryAddExtract(bundle, extracts, seen, match.Groups[1].Value, match.Groups[2].Value, expectedPaths))
                 continue;
+        }
 
-            var relativePath = MapBlockNameToCanonical(bundle, blockName, expectedPaths);
-            if (relativePath is null || !seen.Add(relativePath))
+        foreach (Match match in TruncatedBeginBlockRegex.Matches(assistantText))
+        {
+            if (!TryAddExtract(bundle, extracts, seen, match.Groups[1].Value, match.Groups[2].Value, expectedPaths))
                 continue;
-
-            extracts.Add(new DesignSourceFileExtract
-            {
-                RelativePath = relativePath,
-                Content = content,
-            });
         }
 
         if (extracts.Count == 0 && expectedPaths is { Count: 1 })
@@ -389,6 +428,30 @@ internal static class AdventureSourceFileService
         return extracts;
     }
 
+    private static bool TryAddExtract(
+        AdventureBundle bundle,
+        List<DesignSourceFileExtract> extracts,
+        HashSet<string> seen,
+        string blockName,
+        string rawContent,
+        IReadOnlyList<string>? expectedPaths)
+    {
+        var content = rawContent.Trim();
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+
+        var relativePath = MapBlockNameToCanonical(bundle, blockName.Trim(), expectedPaths);
+        if (relativePath is null || !seen.Add(relativePath))
+            return false;
+
+        extracts.Add(new DesignSourceFileExtract
+        {
+            RelativePath = relativePath,
+            Content = content,
+        });
+        return true;
+    }
+
     public static int TrySaveFromDesignReply(
         AdventureBundle bundle,
         string assistantText,
@@ -405,6 +468,60 @@ internal static class AdventureSourceFileService
                     InstructionContractService.TryApplyFromInstructionsBody(bundle, extract.Content);
                 saved++;
             }
+        }
+
+        return saved;
+    }
+
+    /// <summary>
+    /// When lore files are missing but the design workspace captured assistant replies
+    /// with inline <c>--- begin … ---</c> blocks, materialize those into <c>sources/</c>.
+    /// </summary>
+    public static int TryBootstrapLocalSourcesFromDesignWorkspace(AdventureBundle bundle)
+    {
+        var expected = AdventureDesignSourcePromptService.PromptPipelineOrder.ToList();
+        var missing = expected
+            .Where(path => !File.Exists(ResolveAbsolutePath(bundle, path)))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (missing.Count == 0)
+            return 0;
+
+        var saved = 0;
+
+        foreach (var step in bundle.DesignWorkspace.Steps.Values)
+        {
+            foreach (var message in step.ChatMessages)
+            {
+                if (!string.Equals(message.Role, "assistant", StringComparison.OrdinalIgnoreCase)
+                    || string.IsNullOrWhiteSpace(message.Text))
+                {
+                    continue;
+                }
+
+                foreach (var extract in ExtractFromDesignReply(bundle, message.Text, expected))
+                {
+                    if (!missing.Contains(extract.RelativePath))
+                        continue;
+
+                    if (!TryWrite(bundle, extract.RelativePath, extract.Content, "design-workspace-bootstrap"))
+                        continue;
+
+                    if (string.Equals(extract.RelativePath, "instructions-snippet.md", StringComparison.OrdinalIgnoreCase))
+                        InstructionContractService.TryApplyFromInstructionsBody(bundle, extract.Content);
+
+                    missing.Remove(extract.RelativePath);
+                    saved++;
+                }
+            }
+        }
+
+        if (saved > 0)
+        {
+            bundle.DesignWorkspace.PendingBootstrapNotice =
+                $"Recovered {saved} source file(s) from design workspace history. "
+                + "Use Pull from design thread if any files are incomplete.";
+            ProjectLinkDiagnostics.Log(
+                $"Design workspace bootstrap: adventure={bundle.Metadata.Id} saved={saved} files");
         }
 
         return saved;
@@ -442,7 +559,11 @@ internal static class AdventureSourceFileService
             return;
 
         var markdown = needsWrite ? normalizedContent : File.ReadAllText(absolutePath);
-        ProjectSourceImportService.RefreshManifestSectionsFromMarkdown(bundle, relativePath, markdown);
+        ProjectSourceImportService.RefreshManifestSectionsFromMarkdown(
+            bundle,
+            relativePath,
+            markdown,
+            importStructuredCanon: needsWrite);
     }
 
     private static void UpdateManifestEntryAfterWrite(

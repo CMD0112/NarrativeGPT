@@ -69,24 +69,6 @@ internal static class ContinuityService
             }
         }
 
-        if (bundle.Summary.PendingReview)
-        {
-            warnings.Add(new ContinuityWarning
-            {
-                Message = "Rolling summary has a pending review.",
-                Severity = "info",
-            });
-        }
-
-        if (bundle.Memory.ReviewQueue.Count > 0)
-        {
-            warnings.Add(new ContinuityWarning
-            {
-                Message = $"{bundle.Memory.ReviewQueue.Count} memory entries await review.",
-                Severity = "info",
-            });
-        }
-
         return warnings;
     }
 }

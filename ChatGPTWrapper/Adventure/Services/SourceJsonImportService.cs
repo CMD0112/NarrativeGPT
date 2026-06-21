@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.Adventure.Services;
@@ -43,6 +44,7 @@ internal static class SourceJsonImportService
     {
         var sourceReferences = BuildSourceReferencesBlock(bundle);
         var excerpts = BuildLocalExcerptBlock(bundle);
+        var formatReference = CanonFormatReferenceService.BuildPromptBlock(bundle);
         var formatHints = ProjectSourceFileTemplates.BuildInlineFormatsSection(
             ProjectSourceImportService.ImportableLoreFileNames
                 .Where(file => File.Exists(Path.Combine(
@@ -77,6 +79,7 @@ internal static class SourceJsonImportService
 
             === CURRENT ENTITIES ({EntitiesJsonFileName} summary) ===
             {FormatEntityExcerpt(bundle.Entities)}
+            {formatReference}
             {formatsBlock}
 
             === LOCAL SOURCE EXCERPTS (fallback when retrieval unavailable) ===

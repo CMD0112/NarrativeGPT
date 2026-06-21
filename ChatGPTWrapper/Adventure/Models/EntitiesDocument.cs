@@ -2,7 +2,9 @@ namespace ChatGPTWrapper.Adventure.Models;
 
 public sealed class EntitiesDocument
 {
-    public int SchemaVersion { get; set; } = AdventureJson.SchemaVersion;
+    public const int CurrentSchemaVersion = 2;
+
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
     public PlayerCharacterSheet Player { get; set; } = new();
 
@@ -48,6 +50,8 @@ public sealed class PlayerCharacterSheet
     public string Weaknesses { get; set; } = "";
 
     public string Goals { get; set; } = "";
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class CharacterEntry
@@ -77,6 +81,10 @@ public sealed class CharacterEntry
     public string Flavor { get; set; } = "";
 
     public bool Pinned { get; set; }
+
+    public string ImagePath { get; set; } = "";
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class CustomEntry
@@ -115,6 +123,8 @@ public sealed class CompanionEntry
     public string Goals { get; set; } = "";
 
     public string Secrets { get; set; } = "";
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class LocationEntry
@@ -138,6 +148,10 @@ public sealed class LocationEntry
     public List<string> Aliases { get; set; } = [];
 
     public bool Pinned { get; set; }
+
+    public string ImagePath { get; set; } = "";
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class InventoryEntry
@@ -153,6 +167,8 @@ public sealed class InventoryEntry
     public string Status { get; set; } = "";
 
     public string Notes { get; set; } = "";
+
+    public string ImagePath { get; set; } = "";
 }
 
 public sealed class QuestEntry
@@ -166,6 +182,10 @@ public sealed class QuestEntry
     public QuestStatus Status { get; set; } = QuestStatus.Active;
 
     public string Notes { get; set; } = "";
+
+    public string ImagePath { get; set; } = "";
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public enum QuestStatus
@@ -189,6 +209,10 @@ public sealed class ConceptEntry
     public List<string> Tags { get; set; } = [];
 
     public bool Pinned { get; set; }
+
+    public string ImagePath { get; set; } = "";
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class FactionEntry
@@ -206,6 +230,10 @@ public sealed class FactionEntry
     public string Reputation { get; set; } = "";
 
     public string Conflicts { get; set; } = "";
+
+    public string ImagePath { get; set; } = "";
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class RelationshipEntry
@@ -230,6 +258,8 @@ public sealed class MysteryEntry
     public string Theories { get; set; } = "";
 
     public bool Resolved { get; set; }
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class ConflictEntry
@@ -241,6 +271,8 @@ public sealed class ConflictEntry
     public string Description { get; set; } = "";
 
     public string Status { get; set; } = "active";
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class ConsequenceEntry
@@ -254,6 +286,8 @@ public sealed class ConsequenceEntry
     public string DueWhen { get; set; } = "";
 
     public bool Resolved { get; set; }
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class EntityReviewItem

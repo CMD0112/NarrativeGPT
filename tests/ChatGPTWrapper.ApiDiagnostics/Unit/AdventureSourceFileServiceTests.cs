@@ -128,6 +128,55 @@ public sealed class AdventureSourceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public void ExtractFromDesignReply_parses_truncated_block_without_end_marker()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Truncated");
+        var reply = """
+            --- begin Test Adventure - world.md ---
+            # World
+            Frontier kingdom at war.
+            """;
+
+        var extracts = AdventureSourceFileService.ExtractFromDesignReply(
+            bundle,
+            reply,
+            [SectionSchema.WorldFile]);
+
+        Assert.Single(extracts);
+        Assert.Equal(SectionSchema.WorldFile, extracts[0].RelativePath);
+        Assert.Contains("Frontier kingdom", extracts[0].Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TryBootstrapLocalSourcesFromDesignWorkspace_materializes_inline_blocks()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Bootstrap test");
+        var prefixed = AdventureDesignSourcePromptService.BuildPrefixedFileName(
+            bundle.Metadata.Title,
+            SectionSchema.CastFile);
+        AdventureDesignService.EnsureWorkspace(bundle);
+        var sourcesStep = AdventureDesignService.GetOrCreateStep(bundle, AdventureDesignStep.Sources);
+        sourcesStep.ChatMessages.Add(new DesignChatMessage
+        {
+            Role = "assistant",
+            Text = $"""
+                --- begin {prefixed} ---
+                # Cast
+                ### Anwen
+                Guide who knows every path.
+                --- end {prefixed} ---
+                """,
+        });
+
+        var saved = AdventureSourceFileService.TryBootstrapLocalSourcesFromDesignWorkspace(bundle);
+
+        Assert.Equal(1, saved);
+        Assert.True(File.Exists(AdventureSourceFileService.ResolveAbsolutePath(bundle, SectionSchema.CastFile)));
+        var cast = File.ReadAllText(AdventureSourceFileService.ResolveAbsolutePath(bundle, SectionSchema.CastFile));
+        Assert.Contains("Anwen", cast, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TrySaveFromDesignReply_writes_multiple_files_from_combined_reply()
     {
         var bundle = AdventureStore.CreateNew("Combined save test");
@@ -279,6 +328,29 @@ public sealed class AdventureSourceFileServiceTests : IDisposable
         Assert.Contains(resolved.Baseline, p => p.SectionId == "opening");
         Assert.Contains(resolved.Baseline, p => p.SectionId == "rules");
         Assert.Contains(resolved.Baseline, p => p.SectionId == "player");
+    }
+
+    [Fact]
+    public void ReconcileManifest_refreshes_sections_when_on_disk_hash_changes()
+    {
+        var bundle = CreateBundleWithExportedSources();
+        AdventureSourceFileService.ReconcileManifest(bundle);
+
+        var scenarioPath = AdventureSourceFileService.ResolveAbsolutePath(bundle, SectionSchema.ScenarioFile);
+        var text = File.ReadAllText(scenarioPath);
+        const string marker = "UNIQUE_OPENING_MARKER_FOR_RECONCILE_TEST";
+        text = text.Replace(
+            "**Setting:** A haunted castle on the moor",
+            $"**Setting:** {marker}",
+            StringComparison.Ordinal);
+        File.WriteAllText(scenarioPath, text);
+
+        Assert.True(AdventureSourceFileService.ReconcileManifest(bundle));
+
+        var scenarioEntry = bundle.SourceManifest.Entries
+            .First(e => string.Equals(e.RelativePath, SectionSchema.ScenarioFile, StringComparison.OrdinalIgnoreCase));
+        var openingAfter = scenarioEntry.Sections.First(s => s.Id == "opening").BodyCache;
+        Assert.Contains(marker, openingAfter, StringComparison.Ordinal);
     }
 
     [Fact]

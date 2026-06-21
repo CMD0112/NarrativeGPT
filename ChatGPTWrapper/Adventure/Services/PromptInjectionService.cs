@@ -67,6 +67,9 @@ internal static class PromptInjectionService
         if (!string.IsNullOrWhiteSpace(manifest))
             merged = manifest + Environment.NewLine + Environment.NewLine + merged;
 
+        merged = NarratorOverrideResolver.AppendOverrideBlocks(bundle, merged);
+        merged = CanonReconciliationService.AppendNotifyBlock(bundle, merged);
+
         return new PromptInjectionPrepareResult
         {
             MergedText = merged,

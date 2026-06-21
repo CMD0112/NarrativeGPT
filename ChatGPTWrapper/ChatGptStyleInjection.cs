@@ -1,4 +1,5 @@
 using ChatGPTWrapper.PageIntegration;
+using ChatGPTWrapper.Theme;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using System.IO;
@@ -15,6 +16,7 @@ namespace ChatGPTWrapper;
 public sealed class ChatGptStyleInjection : IPageFeature
 {
     private const string StyleElementId = "chatgpt-wrapper-injected-css";
+    private const string ThemeStyleElementId = "chatgpt-wrapper-theme-vars";
 
     private static string? _cachedBaseCss;
     private static string? _cachedProseCss;
@@ -103,17 +105,49 @@ public sealed class ChatGptStyleInjection : IPageFeature
 
     private async Task ApplyNowAsync(CoreWebView2 core)
     {
-        var css = BuildCssPayload(_getProseEnhancementsEnabled());
-        if (string.IsNullOrWhiteSpace(css))
-            return;
+        var css = BuildBundledCssPayload(_getProseEnhancementsEnabled());
+        if (!string.IsNullOrWhiteSpace(css))
+            await InjectCssAsync(core, StyleElementId, css, _getProseEnhancementsEnabled());
 
-        await InjectCssAsync(core, css, _getProseEnhancementsEnabled());
+        await ReapplyThemeVariablesAsync(core);
     }
 
     public static Task ReapplyAsync(CoreWebView2 core, bool proseEnhancementsEnabled) =>
-        InjectCssAsync(core, BuildCssPayload(proseEnhancementsEnabled), proseEnhancementsEnabled);
+        InjectAllAsync(core, proseEnhancementsEnabled);
+
+    public static Task ReapplyThemeVariablesAsync(CoreWebView2 core)
+    {
+        var css = ThemeApplicationService.BuildCssVariableBlock(ThemeRuntime.Current);
+        return InjectCssAsync(core, ThemeStyleElementId, css, proseEnhancementsEnabled: false);
+    }
+
+    private static Task InjectAllAsync(CoreWebView2 core, bool proseEnhancementsEnabled)
+    {
+        var css = BuildBundledCssPayload(proseEnhancementsEnabled);
+        return string.IsNullOrWhiteSpace(css)
+            ? ReapplyThemeVariablesAsync(core)
+            : InjectBothAsync(core, css, proseEnhancementsEnabled);
+    }
+
+    private static async Task InjectBothAsync(CoreWebView2 core, string bundledCss, bool proseEnhancementsEnabled)
+    {
+        await InjectCssAsync(core, StyleElementId, bundledCss, proseEnhancementsEnabled);
+        await ReapplyThemeVariablesAsync(core);
+    }
 
     internal static string BuildCssPayload(bool proseEnhancementsEnabled)
+    {
+        var bundled = BuildBundledCssPayload(proseEnhancementsEnabled);
+        if (string.IsNullOrEmpty(bundled))
+            return ThemeApplicationService.BuildCssVariableBlock(ThemeRuntime.Current);
+
+        var sb = new StringBuilder();
+        sb.AppendLine(ThemeApplicationService.BuildCssVariableBlock(ThemeRuntime.Current));
+        sb.Append(bundled);
+        return sb.ToString().Trim();
+    }
+
+    private static string BuildBundledCssPayload(bool proseEnhancementsEnabled)
     {
         EnsureFileCaches();
 
@@ -171,14 +205,18 @@ public sealed class ChatGptStyleInjection : IPageFeature
         }
     }
 
-    private static async Task InjectCssAsync(CoreWebView2 core, string css, bool proseEnhancementsEnabled)
+    private static async Task InjectCssAsync(
+        CoreWebView2 core,
+        string elementId,
+        string css,
+        bool proseEnhancementsEnabled)
     {
         var payload = JsonSerializer.Serialize(css);
         var proseFlag = proseEnhancementsEnabled ? "true" : "false";
         var script =
             "(function () {\n" +
             $"  const css = {payload};\n" +
-            $"  const id = \"{StyleElementId}\";\n" +
+            $"  const id = \"{elementId}\";\n" +
             "  let el = document.getElementById(id);\n" +
             "  if (!el) {\n" +
             "    el = document.createElement(\"style\");\n" +
@@ -187,11 +225,13 @@ public sealed class ChatGptStyleInjection : IPageFeature
             "    document.documentElement.appendChild(el);\n" +
             "  }\n" +
             "  el.textContent = css;\n" +
-            $"  if ({proseFlag}) {{\n" +
-            "    document.documentElement.setAttribute(\"data-cgw-prose-enhanced\", \"1\");\n" +
-            "  } else {\n" +
-            "    document.documentElement.removeAttribute(\"data-cgw-prose-enhanced\");\n" +
-            "  }\n" +
+            (elementId == StyleElementId
+                ? $"  if ({proseFlag}) {{\n" +
+                  "    document.documentElement.setAttribute(\"data-cgw-prose-enhanced\", \"1\");\n" +
+                  "  } else {\n" +
+                  "    document.documentElement.removeAttribute(\"data-cgw-prose-enhanced\");\n" +
+                  "  }\n"
+                : string.Empty) +
             "})();";
 
         try

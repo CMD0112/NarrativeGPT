@@ -1,29 +1,28 @@
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Stores;
-using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
 internal static class DesignThreadRotationService
 {
     /// <summary>
-    /// Clears design tab pin and <see cref="GenerationJobId.DesignAdventure"/> utility session
+    /// Archives the active design thread and prepares a fresh registry slot
     /// while keeping the linked Project.
     /// </summary>
     public static void ReleaseDesignThread(AdventureBundle bundle)
     {
         ArgumentNullException.ThrowIfNull(bundle);
 
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+
         var jobId = GenerationJobId.DesignAdventure;
         var session = GenerationUtilitySessionService.GetSession(bundle.Metadata, jobId);
-        if (session is not null)
+        if (session is not null && AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design) is null)
             GenerationUtilitySessionService.ArchiveSession(bundle.Metadata, jobId, session, "manual_rotate");
 
-        bundle.Metadata.PinnedDesignTabKey = null;
-        bundle.Metadata.PinnedDesignTabTitle = null;
-        bundle.Metadata.PinnedDesignTabUrl = null;
-        bundle.Metadata.UtilityConversationLastError = null;
+        AdventureThreadRegistryService.BeginNewActiveThread(bundle, AdventureThreadKind.Design);
 
+        bundle.Metadata.UtilityConversationLastError = null;
         bundle.Metadata.UtilityJobLastErrors?.Remove(jobId);
         bundle.Metadata.UtilityJobLastErrors?.Remove(GenerationJobId.DesignExtractStep);
 
@@ -67,15 +66,6 @@ internal static class DesignThreadRotationService
                + "Draft prompts will use the new chat after you pin.";
     }
 
-    public static string FormatThreadStatus(AdventureBundle bundle)
-    {
-        var conversationId = AdventureDesignContextService.GetDesignConversationId(bundle);
-        if (string.IsNullOrWhiteSpace(conversationId))
-            return "Design thread: not bound — use Start new design thread… or pin a tab.";
-
-        var shortId = conversationId.Length > 12
-            ? conversationId[..12] + "…"
-            : conversationId;
-        return $"Design thread: {shortId}";
-    }
+    public static string FormatThreadStatus(AdventureBundle bundle) =>
+        AdventureThreadRegistryService.FormatThreadStatus(bundle, AdventureThreadKind.Design);
 }

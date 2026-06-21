@@ -11,18 +11,36 @@
     return undefined;
   }
 
+  function normalizeTranscriptViewMode(raw) {
+    var mode = String(raw || "native").toLowerCase();
+    if (mode === "continuous" || mode === "weave") return mode;
+    return "native";
+  }
+
   function normalizePayload(raw) {
     var src = raw && typeof raw === "object" ? raw : {};
+    var transcriptViewMode = normalizeTranscriptViewMode(
+      readField(src, "transcriptViewMode", "TranscriptViewMode")
+    );
+    var legacyContinuous = !!readField(
+      src,
+      "continuousViewEnabled",
+      "ContinuousViewEnabled"
+    );
+    if (
+      transcriptViewMode === "native" &&
+      legacyContinuous &&
+      !readField(src, "transcriptViewMode", "TranscriptViewMode")
+    ) {
+      transcriptViewMode = "continuous";
+    }
     return {
       revision:
         typeof readField(src, "revision", "Revision") === "number"
           ? readField(src, "revision", "Revision")
           : 0,
-      continuousViewEnabled: !!readField(
-        src,
-        "continuousViewEnabled",
-        "ContinuousViewEnabled"
-      ),
+      transcriptViewMode: transcriptViewMode,
+      continuousViewEnabled: transcriptViewMode !== "native",
       proseEnhancementsEnabled: !!readField(
         src,
         "proseEnhancementsEnabled",
@@ -57,6 +75,7 @@
   function snapshotPayload(payload) {
     return JSON.stringify({
       revision: payload.revision,
+      transcriptViewMode: payload.transcriptViewMode,
       continuousViewEnabled: payload.continuousViewEnabled,
       proseEnhancementsEnabled: payload.proseEnhancementsEnabled,
       hideAssistantEditArtifacts: payload.hideAssistantEditArtifacts,
@@ -114,6 +133,10 @@
       impact.rebuild = true;
     }
 
+    if (prev.transcriptViewMode !== next.transcriptViewMode) {
+      impact.rebuild = true;
+    }
+
     if (prev.continuousViewEnabled !== next.continuousViewEnabled) {
       impact.rebuild = true;
     }
@@ -141,6 +164,7 @@
   }
 
   function applyGlobals(payload) {
+    globalThis.__cgwTranscriptViewMode = payload.transcriptViewMode;
     globalThis.__cgwContinuousViewEnabled = payload.continuousViewEnabled;
     globalThis.__cgwProseEnhancementsEnabled = payload.proseEnhancementsEnabled;
     globalThis.__cgwHideAssistantEditArtifacts = payload.hideAssistantEditArtifacts;
@@ -227,7 +251,9 @@
       syncComposerClearance();
     }
 
-    if (typeof globalThis.__cgwSetContinuousView === "function") {
+    if (typeof globalThis.__cgwSetTranscriptViewMode === "function") {
+      globalThis.__cgwSetTranscriptViewMode(payload.transcriptViewMode);
+    } else if (typeof globalThis.__cgwSetContinuousView === "function") {
       globalThis.__cgwSetContinuousView(payload.continuousViewEnabled);
     } else if (impact.rebuild || impact.decorate || impact.cssOnly) {
       if (typeof globalThis.__cgwContinuousViewSchedule === "function") {

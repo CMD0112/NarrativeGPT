@@ -7,7 +7,8 @@ internal static class ContextPointerResolver
     public static ContextResolveResult Resolve(
         AdventureBundle bundle,
         ContextSignalBag signals,
-        bool fatFallback)
+        bool fatFallback,
+        bool freshNarrativeBootstrap = false)
     {
         var index = new SectionAliasIndex(bundle);
         var candidates = new Dictionary<string, ContextPointer>(StringComparer.OrdinalIgnoreCase);
@@ -24,7 +25,7 @@ internal static class ContextPointerResolver
             candidates[pointer.MachineId] = pointer;
         }
 
-        foreach (var baselinePointer in BuildBaseline(bundle, signals))
+        foreach (var baselinePointer in BuildBaseline(bundle, signals, freshNarrativeBootstrap))
             Add(baselinePointer);
 
         foreach (var indexed in index.All.Where(i => i.Section.Pinned))
@@ -94,8 +95,14 @@ internal static class ContextPointerResolver
         };
     }
 
-    private static List<ContextPointer> BuildBaseline(AdventureBundle bundle, ContextSignalBag signals)
+    private static List<ContextPointer> BuildBaseline(
+        AdventureBundle bundle,
+        ContextSignalBag signals,
+        bool freshNarrativeBootstrap = false)
     {
+        if (freshNarrativeBootstrap)
+            return BuildNarrativeStartBaseline(bundle, signals);
+
         var list = new List<ContextPointer>();
         var index = new SectionAliasIndex(bundle);
 
@@ -118,6 +125,24 @@ internal static class ContextPointerResolver
         TryBaseline(SectionSchema.ScenarioFile, "opening");
         TryBaseline(SectionSchema.WorldFile, "rules");
         TryBaseline(SectionSchema.CastFile, "player");
+
+        return list;
+    }
+
+    private static List<ContextPointer> BuildNarrativeStartBaseline(AdventureBundle bundle, ContextSignalBag signals)
+    {
+        var list = new List<ContextPointer>();
+        var index = new SectionAliasIndex(bundle);
+
+        foreach (var file in AdventureBootstrapService.NarrativeStartSourcePaths())
+        {
+            foreach (var indexed in index.All
+                         .Where(i => string.Equals(i.FileName, file, StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(i => i.Section.Id, StringComparer.Ordinal))
+            {
+                list.Add(MakePointer(indexed, 100, PointerSource.Baseline, signals));
+            }
+        }
 
         return list;
     }

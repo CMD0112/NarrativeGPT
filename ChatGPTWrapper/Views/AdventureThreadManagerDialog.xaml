@@ -1,0 +1,42 @@
+<Window x:Class="ChatGPTWrapper.Views.AdventureThreadManagerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Manage adventure threads"
+        Height="520"
+        Width="720"
+        MinHeight="420"
+        MinWidth="560"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,12"
+                   Foreground="{StaticResource TextMutedBrush}"
+                   Text="One active pin per thread kind. Switch active to change which conversation jobs and navigation use. Archive retires a slot without deleting local log data."/>
+
+        <TabControl x:Name="KindTabs" Grid.Row="1" SelectionChanged="KindTabs_SelectionChanged">
+            <TabItem Header="Play threads" Tag="Play"/>
+            <TabItem Header="Design threads" Tag="Design"/>
+        </TabControl>
+
+        <TextBlock x:Name="ActiveSummaryBlock"
+                   Grid.Row="2"
+                   Margin="0,12,0,0"
+                   TextWrapping="Wrap"
+                   FontSize="{StaticResource FontSizeHint}"
+                   Foreground="{StaticResource TextMutedBrush}"/>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Close" Padding="14,6" MinHeight="32" IsCancel="True" Click="Close_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

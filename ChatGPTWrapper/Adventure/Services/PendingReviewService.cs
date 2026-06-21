@@ -8,6 +8,8 @@ internal enum PendingReviewDestination
     WorldSettings,
     MemoryCardsSettings,
     SourcesSettings,
+    WarningsTab,
+    NextSend,
 }
 
 internal sealed class PendingReviewCounts
@@ -82,6 +84,7 @@ internal static class PendingReviewService
         GenerationJobId.BootstrapLore or GenerationJobId.ExpandStoryCard => PendingReviewDestination.MemoryCardsSettings,
         GenerationJobId.ProposeSourceEdits => PendingReviewDestination.SourcesSettings,
         GenerationJobId.ProposeJsonImport => PendingReviewDestination.SourcesSettings,
+        GenerationJobId.ContinuityCheck => PendingReviewDestination.WarningsTab,
         _ => PendingReviewDestination.WorldSettings,
     };
 
@@ -97,6 +100,8 @@ internal static class PendingReviewService
             PendingReviewDestination.WorldSettings => "Play settings → World",
             PendingReviewDestination.MemoryCardsSettings => "Play settings → Memory & cards",
             PendingReviewDestination.SourcesSettings => "Play settings → Sources",
+            PendingReviewDestination.WarningsTab => "Warnings tab",
+            PendingReviewDestination.NextSend => "Play settings → Next send",
             _ => "Play settings",
         };
 

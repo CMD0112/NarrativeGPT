@@ -46,7 +46,7 @@ flowchart LR
         KERNEL[cgw-page-kernel.js]
         API[chatgpt-api-bridge.js]
         PLAY[adventure-bridge.js]
-        DISPLAY[continuous-view / context-tags / play-compose]
+        DISPLAY[continuous / weave / context-tags / play-compose]
     end
 
     subgraph remote [chatgpt.com]
@@ -77,10 +77,11 @@ Defined in `MainWindow.Adventures.cs` as `AppMode`:
 | Mode | UI layout | Primary behavior |
 |------|-----------|------------------|
 | `Browse` | Full-width chat tabs | Standard ChatGPT with style/display injections |
-| `Adventures` | Dashboard + chat tabs | Adventure CRUD, project linking |
+| `Adventures` | Dashboard + chat tabs | Adventure CRUD, project linking, design entry |
+| `Design` | Design panel + ChatGPT tab | AI-assisted adventure authoring wizard |
 | `Play` | Play panel + pinned tab | Automated turn send, utility jobs |
 
-Mode switching adjusts column visibility, play tab pinning, and which injections are prioritized.
+Mode switching adjusts column visibility, play tab pinning, and which injections are prioritized. **Play** and **Design** are entered from the adventure dashboard (not toolbar mode buttons). During an active session, shell chrome provides a **Play / Design toggle** that switches surfaces without leaving the adventure — see [Play/Design surface convergence ADR](play-design-surface-convergence-adr.md) ([CMD-21](https://linear.app/cmd0112/issue/CMD-21), [CMD-230](https://linear.app/cmd0112/issue/CMD-230)).
 
 ---
 
@@ -88,15 +89,22 @@ Mode switching adjusts column visibility, play tab pinning, and which injections
 
 | File | Responsibility |
 |------|----------------|
-| `MainWindow.xaml.cs` | Chrome, continuous view toggle, ui-chrome persistence |
+| `MainWindow.xaml.cs` | Chrome, transcript mode buttons, Format dialog, ui-chrome persistence |
 | `MainWindow.ChatTabs.cs` | WebView2 environment, tab create/close, page host wiring |
 | `MainWindow.PageHost.cs` | Feature registration per tab |
 | `MainWindow.Adventures.cs` | Adventure mode UI, dashboard, `AppMode` |
+| `MainWindow.AdventureDesign.cs` | Design wizard panel, design-thread chat |
+| `MainWindow.DesignTab.cs` | Design tab pin and navigation |
+| `MainWindow.AdventureNavigationGuard.cs` | Unsaved navigation prompts |
 | `MainWindow.PlayTab.cs` | Play session ensure, tab pin |
 | `MainWindow.PlayInjection.cs` | Prompt packet send, continuation queue |
 | `MainWindow.GenerationJobs.cs` | Utility job orchestration (`_generationJobGate`) |
 | `MainWindow.ProjectHost.cs` | Project workspace, linking |
 | `MainWindow.UtilityWebView.cs` | Separate utility-thread WebView for jobs |
+| `MainWindow.Theme.cs` | Theme dialog, CSS variable injection |
+| `MainWindow.ShellStatus.cs` | Status line, breadcrumb chrome |
+| `MainWindow.ThreadLogSync.cs` | Thread ↔ log drift detection and sync |
+| `MainWindow.TurnInvalidation.cs` | Turn invalidation after edits |
 
 ---
 
@@ -125,6 +133,8 @@ Each WebView2 tab gets a `ChatGptPageHost` that orchestrates injection and messa
 | `adventure-bridge` | `ChatGptAdventureBridgeInjection` | `cgw-play` |
 | `play-compose` | `ChatGptPlayComposeInjection` | `cgw-play` |
 | `context-tags` | `ChatGptContextTagsInjection` | `cgw-display` |
+
+`ChatGptContinuousViewInjection` bundles continuous and **Weave** transcript modes (`continuous-transcript-view.js`, `weave-transcript-view.js`). The View menu toggles `TranscriptViewMode`: Native, Continuous, or Weave.
 
 ### Navigation lifecycle
 
@@ -204,6 +214,17 @@ All adventure state is **JSON on disk** under `%LocalAppData%\ChatGPTWrapper\`. 
 - `BackupService` — zip backups
 
 See [Data Model Reference](data-model-reference.md).
+
+---
+
+## Theme and format subsystems
+
+| Folder | Role |
+|--------|------|
+| `ChatGPTWrapper/Theme/` | `ThemeCustomizationDialog`, token catalog, preset library, `ui-chrome.json` theme persistence |
+| `ChatGPTWrapper/Format/` | `FormatProfileService`, continuous-view format profiles, CSS variable generation for transcript typography |
+
+Shell theming (WPF chrome + WebView `--cgw-*` variables) is separate from **Format…** transcript typography. See [appearance-theme-settings.md](appearance-theme-settings.md) and [user-guide.md](user-guide.md).
 
 ---
 

@@ -1,0 +1,191 @@
+<Window x:Class="ChatGPTWrapper.Views.ThemeColorPickerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Pick color"
+        Width="360"
+        SizeToContent="Height"
+        MinWidth="320"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BgBaseBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        ResizeMode="NoResize">
+    <Border Style="{StaticResource ShellCardStyle}" Margin="16">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0"
+                       Text="Pick color"
+                       Style="{StaticResource ShellSectionHeaderStyle}"
+                       Margin="0,0,0,4"/>
+            <TextBlock Grid.Row="1"
+                       Text="Drag on the spectrum or fine-tune with RGB."
+                       Style="{StaticResource ShellSectionHintStyle}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,12"/>
+
+            <!-- Saturation / value plane -->
+            <Border x:Name="SvPlane"
+                    Grid.Row="2"
+                    Height="148"
+                    CornerRadius="{DynamicResource RadiusCard}"
+                    BorderBrush="{DynamicResource BorderStrongBrush}"
+                    BorderThickness="1"
+                    Margin="0,0,0,10"
+                    Cursor="Cross"
+                    MouseLeftButtonDown="SvPlane_MouseLeftButtonDown"
+                    MouseMove="SvPlane_MouseMove"
+                    MouseLeftButtonUp="SvPlane_MouseLeftButtonUp">
+                <Grid>
+                    <Border x:Name="SvHueLayer" CornerRadius="{DynamicResource RadiusCard}"/>
+                    <Border CornerRadius="{DynamicResource RadiusCard}">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                                <GradientStop Color="#FFFFFFFF" Offset="0"/>
+                                <GradientStop Color="#00FFFFFF" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    <Border CornerRadius="{DynamicResource RadiusCard}">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                                <GradientStop Color="#00000000" Offset="0"/>
+                                <GradientStop Color="#FF000000" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    <Canvas x:Name="SvThumbCanvas" IsHitTestVisible="False">
+                        <Ellipse x:Name="SvThumb"
+                                 Width="14"
+                                 Height="14"
+                                 Stroke="{DynamicResource TextPrimaryBrush}"
+                                 StrokeThickness="2"
+                                 Fill="Transparent"/>
+                    </Canvas>
+                </Grid>
+            </Border>
+
+            <!-- Hue strip -->
+            <Border Grid.Row="3"
+                    Height="16"
+                    CornerRadius="{DynamicResource RadiusControl}"
+                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                    BorderThickness="1"
+                    Margin="0,0,0,12">
+                <Grid>
+                    <Border CornerRadius="{DynamicResource RadiusControl}">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                                <GradientStop Color="#FFFF0000" Offset="0.000"/>
+                                <GradientStop Color="#FFFFFF00" Offset="0.167"/>
+                                <GradientStop Color="#FF00FF00" Offset="0.333"/>
+                                <GradientStop Color="#FF00FFFF" Offset="0.500"/>
+                                <GradientStop Color="#FF0000FF" Offset="0.667"/>
+                                <GradientStop Color="#FFFF00FF" Offset="0.833"/>
+                                <GradientStop Color="#FFFF0000" Offset="1.000"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    <Slider x:Name="HueSlider"
+                            Minimum="0"
+                            Maximum="360"
+                            ValueChanged="HueSlider_ValueChanged"
+                            IsMoveToPointEnabled="True"
+                            Margin="0,-4,0,-4"/>
+                </Grid>
+            </Border>
+
+            <!-- Preview + hex -->
+            <Grid Grid.Row="4" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border Width="52"
+                        Height="52"
+                        CornerRadius="{DynamicResource RadiusControl}"
+                        BorderBrush="{DynamicResource BorderStrongBrush}"
+                        BorderThickness="1"
+                        Background="{DynamicResource BgInsetBrush}"
+                        Margin="0,0,12,0">
+                    <Border x:Name="PreviewSwatch"
+                            Margin="4"
+                            CornerRadius="4"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            BorderThickness="1"/>
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="Hex"
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               Margin="0,0,0,4"/>
+                    <TextBox x:Name="HexBox"
+                             FontFamily="Consolas"
+                             MaxLength="7"
+                             TextChanged="HexBox_TextChanged"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- RGB channels -->
+            <Grid Grid.Row="5" Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="28"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="44"/>
+                </Grid.ColumnDefinitions>
+                <Ellipse Grid.Column="0" Width="10" Height="10" Fill="#FFE57373" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="R" VerticalAlignment="Center"/>
+                <Slider x:Name="RedSlider" Grid.Column="2" Minimum="0" Maximum="255" ValueChanged="RgbSlider_ValueChanged"/>
+                <TextBox x:Name="RedBox" Grid.Column="3" Margin="8,0,0,0" FontFamily="Consolas" MaxLength="3" TextChanged="RgbBox_TextChanged" Tag="R"/>
+            </Grid>
+            <Grid Grid.Row="6" Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="28"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="44"/>
+                </Grid.ColumnDefinitions>
+                <Ellipse Grid.Column="0" Width="10" Height="10" Fill="#FF6BCB8E" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="G" VerticalAlignment="Center"/>
+                <Slider x:Name="GreenSlider" Grid.Column="2" Minimum="0" Maximum="255" ValueChanged="RgbSlider_ValueChanged"/>
+                <TextBox x:Name="GreenBox" Grid.Column="3" Margin="8,0,0,0" FontFamily="Consolas" MaxLength="3" TextChanged="RgbBox_TextChanged" Tag="G"/>
+            </Grid>
+            <Grid Grid.Row="7" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="28"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="44"/>
+                </Grid.ColumnDefinitions>
+                <Ellipse Grid.Column="0" Width="10" Height="10" Fill="#FF5B9FD4" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="B" VerticalAlignment="Center"/>
+                <Slider x:Name="BlueSlider" Grid.Column="2" Minimum="0" Maximum="255" ValueChanged="RgbSlider_ValueChanged"/>
+                <TextBox x:Name="BlueBox" Grid.Column="3" Margin="8,0,0,0" FontFamily="Consolas" MaxLength="3" TextChanged="RgbBox_TextChanged" Tag="B"/>
+            </Grid>
+
+            <StackPanel Grid.Row="8"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button Content="Cancel"
+                        Style="{StaticResource ShellCommandBarSecondarySlot}"
+                        Padding="12,6"
+                        Margin="0,0,8,0"
+                        IsCancel="True"/>
+                <Button Content="OK"
+                        Style="{StaticResource ShellCommandBarPrimarySlot}"
+                        Padding="12,6"
+                        IsDefault="True"
+                        Click="Ok_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

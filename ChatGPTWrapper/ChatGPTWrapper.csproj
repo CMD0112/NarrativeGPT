@@ -22,6 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Adventure\Schema\canon-schema.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ChatGPTWrapper.Core\ChatGPTWrapper.Core.csproj" />
   </ItemGroup>
 

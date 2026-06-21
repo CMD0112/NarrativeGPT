@@ -1,0 +1,116 @@
+[
+  {
+    "id": "CMD-44",
+    "labels": [
+      "Feature",
+      "Play",
+      "Composer",
+      "WebView"
+    ]
+  },
+  {
+    "id": "CMD-45",
+    "labels": [
+      "Feature",
+      "Play",
+      "Metadata",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-55",
+    "labels": [
+      "Improvement",
+      "Design",
+      "Utility Jobs"
+    ]
+  },
+  {
+    "id": "CMD-62",
+    "labels": [
+      "ChatGPT Fragile",
+      "Navigation",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-64",
+    "labels": [
+      "Architecture",
+      "Play Packet",
+      "Docs",
+      "Play",
+      "Feature",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-65",
+    "labels": [
+      "Feature",
+      "Play",
+      "Navigation",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-66",
+    "labels": [
+      "Play Packet",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-69",
+    "labels": [
+      "Spike",
+      "Architecture",
+      "Docs"
+    ]
+  },
+  {
+    "id": "CMD-70",
+    "labels": [
+      "Continuous View",
+      "JavaScript",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-71",
+    "labels": [
+      "Play Packet",
+      "C#",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-72",
+    "labels": [
+      "Has Tests",
+      "Play Packet",
+      "C#",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-74",
+    "labels": [
+      "Navigation",
+      "WPF",
+      "Projects",
+      "Bug",
+      "Verified"
+    ]
+  }
+]

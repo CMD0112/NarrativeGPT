@@ -1,24 +1,94 @@
 <Window x:Class="ChatGPTWrapper.Views.RandomTableDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Random table"
-        Height="280"
-        Width="360"
-        MinHeight="220"
-        MinWidth="320"
+        Title="Random tables"
+        Height="420"
+        Width="480"
+        MinHeight="360"
+        MinWidth="400"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource DialogBgBrush}"
-        Foreground="{StaticResource TextBrush}">
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <ComboBox x:Name="TableBox" Margin="0,0,0,12"/>
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,12">
-            <TextBlock x:Name="ResultBlock" FontSize="16" TextWrapping="Wrap"/>
-        </ScrollViewer>
-        <Button Grid.Row="2" Content="Roll" Style="{StaticResource PrimaryButtonStyle}" MinWidth="88" Click="Roll_Click"/>
+        <TextBlock Grid.Row="0"
+                   Text="Per-adventure tables (global defaults used when empty)"
+                   Opacity="0.8"
+                   Margin="0,0,0,8"/>
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <ComboBox x:Name="TableBox" Margin="0,0,8,0"/>
+            <Button Grid.Column="1" Content="Manage tables…" Click="ManageTables_Click"/>
+        </Grid>
+        <Border Grid.Row="2"
+                BorderBrush="{StaticResource BorderSubtleBrush}"
+                BorderThickness="1"
+                Padding="12"
+                Margin="0,0,0,12">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <TextBlock x:Name="ResultBlock" FontSize="16" TextWrapping="Wrap"/>
+            </ScrollViewer>
+        </Border>
+        <CheckBox x:Name="AppendCheckBox"
+                  Grid.Row="3"
+                  Content="Append to composer (uncheck to replace)"
+                  IsChecked="True"
+                  Margin="0,0,0,12"/>
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Cancel" Margin="0,0,8,0" Padding="14,6" MinHeight="32" IsCancel="True"/>
+            <Button Content="Roll" MinWidth="72" Margin="0,0,8,0" Click="Roll_Click"/>
+            <Button x:Name="UseButton"
+                    Content="Use in composer"
+                    Style="{StaticResource PrimaryButtonStyle}"
+                    MinWidth="120"
+                    IsEnabled="False"
+                    IsDefault="True"
+                    Click="Use_Click"/>
+        </StackPanel>
+        <Grid x:Name="ManagePanel"
+              Grid.Row="0"
+              Grid.RowSpan="5"
+              Background="{StaticResource BgBaseBrush}"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Text="Manage tables" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <ListBox x:Name="ManageTableList"
+                         Margin="0,0,8,0"
+                         SelectionChanged="ManageTableList_SelectionChanged"/>
+                <TextBox x:Name="ManageEntriesBox"
+                         Grid.Column="1"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         ToolTip="One entry per line"/>
+            </Grid>
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,8">
+                <Button Content="Add table" Margin="0,0,8,0" Click="AddTable_Click"/>
+                <Button Content="Rename" Margin="0,0,8,0" Click="RenameTable_Click"/>
+                <Button Content="Delete table" Click="DeleteTable_Click"/>
+            </StackPanel>
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Done" Style="{StaticResource PrimaryButtonStyle}" MinWidth="88" Click="ManageDone_Click"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

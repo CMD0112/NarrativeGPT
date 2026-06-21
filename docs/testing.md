@@ -23,7 +23,7 @@ Also see: [tests/ChatGPTWrapper.ApiDiagnostics/README.md](../tests/ChatGPTWrappe
 # Unit only (fast, no login)
 dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "Category=Unit"
 
-# Exclude performance (recommended CI)
+# Exclude performance (local full suite minus perf)
 dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "Category!=Performance"
 
 # Play composer suite
@@ -78,7 +78,6 @@ dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "FullyQualifiedName~Pla
 | `TurnTimelineAcceptTests` | Turn accept/remove-pending |
 | `UtilityConversationPageTests` | href-based page matching, strict navigation, URL matching |
 | `UtilityConversationReadinessTests` | Registered/DomOnly/Unready gate, rate limits, DOM-capable errors |
-| `JsonElementParsingTests` | Null-safe JSON helpers (utility job apply hardening) |
 | `UtilityResponseParseTests` | Utility response unwrapping |
 | `UtilityStoryContextBuilderTests` | Story context preview/trim |
 | `UtilityStoryContextSettingsNormalizerTests` | Role toggle mapping |
@@ -88,9 +87,9 @@ dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "FullyQualifiedName~Pla
 
 | Test class | Feature area |
 |------------|--------------|
-| `PlayComposeBehaviorTests` | Composer mount, send, focus, busy state (25 tests) |
+| `PlayComposeBehaviorTests` | Composer mount, send, focus, busy state (32 tests) |
 | `ContinuousViewDecorationBenchmarkTests` | CV `decorateTurnBlocks` perf (50 turns, &lt;200ms; `Category=Performance`) |
-| `EntityReviewRoutingTests` | Entity review queue persistence + STA selection routing |
+| `EntityReviewRoutingTests` | Entity review queue persistence + STA WPF selection routing (no WebView2 harness) |
 
 **Hosts:** `PlayComposeTestHost`, `PlayComposeUiEnvironment`  
 **Fixture:** `Fixtures/composer-fixture.html`
@@ -186,26 +185,27 @@ Requires `CGW_RUN_LIVE_API_TESTS=1` and ChatGPT login in app profile.
 
 ## Recommended CI
 
-Configured in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). PR gate runs **unit** tests (`Category=Unit`). Integration, live, and performance tiers are local-only — see commands below.
+Configured in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). PR gate on `main` runs **unit** tests only:
 
 ```yaml
+- name: Build
+  run: dotnet build chatgpt-wrapper.sln -c Release --no-restore
+
 - name: Test
-  run: dotnet test tests/ChatGPTWrapper.ApiDiagnostics --filter "Category!=Performance" --no-restore
+  run: dotnet test tests/ChatGPTWrapper.ApiDiagnostics/ChatGPTWrapper.ApiDiagnostics.csproj -c Release --no-build --filter "Category=Unit"
 ```
 
-Optional nightly live job with secrets/env for `CGW_RUN_LIVE_API_TESTS` — not recommended on every PR.
+Integration, live, and performance tiers are **local-only** — not run in CI. Use the commands in [Test tiers](#test-tiers) above.
 
-**Build step:**
+### CI coverage gap
 
-```yaml
-- run: dotnet build chatgpt-wrapper.sln -c Release
-```
+Many test classes in the catalog lack `[Trait("Category", "Unit")]` and are **skipped by CI** even though they are fast unit tests (e.g. `EditInvalidationTests`, `AttachmentSendPolicyTests`, `DraftFrameworkServiceTests`). Adding traits is a separate code change if broader CI coverage is desired.
 
 ---
 
 ## InternalsVisibleTo
 
-`ChatGPTWrapper.csproj` exposes internals to `ChatGPTWrapper.ApiDiagnostics` for testing internal services.
+Both `ChatGPTWrapper.csproj` and `ChatGPTWrapper.Core.csproj` expose internals to `ChatGPTWrapper.ApiDiagnostics` for testing internal services.
 
 ---
 

@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Adventure.Services.Canon;
 
 namespace ChatGPTWrapper.Adventure.Stores;
 
@@ -139,15 +140,163 @@ internal static class AdventureStore
 
         AdventureMetadataMigration.MigrateUtilitySessions(meta);
         AdventureMetadataMigration.EnsureSettingsDefaults(meta);
+        var deprecatedPlayMigrated = AdventureMetadataMigration.MigrateDeprecatedPlaySettings(meta);
         var linkMigrated = AdventureMetadataMigration.MigrateProjectLinkFields(meta);
 
         var manifest = LoadSourceManifest(id);
         AdventureMetadataMigration.MigrateSourcePublishMode(meta, manifest);
+        var deliveryMigrated = AdventureMetadataMigration.MigrateUtilityDeliveryMode(meta);
 
-        if (linkMigrated)
+        var threadRegistryMigrated = AdventureMetadataMigration.MigrateThreadRegistry(meta);
+
+        if (linkMigrated || threadRegistryMigrated || deliveryMigrated || deprecatedPlayMigrated)
             WriteJson(MetadataPath(id), meta);
 
+        var entities = LoadJson<EntitiesDocument>(EntitiesPath(id)) ?? new();
+        var entitiesMigrated = EntitiesDocumentMigration.Migrate(entities);
+        var canonSchemaMigrated = CanonSchemaMigrationService.Migrate(meta);
+
         var bundle = new AdventureBundle
+        {
+            Metadata = meta,
+            Scenario = LoadJson<ScenarioDocument>(ScenarioPath(id)) ?? new(),
+            Log = LoadJson<LogDocument>(LogPath(id)) ?? new(),
+            Summary = LoadJson<SummaryDocument>(SummaryPath(id)) ?? new(),
+            State = LoadJson<StateDocument>(StatePath(id)) ?? new(),
+            Memory = LoadJson<MemoryDocument>(MemoryPath(id)) ?? new(),
+            Entities = entities,
+            Cards = LoadJson<CardsDocument>(CardsPath(id)) ?? new(),
+            Continuity = LoadJson<ContinuityDocument>(ContinuityPath(id)) ?? new(),
+            PromptHistory = LoadJson<PromptHistoryDocument>(PromptHistoryPath(id)) ?? new(),
+            UtilityExchanges = LoadJson<UtilityExchangesDocument>(UtilityExchangesPath(id)) ?? new(),
+            ThreadMetadata = LoadJson<ThreadMetadataDocument>(ThreadMetadataPath(id)) ?? new(),
+            Notes = File.Exists(NotesPath(id)) ? File.ReadAllText(NotesPath(id)) : "",
+            SourceManifest = manifest,
+            ContextIndex = LoadJson<ContextIndexDocument>(ContextIndexPath(id)) ?? new(),
+            DesignWorkspace = LoadJson<AdventureDesignWorkspace>(DesignWorkspacePath(id))
+                ?? new AdventureDesignWorkspace(),
+        };
+
+        SectionInjectionMigrationService.TryMigrateIfNeeded(bundle);
+        var sourcesBootstrapped = AdventureSourceFileService.TryBootstrapLocalSourcesFromDesignWorkspace(bundle);
+        var manifestReconciled = AdventureSourceFileService.ReconcileManifest(bundle);
+        var sourcesPushed = CanonReconciliationService.TryAutoPushSourcesFromJsonOnLoad(bundle);
+        var queuePruned = ProjectSourceImportService.PruneStaleImportRemovalProposals(bundle);
+        if (queuePruned > 0)
+            ProjectSourceImportService.DeduplicateSourceEditReviewQueue(bundle);
+        AdventureSessionService.RestoreActiveSessionOnLoad(bundle);
+        if (entitiesMigrated || canonSchemaMigrated || sourcesBootstrapped > 0 || manifestReconciled || sourcesPushed || queuePruned > 0)
+            Save(bundle);
+        return bundle;
+    }
+
+    public static SourceManifest LoadSourceManifest(Guid id)
+    {
+        var manifest = LoadJson<SourceManifest>(SourceManifestPath(id)) ?? new();
+        SourceManifestHelper.MigrateManifest(manifest);
+        return manifest;
+    }
+
+    public static void SaveSourceManifest(Guid id, SourceManifest manifest)
+    {
+        WriteJson(SourceManifestPath(id), manifest);
+    }
+
+    public static void Save(AdventureBundle bundle, bool allowLinkMetadataOverwrite = false) =>
+        Save(bundle, AdventureSaveScope.All, allowLinkMetadataOverwrite);
+
+    public static void Save(
+        AdventureBundle bundle,
+        AdventureSaveScope scope,
+        bool allowLinkMetadataOverwrite = false)
+    {
+        ArgumentNullException.ThrowIfNull(bundle);
+        if (scope == AdventureSaveScope.None)
+            return;
+
+        var id = bundle.Metadata.Id;
+        var dir = AppDirectories.AdventureDirectory(id);
+        Directory.CreateDirectory(dir);
+
+        bundle.Metadata.LastPlayedAt = DateTimeOffset.UtcNow;
+        if (!allowLinkMetadataOverwrite)
+            PreserveLinkMetadataFromDisk(bundle.Metadata, id);
+
+        if (scope.HasFlag(AdventureSaveScope.Metadata))
+            WriteJson(MetadataPath(id), bundle.Metadata);
+        if (scope.HasFlag(AdventureSaveScope.Scenario))
+            WriteJson(ScenarioPath(id), bundle.Scenario);
+        if (scope.HasFlag(AdventureSaveScope.Log))
+            WriteJson(LogPath(id), bundle.Log);
+        if (scope.HasFlag(AdventureSaveScope.Summary))
+            WriteJson(SummaryPath(id), bundle.Summary);
+        if (scope.HasFlag(AdventureSaveScope.State))
+            WriteJson(StatePath(id), bundle.State);
+        if (scope.HasFlag(AdventureSaveScope.Memory))
+            WriteJson(MemoryPath(id), bundle.Memory);
+        if (scope.HasFlag(AdventureSaveScope.Entities))
+            WriteJson(EntitiesPath(id), bundle.Entities);
+        if (scope.HasFlag(AdventureSaveScope.Cards))
+            WriteJson(CardsPath(id), bundle.Cards);
+        if (scope.HasFlag(AdventureSaveScope.Continuity))
+            WriteJson(ContinuityPath(id), bundle.Continuity);
+        if (scope.HasFlag(AdventureSaveScope.PromptHistory))
+            WriteJson(PromptHistoryPath(id), bundle.PromptHistory);
+        if (scope.HasFlag(AdventureSaveScope.UtilityExchanges))
+            WriteJson(UtilityExchangesPath(id), bundle.UtilityExchanges);
+        if (scope.HasFlag(AdventureSaveScope.ThreadMetadata))
+            WriteJson(ThreadMetadataPath(id), bundle.ThreadMetadata);
+        if (scope.HasFlag(AdventureSaveScope.Notes))
+            File.WriteAllText(NotesPath(id), bundle.Notes ?? "");
+        if (scope.HasFlag(AdventureSaveScope.SourceManifest))
+            SaveSourceManifest(id, bundle.SourceManifest);
+        if (scope.HasFlag(AdventureSaveScope.ContextIndex))
+            WriteJson(ContextIndexPath(id), bundle.ContextIndex);
+        if (scope.HasFlag(AdventureSaveScope.DesignWorkspace))
+            WriteJson(DesignWorkspacePath(id), bundle.DesignWorkspace);
+    }
+
+    public static void SaveSourceManifestOnly(AdventureBundle bundle) =>
+        Save(bundle, AdventureSaveScope.SourceManifest);
+
+    /// <summary>
+    /// Persists play-settings UI changes without overwriting structured canon
+    /// (<c>entities.json</c> / most of <c>scenario.json</c>) that may have been updated elsewhere.
+    /// </summary>
+    public static void SavePlaySettingsFromDialog(AdventureBundle ui)
+    {
+        var disk = ReadBundleDocumentsFromDisk(ui.Metadata.Id);
+        if (disk is null)
+            return;
+
+        disk.Metadata.Settings = CloneJson(ui.Metadata.Settings);
+        disk.Summary = CloneJson(ui.Summary);
+        disk.State = CloneJson(ui.State);
+        disk.Scenario.AuthorsNote = ui.Scenario.AuthorsNote;
+        disk.ContinuationQueue = ui.ContinuationQueue.ToList();
+        disk.Cards = CloneJson(ui.Cards);
+        disk.Memory = CloneJson(ui.Memory);
+        disk.Continuity = CloneJson(ui.Continuity);
+        disk.UtilityExchanges = CloneJson(ui.UtilityExchanges);
+        disk.ThreadMetadata = CloneJson(ui.ThreadMetadata);
+        disk.SourceManifest = CloneJson(ui.SourceManifest);
+
+        Save(disk, AdventureSaveScope.PlaySettingsDialog);
+    }
+
+    internal static AdventureBundle? ReadBundleDocumentsFromDisk(Guid id)
+    {
+        var dir = AppDirectories.AdventureDirectory(id);
+        if (!Directory.Exists(dir))
+            return null;
+
+        var meta = LoadJson<AdventureMetadata>(MetadataPath(id));
+        if (meta is null)
+            return null;
+
+        var manifest = LoadSourceManifest(id);
+
+        return new AdventureBundle
         {
             Metadata = meta,
             Scenario = LoadJson<ScenarioDocument>(ScenarioPath(id)) ?? new(),
@@ -167,52 +316,11 @@ internal static class AdventureStore
             DesignWorkspace = LoadJson<AdventureDesignWorkspace>(DesignWorkspacePath(id))
                 ?? new AdventureDesignWorkspace(),
         };
-
-        SectionInjectionMigrationService.TryMigrateIfNeeded(bundle);
-        AdventureSourceFileService.ReconcileManifest(bundle);
-        AdventureSessionService.RestoreActiveSessionOnLoad(bundle);
-        return bundle;
     }
 
-    public static SourceManifest LoadSourceManifest(Guid id)
-    {
-        var manifest = LoadJson<SourceManifest>(SourceManifestPath(id)) ?? new();
-        SourceManifestHelper.MigrateManifest(manifest);
-        return manifest;
-    }
-
-    public static void SaveSourceManifest(Guid id, SourceManifest manifest)
-    {
-        WriteJson(SourceManifestPath(id), manifest);
-    }
-
-    public static void Save(AdventureBundle bundle, bool allowLinkMetadataOverwrite = false)
-    {
-        ArgumentNullException.ThrowIfNull(bundle);
-        var id = bundle.Metadata.Id;
-        var dir = AppDirectories.AdventureDirectory(id);
-        Directory.CreateDirectory(dir);
-
-        bundle.Metadata.LastPlayedAt = DateTimeOffset.UtcNow;
-        if (!allowLinkMetadataOverwrite)
-            PreserveLinkMetadataFromDisk(bundle.Metadata, id);
-        WriteJson(MetadataPath(id), bundle.Metadata);
-        WriteJson(ScenarioPath(id), bundle.Scenario);
-        WriteJson(LogPath(id), bundle.Log);
-        WriteJson(SummaryPath(id), bundle.Summary);
-        WriteJson(StatePath(id), bundle.State);
-        WriteJson(MemoryPath(id), bundle.Memory);
-        WriteJson(EntitiesPath(id), bundle.Entities);
-        WriteJson(CardsPath(id), bundle.Cards);
-        WriteJson(ContinuityPath(id), bundle.Continuity);
-        WriteJson(PromptHistoryPath(id), bundle.PromptHistory);
-        WriteJson(UtilityExchangesPath(id), bundle.UtilityExchanges);
-        WriteJson(ThreadMetadataPath(id), bundle.ThreadMetadata);
-        File.WriteAllText(NotesPath(id), bundle.Notes ?? "");
-        SaveSourceManifest(id, bundle.SourceManifest);
-        WriteJson(ContextIndexPath(id), bundle.ContextIndex);
-        WriteJson(DesignWorkspacePath(id), bundle.DesignWorkspace);
-    }
+    private static T CloneJson<T>(T value) where T : class, new() =>
+        JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, AdventureJson.Options), AdventureJson.Options)
+        ?? new();
 
     public static void Delete(Guid id)
     {

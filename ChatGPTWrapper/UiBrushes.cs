@@ -15,5 +15,5 @@ internal static class UiBrushes
         (Brush)element.FindResource("ErrorBrush");
 
     public static Brush Muted(FrameworkElement element) =>
-        (Brush)element.FindResource("MutedTextBrush");
+        (Brush)element.FindResource("TextMutedBrush");
 }

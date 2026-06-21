@@ -28,9 +28,10 @@ internal static class PlayTurnScopeService
             return;
 
         // Pinned tab already linked this thread — first API bind is not a thread switch.
+        var activePlayConversation = GetActivePlayConversationId(bundle);
         if (string.IsNullOrWhiteSpace(previousConversationId)
-            && !string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId)
-            && string.Equals(bundle.Metadata.LinkedConversationId, newConversationId, StringComparison.OrdinalIgnoreCase))
+            && !string.IsNullOrWhiteSpace(activePlayConversation)
+            && string.Equals(activePlayConversation, newConversationId, StringComparison.OrdinalIgnoreCase))
             return;
 
         AdventureSessionService.EndSession(bundle);
@@ -81,7 +82,7 @@ internal static class PlayTurnScopeService
 
     public static IReadOnlyList<TurnRecord> GetPacketAcceptedTurns(AdventureBundle bundle)
     {
-        var activeConversationId = bundle.Metadata.LinkedConversationId;
+        var activeConversationId = GetActivePlayConversationId(bundle);
         var activeSessionId = GetActiveSessionId(bundle);
 
         return bundle.Log.Turns
@@ -110,13 +111,38 @@ internal static class PlayTurnScopeService
     public static bool IsFreshPlayThread(AdventureBundle bundle) =>
         GetPacketAcceptedTurns(bundle).Count == 0;
 
+    public static IReadOnlyList<TurnRecord> GetAcceptedTurnsForConversation(
+        AdventureBundle bundle,
+        string conversationId)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId))
+            return [];
+
+        return bundle.Log.Turns
+            .Where(ShouldIncludeInPlayPacket)
+            .Where(t => string.Equals(t.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(t => t.Index)
+            .ToList();
+    }
+
+    public static IReadOnlyList<TurnRecord> GetAcceptedTurnsForSession(
+        AdventureBundle bundle,
+        Guid sessionId)
+    {
+        return bundle.Log.Turns
+            .Where(ShouldIncludeInPlayPacket)
+            .Where(t => t.SessionId == sessionId)
+            .OrderBy(t => t.Index)
+            .ToList();
+    }
+
     /// <summary>
     /// Play turns that contribute to packet meta and transcript. Includes pending sends on the
     /// active thread so injection stays consistent when narrator capture is delayed or fails.
     /// </summary>
     public static IReadOnlyList<TurnRecord> GetPacketContextTurns(AdventureBundle bundle)
     {
-        var activeConversationId = bundle.Metadata.LinkedConversationId;
+        var activeConversationId = GetActivePlayConversationId(bundle);
         var activeSessionId = GetActiveSessionId(bundle);
 
         return bundle.Log.Turns
@@ -137,7 +163,7 @@ internal static class PlayTurnScopeService
     /// </summary>
     public static bool NormalizeIncompleteCaptureTurns(AdventureBundle bundle)
     {
-        var linkedConversationId = bundle.Metadata.LinkedConversationId;
+        var linkedConversationId = GetActivePlayConversationId(bundle);
         var changed = false;
         foreach (var turn in bundle.Log.Turns.Where(t => t.Status == TurnStatus.Accepted))
         {
@@ -204,5 +230,21 @@ internal static class PlayTurnScopeService
             return false;
 
         return turn.SessionId == activeSessionId;
+    }
+
+    private static string? GetActivePlayConversationId(AdventureBundle bundle)
+    {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var legacy = bundle.Metadata.LinkedConversationId;
+        var fromRegistry = AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Play);
+
+        // During rollout, some paths still write LinkedConversationId directly.
+        if (!string.IsNullOrWhiteSpace(legacy)
+            && !string.Equals(legacy, fromRegistry, StringComparison.OrdinalIgnoreCase))
+        {
+            return legacy;
+        }
+
+        return fromRegistry ?? legacy;
     }
 }

@@ -90,6 +90,48 @@ public sealed class ProjectChatDraftServiceTests
     }
 
     [Fact]
+    public void ShouldSuppressPlayAutomation_on_project_page_when_stored_play_thread_without_draft()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-util",
+                LinkedConversationId = "conv-play",
+            },
+        };
+
+        var source = ChatGptUrls.BuildProjectUrl("g-p-util");
+
+        Assert.True(ProjectChatDraftService.ShouldSuppressPlayAutomation(bundle, null, null, source));
+    }
+
+    [Fact]
+    public void ShouldSuppressPlayAutomation_false_on_project_page_during_play_rotation()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-rotate",
+            },
+        };
+
+        ProjectChatDraftService.BeginPlayDraft(bundle);
+
+        try
+        {
+            var source = ChatGptUrls.BuildProjectUrl("g-p-rotate");
+
+            Assert.False(ProjectChatDraftService.ShouldSuppressPlayAutomation(bundle, null, null, source));
+        }
+        finally
+        {
+            ProjectChatDraftService.Complete(bundle);
+        }
+    }
+
+    [Fact]
     public void ShouldSuppressPlayAutomation_on_project_page_during_utility_draft()
     {
         var bundle = new AdventureBundle
@@ -127,22 +169,13 @@ public sealed class ProjectChatDraftServiceTests
             },
         };
 
-        ProjectChatDraftService.BeginUtilityDraft(bundle);
+        var source = ChatGptUrls.BuildProjectUrl("g-p-valid");
 
-        try
-        {
-            var source = ChatGptUrls.BuildProjectUrl("g-p-valid");
-
-            Assert.True(
-                AdventureNavigationService.IsOnValidAdventureWebTarget(
-                    source,
-                    bundle,
-                    AdventureNavigationIntent.Play));
-        }
-        finally
-        {
-            ProjectChatDraftService.Complete(bundle);
-        }
+        Assert.True(
+            AdventureNavigationService.IsOnValidAdventureWebTarget(
+                source,
+                bundle,
+                AdventureNavigationIntent.Play));
     }
 
     [Fact]

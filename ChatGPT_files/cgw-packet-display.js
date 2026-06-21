@@ -142,6 +142,9 @@
   }
 
   function overlayActive() {
+    if (globalThis.__cgwTranscriptViewMode) {
+      return globalThis.__cgwTranscriptViewMode !== "native";
+    }
     return globalThis.__cgwContinuousViewEnabled === true;
   }
 

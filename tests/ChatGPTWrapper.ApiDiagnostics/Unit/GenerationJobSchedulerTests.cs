@@ -7,7 +7,7 @@ namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 public sealed class GenerationJobSchedulerTests
 {
     [Fact]
-    public void GetJobsAfterTurn_returns_empty_when_inline_delivery()
+    public void GetJobsAfterTurn_queues_auto_jobs_when_inline_delivery()
     {
         var bundle = AdventureTestData.CreateLinkedBundle();
         bundle.Metadata.Settings.AutoExtractEntities = true;
@@ -17,6 +17,7 @@ public sealed class GenerationJobSchedulerTests
         var turn = new TurnRecord { Index = 1, PlayerText = "look", NarratorText = "A room.", Status = TurnStatus.Accepted };
         var jobs = GenerationJobScheduler.GetJobsAfterTurn(bundle, turn);
 
-        Assert.Empty(jobs);
+        Assert.Contains(GenerationJobId.ExtractEntities, jobs);
+        Assert.Contains(GenerationJobId.ProposeMemories, jobs);
     }
 }

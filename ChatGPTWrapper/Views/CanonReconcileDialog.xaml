@@ -1,0 +1,58 @@
+<Window x:Class="ChatGPTWrapper.Views.CanonReconcileDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Reconcile canon with source files"
+        Height="560"
+        Width="760"
+        MinHeight="420"
+        MinWidth="560"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}"
+        ResizeMode="CanResizeWithGrip">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,8"
+                   Foreground="{StaticResource TextMutedBrush}"
+                   Text="Entity edits normally sync to sources/ automatically. Use this dialog when JSON and markdown still disagree — push writes JSON to sources; pull imports sources into JSON. Project upload remains manual via Source Manager."/>
+
+        <TextBlock x:Name="SummaryLine" Grid.Row="1" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+        <TextBlock x:Name="RenameLine" Grid.Row="2" TextWrapping="Wrap" Margin="0,0,0,8"
+                   Foreground="{StaticResource TextMutedBrush}" Visibility="Collapsed"/>
+
+        <Border Grid.Row="3" BorderBrush="{StaticResource BorderStrongBrush}"
+                BorderThickness="1" Background="{StaticResource BgSurfaceBrush}" Padding="8" Margin="0,0,0,12">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <TextBox x:Name="DiffPreviewBox" IsReadOnly="True" TextWrapping="Wrap"
+                         AcceptsReturn="True" BorderThickness="0" Background="Transparent"
+                         VerticalScrollBarVisibility="Disabled"/>
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel x:Name="RenameOptionsPanel" Grid.Row="4" Margin="0,0,0,12" Visibility="Collapsed">
+            <CheckBox x:Name="AddAliasCheck" Content="Add prior name as alias" IsChecked="True" Margin="0,0,0,4"/>
+            <CheckBox x:Name="UpdateContextIndexCheck" Content="Update context-index pointers" IsChecked="True" Margin="0,0,0,4"/>
+            <CheckBox x:Name="UpdatePhraseHighlightsCheck" Content="Update phrase highlight rules" Margin="0,0,0,4"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Open Source Manager" Margin="0,0,8,0" Padding="12,6" MinHeight="32" Click="OpenSourceManager_Click"/>
+            <Button Content="Compare…" Margin="0,0,8,0" Padding="12,6" MinHeight="32" Click="Compare_Click"/>
+            <Button Content="Defer" Margin="0,0,8,0" Padding="12,6" MinHeight="32" Click="Defer_Click"
+                    ToolTip="Keep JSON changes; leave sources unchanged for now"/>
+            <Button Content="Pull from sources" Margin="0,0,8,0" Padding="12,6" MinHeight="32" Click="Pull_Click"
+                    ToolTip="Discard JSON changes for drifted files and re-import from sources/"/>
+            <Button Content="Push to sources" Style="{StaticResource PrimaryButtonStyle}" MinWidth="120" MinHeight="32" Click="Push_Click"
+                    ToolTip="Overwrite drifted sources/*.md from current JSON"/>
+        </StackPanel>
+    </Grid>
+</Window>

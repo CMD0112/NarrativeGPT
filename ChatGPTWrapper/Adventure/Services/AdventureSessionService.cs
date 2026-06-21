@@ -29,6 +29,7 @@ internal static class AdventureSessionService
             session.EndedAt = DateTimeOffset.UtcNow;
 
         bundle.CurrentSessionId = null;
+        bundle.Metadata.Settings.SessionNarratorOverrides.Remove(sid.ToString());
     }
 
     public static void AttachTurnToSession(AdventureBundle bundle, TurnRecord turn)

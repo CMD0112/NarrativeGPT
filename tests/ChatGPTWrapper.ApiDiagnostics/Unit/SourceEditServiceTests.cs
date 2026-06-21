@@ -80,7 +80,6 @@ public sealed class SourceEditServiceTests
                 SectionSchema.CastFile);
             File.WriteAllText(castPath, "# Cast\n\n## player\n\n**Name:** Alex\n");
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             ProjectSourceImportService.Import(bundle);
             ProjectSourceImportService.Import(bundle);
 

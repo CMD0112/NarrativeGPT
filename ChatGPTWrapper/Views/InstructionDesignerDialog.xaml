@@ -7,8 +7,8 @@
         MinHeight="560"
         MinWidth="760"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource DialogBgBrush}"
-        Foreground="{StaticResource TextBrush}">
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -32,7 +32,7 @@
                                Text="3. Generate instructions file — writes instructions-snippet.md locally without AI."/>
                     <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
                                Text="4. Copy instructions → paste into ChatGPT Project custom instructions → Mark instructions pasted."/>
-                    <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedTextBrush}"
+                    <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource TextMutedBrush}"
                                Text="Optional: Refine instructions with AI in Design mode polishes wording only — define boundaries here first. Full guide: docs/instruction-contract-guide.md"/>
                 </StackPanel>
             </Expander>
@@ -41,11 +41,11 @@
                        FontSize="14"
                        Margin="0,0,0,4"/>
             <TextBlock x:Name="DriftLine"
-                       Foreground="{StaticResource MutedTextBrush}"
+                       Foreground="{StaticResource TextMutedBrush}"
                        FontSize="11"
                        TextWrapping="Wrap"
                        Margin="0,0,0,4"/>
-            <TextBlock Foreground="{StaticResource MutedTextBrush}"
+            <TextBlock Foreground="{StaticResource TextMutedBrush}"
                        FontSize="11"
                        TextWrapping="Wrap"
                        Text="Edit fields on the left. Preview shows the canonical body used for Copy instructions, export, and AI refinement."/>
@@ -55,49 +55,55 @@
             <StackPanel>
                 <TextBlock Text="Voice &amp; format" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <TextBlock Text="Perspective" Margin="0,0,0,4"/>
-                <TextBox x:Name="PerspectiveBox" Margin="0,0,0,8" TextChanged="Fields_Changed"/>
+                <ComboBox x:Name="PerspectiveBox" IsEditable="True" Margin="0,0,0,8"
+                          SelectionChanged="Fields_Changed" LostFocus="Fields_Changed"/>
                 <WrapPanel Margin="0,0,0,8">
                     <StackPanel Width="140" Margin="0,0,12,0">
                         <TextBlock Text="Tense" Margin="0,0,0,4"/>
-                        <TextBox x:Name="TenseBox" TextChanged="Fields_Changed"/>
+                        <ComboBox x:Name="TenseBox" IsEditable="True"
+                                  SelectionChanged="Fields_Changed" LostFocus="Fields_Changed"/>
                     </StackPanel>
                     <StackPanel Width="140" Margin="0,0,12,0">
                         <TextBlock Text="Detail level" Margin="0,0,0,4"/>
-                        <TextBox x:Name="DetailBox" TextChanged="Fields_Changed"/>
+                        <ComboBox x:Name="DetailBox" IsEditable="True"
+                                  SelectionChanged="Fields_Changed" LostFocus="Fields_Changed"/>
                     </StackPanel>
                     <StackPanel Width="140">
                         <TextBlock Text="Tone" Margin="0,0,0,4"/>
-                        <TextBox x:Name="ToneBox" TextChanged="Fields_Changed"/>
+                        <ComboBox x:Name="ToneBox" IsEditable="True"
+                                  SelectionChanged="Fields_Changed" LostFocus="Fields_Changed"/>
                     </StackPanel>
                 </WrapPanel>
                 <WrapPanel Margin="0,0,0,8">
                     <StackPanel Width="140" Margin="0,0,12,0">
                         <TextBlock Text="Difficulty" Margin="0,0,0,4"/>
-                        <TextBox x:Name="DifficultyBox" TextChanged="Fields_Changed"/>
+                        <ComboBox x:Name="DifficultyBox" IsEditable="True"
+                                  SelectionChanged="Fields_Changed" LostFocus="Fields_Changed"/>
                     </StackPanel>
                     <StackPanel Width="140">
                         <TextBlock Text="Violence level" Margin="0,0,0,4"/>
-                        <TextBox x:Name="ViolenceBox" TextChanged="Fields_Changed"/>
+                        <ComboBox x:Name="ViolenceBox" IsEditable="True"
+                                  SelectionChanged="Fields_Changed" LostFocus="Fields_Changed"/>
                     </StackPanel>
                 </WrapPanel>
                 <TextBlock Text="Author's note (style only)" Margin="0,0,0,4"/>
                 <TextBox x:Name="AuthorsNoteBox" AcceptsReturn="True" MinHeight="56" TextWrapping="Wrap"
-                         Margin="0,0,0,12" TextChanged="Fields_Changed"/>
+                         Margin="0,0,0,12" TextChanged="Fields_TextChanged"/>
 
                 <TextBlock Text="Global content boundaries (one per line)" FontWeight="SemiBold" Margin="0,0,0,4"/>
                 <TextBox x:Name="BoundariesBox" AcceptsReturn="True" MinHeight="72" TextWrapping="Wrap"
-                         Margin="0,0,0,12" TextChanged="Fields_Changed"/>
+                         Margin="0,0,0,12" TextChanged="Fields_TextChanged"/>
 
                 <TextBlock Text="Subject portrayal rules (Subject: rule)" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                <TextBlock Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap"
+                <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                            Text="Characters, factions, or concepts. Example: Mara: Avoid treating as passive."
                            Margin="0,0,0,4"/>
                 <TextBox x:Name="PortrayalBox" AcceptsReturn="True" MinHeight="72" TextWrapping="Wrap"
-                         Margin="0,0,0,12" TextChanged="Fields_Changed"/>
+                         Margin="0,0,0,12" TextChanged="Fields_TextChanged"/>
 
                 <TextBlock Text="Instruction addendum (optional)" FontWeight="SemiBold" Margin="0,0,0,4"/>
                 <TextBox x:Name="AddendumBox" AcceptsReturn="True" MinHeight="48" TextWrapping="Wrap"
-                         Margin="0,0,0,8" TextChanged="Fields_Changed"/>
+                         Margin="0,0,0,8" TextChanged="Fields_TextChanged"/>
             </StackPanel>
         </ScrollViewer>
 

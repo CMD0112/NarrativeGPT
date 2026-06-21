@@ -145,6 +145,12 @@ internal static class PlayContextSessionCache
         conversationId = parsed;
         var previous = bundle.Metadata.LinkedConversationId;
         PlayTurnScopeService.OnPlayThreadChanged(bundle, previous, parsed);
+
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var playEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)
+                          ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play);
+        AdventureThreadRegistryService.UpdateConversationId(bundle, playEntry.Id, parsed);
+
         bundle.Metadata.LinkedConversationId = parsed;
         if (bundle.Metadata.ProjectLink is not null)
             bundle.Metadata.ProjectLink.PlayConversationId = parsed;

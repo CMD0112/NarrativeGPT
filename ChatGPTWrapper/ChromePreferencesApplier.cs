@@ -16,6 +16,8 @@ internal static class ChromePreferencesApplier
     {
         public int Revision { get; set; }
 
+        public string TranscriptViewMode { get; set; } = "native";
+
         public bool ContinuousViewEnabled { get; set; }
 
         public bool ProseEnhancementsEnabled { get; set; }
@@ -36,20 +38,24 @@ internal static class ChromePreferencesApplier
 
     public static ChromePreferencesPayload ToPayload(
         UiChromeSettings settings,
-        int? revisionOverride = null) =>
-        new()
+        int? revisionOverride = null)
+    {
+        var mode = settings.ActiveModeSettings();
+        return new()
         {
             Revision = revisionOverride ?? settings.ChromePreferencesRevision,
-            ContinuousViewEnabled = settings.ContinuousViewEnabled,
-            ProseEnhancementsEnabled = settings.ProseEnhancementsEnabled,
-            HideAssistantEditArtifacts = settings.HideAssistantEditArtifacts,
-            HideContextTagsInThread = settings.HideContextTagsInThread,
-            ExpandHiddenContextInThread = settings.ExpandHiddenContextInThread,
-            PhraseHighlightsEnabled = settings.PhraseHighlightsEnabled,
-            PhraseHighlightRules = settings.PhraseHighlightRules ?? [],
-            ContinuousViewFormat = settings.ContinuousViewFormat
+            TranscriptViewMode = settings.TranscriptViewMode.ToPayloadValue(),
+            ContinuousViewEnabled = settings.IsTranscriptOverlayActive,
+            ProseEnhancementsEnabled = mode.ProseEnhancementsEnabled,
+            HideAssistantEditArtifacts = mode.HideAssistantEditArtifacts,
+            HideContextTagsInThread = mode.HideContextTagsInThread,
+            ExpandHiddenContextInThread = mode.ExpandHiddenContextInThread,
+            PhraseHighlightsEnabled = mode.PhraseHighlightsEnabled,
+            PhraseHighlightRules = mode.PhraseHighlightRules ?? [],
+            ContinuousViewFormat = mode.ContinuousViewFormat
                 ?? ContinuousViewFormatSettings.CreateDefaults(),
         };
+    }
 
     public static string BuildApplyScript(
         UiChromeSettings settings,

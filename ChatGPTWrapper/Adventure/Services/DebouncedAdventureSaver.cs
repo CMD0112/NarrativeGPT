@@ -7,13 +7,19 @@ namespace ChatGPTWrapper.Adventure.Services;
 internal sealed class DebouncedAdventureSaver : IDisposable
 {
     private readonly Func<AdventureBundle?> _getBundle;
+    private readonly Action<AdventureBundle> _save;
     private readonly Action<DateTimeOffset>? _onSaved;
     private readonly DispatcherTimer _timer;
 
-    public DebouncedAdventureSaver(Func<AdventureBundle?> getBundle, Action<DateTimeOffset>? onSaved = null, int delayMs = 300)
+    public DebouncedAdventureSaver(
+        Func<AdventureBundle?> getBundle,
+        Action<DateTimeOffset>? onSaved = null,
+        int delayMs = 300,
+        Action<AdventureBundle>? save = null)
     {
         _getBundle = getBundle;
         _onSaved = onSaved;
+        _save = save ?? (b => AdventureStore.Save(b));
         _timer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(delayMs),
@@ -34,7 +40,7 @@ internal sealed class DebouncedAdventureSaver : IDisposable
         if (bundle is null)
             return;
 
-        AdventureStore.Save(bundle);
+        _save(bundle);
         _onSaved?.Invoke(DateTimeOffset.Now);
     }
 

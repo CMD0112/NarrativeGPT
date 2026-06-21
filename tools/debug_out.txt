@@ -1,0 +1,15 @@
+Wrote E:\Documents\Code\chatgpt-wrapper\tools\linear_audit_report.json
+Total issues: 144
+  missing_context: 55
+  missing_acceptance: 48
+  done_no_verified: 42
+  missing_layer: 20
+  wave_past_cap: 17
+  missing_area: 15
+  missing_kind: 12
+  multi_group: 6
+  manual_qa_no_testplan: 5
+  done_with_manual_qa: 2
+  verified_not_done: 1
+  done_with_regression: 1
+  blocked_no_relation: 1

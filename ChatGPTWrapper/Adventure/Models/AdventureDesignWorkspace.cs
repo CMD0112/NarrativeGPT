@@ -19,6 +19,9 @@ public sealed class AdventureDesignWorkspace
 
     public Dictionary<string, DesignSourceFilePromptState> SourceFilesPrompted { get; set; } =
         new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Set when sources are auto-recovered from design chat history; shown once in Design UI.</summary>
+    public string? PendingBootstrapNotice { get; set; }
 }
 
 public sealed class DesignSourceFilePromptState

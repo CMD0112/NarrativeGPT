@@ -19,7 +19,7 @@ ChatGPT Wrapper is a **Windows desktop WPF** application. There is no Docker, cl
 ### Main application
 
 ```powershell
-cd E:\Documents\Code\chatgpt-wrapper
+# From your clone root:
 dotnet build ChatGPTWrapper\ChatGPTWrapper.csproj
 ```
 

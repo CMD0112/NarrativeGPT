@@ -23,7 +23,7 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
     private static long _cachedScriptStamp;
 
     private readonly WebView2 _webView;
-    private readonly Func<bool> _isContinuousViewEnabled;
+    private readonly Func<TranscriptViewMode> _getTranscriptViewMode;
     private readonly Func<bool> _isProseEnhancementsEnabled;
     private readonly Func<bool> _isHideAssistantEditArtifacts;
     private readonly Func<bool> _isPhraseHighlightsEnabled;
@@ -37,7 +37,7 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
 
     public ChatGptContinuousViewInjection(
         WebView2 webView,
-        Func<bool> isContinuousViewEnabled,
+        Func<TranscriptViewMode> getTranscriptViewMode,
         Func<bool> isProseEnhancementsEnabled,
         Func<bool> isHideAssistantEditArtifacts,
         Func<bool> isPhraseHighlightsEnabled,
@@ -45,8 +45,8 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
         Func<ContinuousViewFormatSettings> getContinuousViewFormat)
     {
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
-        _isContinuousViewEnabled = isContinuousViewEnabled
-            ?? throw new ArgumentNullException(nameof(isContinuousViewEnabled));
+        _getTranscriptViewMode = getTranscriptViewMode
+            ?? throw new ArgumentNullException(nameof(getTranscriptViewMode));
         _isProseEnhancementsEnabled = isProseEnhancementsEnabled
             ?? throw new ArgumentNullException(nameof(isProseEnhancementsEnabled));
         _isHideAssistantEditArtifacts = isHideAssistantEditArtifacts
@@ -159,7 +159,7 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
 
         var settings = new UiChromeSettings
         {
-            ContinuousViewEnabled = _isContinuousViewEnabled(),
+            TranscriptViewMode = _getTranscriptViewMode(),
             ProseEnhancementsEnabled = _isProseEnhancementsEnabled(),
             HideAssistantEditArtifacts = _isHideAssistantEditArtifacts(),
             PhraseHighlightsEnabled = _isPhraseHighlightsEnabled(),
@@ -208,6 +208,8 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
         var chromePreferencesPath = Path.Combine(assetsDir, "chrome-preferences.js");
         var phrasePath = Path.Combine(assetsDir, "continuous-phrase-highlights.js");
         var packetDisplayPath = Path.Combine(assetsDir, "cgw-packet-display.js");
+        var weaveCssPath = Path.Combine(assetsDir, "weave-transcript-view.css");
+        var weaveJsPath = Path.Combine(assetsDir, "weave-transcript-view.js");
         var jsPath = Path.Combine(assetsDir, "continuous-transcript-view.js");
 
         if (!File.Exists(jsPath))
@@ -216,6 +218,8 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
         var newStamp = WrapperAssetCache.ComputeStamp(
             jsPath,
             cssPath,
+            weaveCssPath,
+            weaveJsPath,
             formatPath,
             formatSettingsPath,
             chromePreferencesPath,
@@ -268,7 +272,14 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
             sb.Append("globalThis.__cgwContinuousViewCss = ");
             sb.Append(JsonSerializer.Serialize(cssText));
             sb.Append(";\n");
+            var weaveCssText = File.Exists(weaveCssPath) ? File.ReadAllText(weaveCssPath) : "";
+            sb.Append("globalThis.__cgwWeaveViewCss = ");
+            sb.Append(JsonSerializer.Serialize(weaveCssText));
+            sb.Append(";\n");
             sb.Append(File.ReadAllText(jsPath));
+            sb.Append("\n");
+            if (File.Exists(weaveJsPath))
+                sb.Append(File.ReadAllText(weaveJsPath));
             _cachedScriptPayload = sb.ToString();
             _cachedScriptStamp = newStamp;
             return _cachedScriptPayload;
@@ -280,7 +291,7 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
     }
 
     public static string BuildPreferenceUpdateScript(
-        bool continuousEnabled,
+        TranscriptViewMode transcriptViewMode,
         bool proseEnhancementsEnabled,
         bool hideAssistantEditArtifacts,
         bool phraseHighlightsEnabled,
@@ -293,7 +304,7 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
             new UiChromeSettings
             {
                 ChromePreferencesRevision = revision,
-                ContinuousViewEnabled = continuousEnabled,
+                TranscriptViewMode = transcriptViewMode,
                 ProseEnhancementsEnabled = proseEnhancementsEnabled,
                 HideAssistantEditArtifacts = hideAssistantEditArtifacts,
                 PhraseHighlightsEnabled = phraseHighlightsEnabled,
@@ -305,7 +316,8 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
 
     internal static string BuildLegacyPreferenceUpdateScript(UiChromeSettings settings)
     {
-        var continuous = settings.ContinuousViewEnabled ? "true" : "false";
+        var mode = JsonSerializer.Serialize(settings.TranscriptViewMode.ToPayloadValue(), RulesJsonOptions);
+        var overlay = settings.IsTranscriptOverlayActive ? "true" : "false";
         var prose = settings.ProseEnhancementsEnabled ? "true" : "false";
         var hideArtifacts = settings.HideAssistantEditArtifacts ? "true" : "false";
         var phraseHighlights = settings.PhraseHighlightsEnabled ? "true" : "false";
@@ -314,17 +326,18 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
         var rulesJson = SerializeRules(settings.PhraseHighlightRules);
         var formatJson = SerializeFormat(settings.ContinuousViewFormat);
 
-        return "var c=" + continuous + ";var p=" + prose + ";var h=" + hideArtifacts + ";var ph=" +
+        return "var tvm=" + mode + ";var c=" + overlay + ";var p=" + prose + ";var h=" + hideArtifacts + ";var ph=" +
                phraseHighlights + ";var pr=" + rulesJson + ";var fmt=" + formatJson + ";var ht=" + hideTags +
                ";var et=" + expandTags + ";" +
-               "globalThis.__cgwContinuousViewEnabled=c;globalThis.__cgwProseEnhancementsEnabled=p;" +
+               "globalThis.__cgwTranscriptViewMode=tvm;globalThis.__cgwContinuousViewEnabled=c;globalThis.__cgwProseEnhancementsEnabled=p;" +
                "globalThis.__cgwHideAssistantEditArtifacts=h;" +
                "globalThis.__cgwPhraseHighlightsEnabled=ph;globalThis.__cgwPhraseHighlightRules=pr;" +
                "globalThis.__cgwContinuousViewFormat=fmt;" +
                "globalThis.__cgwHideContextTags=ht;globalThis.__cgwExpandHiddenContext=et;" +
                BuildProseAttributeScript(prose) +
                "if(typeof globalThis.__cgwSetContinuousViewFormat===\"function\")globalThis.__cgwSetContinuousViewFormat(fmt);" +
-               "if(typeof globalThis.__cgwSetContinuousView===\"function\")globalThis.__cgwSetContinuousView(c);" +
+               "if(typeof globalThis.__cgwSetTranscriptViewMode===\"function\")globalThis.__cgwSetTranscriptViewMode(tvm);" +
+               "else if(typeof globalThis.__cgwSetContinuousView===\"function\")globalThis.__cgwSetContinuousView(c);" +
                "else if(typeof globalThis.__cgwContinuousViewSchedule===\"function\")globalThis.__cgwContinuousViewSchedule();" +
                "if(typeof globalThis.__cgwSetHideAssistantEditArtifacts===\"function\")globalThis.__cgwSetHideAssistantEditArtifacts(h);" +
                "else if(typeof globalThis.__cgwContinuousViewSchedule===\"function\")globalThis.__cgwContinuousViewSchedule();" +

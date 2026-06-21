@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Adventure.Services.Canon;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
 
@@ -77,8 +78,10 @@ public partial class SourceManagerDialog : Window
                   ?? throw new InvalidOperationException("Adventure not found.");
 
         InitializeComponent();
-        _autosave = new DebouncedAdventureSaver(() => _bundle, at =>
-            StatusLine.Text = $"Saved automatically at {at.LocalDateTime:t}.");
+        _autosave = new DebouncedAdventureSaver(
+            () => _bundle,
+            at => StatusLine.Text = $"Saved automatically at {at.LocalDateTime:t}.",
+            save: AdventureStore.SaveSourceManifestOnly);
         FilesGrid.ItemsSource = _rows;
         Closed += (_, _) => _autosave.Dispose();
         Loaded += async (_, _) =>
@@ -183,6 +186,38 @@ public partial class SourceManagerDialog : Window
         AdventureStore.Save(_bundle);
         BindUi();
         StatusLine.Text = "Export refreshed.";
+    }
+
+    private void CheckCanon_Click(object sender, RoutedEventArgs e)
+    {
+        var issues = CanonValidationService.ValidateBundle(_bundle);
+        if (issues.Count == 0)
+        {
+            StatusLine.Text = "Canon check passed — no issues found.";
+            MessageBox.Show(
+                this,
+                "All sectioned lore files pass canon validation.",
+                "Check canon",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        var errors = issues.Count(i => i.Severity == CanonValidationSeverity.Error);
+        var warnings = issues.Count - errors;
+        var body = string.Join(
+            Environment.NewLine,
+            issues.Take(40).Select(i => i.ToString()));
+        if (issues.Count > 40)
+            body += Environment.NewLine + $"... and {issues.Count - 40} more.";
+
+        StatusLine.Text = $"Canon check: {errors} error(s), {warnings} warning(s).";
+        MessageBox.Show(
+            this,
+            body,
+            "Check canon",
+            MessageBoxButton.OK,
+            errors > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
     }
 
     private void OpenCanonicalFolder_Click(object sender, RoutedEventArgs e) =>

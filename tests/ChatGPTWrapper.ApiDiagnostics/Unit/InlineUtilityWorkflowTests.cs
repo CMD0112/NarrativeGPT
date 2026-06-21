@@ -24,7 +24,7 @@ public sealed class InlineUtilityWorkflowTests
 
     [Theory]
     [InlineData(UtilityDeliveryMode.InlinePlayThread, true)]
-    [InlineData(UtilityDeliveryMode.SeparateThread, false)]
+    [InlineData(UtilityDeliveryMode.SeparateThread, true)]
     public void UtilityDeliveryModeService_UsesInlineDelivery(UtilityDeliveryMode mode, bool expected)
     {
         var bundle = new AdventureBundle

@@ -49,11 +49,16 @@ flowchart TB
 |----------|-------------|
 | [README](../README.md) | Build, run, publish — quick start |
 | [User Guide](user-guide.md) | Browse mode, chat tabs, continuous view, phrase highlights, UI chrome |
-| [Adventure Panel Reference](adventure-panel.md) | Full Adventures UI, play loop, dialogs, workflows — includes [canonical begin-play checklist](adventure-panel.md#g-canonical-begin-play-workflow-design--first-turn) |
+| [Adventure Panel Reference](adventure-panel.md) | Adventures UI, dialogs, workflows, smoke checklists — includes [canonical begin-play checklist](adventure-panel.md#g-canonical-begin-play-workflow-design--first-turn) |
 | [Projects & Source Sync](user-projects-and-sync.md) | Link ChatGPT Projects, sync lore files, thin vs fat packets |
 | [Instruction vs Sources Paradigm](instruction-sources-paradigm.md) | What goes in Project instructions vs source files vs play packets |
+| [Entity Canon Change Paradigm](entity-canon-change-paradigm.md) | Entity edits → sources sync pipeline, workspace UX, rename wizard (CMD-232) |
 | [Prompt Construction Guide](prompt-construction-guide.md) | How play packets, start packets, design chat, and utility jobs build prompts |
 | [Instruction Contract Guide](instruction-contract-guide.md) | Define boundaries, portrayal rules, publish instructions — includes [drafting tutorial](instruction-contract-guide.md#tutorial-drafting-narrator-instructions) |
+| [Narrator Settings](narrator-settings.md) | Play side panel narrator overrides — scopes, scene profiles, packet injection |
+| [Appearance & Theme Settings](appearance-theme-settings.md) | Shell theme dialog, token layers, CSS layering, wave 2 roadmap |
+| [Settings & Interactables Inventory](settings-interactables-inventory.md) | Master catalog of settings, dialogs, persistence (CMD-255) |
+| [Settings UX Taxonomy](settings-ux-taxonomy.md) | Scope layers, discovery rules, deprecation register (CMD-262) |
 | [Utility Job Orchestration](utility-job-orchestration.md) | Generation jobs: readiness gate, atomic DOM turns, session reuse |
 | [Troubleshooting](troubleshooting.md) | Diagnostics, auth, bridge failures, recovery |
 
@@ -61,25 +66,48 @@ flowchart TB
 
 | Document | Description |
 |----------|-------------|
+| [AGENTS.md](../AGENTS.md) | Agent entry point — Linear issue workflow, dual-canon sync |
 | [Architecture](architecture.md) | Solution structure, runtime modes, page integration, concurrency |
+| [Play/Design surface convergence ADR](play-design-surface-convergence-adr.md) | CMD-21 / CMD-230 — in-session Play/Design toggle (Option 2) |
 | [WebView Bridges](webview-bridges.md) | JS↔C# protocol, every bridge command |
 | [ChatGPT API Integration](chatgpt-api-integration.md) | Internal backend-api paths, send pipeline, caches |
 | [Data Model Reference](data-model-reference.md) | JSON schemas, on-disk layout, migrations |
+| [Adventure Developer Reference](adventure-developer-reference.md) | Turn lifecycle, packet internals, project linking, source sync, key services |
+| [Entity Canon Change Paradigm](entity-canon-change-paradigm.md) | EntityChangePlan, auto-sync, mention index, canon inbox — implementation ADR |
 | [Services Reference](services-reference.md) | All adventure and API services, generation jobs |
 | [Prompt Construction Guide](prompt-construction-guide.md) | Prompt builders, thin/fat packets, pointer resolution, job prompts |
 | [Utility Job Orchestration](utility-job-orchestration.md) | Phase 2c utility pipeline (readiness, atomic send, errors) |
 | [UI Components](ui-components.md) | WPF views, dialogs, MainWindow partial-class map |
+| [Settings interactables audit](settings-interactables-audit.md) | Surface audits: keep / merge / deprecate (CMD-256–261) |
 | [Injected Assets](injected-assets.md) | `ChatGPT_files/` JS and CSS reference |
 | [Testing](testing.md) | Test tiers, fixtures, live diagnostics, CI |
 | [Linear integration](linear-integration.md) | Issue workflow, PR linking, GitHub ↔ Linear setup |
+| [Linear issue reference](linear-issue-reference.md) | Label taxonomy, statuses, issue templates — agent canon |
 | [Build & Deploy](build-and-deploy.md) | Build, publish, distribution |
-| [AI Dungeon Phased Plan](AI-DUNGEON-PHASED-PLAN.md) | 70-feature roadmap and implementation status |
 
-### Proposed enhancements
+### Spikes and proposed enhancements
 
 | Document | Description |
 |----------|-------------|
+| [Chat File I/O Feasibility](chat-file-io-feasibility.md) | Chat upload/download: API vs DOM, diagnostics, production paths |
 | [Attachment-aware context injection](Enhancements/attachment-aware-context-injection.md) | Branch play packet injection by attachment type (native composer, metadata scrape, policy design) |
+
+## Adventures roadmap (phase status)
+
+High-level Adventures delivery phases. Individual features are tracked as **CMD-** issues in [Linear](https://linear.app/cmd0112/project/chatgpt-wrapper).
+
+| Phase | Status | Summary |
+|-------|--------|---------|
+| **0** | **Done** | Stores, models, backup, dashboard shell, local-only hint |
+| **1** | **Done** | Play loop, bridge, packet builder, linking, start adventure |
+| **2** | **Mostly done** | Projects/sync/thin packets + `GenerationJobService`, review UIs, instruction auto-sync |
+| **2c** | **Done** | Utility job orchestration — see [utility-job-orchestration.md](utility-job-orchestration.md) |
+| **2b** | Partial | Memory/cards/continuity services exist; job UIs incomplete |
+| **3** | Partial | `entities.json` + Reference CRUD/review; full generation job suite |
+| **4** | Partial | Undo, edit, branch, save states, queue in code; some UI present |
+| **5** | Partial | `LibraryStore`, libraries dialog, random tables, save scenario |
+| **6** | Partial | Export formats; session list; recap stub; clean/archive toggles |
+| **7** | Planned | Advanced continuity, DOM sync, narrative CSS port |
 
 ## Solution projects
 

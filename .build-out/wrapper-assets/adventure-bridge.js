@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var BRIDGE_VERSION = 20;
+  var BRIDGE_VERSION = 21;
   var DOM_FALLBACK_STASH_KEY = "__cgwDomFallbackAttachmentStash";
   var kernel = globalThis.__cgwPageKernel;
   var composerDom = globalThis.__cgwComposerDom;
@@ -534,6 +534,31 @@
       new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" })
     );
     return true;
+  }
+
+  function clearStaleInjectionComposer(onDone) {
+    onDone = onDone || function () {};
+    waitForComposer(
+      5000,
+      function (probe) {
+        if (!probe.composerFound) {
+          onDone({ ok: false, error: "composer_not_found" });
+          return;
+        }
+        var text = readComposerText();
+        if (!isInjectedContextUserMessage(text)) {
+          onDone({ ok: true, cleared: false, skipped: true });
+          return;
+        }
+        clearComposer();
+        if (typeof globalThis.__cgwPlayComposeApplyState === "function") {
+          globalThis.__cgwPlayComposeApplyState({ clear: true });
+        }
+        post({ type: "cgwComposeInput", text: "" });
+        onDone({ ok: true, cleared: true, textLength: text.length });
+      },
+      { requireSubmit: false }
+    );
   }
 
   function setBridgeAutomation(active) {
@@ -1323,6 +1348,23 @@
         }, wrapperActive ? 0 : 250);
         break;
       }
+      case "clearComposer":
+        setTimeout(function () {
+          clearComposer();
+          if (typeof globalThis.__cgwPlayComposeApplyState === "function") {
+            globalThis.__cgwPlayComposeApplyState({ clear: true });
+          }
+          post({ type: "cgwComposeInput", text: "" });
+          post({ type: "composerCleared", ok: true, cleared: true });
+        }, 250);
+        break;
+      case "clearComposerIfInjection":
+        setTimeout(function () {
+          clearStaleInjectionComposer(function (result) {
+            post({ type: "composerCleared", ok: !!result.ok, cleared: !!result.cleared, skipped: !!result.skipped, error: result.error || null });
+          });
+        }, 250);
+        break;
       case "captureLastAssistant": {
         var captured = getLastAssistantText();
         post({
@@ -1462,6 +1504,7 @@
 
   globalThis.__cgwAdventureBridgeVersion = BRIDGE_VERSION;
   globalThis.__cgwAdventureHandleCommand = handleCommand;
+  globalThis.__cgwAdventureClearStaleInjectionComposer = clearStaleInjectionComposer;
   globalThis.__cgwAdventureSendPrompt = function (text, timeoutMs, requireProjectContext) {
     sendPrompt(text, timeoutMs, !!requireProjectContext);
   };

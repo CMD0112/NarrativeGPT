@@ -8,8 +8,8 @@
         MinWidth="640"
         ResizeMode="CanResizeWithGrip"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource DialogBgBrush}"
-        Foreground="{StaticResource TextBrush}">
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -22,15 +22,15 @@
         <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,8"
                    Text="Diagnostics only — programmatic API sync is deprecated. Use Source Manager for manual publish (copy instructions, drag files, mark Published)."/>
         <TextBlock x:Name="RemoteBanner" Grid.Row="1" TextWrapping="Wrap" Margin="0,0,0,8"
-                   Foreground="{StaticResource MutedTextBrush}" Visibility="Collapsed"/>
-        <TextBlock x:Name="StatusLine" Grid.Row="2" Foreground="{StaticResource MutedTextBrush}"
+                   Foreground="{StaticResource TextMutedBrush}" Visibility="Collapsed"/>
+        <TextBlock x:Name="StatusLine" Grid.Row="2" Foreground="{StaticResource TextMutedBrush}"
                    TextWrapping="Wrap" Margin="0,0,0,8"/>
         <DataGrid x:Name="FilesGrid" Grid.Row="3" AutoGenerateColumns="False"
                   CanUserAddRows="False" SelectionMode="Single" RowHeight="36"
-                  Background="{StaticResource PanelBgBrush}"
-                  Foreground="{StaticResource TextBrush}"
-                  BorderBrush="{StaticResource BorderBrushDark}"/>
-        <TextBlock x:Name="CapabilitiesHint" Grid.Row="4" Foreground="{StaticResource MutedTextBrush}"
+                  Background="{StaticResource BgSurfaceBrush}"
+                  Foreground="{StaticResource TextPrimaryBrush}"
+                  BorderBrush="{StaticResource BorderStrongBrush}"/>
+        <TextBlock x:Name="CapabilitiesHint" Grid.Row="4" Foreground="{StaticResource TextMutedBrush}"
                    FontSize="11" TextWrapping="Wrap" Margin="0,8,0,8"/>
         <StackPanel Grid.Row="5">
             <WrapPanel Margin="0,0,0,8">

@@ -78,6 +78,8 @@ internal static class ProjectSourceInjectionService
         var needsRepublish = loreEntries.Count(e => e.NeedsManualRepublish);
         var publishedFiles = loreEntries
             .Where(e => e.IsManuallyCurrent())
+            .Concat(GetPublishedReferenceEntries(bundle))
+            .DistinctBy(e => e.RelativePath, StringComparer.OrdinalIgnoreCase)
             .OrderBy(e => e.RelativePath, StringComparer.OrdinalIgnoreCase)
             .Select(ToFileInfo)
             .ToList();
@@ -202,6 +204,10 @@ internal static class ProjectSourceInjectionService
             .Where(e => SourceManifestHelper.IsLoreSourceFile(e.RelativePath))
             .ToList();
     }
+
+    private static IEnumerable<SourceManifestEntry> GetPublishedReferenceEntries(AdventureBundle bundle) =>
+        bundle.SourceManifest.Entries
+            .Where(e => SectionSchema.IsReferenceSourceFile(e.RelativePath) && e.IsManuallyCurrent());
 
     public static string BuildProjectSourcesSection(AdventureBundle bundle, ProjectSourceReadiness readiness)
     {

@@ -10,6 +10,8 @@ public sealed class ChromePreferencesTests
         var js = WrapperAssetTestHelpers.ReadAsset("chrome-preferences.js");
         Assert.Contains("__cgwApplyChromePreferences", js);
         Assert.Contains("classifyImpact", js);
+        Assert.Contains("__cgwSetTranscriptViewMode", js);
+        Assert.Contains("transcriptViewMode", js);
     }
 
     [Fact]
@@ -37,12 +39,33 @@ public sealed class ChromePreferencesTests
     {
         var settings = new UiChromeSettings
         {
-            ContinuousViewEnabled = true,
+            TranscriptViewMode = TranscriptViewMode.Weave,
             ChromePreferencesRevision = 3,
         };
         var script = ChromePreferencesApplier.BuildApplyScript(settings);
         Assert.Contains("__cgwApplyChromePreferences", script);
         Assert.Contains("\"revision\":3", script);
+        Assert.Contains("\"transcriptViewMode\":\"weave\"", script);
+    }
+
+    [Fact]
+    public void Ui_chrome_migrates_continuous_view_enabled_to_transcript_mode()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "ui-chrome-" + Guid.NewGuid() + ".json");
+        try
+        {
+            File.WriteAllText(path, """{"continuousViewEnabled":true}""");
+            var json = File.ReadAllText(path);
+            var settings = new UiChromeSettings();
+            TranscriptViewModeMigration.ApplyFromJson(settings, json);
+            TranscriptViewModeMigration.Normalize(settings);
+            Assert.Equal(TranscriptViewMode.Continuous, settings.TranscriptViewMode);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
     }
 
     [Fact]
@@ -53,5 +76,8 @@ public sealed class ChromePreferencesTests
         var css = FormatCssPreview.BuildCssText(format);
         Assert.Contains("--cgw-cv-content-max-width: 40rem", css);
         Assert.Contains("data-cgw-cv-pending=\"1\"", css);
+        Assert.Contains("--cgw-cv-user-letter-spacing:", css);
+        Assert.Contains("--cgw-cv-assistant-letter-spacing:", css);
+        Assert.DoesNotContain("--cgw-cv-block-font-size", css);
     }
 }

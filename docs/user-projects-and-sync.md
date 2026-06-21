@@ -135,7 +135,7 @@ In **Source Sync** dialog:
 
 Thin packets are smaller and rely on ChatGPT retrieving from Project files. If narration "forgets" lore, check sync status — one out-of-sync file forces fat mode.
 
-Play link status line (play header) shows conversation URL, project link health, and sync summary. Format documented in [adventure-panel.md §10](adventure-panel.md#play-status-line-format).
+Play link status line (play header) shows conversation URL, project link health, and sync summary. Format documented in [adventure-developer-reference.md §6](adventure-developer-reference.md#play-status-line-format).
 
 ---
 
@@ -186,7 +186,7 @@ See [instruction-sources-paradigm.md § Generation jobs](instruction-sources-par
 
 ## Related documentation
 
-- [Adventure Panel §10–11](adventure-panel.md) — technical linking and sync details
+- [Adventure Developer Reference §6–7](adventure-developer-reference.md) — technical linking and sync details
 - [Instruction vs Sources Paradigm](instruction-sources-paradigm.md)
 - [Troubleshooting](troubleshooting.md) — API bridge failures, 404 recovery
 - [Data Model — Source manifest](data-model-reference.md#source-manifest)
