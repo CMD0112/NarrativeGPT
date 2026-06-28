@@ -1,13 +1,25 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using System.Windows.Threading;
+using ChatGPTWrapper.Format;
+using ChatGPTWrapper.Theme;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class ThemeColorPickerDialog : Window
+public partial class ThemeColorPickerDialog : ShellDialogWindow
 {
+    private const double SwatchSize = 28;
+    private const double SwatchRadius = 5;
+
+    protected override bool ApplyDesignSizeOnOpen => false;
+
+    private readonly string _contextBackgroundHex;
+    private readonly ColorPickerContext? _pickerContext;
+    private readonly IReadOnlyList<string>? _recentColors;
     private bool _suppressEvents;
     private bool _svDragging;
     private double _hue;
@@ -17,21 +29,47 @@ public partial class ThemeColorPickerDialog : Window
     public string SelectedHex { get; private set; } = "#000000";
 
     public ThemeColorPickerDialog(Window owner, string initialHex)
+        : this(owner, initialHex, null)
+    {
+    }
+
+    public ThemeColorPickerDialog(Window owner, string initialHex, ColorPickerDialogOptions? options)
     {
         Owner = owner;
         InitializeComponent();
 
-        SvPlane.SizeChanged += (_, _) => UpdateSvThumb();
-        Loaded += (_, _) => UpdateSvThumb();
+        _contextBackgroundHex = options?.ContextBackgroundHex
+            ?? ThemeRuntime.Current.GetHex("BgBase");
+        _pickerContext = options?.Context;
+        _recentColors = options?.RecentColors;
 
-        var color = ParseColor(initialHex);
-        SelectedHex = ToHex(color);
+        SvPlane.SizeChanged += (_, _) => UpdateSvThumb();
+        Loaded += OnDialogLoaded;
+
+        var color = ColorSpaceConverter.ParseColor(initialHex);
+        SelectedHex = ColorSpaceConverter.ToHex(color);
         SetColorFromRgb(color, updatePickers: true);
     }
 
+    private void OnDialogLoaded(object sender, RoutedEventArgs e)
+    {
+        UpdateSvThumb();
+        BuildRecentSwatches(_recentColors);
+        BuildHelpersPanel();
+        BuildHarmonySwatches();
+        BuildShadingGrid();
+        ReapplyViewportLayout();
+    }
+
+    private void MoreTuningExpander_Expanded(object sender, RoutedEventArgs e) =>
+        Dispatcher.BeginInvoke(ReapplyViewportLayout, DispatcherPriority.Loaded);
+
+    private void MoreTuningExpander_Collapsed(object sender, RoutedEventArgs e) =>
+        Dispatcher.BeginInvoke(ReapplyViewportLayout, DispatcherPriority.Loaded);
+
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
-        SelectedHex = ToHex(CurrentRgbColor());
+        SelectedHex = ColorSpaceConverter.ToHex(CurrentRgbColor());
         DialogResult = true;
         Close();
     }
@@ -93,16 +131,170 @@ public partial class ThemeColorPickerDialog : Window
             return;
 
         var text = HexBox.Text.Trim();
-        if (text.Length is not (6 or 7))
+        if (string.IsNullOrWhiteSpace(text))
             return;
 
-        if (!text.StartsWith('#'))
-            text = "#" + text;
-
-        if (!TryParseColor(text, out var color))
+        if (!ColorSpaceConverter.TryParseColor(text, out var color))
             return;
 
         SetColorFromRgb(color, updatePickers: true);
+    }
+
+    private void HslSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressEvents)
+            return;
+
+        SyncHslBoxesFromSliders();
+        ApplyHslFromControls();
+    }
+
+    private void HsvBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents || sender is not TextBox box)
+            return;
+
+        if (!double.TryParse(box.Text, out var value))
+            return;
+
+        _suppressEvents = true;
+        try
+        {
+            switch (box.Tag as string)
+            {
+                case "HsvH":
+                    _hue = Math.Clamp(value, 0, 360);
+                    HueSlider.Value = _hue;
+                    break;
+                case "HsvS":
+                    _saturation = Math.Clamp(value, 0, 100) / 100.0;
+                    break;
+                case "HsvV":
+                    _value = Math.Clamp(value, 0, 100) / 100.0;
+                    break;
+            }
+        }
+        finally
+        {
+            _suppressEvents = false;
+        }
+
+        ApplyHsvToUi();
+    }
+
+    private void HslBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressEvents || sender is not TextBox box)
+            return;
+
+        if (!double.TryParse(box.Text, out var value))
+            return;
+
+        _suppressEvents = true;
+        try
+        {
+            switch (box.Tag as string)
+            {
+                case "H":
+                    HueHslSlider.Value = Math.Clamp(value, 0, 360);
+                    break;
+                case "S":
+                    SaturationSlider.Value = Math.Clamp(value, 0, 100);
+                    break;
+                case "L":
+                    LightnessSlider.Value = Math.Clamp(value, 0, 100);
+                    break;
+            }
+        }
+        finally
+        {
+            _suppressEvents = false;
+        }
+
+        ApplyHslFromControls();
+    }
+
+    private void ApplyHslFromControls()
+    {
+        var color = ColorSpaceConverter.HslToRgb(
+            HueHslSlider.Value,
+            SaturationSlider.Value / 100.0,
+            LightnessSlider.Value / 100.0);
+        SetColorFromRgb(color, updatePickers: true);
+    }
+
+    private void CopyFormatButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button)
+            return;
+
+        var text = button.Tag as string;
+        var copyText = text switch
+        {
+            "rgb" => RgbFormatBox.Text,
+            "hsl" => HslFormatBox.Text,
+            "hsv" => HsvFormatBox.Text,
+            "hex" => SelectedHex,
+            _ => SelectedHex,
+        };
+
+        if (!string.IsNullOrWhiteSpace(copyText))
+            Clipboard.SetText(copyText);
+    }
+
+    private void FixContrastButton_Click(object sender, RoutedEventArgs e) =>
+        ApplyHelper("fix-contrast");
+
+    private void ApplyHelper(string helperId)
+    {
+        var current = ColorSpaceConverter.ToHex(CurrentRgbColor());
+        var result = ColorPickerHelperExecutor.Apply(helperId, _pickerContext, current);
+        if (!ColorSpaceConverter.TryParseColor(result, out var color))
+            return;
+
+        SetColorFromRgb(color, updatePickers: true);
+    }
+
+    private void BuildHelpersPanel()
+    {
+        HelpersWrapPanel.Children.Clear();
+
+        var hint = ColorPickerHelperCatalog.GetContextHint(_pickerContext);
+        if (!string.IsNullOrWhiteSpace(hint))
+        {
+            HelpersHintText.Text = hint;
+            HelpersHintText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            HelpersHintText.Visibility = Visibility.Collapsed;
+        }
+
+        var helpers = ColorPickerHelperCatalog.GetHelpers(_pickerContext);
+        if (helpers.Count == 0)
+        {
+            HelpersSection.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        HelpersSection.Visibility = Visibility.Visible;
+        foreach (var helper in helpers)
+        {
+            if (string.Equals(helper.Id, "fix-contrast", StringComparison.Ordinal))
+                continue;
+
+            var button = new Button
+            {
+                Content = helper.Label,
+                ToolTip = helper.Description,
+                Padding = new Thickness(8, 4, 8, 4),
+                Margin = new Thickness(0, 0, 8, 8),
+                Style = TryFindResource("ShellCommandBarSecondarySlot") as Style,
+            };
+            var helperId = helper.Id;
+            button.Click += (_, _) => ApplyHelper(helperId);
+            HelpersWrapPanel.Children.Add(button);
+        }
     }
 
     private void SvPlane_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -142,14 +334,18 @@ public partial class ThemeColorPickerDialog : Window
 
     private void SetColorFromRgb(Color color, bool updatePickers)
     {
-        RgbToHsv(color, out _hue, out _saturation, out _value);
+        ColorSpaceConverter.RgbToHsv(color, out _hue, out _saturation, out _value);
 
         _suppressEvents = true;
         try
         {
             PreviewSwatch.Background = new SolidColorBrush(color);
-            SelectedHex = ToHex(color);
+            SelectedHex = ColorSpaceConverter.ToHex(color);
             HexBox.Text = SelectedHex.ToUpperInvariant();
+            RgbFormatBox.Text = ColorSpaceConverter.FormatRgb(color);
+            HslFormatBox.Text = ColorSpaceConverter.FormatHsl(color);
+            HsvFormatBox.Text = ColorSpaceConverter.FormatHsv(color);
+            UpdateNearestColorName(color);
 
             if (updatePickers)
             {
@@ -158,10 +354,20 @@ public partial class ThemeColorPickerDialog : Window
                 GreenSlider.Value = color.G;
                 BlueSlider.Value = color.B;
                 SyncRgbBoxesFromSliders();
+                SyncHsvBoxesFromState();
+
+                ColorSpaceConverter.RgbToHsl(color, out var h, out var s, out var l);
+                HueHslSlider.Value = h;
+                SaturationSlider.Value = s * 100;
+                LightnessSlider.Value = l * 100;
+                SyncHslBoxesFromSliders();
             }
 
             UpdateHueLayer();
             UpdateSvThumb();
+            UpdateContrastPreview(color);
+            BuildHarmonySwatches();
+            BuildShadingGrid();
         }
         finally
         {
@@ -171,7 +377,7 @@ public partial class ThemeColorPickerDialog : Window
 
     private void ApplyHsvToUi()
     {
-        var color = HsvToRgb(_hue, _saturation, _value);
+        var color = ColorSpaceConverter.HsvToRgb(_hue, _saturation, _value);
         SetColorFromRgb(color, updatePickers: true);
     }
 
@@ -182,12 +388,26 @@ public partial class ThemeColorPickerDialog : Window
         BlueBox.Text = ((int)BlueSlider.Value).ToString();
     }
 
+    private void SyncHslBoxesFromSliders()
+    {
+        HueHslBox.Text = ((int)HueHslSlider.Value).ToString();
+        SaturationBox.Text = ((int)SaturationSlider.Value).ToString();
+        LightnessBox.Text = ((int)LightnessSlider.Value).ToString();
+    }
+
+    private void SyncHsvBoxesFromState()
+    {
+        HueHsvBox.Text = ((int)Math.Round(_hue)).ToString();
+        SaturationHsvBox.Text = ((int)Math.Round(_saturation * 100)).ToString();
+        ValueHsvBox.Text = ((int)Math.Round(_value * 100)).ToString();
+    }
+
     private Color CurrentRgbColor() =>
         Color.FromRgb((byte)RedSlider.Value, (byte)GreenSlider.Value, (byte)BlueSlider.Value);
 
     private void UpdateHueLayer()
     {
-        var hueColor = HsvToRgb(_hue, 1, 1);
+        var hueColor = ColorSpaceConverter.HsvToRgb(_hue, 1, 1);
         SvHueLayer.Background = new SolidColorBrush(hueColor);
     }
 
@@ -209,6 +429,139 @@ public partial class ThemeColorPickerDialog : Window
         Canvas.SetTop(SvThumb, Math.Clamp(y - thumbRadius, 0, maxTop));
     }
 
+    private void UpdateContrastPreview(Color foreground)
+    {
+        var foregroundHex = ColorSpaceConverter.ToHex(foreground);
+        PreviewOnBackgroundBorder.Background = CreateBrush(_contextBackgroundHex);
+        PreviewOnBackgroundText.Foreground = new SolidColorBrush(foreground);
+
+        var ratio = ThemeContrast.ContrastRatio(foregroundHex, _contextBackgroundHex);
+        var readable = ThemeContrast.IsReadable(foregroundHex, _contextBackgroundHex);
+        ContrastRatioText.Text = readable
+            ? $"Contrast {ratio:F1}:1 on background"
+            : $"Low contrast {ratio:F1}:1 (needs {ThemeContrast.MinBodyRatio:F1}:1)";
+        ContrastRatioText.Foreground = readable
+            ? (Brush)FindResource("TextMutedBrush")
+            : (Brush)FindResource("WarningBrush");
+        ContrastPanel.BorderBrush = readable
+            ? (Brush)FindResource("BorderSubtleBrush")
+            : (Brush)FindResource("WarningBrush");
+    }
+
+    private void UpdateNearestColorName(Color color)
+    {
+        var name = ColorSpaceConverter.TryFindNearestNamedColor(color);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            NearestColorNameText.Visibility = Visibility.Collapsed;
+            NearestColorNameText.Text = string.Empty;
+            return;
+        }
+
+        NearestColorNameText.Text = $"Nearest: {name}";
+        NearestColorNameText.Visibility = Visibility.Visible;
+    }
+
+    private void BuildRecentSwatches(IReadOnlyList<string>? recentColors)
+    {
+        RecentColorsWrapPanel.Children.Clear();
+        if (recentColors is null || recentColors.Count == 0)
+        {
+            RecentColorsPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        RecentColorsPanel.Visibility = Visibility.Visible;
+        foreach (var color in recentColors)
+        {
+            var swatch = CreatePaletteSwatch(color);
+            swatch.MouseLeftButtonUp += (_, _) =>
+            {
+                if (ColorSpaceConverter.TryParseColor(color, out var parsed))
+                    SetColorFromRgb(parsed, updatePickers: true);
+            };
+            RecentColorsWrapPanel.Children.Add(swatch);
+        }
+    }
+
+    private void BuildHarmonySwatches()
+    {
+        HarmonyAnalogousPanel.Children.Clear();
+        HarmonyComplementPanel.Children.Clear();
+        HarmonyTriadPanel.Children.Clear();
+
+        var baseHex = ColorSpaceConverter.ToHex(CurrentRgbColor());
+        AddHarmonySwatch(HarmonyAnalogousPanel, ColorSpaceConverter.RotateHue(baseHex, -30), "−30°");
+        AddHarmonySwatch(HarmonyAnalogousPanel, baseHex, "Base");
+        AddHarmonySwatch(HarmonyAnalogousPanel, ColorSpaceConverter.RotateHue(baseHex, 30), "+30°");
+        AddHarmonySwatch(HarmonyComplementPanel, ColorSpaceConverter.RotateHue(baseHex, 180), "Complement");
+        AddHarmonySwatch(HarmonyTriadPanel, baseHex, "0°");
+        AddHarmonySwatch(HarmonyTriadPanel, ColorSpaceConverter.RotateHue(baseHex, 120), "+120°");
+        AddHarmonySwatch(HarmonyTriadPanel, ColorSpaceConverter.RotateHue(baseHex, 240), "+240°");
+    }
+
+    private void AddHarmonySwatch(WrapPanel panel, string hex, string label)
+    {
+        var swatch = CreatePaletteSwatch(hex);
+        swatch.ToolTip = $"{label}: {hex}";
+        swatch.MouseLeftButtonUp += (_, _) =>
+        {
+            if (ColorSpaceConverter.TryParseColor(hex, out var color))
+                SetColorFromRgb(color, updatePickers: true);
+        };
+        panel.Children.Add(swatch);
+    }
+
+    private void BuildShadingGrid()
+    {
+        ShadingGrid.Children.Clear();
+        ColorSpaceConverter.RgbToHsl(CurrentRgbColor(), out var hue, out _, out _);
+
+        for (var row = 0; row < 5; row++)
+        {
+            for (var col = 0; col < 5; col++)
+            {
+                var saturation = 0.2 + row * 0.2;
+                var lightness = 0.15 + col * 0.175;
+                var hex = ColorSpaceConverter.HslToHex(hue, saturation, lightness);
+                var cell = CreatePaletteSwatch(hex, size: 24, margin: 2);
+                cell.ToolTip = hex;
+                cell.MouseLeftButtonUp += (_, _) =>
+                {
+                    if (ColorSpaceConverter.TryParseColor(hex, out var color))
+                        SetColorFromRgb(color, updatePickers: true);
+                };
+                ShadingGrid.Children.Add(cell);
+            }
+        }
+    }
+
+    private Border CreatePaletteSwatch(string color, double size = SwatchSize, double margin = 8)
+    {
+        return new Border
+        {
+            Width = size,
+            Height = size,
+            Margin = new Thickness(0, 0, margin, margin),
+            CornerRadius = new CornerRadius(SwatchRadius),
+            Background = CreateBrush(color),
+            BorderBrush = (Brush)FindResource("BorderStrongBrush"),
+            BorderThickness = new Thickness(1),
+            Cursor = Cursors.Hand,
+            ToolTip = color,
+        };
+    }
+
+    private static SolidColorBrush CreateBrush(string hex)
+    {
+        if (!ColorSpaceConverter.TryParseColor(hex, out var color))
+            return new SolidColorBrush(Colors.Gray);
+
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
+
     private void EnsureSvPlaneMeasured()
     {
         if (SvPlane.ActualWidth > 0 && SvPlane.ActualHeight > 0)
@@ -222,91 +575,6 @@ public partial class ThemeColorPickerDialog : Window
         base.OnContentRendered(e);
         UpdateHueLayer();
         UpdateSvThumb();
-    }
-
-    private static Color ParseColor(string hex) =>
-        TryParseColor(hex, out var color) ? color : Colors.White;
-
-    private static bool TryParseColor(string hex, out Color color)
-    {
-        color = default;
-        try
-        {
-            var normalized = hex.Trim();
-            if (!normalized.StartsWith('#'))
-                normalized = "#" + normalized;
-
-            color = (Color)ColorConverter.ConvertFromString(normalized);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static string ToHex(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
-
-    private static void RgbToHsv(Color color, out double h, out double s, out double v)
-    {
-        var r = color.R / 255.0;
-        var g = color.G / 255.0;
-        var b = color.B / 255.0;
-
-        var max = Math.Max(r, Math.Max(g, b));
-        var min = Math.Min(r, Math.Min(g, b));
-        var delta = max - min;
-
-        v = max;
-        s = max <= 0 ? 0 : delta / max;
-
-        if (delta <= 0)
-        {
-            h = 0;
-            return;
-        }
-
-        if (max == r)
-            h = 60 * (((g - b) / delta) % 6);
-        else if (max == g)
-            h = 60 * (((b - r) / delta) + 2);
-        else
-            h = 60 * (((r - g) / delta) + 4);
-
-        if (h < 0)
-            h += 360;
-    }
-
-    private static Color HsvToRgb(double h, double s, double v)
-    {
-        if (s <= 0)
-        {
-            var gray = (byte)Math.Round(v * 255);
-            return Color.FromRgb(gray, gray, gray);
-        }
-
-        h = (h % 360 + 360) % 360;
-        var c = v * s;
-        var x = c * (1 - Math.Abs(h / 60 % 2 - 1));
-        var m = v - c;
-
-        double r, g, b;
-        if (h < 60)
-            (r, g, b) = (c, x, 0);
-        else if (h < 120)
-            (r, g, b) = (x, c, 0);
-        else if (h < 180)
-            (r, g, b) = (0, c, x);
-        else if (h < 240)
-            (r, g, b) = (0, x, c);
-        else if (h < 300)
-            (r, g, b) = (x, 0, c);
-        else
-            (r, g, b) = (c, 0, x);
-
-        return Color.FromRgb(
-            (byte)Math.Round((r + m) * 255),
-            (byte)Math.Round((g + m) * 255),
-            (byte)Math.Round((b + m) * 255));
+        ReapplyViewportLayout();
     }
 }

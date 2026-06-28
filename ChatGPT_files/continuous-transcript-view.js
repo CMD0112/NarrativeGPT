@@ -78,22 +78,23 @@
 
   globalThis.__cgwRegisterTranscriptRenderer = registerTranscriptRenderer;
 
-  if (globalThis.__cgwProseEnhancementsEnabled === undefined) {
-    globalThis.__cgwProseEnhancementsEnabled = false;
-  }
-
   if (globalThis.__cgwHideAssistantEditArtifacts === undefined) {
     globalThis.__cgwHideAssistantEditArtifacts = false;
   }
 
-  var REVISION_PROMPT_PREFIX =
-    "Please replace your previous response with the following text exactly:";
+  var REVISION_PROMPT_PREFIX = "For play turn ";
   var REVISION_HIDE_STORAGE_PREFIX = "cgw-revision-hide:";
   var UTILITY_HIDE_STORAGE_PREFIX = "cgw-utility-hide:";
   var UTILITY_TAG_MARKER = "[[cgw:utility";
   var UTILITY_RESPONSE_TAG_MARKER = "[[cgw:utility-response";
   var STICK_TO_BOTTOM_THRESHOLD_PX = 48;
   var userDetachedFromBottom = false;
+  var preferBottomOnNextApply = false;
+
+  function markPreferBottomScroll() {
+    preferBottomOnNextApply = true;
+    userDetachedFromBottom = false;
+  }
   var containerScrollIntentTarget = null;
   var containerScrollIntentHandler = null;
 
@@ -120,7 +121,7 @@
   var HREF_POLL_MS = 250;
   var HREF_POLL_DURATION_MS = 3000;
   var PEEK_TIMEOUT_MS = 60000;
-  var NATIVE_EDIT_TIMEOUT_MS = 2000;
+  var NATIVE_EDIT_TIMEOUT_MS = 5000;
 
   var contextMenuState = { segment: null, turnId: null, role: null, open: false };
   var surrogateEditState = {
@@ -129,6 +130,7 @@
     segment: null,
     initialText: "",
     submitting: false,
+    role: "assistant",
   };
   var peekState = {
     turnId: null,
@@ -137,6 +139,8 @@
     docObserver: null,
     timeoutId: null,
     clickHandler: null,
+    pendingInvalidation: null,
+    actionKind: null,
   };
   var contextMenuListenersBound = false;
   var nextTurnId = 0;
@@ -150,6 +154,14 @@
   var activeConversationKey = null;
   var cachedScrollHostForKey = null;
   var scrollHostResizeObserver = null;
+  var scrollHostResizeObserveTarget = null;
+  var scrollHostResizeObserveContainer = null;
+  var overlayGeometrySyncTimer = null;
+  var overlayGeometrySyncPending = null;
+  var userScrollAnchor = null;
+  var userScrollAnchorAt = 0;
+  var lastResizeBottomInset = null;
+  var overlayGeometryPinnedHost = null;
   var scrollHostScrollLockHandler = null;
   var scrollHostScrollLockTarget = null;
   var containerScrollClampHandler = null;
@@ -192,6 +204,29 @@
       scrollHostResizeObserver.disconnect();
       scrollHostResizeObserver = null;
     }
+    scrollHostResizeObserveTarget = null;
+    scrollHostResizeObserveContainer = null;
+  }
+
+  function isContinuousScrollingActive() {
+    return document.documentElement.hasAttribute("data-cgw-continuous-scrolling");
+  }
+
+  function scheduleOverlayGeometrySync(scrollHost, container, opts) {
+    if (!scrollHost || !container) return;
+    overlayGeometrySyncPending = {
+      scrollHost: scrollHost,
+      container: container,
+      opts: opts || {},
+    };
+    if (overlayGeometrySyncTimer != null) return;
+    overlayGeometrySyncTimer = setTimeout(function () {
+      overlayGeometrySyncTimer = null;
+      var pending = overlayGeometrySyncPending;
+      overlayGeometrySyncPending = null;
+      if (!pending || !globalThis.__cgwContinuousViewEnabled) return;
+      syncOverlayGeometry(pending.scrollHost, pending.container, pending.opts);
+    }, 16);
   }
 
   function disconnectOverlayViewportWatcher() {
@@ -216,28 +251,154 @@
     return true;
   }
 
+  var diagScrollSkipLast = Object.create(null);
+
+  function diagScroll(eventName, message, data) {
+    if (!globalThis.__cgwExtendedDiagnostics) return;
+    var k = globalThis.__cgwPageKernel;
+    if (k && k.bus && typeof k.bus.diagnosticsLog === "function") {
+      k.bus.diagnosticsLog("debug", eventName, message, data, "continuous-view", "navigation");
+    }
+  }
+
+  function diagScrollSkip(reason, data) {
+    if (!globalThis.__cgwExtendedDiagnostics) return;
+    if (!data || !data.deltaY) return;
+    var now = Date.now();
+    if (diagScrollSkipLast[reason] && now - diagScrollSkipLast[reason] < 400) return;
+    diagScrollSkipLast[reason] = now;
+    var payload = data || {};
+    payload.reason = reason;
+    diagScroll("scroll_wheel_skip", reason, payload);
+  }
+
+  function wrapperComposerConsumesWheel(target, e) {
+    var root =
+      target && target.closest
+        ? target.closest("#cgw-play-composer-root")
+        : null;
+    if (!root) return false;
+    var input = root.querySelector(".cgw-compose-input");
+    if (!input || (target !== input && !input.contains(target))) return false;
+    if (input.scrollHeight <= input.clientHeight + 2) return false;
+    var atTop = input.scrollTop <= 0;
+    var atBottom =
+      input.scrollTop + input.clientHeight >= input.scrollHeight - 2;
+    if (e.deltaY < 0 && !atTop) return true;
+    if (e.deltaY > 0 && !atBottom) return true;
+    return false;
+  }
+
+  function shouldForwardWheelToTranscript(target) {
+    if (!target || !target.closest) return false;
+    if (target.closest("#cgw-play-composer-root")) return true;
+    if (target.closest("#cgw-continuous-view")) return true;
+    if (target.closest(".cgw-transcript-scroll-host")) return true;
+    if (globalThis.__cgwContinuousViewEnabled && isComposerElement(target)) {
+      return true;
+    }
+    return false;
+  }
+
+  function applyWheelToContinuousSurface(surface, e, origin) {
+    var max = maxScrollTop(surface);
+    if (max <= 0) {
+      diagScrollSkip("no_scroll_range", {
+        deltaY: e.deltaY,
+        origin: origin,
+        scrollHeight: surface.scrollHeight,
+        clientHeight: surface.clientHeight,
+      });
+      return false;
+    }
+    var before = surface.scrollTop;
+    var after = Math.max(0, Math.min(max, before + e.deltaY));
+    if (after === before) {
+      diagScrollSkip("at_scroll_limit", {
+        deltaY: e.deltaY,
+        origin: origin,
+        before: before,
+        max: max,
+      });
+      return false;
+    }
+    surface.scrollTop = after;
+    noteUserScrollTop(surface);
+    if (!isNearBottom(surface)) {
+      userDetachedFromBottom = true;
+      preferBottomOnNextApply = false;
+    }
+    markContinuousScrolling();
+    diagScroll(
+      origin === "direct" ? "scroll_wheel_direct" : "scroll_wheel_forward",
+      "Applied wheel to continuous view",
+      {
+        deltaY: e.deltaY,
+        before: before,
+        after: after,
+        max: max,
+        origin: origin,
+        targetTag: e.target && e.target.tagName,
+      }
+    );
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
+  }
+
   function bindScrollHostWheelForward(scrollHost, container) {
     if (!scrollHost || !container) return;
-    if (scrollHostWheelTarget === scrollHost && scrollHostWheelHandler) return;
+    if (
+      scrollHostWheelTarget &&
+      scrollHostWheelHandler &&
+      document.contains(scrollHostWheelTarget)
+    ) {
+      return;
+    }
     disconnectScrollHostWheelForward();
     scrollHostWheelTarget = scrollHost;
     scrollHostWheelHandler = function (e) {
-      if (!globalThis.__cgwContinuousViewEnabled) return;
+      if (!globalThis.__cgwContinuousViewEnabled) {
+        diagScrollSkip("continuous_disabled", { deltaY: e.deltaY });
+        return;
+      }
       var surface = document.getElementById(CONTAINER_ID);
-      if (!surface || surface !== container) return;
-      if (isComposerElement(e.target)) return;
-      if (surface === e.target || surface.contains(e.target)) return;
-      var max = maxScrollTop(surface);
-      surface.scrollTop = Math.max(0, Math.min(max, surface.scrollTop + e.deltaY));
-      e.preventDefault();
-      e.stopPropagation();
+      if (!surface) {
+        diagScrollSkip("no_surface", { deltaY: e.deltaY });
+        return;
+      }
+      if (wrapperComposerConsumesWheel(e.target, e)) {
+        diagScrollSkip("compose_input", { deltaY: e.deltaY });
+        return;
+      }
+      if (!shouldForwardWheelToTranscript(e.target)) {
+        diagScrollSkip("outside_transcript_zone", {
+          deltaY: e.deltaY,
+          tag: e.target && e.target.tagName,
+        });
+        return;
+      }
+      var origin =
+        surface === e.target || surface.contains(e.target) ? "direct" : "forward";
+      applyWheelToContinuousSurface(surface, e, origin);
     };
-    scrollHost.addEventListener("wheel", scrollHostWheelHandler, { passive: false });
+    document.addEventListener("wheel", scrollHostWheelHandler, {
+      passive: false,
+      capture: true,
+    });
+    diagScroll("scroll_wheel_bound", "Continuous view wheel listener bound", {
+      scrollHeight: container.scrollHeight,
+      clientHeight: container.clientHeight,
+      maxScroll: maxScrollTop(container),
+      bottomInset: computeComposerBottomInset(scrollHost),
+    });
   }
 
   function disconnectScrollHostWheelForward() {
-    if (scrollHostWheelTarget && scrollHostWheelHandler) {
-      scrollHostWheelTarget.removeEventListener("wheel", scrollHostWheelHandler);
+    if (scrollHostWheelHandler) {
+      document.removeEventListener("wheel", scrollHostWheelHandler, {
+        capture: true,
+      });
     }
     scrollHostWheelTarget = null;
     scrollHostWheelHandler = null;
@@ -247,10 +408,13 @@
     if (overlayViewportHandler) return;
     overlayViewportHandler = function () {
       if (!globalThis.__cgwContinuousViewEnabled) return;
+      if (isContinuousScrollingActive()) return;
       var c = document.getElementById(CONTAINER_ID);
       var host = c ? resolveScrollHost(c) : scrollHost;
       if (!c || !host) return;
-      syncOverlayGeometry(host, c, { preserveScroll: true });
+      var bottomInset = computeComposerBottomInset(host);
+      if (userDetachedFromBottom && lastResizeBottomInset === bottomInset) return;
+      scheduleOverlayGeometrySync(host, c, { preserveScroll: true });
     };
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", overlayViewportHandler);
@@ -328,6 +492,43 @@
     containerScrollIntentHandler = null;
   }
 
+  var continuousScrollIdleTimer = null;
+
+  function markContinuousScrolling() {
+    document.documentElement.setAttribute("data-cgw-continuous-scrolling", "1");
+    if (continuousScrollIdleTimer) clearTimeout(continuousScrollIdleTimer);
+    continuousScrollIdleTimer = setTimeout(function () {
+      continuousScrollIdleTimer = null;
+      document.documentElement.removeAttribute("data-cgw-continuous-scrolling");
+    }, 320);
+  }
+
+  function noteUserScrollTop(surface) {
+    if (!surface || typeof surface.scrollTop !== "number") return;
+    userScrollAnchor = surface.scrollTop;
+    userScrollAnchorAt = Date.now();
+  }
+
+  function resolvePreservedScrollTop(scrollHost, container) {
+    var saved = readScrollTop(scrollHost, container);
+    if (
+      userScrollAnchor != null &&
+      userScrollAnchor > 8 &&
+      saved < userScrollAnchor - 8 &&
+      Date.now() - userScrollAnchorAt < 800
+    ) {
+      if (globalThis.__cgwExtendedDiagnostics) {
+        diagScroll(
+          "scroll_position_anchor_restore",
+          "Restoring scroll from user anchor after geometry sync",
+          { saved: saved, anchor: userScrollAnchor }
+        );
+      }
+      return userScrollAnchor;
+    }
+    return saved;
+  }
+
   function bindContainerScrollIntent(container) {
     if (!container) return;
     if (
@@ -340,10 +541,13 @@
     containerScrollIntentTarget = container;
     containerScrollIntentHandler = function () {
       if (!globalThis.__cgwContinuousViewEnabled) return;
+      noteUserScrollTop(container);
+      markContinuousScrolling();
       if (isNearBottom(container)) {
         userDetachedFromBottom = false;
       } else {
         userDetachedFromBottom = true;
+        preferBottomOnNextApply = false;
       }
     };
     container.addEventListener("scroll", containerScrollIntentHandler, {
@@ -354,8 +558,12 @@
   function shouldStickToBottom(scrollHost, container) {
     var surface = getScrollSurface(scrollHost, container);
     if (!surface) return false;
+    if (userDetachedFromBottom) return false;
+    if (preferBottomOnNextApply) return true;
     if (isNearBottom(surface)) return true;
-    if (isNativeStreaming() && !userDetachedFromBottom) return true;
+    if (isNativeStreaming()) return true;
+    if (transitionPhase === TRANSITION_PHASE_TRANSITIONING) return true;
+    if (isCvPending()) return true;
     return false;
   }
 
@@ -443,6 +651,10 @@
   function markProvisionalScrollHost() {
     var main = document.querySelector("main");
     if (!main) return null;
+    if (main.classList.contains(SCROLL_HOST_CLASS)) {
+      ensureTransitionShell(main);
+      return main;
+    }
     clearScrollHostMark();
     main.classList.add(SCROLL_HOST_CLASS);
     ensureTransitionShell(main);
@@ -576,7 +788,11 @@
     disconnectScrollHostScrollLock();
     disconnectContainerScrollClamp();
     disconnectContainerScrollIntent();
-    userDetachedFromBottom = false;
+    markPreferBottomScroll();
+    userScrollAnchor = null;
+    userScrollAnchorAt = 0;
+    lastResizeBottomInset = null;
+    overlayGeometryPinnedHost = null;
     cachedScrollHostForKey = null;
     applyRetryAttempts = 0;
     cancelDomReadyWait();
@@ -659,7 +875,11 @@
       "\x00" +
       formatSettingsRevision() +
       "\x00" +
-      (globalThis.__cgwShowContinuousImages === false ? "0" : "1")
+      (globalThis.__cgwShowContinuousImages === false ? "0" : "1") +
+      "\x00" +
+      (globalThis.__cgwHideContextTags === true ? "1" : "0") +
+      "\x00" +
+      (globalThis.__cgwExpandHiddenContext === false ? "0" : "1")
     );
   }
 
@@ -691,7 +911,7 @@
       typeof globalThis.__cgwPacketDisplay.transformUserBlocks === "function"
     ) {
       blocks =
-        globalThis.__cgwPacketDisplay.transformUserBlocks(turn, rawBlocks) ||
+        globalThis.__cgwPacketDisplay.transformUserBlocks(turn, rawBlocks, role) ||
         rawBlocks;
     }
 
@@ -1058,6 +1278,11 @@
 
   function findUserContentHostIn(root) {
     if (!root) return null;
+    var pd = globalThis.__cgwPacketDisplay;
+    if (pd && typeof pd.findNativePlayerTextLeaf === "function") {
+      var marked = pd.findNativePlayerTextLeaf(root);
+      if (marked) return marked;
+    }
     var actions = root.querySelector('[aria-label="Your message actions"]');
     if (actions && actions.parentElement && actions.parentElement.previousElementSibling) {
       return actions.parentElement.previousElementSibling;
@@ -1096,6 +1321,26 @@
   function phraseHighlightFingerprintSuffix() {
     if (!globalThis.__cgwPhraseHighlightsEnabled) return "\x04off";
     return "\x04" + (globalThis.__cgwPhraseHighlightStyleFp || "on");
+  }
+
+  function currentSegmentPhraseHighlightFp() {
+    return (
+      (globalThis.__cgwPhraseHighlightStyleFp || "off") +
+      phraseHighlightFingerprintSuffix()
+    );
+  }
+
+  function segmentsNeedPhraseHighlightRefresh(container) {
+    if (!container || !globalThis.__cgwPhraseHighlightsEnabled) return false;
+    var curFp = currentSegmentPhraseHighlightFp();
+    var segs = container.querySelectorAll(
+      ".cgw-continuous-segment, .cgw-weave-body, .cgw-weave-embed"
+    );
+    for (var i = 0; i < segs.length; i++) {
+      if (segs[i].getAttribute("data-cgw-streaming") === "1") continue;
+      if (segs[i].getAttribute("data-cgw-phrase-hl-fp") !== curFp) return true;
+    }
+    return false;
   }
 
   function blocksFingerprint(blocks) {
@@ -1162,6 +1407,7 @@
     if (wasNativeStreaming && !streamingNow && container) {
       clearStreamingSegmentMarkers(container);
       finalizeContinuousViewFormatting(container, null);
+      finalizePendingComposerRevision();
     }
     wasNativeStreaming = streamingNow;
   }
@@ -1181,10 +1427,12 @@
     seg.setAttribute("data-cgw-turn-role", segData.role);
     if (
       segData.role === "user" &&
-      segmentHasPacketContextBlock(segData.blocks) &&
-      !isPacketContextUiVisible()
+      segmentHasPacketContextBlock(segData.blocks)
     ) {
-      seg.classList.add("cgw-continuous-segment--has-hidden-packet");
+      seg.classList.add("cgw-has-packet-context");
+      if (!isPacketContextUiVisible()) {
+        seg.classList.add("cgw-continuous-segment--has-hidden-packet");
+      }
     }
     return seg;
   }
@@ -1218,10 +1466,13 @@
   function normalizeSegmentTypography(seg) {
     if (!seg) return;
     seg.normalize();
-    if (globalThis.__cgwProseEnhancementsEnabled) {
-      seg.classList.add("cgw-continuous-segment--formatted");
-    } else {
-      seg.classList.remove("cgw-continuous-segment--formatted");
+  }
+
+  function scheduleReadingGuides(container) {
+    if (typeof globalThis.__cgwScheduleReadingGuides === "function") {
+      globalThis.__cgwScheduleReadingGuides(container);
+    } else if (typeof globalThis.__cgwApplyReadingGuides === "function") {
+      globalThis.__cgwApplyReadingGuides(container);
     }
   }
 
@@ -1248,11 +1499,6 @@
           if (hlFpW === curFpW) return;
         }
         seg.normalize();
-        if (globalThis.__cgwProseEnhancementsEnabled) {
-          seg.classList.add("cgw-weave--formatted");
-        } else {
-          seg.classList.remove("cgw-weave--formatted");
-        }
         decoratePhraseHighlights(seg);
         seg.setAttribute(
           "data-cgw-phrase-hl-fp",
@@ -1260,27 +1506,28 @@
             phraseHighlightFingerprintSuffix()
         );
       });
-      return;
+    } else {
+      container.querySelectorAll(".cgw-continuous-segment").forEach(function (seg) {
+        if (seg.getAttribute("data-cgw-streaming") === "1") return;
+        var tid = seg.getAttribute("data-cgw-turn-id");
+        if (changedSet && !changedSet[tid]) {
+          var hlFp = seg.getAttribute("data-cgw-phrase-hl-fp");
+          var curFp =
+            (globalThis.__cgwPhraseHighlightStyleFp || "off") +
+            phraseHighlightFingerprintSuffix();
+          if (hlFp === curFp) return;
+        }
+        normalizeSegmentTypography(seg);
+        decoratePhraseHighlights(seg);
+        seg.setAttribute(
+          "data-cgw-phrase-hl-fp",
+          (globalThis.__cgwPhraseHighlightStyleFp || "off") +
+            phraseHighlightFingerprintSuffix()
+        );
+      });
     }
 
-    container.querySelectorAll(".cgw-continuous-segment").forEach(function (seg) {
-      if (seg.getAttribute("data-cgw-streaming") === "1") return;
-      var tid = seg.getAttribute("data-cgw-turn-id");
-      if (changedSet && !changedSet[tid]) {
-        var hlFp = seg.getAttribute("data-cgw-phrase-hl-fp");
-        var curFp =
-          (globalThis.__cgwPhraseHighlightStyleFp || "off") +
-          phraseHighlightFingerprintSuffix();
-        if (hlFp === curFp) return;
-      }
-      normalizeSegmentTypography(seg);
-      decoratePhraseHighlights(seg);
-      seg.setAttribute(
-        "data-cgw-phrase-hl-fp",
-        (globalThis.__cgwPhraseHighlightStyleFp || "off") +
-          phraseHighlightFingerprintSuffix()
-      );
-    });
+    scheduleReadingGuides(container);
   }
 
   function fillSegmentBlocks(segEl, blocks) {
@@ -1412,18 +1659,19 @@
       }
 
       if (prevFps[tid] !== fp) {
-        if (
-          updateSegmentBlocksIncremental(
-            el,
-            segData.blocks,
-            prevBlockFps[tid],
-            tid,
-            streamingPatch &&
-              i === segments.length - 1 &&
-              segData.role === "assistant"
-          )
-        ) {
+        var blocksUpdated = updateSegmentBlocksIncremental(
+          el,
+          segData.blocks,
+          prevBlockFps[tid],
+          tid,
+          streamingPatch &&
+            i === segments.length - 1 &&
+            segData.role === "assistant"
+        );
+        if (blocksUpdated) {
           changed = true;
+          changedTurnIds.push(tid);
+        } else {
           changedTurnIds.push(tid);
         }
       }
@@ -1549,13 +1797,66 @@
       }
     }
 
-    if (!blocks.length) {
+        if (!blocks.length) {
       var userHost = findUserContentHostIn(clone);
       if (userHost) {
         var hostClone = userHost.cloneNode(true);
         stripChrome(hostClone);
         var hostText = sanitizeExtractedMessageText((hostClone.innerText || "").trim());
-        if (hostText) return splitParagraphFallback(hostText);
+        var pdCollect = globalThis.__cgwPacketDisplay;
+        if (
+          pdCollect &&
+          typeof pdCollect.collectNativeUserMessageText === "function"
+        ) {
+          var joined = pdCollect.collectNativeUserMessageText(turnRoot);
+          if (joined) hostText = joined;
+        }
+        if (hostText && globalThis.__cgwHideContextTags === true) {
+          if (hostText.indexOf("[[cgw:") >= 0) {
+            if (typeof globalThis.__cgwStripContextTags === "function") {
+              hostText = globalThis.__cgwStripContextTags(hostText);
+            } else if (
+              typeof globalThis.__cgwPacketDisplay === "object" &&
+              globalThis.__cgwPacketDisplay &&
+              typeof globalThis.__cgwPacketDisplay.parsePacket === "function"
+            ) {
+              var parsed = globalThis.__cgwPacketDisplay.parsePacket(hostText);
+              if (parsed && parsed.userLine) hostText = parsed.userLine;
+            }
+          } else if (
+            typeof globalThis.__cgwPacketDisplay === "object" &&
+            globalThis.__cgwPacketDisplay &&
+            typeof globalThis.__cgwPacketDisplay.isStructuredPreviewPacket ===
+              "function" &&
+            globalThis.__cgwPacketDisplay.isStructuredPreviewPacket(hostText)
+          ) {
+            var structured = globalThis.__cgwPacketDisplay.parseStructuredPreview(
+              hostText
+            );
+            if (structured && structured.userLine) hostText = structured.userLine;
+          }
+          if (typeof globalThis.__cgwStripTrailingInjectionBlocks === "function") {
+            hostText = globalThis.__cgwStripTrailingInjectionBlocks(hostText);
+          }
+        }
+        if (hostText) {
+          var role = getTurnRole(turnRoot);
+          if (
+            role === "user" &&
+            globalThis.__cgwHideContextTags === true &&
+            typeof globalThis.__cgwPacketDisplay === "object" &&
+            globalThis.__cgwPacketDisplay &&
+            typeof globalThis.__cgwPacketDisplay.transformUserBlocks === "function"
+          ) {
+            var hidden = globalThis.__cgwPacketDisplay.transformUserBlocks(
+              turnRoot,
+              splitParagraphFallback(hostText),
+              role
+            );
+            if (hidden && hidden.length) return hidden;
+          }
+          return splitParagraphFallback(hostText);
+        }
       }
       var wrapClone = turnWrapper(turnRoot);
       if (wrapClone) {
@@ -1628,6 +1929,22 @@
 
   function findScrollHost(turns) {
     if (!turns.length) return null;
+
+    var mounted = document.getElementById(CONTAINER_ID);
+    if (
+      mounted &&
+      mounted.isConnected &&
+      mounted.parentElement &&
+      document.contains(mounted.parentElement)
+    ) {
+      return mounted.parentElement;
+    }
+    if (
+      overlayGeometryPinnedHost &&
+      document.contains(overlayGeometryPinnedHost)
+    ) {
+      return overlayGeometryPinnedHost;
+    }
 
     if (
       cachedScrollHostForKey &&
@@ -1704,8 +2021,22 @@
   }
 
   function findActionBar(wrap, role) {
-    var label = role === "user" ? "Your message actions" : "Response actions";
-    return wrap.querySelector('[aria-label="' + label + '"]');
+    if (!wrap) return null;
+    var exact = role === "user" ? "Your message actions" : "Response actions";
+    var bar = wrap.querySelector('[aria-label="' + exact + '"]');
+    if (bar) return bar;
+
+    var partial = role === "user" ? "message actions" : "response actions";
+    var labeled = wrap.querySelectorAll("[aria-label]");
+    var i;
+    for (i = 0; i < labeled.length; i++) {
+      var aria = (labeled[i].getAttribute("aria-label") || "").toLowerCase();
+      if (aria.indexOf(partial) >= 0) return labeled[i];
+    }
+
+    return wrap.querySelector(
+      '[class*="message-actions"], [class*="action-buttons"]'
+    );
   }
 
   function buttonMatchesAction(btn, kind) {
@@ -1745,6 +2076,38 @@
   function segmentPlainText(segEl) {
     return (segEl.innerText || segEl.textContent || "").trim();
   }
+
+  function playerLineFromSegment(segEl) {
+    if (!segEl) return "";
+    var role = segEl.getAttribute("data-cgw-turn-role") || "assistant";
+    if (role !== "user") return segmentPlainText(segEl);
+
+    var turnId = segEl.getAttribute("data-cgw-turn-id");
+    var registry = globalThis.__cgwTurnRegistry || {};
+    var entry = turnId != null ? registry[turnId] : null;
+    if (entry && entry.playerSnippet) {
+      return sanitizeExtractedMessageText(entry.playerSnippet);
+    }
+
+    var clone = segEl.cloneNode(true);
+    clone
+      .querySelectorAll(".cgw-continuous-packet-context")
+      .forEach(function (el) {
+        el.remove();
+      });
+    stripChrome(clone);
+    return sanitizeExtractedMessageText(
+      (clone.innerText || clone.textContent || "").trim()
+    );
+  }
+
+  function segmentTextForRole(segEl) {
+    if (!segEl) return "";
+    var role = segEl.getAttribute("data-cgw-turn-role") || "assistant";
+    return role === "user" ? playerLineFromSegment(segEl) : segmentPlainText(segEl);
+  }
+
+  globalThis.__cgwPlayerLineFromSegment = playerLineFromSegment;
 
   function hideContextMenu() {
     var menu = document.getElementById(CONTEXT_MENU_ID);
@@ -1823,7 +2186,7 @@
           if (sel && !sel.isCollapsed && sel.toString().trim()) {
             text = sel.toString();
           } else {
-            text = segmentPlainText(segment);
+            text = segmentTextForRole(segment);
           }
           if (text && navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).catch(function () {
@@ -1834,9 +2197,11 @@
           }
           return;
         }
-        if (action === "edit" && turnId) enterPeekMode(turnId, "edit");
+        if (action === "edit" && turnId && segment) {
+          openSurrogateEditPanel(turnId, segment, null, "user");
+        }
         if (action === "edit-response" && turnId && segment) {
-          openSurrogateEditPanel(turnId, segment);
+          openSurrogateEditPanel(turnId, segment, null, "assistant");
         }
         if (action === "regenerate" && turnId) enterPeekMode(turnId, "regenerate");
         if (action === "toggle-packet-context") {
@@ -1944,6 +2309,9 @@
       var testid = (btn.getAttribute("data-testid") || "").toLowerCase();
       if (text === "cancel" || aria.indexOf("cancel") >= 0) continue;
       if (text === "send" || aria.indexOf("send") >= 0) return btn;
+      if (text === "save" || text === "update" || aria.indexOf("save") >= 0) {
+        return btn;
+      }
       if (
         testid.indexOf("confirm") >= 0 ||
         testid.indexOf("save") >= 0
@@ -2081,7 +2449,16 @@
     return null;
   }
 
-  function postTurnInvalidated(turnId, reason, revisedText) {
+  function transcriptIx() {
+    return globalThis.__cgwTranscriptInteractions || null;
+  }
+
+  function postTurnInvalidated(turnId, reason, revisedText, opts) {
+    var ix = transcriptIx();
+    if (ix && typeof ix.postTurnInvalidated === "function") {
+      ix.postTurnInvalidated(turnId, reason, revisedText, opts);
+      return;
+    }
     var msg = {
       type: "turnInvalidated",
       turnId: turnId != null ? String(turnId) : null,
@@ -2104,11 +2481,29 @@
   }
 
   function buildRevisionPrompt(editedText, turnId) {
+    var registry = globalThis.__cgwTurnRegistry || {};
+    var entry = turnId != null ? registry[turnId] : null;
+    var ix = transcriptIx();
+    var markerTurn =
+      ix && typeof ix.resolveInvalidationMarkerTurn === "function"
+        ? ix.resolveInvalidationMarkerTurn(entry)
+        : turnId;
     var marker =
-      turnId != null
-        ? '[[cgw:invalidation turn="' + String(turnId) + '"]]\n'
+      markerTurn != null
+        ? '[[cgw:invalidation turn="' + String(markerTurn) + '"]]\n'
         : "";
-    return marker + REVISION_PROMPT_PREFIX + "\n\n" + editedText;
+    var turnNum = markerTurn != null ? String(markerTurn) : "?";
+    var prefix =
+      REVISION_PROMPT_PREFIX +
+      turnNum +
+      " only: disregard your prior assistant reply for this turn and any later play turns in the thread. Output ONLY the replacement narrator text below with no preamble or commentary.";
+    if (entry && entry.playerSnippet) {
+      prefix +=
+        '\n(Player line: "' +
+        String(entry.playerSnippet).replace(/"/g, "'") +
+        '")';
+    }
+    return marker + prefix + "\n\n" + editedText;
   }
 
   function getConversationKey() {
@@ -2221,17 +2616,34 @@
 
   function shouldHideTurn(turnId, role, blocks) {
     if (!globalThis.__cgwHideAssistantEditArtifacts) return false;
-    var queue = globalThis.__cgwRevisionHideQueue || [];
-    if (!queue.length) return false;
     var id = String(turnId);
     var text = blocksPlainText(blocks);
+    var entries = globalThis.__cgwRevisionHideEntries || [];
     var i;
+    for (i = 0; i < entries.length; i++) {
+      var meta = entries[i];
+      if (meta.assistantDomTurnId && String(meta.assistantDomTurnId) === id) {
+        return true;
+      }
+      if (role === "user" && meta.promptPrefix) {
+        if (text.indexOf(meta.promptPrefix) === 0) return true;
+      }
+      if (
+        role === "user" &&
+        meta.messageKind === "narrator_revision_prompt" &&
+        text.indexOf(REVISION_PROMPT_PREFIX) === 0
+      ) {
+        return true;
+      }
+    }
+    var queue = globalThis.__cgwRevisionHideQueue || [];
+    if (!queue.length) return false;
     for (i = 0; i < queue.length; i++) {
       var entry = queue[i];
       if (String(entry.assistantTurnId) === id) return true;
       if (role === "user" && entry.promptPrefix) {
         if (text.indexOf(entry.promptPrefix) === 0) return true;
-        if (text.indexOf("replace your previous response") >= 0) return true;
+        if (text.indexOf(REVISION_PROMPT_PREFIX) === 0) return true;
       }
     }
     return false;
@@ -2239,19 +2651,34 @@
 
   function ensureScrollHostResizeObserver(scrollHost, container) {
     if (typeof ResizeObserver === "undefined" || !scrollHost) return;
+    if (
+      scrollHostResizeObserver &&
+      scrollHostResizeObserveTarget === scrollHost &&
+      scrollHostResizeObserveContainer === container
+    ) {
+      return;
+    }
     disconnectScrollHostResizeObserver();
+    scrollHostResizeObserveTarget = scrollHost;
+    scrollHostResizeObserveContainer = container;
     scrollHostResizeObserver = new ResizeObserver(function () {
       if (!globalThis.__cgwContinuousViewEnabled) return;
-      syncOverlayGeometry(scrollHost, container, { preserveScroll: true });
+      if (isContinuousScrollingActive()) return;
+      var bottomInset = computeComposerBottomInset(scrollHost);
       if (
-        container &&
-        shouldStickToBottom(scrollHost, container)
+        userDetachedFromBottom &&
+        lastResizeBottomInset === bottomInset
       ) {
-        applyScrollSurface(scrollHost, container, null, true);
+        return;
       }
+      lastResizeBottomInset = bottomInset;
+      scheduleOverlayGeometrySync(scrollHost, container, { preserveScroll: true });
     });
     scrollHostResizeObserver.observe(scrollHost);
     ensureOverlayViewportWatcher(scrollHost, container);
+  }
+
+  function ensureScrollHostWheelBinding(scrollHost, container) {
     bindScrollHostWheelForward(scrollHost, container);
   }
 
@@ -2272,6 +2699,7 @@
       if (shouldStickToBottom(scrollHost, container)) {
         applyScrollSurface(scrollHost, container, null, true);
       }
+      scheduleReadingGuides(container);
     });
   }
 
@@ -2286,9 +2714,21 @@
     scheduleApplyRetry();
   }
 
+  function resolveComposerMeasureNode() {
+    var wrapperRoot = document.getElementById("cgw-play-composer-root");
+    if (
+      wrapperRoot &&
+      wrapperRoot.isConnected &&
+      globalThis.__cgwWrapperComposer
+    ) {
+      return wrapperRoot;
+    }
+    return findComposerRoot();
+  }
+
   function computeComposerBottomInset(scrollHost) {
     if (!scrollHost) return 0;
-    var composer = findComposerRoot();
+    var composer = resolveComposerMeasureNode();
     if (
       !composer ||
       composer === document ||
@@ -2315,19 +2755,35 @@
     );
   }
 
+  function shouldSkipOverlayGeometrySync(scrollHost, container, bottomInset) {
+    if (!scrollHost || !container) return true;
+    return (
+      container.getAttribute("data-cgw-overlay-bottom") === bottomInset + "px" &&
+      container.parentElement === scrollHost
+    );
+  }
+
   function syncOverlayGeometry(scrollHost, container, opts) {
     opts = opts || {};
     if (!scrollHost || !container) return;
-    ensureOverlayInScrollHost(scrollHost, container);
-    updateComposerClearance();
     var preserveScroll = !!opts.preserveScroll;
-    var savedScrollTop = preserveScroll ? readScrollTop(scrollHost, container) : null;
     var bottomInset = computeComposerBottomInset(scrollHost);
+    if (shouldSkipOverlayGeometrySync(scrollHost, container, bottomInset)) {
+      return;
+    }
+    ensureOverlayInScrollHost(scrollHost, container);
+    overlayGeometryPinnedHost = scrollHost;
+    var savedScrollTop = preserveScroll
+      ? resolvePreservedScrollTop(scrollHost, container)
+      : null;
+    var nextBottom = bottomInset + "px";
+    lastResizeBottomInset = bottomInset;
+    container.setAttribute("data-cgw-overlay-bottom", nextBottom);
     container.style.position = "absolute";
     container.style.top = "0";
     container.style.left = "0";
     container.style.right = "0";
-    container.style.bottom = bottomInset + "px";
+    container.style.bottom = nextBottom;
     container.style.width = "100%";
     container.style.height = "";
     container.style.maxHeight = "";
@@ -2335,11 +2791,37 @@
     container.style.minHeight = "0";
     container.style.margin = "0";
     container.style.zIndex = "5";
-    if (scrollHost.scrollTop !== 0) scrollHost.scrollTop = 0;
+    if (
+      !preserveScroll ||
+      savedScrollTop == null ||
+      savedScrollTop <= 8
+    ) {
+      if (scrollHost.scrollTop !== 0) scrollHost.scrollTop = 0;
+    }
+    function restoreScroll() {
+      if (preserveScroll && typeof savedScrollTop === "number") {
+        applyScrollSurface(scrollHost, container, savedScrollTop, false);
+        if (globalThis.__cgwExtendedDiagnostics && savedScrollTop > 8) {
+          var actual = readScrollTop(scrollHost, container);
+          if (actual < savedScrollTop - 8) {
+            diagScroll(
+              "scroll_position_restore_gap",
+              "Overlay geometry restore below saved scroll",
+              {
+                saved: savedScrollTop,
+                actual: actual,
+                bottomInset: bottomInset,
+              }
+            );
+          }
+        }
+      } else {
+        clampScrollSurface(container);
+      }
+    }
+    restoreScroll();
     if (preserveScroll && typeof savedScrollTop === "number") {
-      applyScrollSurface(scrollHost, container, savedScrollTop, false);
-    } else {
-      clampScrollSurface(container);
+      requestAnimationFrame(restoreScroll);
     }
   }
 
@@ -2351,7 +2833,11 @@
     scrollHost
   ) {
     requestAnimationFrame(function () {
-      if (!globalThis.__cgwContinuousViewEnabled) return;
+      if (!isOverlayTranscriptMode()) return;
+      if (!container || !document.contains(container)) {
+        schedule({ immediate: true });
+        return;
+      }
       syncOverlayGeometry(scrollHost, container);
 
       clearSuppressed();
@@ -2377,6 +2863,8 @@
       if (shouldStickToBottom(scrollHost, container)) {
         applyScrollSurface(scrollHost, container, null, true);
       }
+
+      scheduleReadingGuides(container);
     });
   }
 
@@ -2397,7 +2885,7 @@
   }
 
   function updateComposerClearance() {
-    var root = findComposerRoot();
+    var root = resolveComposerMeasureNode();
     var height = COMPOSER_CLEARANCE_DEFAULT_PX;
     if (root && root !== document && root !== document.documentElement) {
       var rect = root.getBoundingClientRect();
@@ -2426,7 +2914,9 @@
         var c = document.getElementById(CONTAINER_ID);
         var host = c ? resolveScrollHost(c) : null;
         if (c && host) {
-          syncOverlayGeometry(host, c, { preserveScroll: true });
+          if (!isContinuousScrollingActive()) {
+            scheduleOverlayGeometrySync(host, c, { preserveScroll: true });
+          }
         } else {
           updateComposerClearance();
         }
@@ -2444,7 +2934,9 @@
           var c = document.getElementById(CONTAINER_ID);
           var host = c ? resolveScrollHost(c) : null;
           if (c && host) {
-            syncOverlayGeometry(host, c, { preserveScroll: true });
+            if (!isContinuousScrollingActive()) {
+              scheduleOverlayGeometrySync(host, c, { preserveScroll: true });
+            }
           } else {
             updateComposerClearance();
           }
@@ -2521,6 +3013,10 @@
     header.className = "cgw-surrogate-edit-panel__header";
     header.textContent = "Edit response";
 
+    var meta = document.createElement("div");
+    meta.className = "cgw-surrogate-edit-panel__meta";
+    meta.hidden = true;
+
     var input = document.createElement("textarea");
     input.className = "cgw-surrogate-edit-panel__input";
     input.setAttribute("rows", "12");
@@ -2548,6 +3044,7 @@
     footer.appendChild(cancelBtn);
     footer.appendChild(sendBtn);
     panel.appendChild(header);
+    panel.appendChild(meta);
     panel.appendChild(input);
     panel.appendChild(error);
     panel.appendChild(footer);
@@ -2565,12 +3062,16 @@
       if (surrogateEditState.submitting || !surrogateEditState.turnId) return;
       var editedText = (input.value || "").trim();
       if (!editedText) {
-        setSurrogateError("Response text cannot be empty.");
+        setSurrogateError(
+          surrogateEditState.role === "user"
+            ? "Message text cannot be empty."
+            : "Response text cannot be empty."
+        );
         return;
       }
       setSurrogateError("");
       setSurrogateSubmitting(true);
-      submitSurrogateAssistantEdit(editedText, surrogateEditState.turnId);
+      submitSurrogateEdit(editedText, surrogateEditState.turnId, surrogateEditState.role);
     });
 
     input.addEventListener("keydown", function (e) {
@@ -2588,16 +3089,22 @@
     return panel;
   }
 
-  function openSurrogateEditPanel(turnId, segment, initialTextOverride) {
+  function openSurrogateEditPanel(turnId, segment, initialTextOverride, role) {
     hideContextMenu();
     var panel = ensureSurrogateEditPanel();
     var backdrop = document.getElementById(SURROGATE_EDIT_BACKDROP_ID);
     var input = panel.querySelector(".cgw-surrogate-edit-panel__input");
+    var header = panel.querySelector(".cgw-surrogate-edit-panel__header");
+    var meta = panel.querySelector(".cgw-surrogate-edit-panel__meta");
+    var editRole = role === "user" ? "user" : "assistant";
+    var registry = globalThis.__cgwTurnRegistry || {};
+    var entry = turnId != null ? registry[turnId] : null;
+    var ix = transcriptIx();
     var initialText =
       initialTextOverride != null
         ? initialTextOverride
         : segment
-          ? segmentPlainText(segment)
+          ? segmentTextForRole(segment)
           : surrogateEditState.initialText || "";
 
     surrogateEditState.open = true;
@@ -2605,6 +3112,33 @@
     surrogateEditState.segment = segment;
     surrogateEditState.initialText = initialText;
     surrogateEditState.submitting = false;
+    surrogateEditState.role = editRole;
+
+    if (header) {
+      header.textContent =
+        ix && typeof ix.buildTurnContextLabel === "function"
+          ? ix.buildTurnContextLabel(entry, editRole)
+          : editRole === "user"
+            ? "Edit message"
+            : "Edit response";
+    }
+    if (meta) {
+      var warning =
+        ix && typeof ix.buildSupersedeWarning === "function"
+          ? ix.buildSupersedeWarning(entry)
+          : "";
+      if (warning) {
+        meta.textContent = warning;
+        meta.hidden = false;
+      } else {
+        meta.textContent = "";
+        meta.hidden = true;
+      }
+    }
+    panel.setAttribute(
+      "aria-label",
+      editRole === "user" ? "Edit message" : "Edit response"
+    );
 
     if (input) {
       input.value = initialText;
@@ -2629,7 +3163,8 @@
     });
   }
 
-  function closeSurrogateEditPanel(restoreOverlay) {
+  function closeSurrogateEditPanel(restoreOverlay, opts) {
+    opts = opts || {};
     if (!surrogateEditState.open && !document.getElementById(SURROGATE_EDIT_PANEL_ID)) {
       return;
     }
@@ -2651,18 +3186,24 @@
     surrogateEditState.segment = null;
     surrogateEditState.initialText = "";
     surrogateEditState.submitting = false;
+    surrogateEditState.role = "assistant";
     setSurrogateError("");
 
-    scheduleContinuousViewRebuild();
+    if (!opts.skipRebuild) {
+      scheduleContinuousViewRebuild();
+    }
   }
 
-  function scheduleContinuousViewRebuild() {
+  function scheduleContinuousViewRebuild(opts) {
+    opts = opts || {};
     if (!globalThis.__cgwContinuousViewEnabled) return;
     delete globalThis.__cgwContinuousViewFingerprint;
     delete globalThis.__cgwSegmentFingerprints;
     delete globalThis.__cgwSegmentBlockFingerprints;
     invalidateTurnExtractCache();
-    if (typeof schedule === "function") schedule();
+    if (typeof schedule === "function") {
+      schedule(opts.immediate ? { immediate: true } : undefined);
+    }
   }
 
   function scheduleContinuousViewDecorationOnly() {
@@ -2707,27 +3248,55 @@
     return findEditSurface(turn);
   }
 
-  function tryNativeAssistantEdit(turnId, editedText, onComplete) {
-    var registry = globalThis.__cgwTurnRegistry || {};
-    var entry = registry[turnId];
-    if (!entry || !entry.wrap) {
-      onComplete(false);
-      return;
+  function readTurnBubbleText(wrap, role) {
+    if (!wrap) return "";
+    var turn =
+      wrap.closest('[data-testid^="conversation-turn-"]') ||
+      wrap.closest("[data-message-author-role]") ||
+      wrap;
+    var bubble =
+      turn.querySelector('[data-message-author-role="' + role + '"]') ||
+      turn.querySelector(".markdown") ||
+      turn;
+    return (bubble.innerText || bubble.textContent || "").trim();
+  }
+
+  function isEditSurfaceVisible(el) {
+    if (!el || !el.getBoundingClientRect) return false;
+    if (isComposerElement(el)) return false;
+    var rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    var style = window.getComputedStyle(el);
+    return style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  function findEditSurface(root) {
+    if (!root) return null;
+    var surfaces = root.querySelectorAll(
+      '[contenteditable="true"], textarea, [role="textbox"], form textarea'
+    );
+    var i;
+    for (i = 0; i < surfaces.length; i++) {
+      if (isEditSurfaceVisible(surfaces[i])) return surfaces[i];
     }
+    return null;
+  }
 
-    var wrap = entry.wrap;
-    var editBtn = findTurnActionButton(wrap, "assistant", "edit");
-    if (!editBtn) {
-      onComplete(false);
-      return;
-    }
+  function dispatchTurnHover(wrap) {
+    if (!wrap || !wrap.dispatchEvent) return;
+    ["pointerover", "mouseenter", "mouseover"].forEach(function (type) {
+      try {
+        wrap.dispatchEvent(
+          new MouseEvent(type, { bubbles: true, cancelable: true, view: window })
+        );
+      } catch (_e) {
+        /* ignore */
+      }
+    });
+  }
 
-    hideContextMenu();
-    if (peekState.turnId) exitPeekMode(false);
-
-    peekState.turnId = turnId;
-    peekState.wrap = wrap;
-
+  function revealNativeTurnForPeek(wrap) {
+    document.documentElement.removeAttribute("data-cgw-continuous-inline-edit");
     document.documentElement.setAttribute("data-cgw-continuous-peek", "1");
 
     var container = document.getElementById(CONTAINER_ID);
@@ -2739,15 +3308,72 @@
     wrap.classList.remove(SUPPRESS_CLASS);
     wrap.classList.add(PEEK_TARGET_CLASS);
     wrap.scrollIntoView({ block: "center", behavior: "auto" });
-    editBtn.click();
+  }
+
+  function revealNativeTurnForInlineEdit(wrap) {
+    document.documentElement.removeAttribute("data-cgw-continuous-peek");
+    document.documentElement.setAttribute("data-cgw-continuous-inline-edit", "1");
+
+    wrap.classList.remove(SUPPRESS_CLASS);
+    wrap.classList.add(PEEK_TARGET_CLASS);
+  }
+
+  function clearInlineEditMode() {
+    document.documentElement.removeAttribute("data-cgw-continuous-inline-edit");
+  }
+
+  function tryNativeEdit(turnId, editedText, role, onComplete, opts) {
+    opts = opts || {};
+    var allowPeek = opts.allowPeek !== false;
+    var registry = globalThis.__cgwTurnRegistry || {};
+    var entry = registry[turnId];
+    if (!entry || !entry.wrap) {
+      onComplete(false);
+      return;
+    }
+
+    var wrap = entry.wrap;
+    hideContextMenu();
+    if (peekState.turnId) exitPeekMode(false);
+
+    peekState.turnId = turnId;
+    peekState.wrap = wrap;
+    peekState.actionKind = allowPeek ? "edit" : "edit-inline";
+
+    if (allowPeek) {
+      revealNativeTurnForPeek(wrap);
+    } else {
+      revealNativeTurnForInlineEdit(wrap);
+    }
 
     var deadline = Date.now() + NATIVE_EDIT_TIMEOUT_MS;
+
+    function failEdit() {
+      if (allowPeek) {
+        exitPeekMode(false);
+      } else {
+        wrap.classList.add(SUPPRESS_CLASS);
+        wrap.classList.remove(PEEK_TARGET_CLASS);
+        clearInlineEditMode();
+        peekState.turnId = null;
+        peekState.wrap = null;
+        peekState.actionKind = null;
+      }
+      onComplete(false);
+    }
 
     function attemptPopulate() {
       var surface = scanEditSurfaceInWrap(wrap);
       if (surface && populateEditSurface(surface, editedText)) {
         var sendBtn = findNativeSendButton(wrap);
         if (sendBtn) {
+          peekState.pendingInvalidation = {
+            turnId: turnId,
+            reason: role === "user" ? "user_edit" : "native_edit",
+            text: editedText,
+            editRole: role,
+            captureFromDom: role === "user",
+          };
           sendBtn.click();
           startPeekExitWatch(wrap);
           onComplete(true);
@@ -2758,13 +3384,53 @@
         requestAnimationFrame(attemptPopulate);
         return;
       }
-      exitPeekMode(false);
-      onComplete(false);
+      failEdit();
     }
 
     requestAnimationFrame(function () {
-      requestAnimationFrame(attemptPopulate);
+      requestAnimationFrame(function () {
+        dispatchTurnHover(wrap);
+        var editBtn = findTurnActionButton(wrap, role, "edit");
+        if (!editBtn) {
+          failEdit();
+          return;
+        }
+        editBtn.click();
+        requestAnimationFrame(attemptPopulate);
+      });
     });
+  }
+
+  function tryNativeAssistantEdit(turnId, editedText, onComplete) {
+    tryNativeEdit(turnId, editedText, "assistant", onComplete);
+  }
+
+  function finalizePendingComposerRevision() {
+    var pending = globalThis.__cgwPendingComposerRevision;
+    if (!pending) return;
+    if (isNativeStreaming()) return;
+    if (Date.now() - pending.startedAt < 500) return;
+
+    var captured = pending.revisedText || "";
+    var turns = findTurnRoots();
+    if (turns.length) {
+      var last = turns[turns.length - 1];
+      if (getTurnRole(last) === "assistant") {
+        var wrap = turnWrapper(last);
+        if (wrap) {
+          var fromDom = readTurnBubbleText(wrap, "assistant");
+          if (fromDom && fromDom.trim()) captured = fromDom.trim();
+        }
+      }
+    }
+
+    postTurnInvalidated(pending.assistantTurnId, "composer_revision", captured, {
+      editRole: "assistant",
+      revisionGroupId: pending.revisionGroupId,
+      revisionPrompt: pending.revisionPrompt,
+      assistantDomTurnId: pending.assistantTurnId,
+    });
+    globalThis.__cgwPendingComposerRevision = null;
   }
 
   function submitComposerRevision(editedText, assistantTurnId, onComplete) {
@@ -2827,28 +3493,62 @@
     });
   }
 
-  function submitSurrogateAssistantEdit(editedText, turnId) {
-    closeSurrogateEditPanel(false);
+  function submitSurrogateEdit(editedText, turnId, role) {
+    closeSurrogateEditPanel(false, { skipRebuild: true });
+    var editRole = role === "user" ? "user" : "assistant";
 
-    tryNativeAssistantEdit(turnId, editedText, function (nativeOk) {
-      if (nativeOk) {
-        postTurnInvalidated(turnId, "surrogate_edit", editedText);
-        return;
-      }
-
+    if (editRole === "assistant") {
+      var revisionGroupId =
+        "rev-" +
+        Date.now().toString(36) +
+        "-" +
+        Math.random().toString(36).slice(2, 9);
+      var revisionPrompt = buildRevisionPrompt(editedText, turnId);
       submitComposerRevision(editedText, turnId, function (composerOk) {
-        if (composerOk) {
-          postTurnInvalidated(turnId, "surrogate_edit", editedText);
+        if (!composerOk) {
+          openSurrogateEditPanel(turnId, null, editedText, "assistant");
+          setSurrogateError(
+            "Could not submit. Check that the composer is available and try again."
+          );
+          setSurrogateSubmitting(false);
+          return;
+        }
+        globalThis.__cgwPendingComposerRevision = {
+          assistantTurnId: String(turnId),
+          revisedText: editedText,
+          revisionGroupId: revisionGroupId,
+          revisionPrompt: revisionPrompt,
+          startedAt: Date.now(),
+        };
+      });
+      return;
+    }
+
+    var allowPeek = !isOverlayTranscriptMode();
+    tryNativeEdit(
+      turnId,
+      editedText,
+      editRole,
+      function (nativeOk) {
+        if (nativeOk) {
           return;
         }
 
-        openSurrogateEditPanel(turnId, null, editedText);
+        scheduleContinuousViewRebuild();
+        openSurrogateEditPanel(turnId, null, editedText, "user");
         setSurrogateError(
-          "Could not submit. Check that the composer is available and try again."
+          allowPeek
+            ? "Could not open native edit. Try again from the context menu."
+            : "Could not submit edit while keeping overlay view. Try Native transcript mode or edit in ChatGPT directly."
         );
         setSurrogateSubmitting(false);
-      });
-    });
+      },
+      { allowPeek: allowPeek }
+    );
+  }
+
+  function submitSurrogateAssistantEdit(editedText, turnId) {
+    submitSurrogateEdit(editedText, turnId, "assistant");
   }
 
   function segmentHasPacketContext(segment) {
@@ -2883,14 +3583,23 @@
       editRespBtn.hidden = true;
       regenBtn.hidden = true;
       var editTarget = wrap ? findTurnActionButton(wrap, "user", "edit") : null;
-      editBtn.disabled = !editTarget;
+      editBtn.disabled = !editTarget || isNativeStreaming();
+      editBtn.title = editBtn.disabled && isNativeStreaming()
+        ? "Wait for the current response to finish"
+        : "";
     } else {
       editBtn.hidden = true;
       editRespBtn.hidden = false;
-      editRespBtn.disabled = false;
+      editRespBtn.disabled = isNativeStreaming();
+      editRespBtn.title = editRespBtn.disabled
+        ? "Wait for the current response to finish"
+        : "";
       regenBtn.hidden = false;
       var regenTarget = wrap ? findTurnActionButton(wrap, "assistant", "regenerate") : null;
       regenBtn.disabled = !regenTarget || isNativeStreaming();
+      regenBtn.title = regenBtn.disabled && isNativeStreaming()
+        ? "Wait for the current response to finish"
+        : "";
     }
 
     if (togglePacketCtxBtn) {
@@ -2993,13 +3702,6 @@
     return false;
   }
 
-  function findEditSurface(root) {
-    if (!root) return null;
-    return root.querySelector(
-      '[contenteditable="true"], textarea, [role="textbox"], form textarea'
-    );
-  }
-
   function clearPeekObserver() {
     if (peekState.observer) {
       peekState.observer.disconnect();
@@ -3035,8 +3737,11 @@
     });
 
     document.documentElement.removeAttribute("data-cgw-continuous-peek");
+    clearInlineEditMode();
     peekState.turnId = null;
     peekState.wrap = null;
+    peekState.pendingInvalidation = null;
+    peekState.actionKind = null;
 
     var container = document.getElementById(CONTAINER_ID);
     if (container) {
@@ -3060,6 +3765,19 @@
     var hadEditor = false;
 
     function onEditEnded() {
+      if (peekState.pendingInvalidation) {
+        var inv = peekState.pendingInvalidation;
+        var text = inv.text || "";
+        if (inv.captureFromDom && peekState.wrap) {
+          text =
+            readTurnBubbleText(peekState.wrap, inv.editRole || "user") || text;
+        }
+        postTurnInvalidated(inv.turnId, inv.reason, text, {
+          editRole: inv.editRole,
+          usedFallback: !!inv.usedFallback,
+        });
+        peekState.pendingInvalidation = null;
+      }
       if (peekState.turnId) exitPeekMode();
     }
 
@@ -3283,6 +4001,11 @@
     disconnectScrollHostResizeObserver();
     disconnectScrollHostScrollLock();
     disconnectContainerScrollClamp();
+    markPreferBottomScroll();
+    userScrollAnchor = null;
+    userScrollAnchorAt = 0;
+    lastResizeBottomInset = null;
+    overlayGeometryPinnedHost = null;
     cachedScrollHostForKey = null;
     applyRetryAttempts = 0;
     cancelDomReadyWait();
@@ -3319,9 +4042,19 @@
     disconnectScrollHostResizeObserver();
     disconnectOverlayViewportWatcher();
     disconnectScrollHostWheelForward();
+    if (overlayGeometrySyncTimer != null) {
+      clearTimeout(overlayGeometrySyncTimer);
+      overlayGeometrySyncTimer = null;
+    }
+    overlayGeometrySyncPending = null;
+    userScrollAnchor = null;
+    userScrollAnchorAt = 0;
+    lastResizeBottomInset = null;
+    overlayGeometryPinnedHost = null;
     disconnectScrollHostScrollLock();
     disconnectContainerScrollClamp();
     disconnectContainerScrollIntent();
+    preferBottomOnNextApply = false;
     userDetachedFromBottom = false;
     activeConversationKey = null;
     targetConversationKey = null;
@@ -3451,13 +4184,6 @@
 
   function activateOverlayTranscriptMode(mode) {
     syncTranscriptViewDom(mode);
-    if (typeof globalThis.__cgwApplyContextTagDisplay === "function") {
-      globalThis.__cgwApplyContextTagDisplay();
-    }
-    var pd = globalThis.__cgwPacketDisplay;
-    if (pd && typeof pd.teardownAllPacketShells === "function") {
-      pd.teardownAllPacketShells();
-    }
     ensureNavigationWatcher();
     var key = getConversationKey();
     if (canResumeContinuousViewWithoutTransition(key)) {
@@ -3557,6 +4283,11 @@
       return { notReady: true, reason: "segments" };
     }
 
+    var ix = transcriptIx();
+    if (ix && typeof ix.assignPlayPairIndices === "function") {
+      ix.assignPlayPairIndices(registry, segments);
+    }
+
     globalThis.__cgwTurnRegistry = registry;
 
     var scrollHost = findScrollHost(turns);
@@ -3621,10 +4352,14 @@
       unchanged &&
       isContinuousViewStableActive() &&
       container.parentElement === scrollHost &&
-      !isNativeStreaming()
+      !isNativeStreaming() &&
+      !segmentsNeedPhraseHighlightRefresh(container)
     ) {
-      syncOverlayGeometry(scrollHost, container, { preserveScroll: true });
+      if (!shouldSkipOverlayGeometrySync(scrollHost, container, computeComposerBottomInset(scrollHost))) {
+        scheduleOverlayGeometrySync(scrollHost, container, { preserveScroll: true });
+      }
       updateStreamingStickObserver(scrollHost, container, isNativeStreaming());
+      scheduleReadingGuides(container);
       return;
     }
 
@@ -3653,10 +4388,6 @@
       reparented = true;
     }
 
-    if (reparented) {
-      applyScrollSurface(scrollHost, container, 0, false);
-    }
-
     if (needsAtomicSwap) {
       container.style.visibility = "hidden";
       container.setAttribute("aria-hidden", "true");
@@ -3667,6 +4398,7 @@
 
     ensureComposerClearanceWatcher();
     ensureScrollHostResizeObserver(scrollHost, container);
+    ensureScrollHostWheelBinding(scrollHost, container);
     bindContainerScrollClamp(container);
     bindContainerScrollIntent(container);
 
@@ -3716,6 +4448,8 @@
           finalizeContinuousViewFormatting(container, changedTurnIds);
         } else if (!unchanged) {
           finalizeContinuousViewFormatting(container, null);
+        } else {
+          scheduleReadingGuides(container);
         }
       });
       stabilizeContinuousLayout(scrollHost, container, true);
@@ -3733,8 +4467,8 @@
         if (finalizeIds.length) {
           finalizeContinuousViewFormatting(container, finalizeIds);
         }
-      } else if (unchanged) {
-        /* skip full finalize when transcript is stable */
+      } else if (unchanged && !segmentsNeedPhraseHighlightRefresh(container)) {
+        scheduleReadingGuides(container);
       } else {
         finalizeContinuousViewFormatting(container, null);
       }
@@ -3825,6 +4559,12 @@
     globalThis.__cgwContinuousViewEnabled = mode !== "native";
     syncTranscriptViewDom(mode);
 
+    diagScroll("transcript_view_mode", "Transcript view mode changed", {
+      mode: mode,
+      prev: prev,
+      continuous: globalThis.__cgwContinuousViewEnabled,
+    });
+
     if (mode === "native") {
       cancelPendingApply();
       teardown();
@@ -3840,9 +4580,18 @@
       delete globalThis.__cgwSegmentFingerprints;
       delete globalThis.__cgwSegmentBlockFingerprints;
       invalidateTurnExtractCache();
+      if (mode !== "native") {
+        markPreferBottomScroll();
+      }
     }
 
     activateOverlayTranscriptMode(mode);
+    if (
+      typeof globalThis.__cgwSetContinuousViewFormat === "function" &&
+      globalThis.__cgwContinuousViewFormat
+    ) {
+      globalThis.__cgwSetContinuousViewFormat(globalThis.__cgwContinuousViewFormat, false);
+    }
     schedule({ immediate: true });
   };
 
@@ -3853,6 +4602,7 @@
   globalThis.__cgwContinuousViewNavigate = function () {
     if (!isOverlayTranscriptMode()) return;
     ensureNavigationWatcher();
+    markPreferBottomScroll();
     var key = getConversationKey();
     if (shouldEnterTransitionForKey(key)) {
       enterConversationTransition(key, { force: true });
@@ -3877,6 +4627,19 @@
   registerTranscriptRenderer("continuous", {
     apply: applyContinuousViewCore,
   });
+
+  var transcriptInteractions = globalThis.__cgwTranscriptInteractions;
+  if (transcriptInteractions && typeof transcriptInteractions.registerRenderer === "function") {
+    transcriptInteractions.registerRenderer({
+      id: "continuous",
+      getTurnIdFromElement: function (el) {
+        var segment = el.closest(
+          ".cgw-continuous-segment, .cgw-weave-embed, .cgw-weave-body"
+        );
+        return segment ? segment.getAttribute("data-cgw-turn-id") : null;
+      },
+    });
+  }
 
   globalThis.__cgwTranscriptKernel = {
     CONTAINER_ID: CONTAINER_ID,
@@ -3906,6 +4669,7 @@
     bindContainerScrollIntent: bindContainerScrollIntent,
     ensureComposerClearanceWatcher: ensureComposerClearanceWatcher,
     ensureScrollHostResizeObserver: ensureScrollHostResizeObserver,
+    ensureScrollHostWheelBinding: ensureScrollHostWheelBinding,
     trimTurnExtractCache: trimTurnExtractCache,
     turnExtractCacheKey: turnExtractCacheKey,
     isNativeStreaming: isNativeStreaming,
@@ -3935,10 +4699,11 @@
 
   globalThis.__cgwShouldStickToBottom = shouldStickToBottom;
   globalThis.__cgwResetContinuousScrollIntent = function () {
-    userDetachedFromBottom = false;
+    markPreferBottomScroll();
   };
   globalThis.__cgwNoteUserDetachedFromBottom = function (detached) {
     userDetachedFromBottom = !!detached;
+    if (detached) preferBottomOnNextApply = false;
   };
 
   globalThis.__cgwBenchmarkDecorateTurnBlocks = function (turnCount) {

@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 namespace ChatGPTWrapper;
 
 /// <summary>
-/// Injects base CSS always; optional <c>prose-enhancements.css</c> when enabled in toolbar.
+/// Injects bundled wrapper CSS and theme variable blocks into ChatGPT pages.
 /// </summary>
 public sealed class ChatGptStyleInjection : IPageFeature
 {
@@ -19,22 +19,18 @@ public sealed class ChatGptStyleInjection : IPageFeature
     private const string ThemeStyleElementId = "chatgpt-wrapper-theme-vars";
 
     private static string? _cachedBaseCss;
-    private static string? _cachedProseCss;
     private static long _cachedFileStamp;
 
     private readonly WebView2 _webView;
-    private readonly Func<bool> _getProseEnhancementsEnabled;
     private ChatGptPageHost? _pageHost;
     private CancellationTokenSource? _historyDebounce;
     private readonly object _gate = new();
 
     string IPageFeature.FeatureId => PageFeatureIds.Style;
 
-    public ChatGptStyleInjection(WebView2 webView, Func<bool> getProseEnhancementsEnabled)
+    public ChatGptStyleInjection(WebView2 webView)
     {
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
-        _getProseEnhancementsEnabled = getProseEnhancementsEnabled
-            ?? throw new ArgumentNullException(nameof(getProseEnhancementsEnabled));
     }
 
     Task IPageFeature.ApplyAsync(CoreWebView2 core, CancellationToken cancellationToken) =>
@@ -100,44 +96,41 @@ public sealed class ChatGptStyleInjection : IPageFeature
         }
     }
 
-    private static bool IsInjectableChatGptPage(string? source) =>
-        ChatGptPageGate.IsInjectable(source);
-
     private async Task ApplyNowAsync(CoreWebView2 core)
     {
-        var css = BuildBundledCssPayload(_getProseEnhancementsEnabled());
+        var css = BuildBundledCssPayload();
         if (!string.IsNullOrWhiteSpace(css))
-            await InjectCssAsync(core, StyleElementId, css, _getProseEnhancementsEnabled());
+            await InjectCssAsync(core, StyleElementId, css);
 
         await ReapplyThemeVariablesAsync(core);
     }
 
-    public static Task ReapplyAsync(CoreWebView2 core, bool proseEnhancementsEnabled) =>
-        InjectAllAsync(core, proseEnhancementsEnabled);
+    public static Task ReapplyAsync(CoreWebView2 core) =>
+        InjectAllAsync(core);
 
     public static Task ReapplyThemeVariablesAsync(CoreWebView2 core)
     {
         var css = ThemeApplicationService.BuildCssVariableBlock(ThemeRuntime.Current);
-        return InjectCssAsync(core, ThemeStyleElementId, css, proseEnhancementsEnabled: false);
+        return InjectCssAsync(core, ThemeStyleElementId, css);
     }
 
-    private static Task InjectAllAsync(CoreWebView2 core, bool proseEnhancementsEnabled)
+    private static Task InjectAllAsync(CoreWebView2 core)
     {
-        var css = BuildBundledCssPayload(proseEnhancementsEnabled);
+        var css = BuildBundledCssPayload();
         return string.IsNullOrWhiteSpace(css)
             ? ReapplyThemeVariablesAsync(core)
-            : InjectBothAsync(core, css, proseEnhancementsEnabled);
+            : InjectBothAsync(core, css);
     }
 
-    private static async Task InjectBothAsync(CoreWebView2 core, string bundledCss, bool proseEnhancementsEnabled)
+    private static async Task InjectBothAsync(CoreWebView2 core, string bundledCss)
     {
-        await InjectCssAsync(core, StyleElementId, bundledCss, proseEnhancementsEnabled);
+        await InjectCssAsync(core, StyleElementId, bundledCss);
         await ReapplyThemeVariablesAsync(core);
     }
 
-    internal static string BuildCssPayload(bool proseEnhancementsEnabled)
+    internal static string BuildCssPayload()
     {
-        var bundled = BuildBundledCssPayload(proseEnhancementsEnabled);
+        var bundled = BuildBundledCssPayload();
         if (string.IsNullOrEmpty(bundled))
             return ThemeApplicationService.BuildCssVariableBlock(ThemeRuntime.Current);
 
@@ -147,32 +140,19 @@ public sealed class ChatGptStyleInjection : IPageFeature
         return sb.ToString().Trim();
     }
 
-    private static string BuildBundledCssPayload(bool proseEnhancementsEnabled)
+    private static string BuildBundledCssPayload()
     {
         EnsureFileCaches();
-
-        var sb = new StringBuilder();
-        if (!string.IsNullOrEmpty(_cachedBaseCss))
-            sb.Append(_cachedBaseCss);
-
-        if (proseEnhancementsEnabled && !string.IsNullOrEmpty(_cachedProseCss))
-        {
-            if (sb.Length > 0)
-                sb.AppendLine();
-            sb.Append(_cachedProseCss);
-        }
-
-        return sb.ToString().Trim();
+        return _cachedBaseCss ?? string.Empty;
     }
 
     private static void EnsureFileCaches()
     {
         var baseDir = AppContext.BaseDirectory;
         var bundledPath = Path.Combine(baseDir, "wrapper-assets", "wrapper-overrides.css");
-        var prosePath = Path.Combine(baseDir, "wrapper-assets", "prose-enhancements.css");
         var userPath = Path.Combine(AppDirectories.StylesDirectory, "user-overrides.css");
 
-        var newStamp = WrapperAssetCache.ComputeStamp(bundledPath, prosePath, userPath);
+        var newStamp = WrapperAssetCache.ComputeStamp(bundledPath, userPath);
         if (_cachedFileStamp == newStamp && _cachedBaseCss != null)
             return;
 
@@ -180,10 +160,6 @@ public sealed class ChatGptStyleInjection : IPageFeature
         AppendFile(baseSb, bundledPath, "bundled");
         AppendFile(baseSb, userPath, "user");
         _cachedBaseCss = baseSb.ToString().Trim();
-
-        var proseSb = new StringBuilder();
-        AppendFile(proseSb, prosePath, "prose");
-        _cachedProseCss = proseSb.ToString().Trim();
 
         _cachedFileStamp = newStamp;
     }
@@ -205,14 +181,9 @@ public sealed class ChatGptStyleInjection : IPageFeature
         }
     }
 
-    private static async Task InjectCssAsync(
-        CoreWebView2 core,
-        string elementId,
-        string css,
-        bool proseEnhancementsEnabled)
+    private static async Task InjectCssAsync(CoreWebView2 core, string elementId, string css)
     {
         var payload = JsonSerializer.Serialize(css);
-        var proseFlag = proseEnhancementsEnabled ? "true" : "false";
         var script =
             "(function () {\n" +
             $"  const css = {payload};\n" +
@@ -225,13 +196,6 @@ public sealed class ChatGptStyleInjection : IPageFeature
             "    document.documentElement.appendChild(el);\n" +
             "  }\n" +
             "  el.textContent = css;\n" +
-            (elementId == StyleElementId
-                ? $"  if ({proseFlag}) {{\n" +
-                  "    document.documentElement.setAttribute(\"data-cgw-prose-enhanced\", \"1\");\n" +
-                  "  } else {\n" +
-                  "    document.documentElement.removeAttribute(\"data-cgw-prose-enhanced\");\n" +
-                  "  }\n"
-                : string.Empty) +
             "})();";
 
         try

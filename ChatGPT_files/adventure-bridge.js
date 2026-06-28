@@ -468,7 +468,7 @@
   function waitForProjectChatReady(onDone, attempts) {
     attempts = attempts || 0;
     var probe = probeComposer();
-    if (probe.composerFound) {
+    if (probe.composerFound && probe.conversationId) {
       onDone({ ok: true, probe: probe, conversationId: probe.conversationId });
       return;
     }
@@ -654,6 +654,21 @@
     return document.querySelectorAll('[data-message-author-role="user"]').length;
   }
 
+  /** Play turns only — excludes utility jobs and context-only injection packets. */
+  function countPlayUserTurns() {
+    var nodes = document.querySelectorAll('[data-message-author-role="user"]');
+    var count = 0;
+    for (var i = 0; i < nodes.length; i++) {
+      var text = extractTurnText(nodes[i]);
+      if (!text) continue;
+      if (isUtilityUserMessage(text)) continue;
+      var playerText = extractTranscriptPlayerText(text);
+      if (!playerText && isInjectedContextUserMessage(text)) continue;
+      count++;
+    }
+    return count;
+  }
+
   function readComposerText() {
     var el = findComposerElement();
     if (!el) return "";
@@ -661,9 +676,91 @@
     return (el.innerText || el.textContent || "").trim();
   }
 
+  function shortTextHash(text) {
+    var s = text || "";
+    var h = 0;
+    for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(16).slice(0, 8);
+  }
+
+  function fillReadbackRatio(expectedLen, actualLen) {
+    if (expectedLen <= 0) return 1;
+    return actualLen / expectedLen;
+  }
+
+  function minFillReadbackRatio(expectedLen) {
+    return expectedLen > 200 ? 0.9 : 0.5;
+  }
+
+  function waitForStableComposerText(expectedText, timeoutMs, onDone) {
+    var expectedLen = (expectedText || "").trim().length;
+    var deadline = Date.now() + (timeoutMs || STABLE_TEXT_MS + 400);
+    var stableSince = 0;
+    var lastLen = -1;
+    function poll() {
+      var current = readComposerText();
+      var len = current.length;
+      if (len === lastLen && len > 0) {
+        if (!stableSince) stableSince = Date.now();
+        if (Date.now() - stableSince >= STABLE_TEXT_MS) {
+          onDone({ ok: true, readback: current, length: len });
+          return;
+        }
+      } else {
+        stableSince = 0;
+        lastLen = len;
+      }
+      if (Date.now() >= deadline) {
+        onDone({
+          ok: false,
+          readback: current,
+          length: len,
+          error: "composer_text_unstable",
+        });
+        return;
+      }
+      setTimeout(poll, 60);
+    }
+    poll();
+  }
+
+  function auditLastUserMessageDelivery(sentText, packetHash, onDone) {
+    var nodes = document.querySelectorAll('[data-message-author-role="user"]');
+    if (!nodes.length) {
+      onDone({ ok: false, error: "no_user_message" });
+      return;
+    }
+    var domText = extractTurnText(nodes[nodes.length - 1]);
+    var sentLen = (sentText || "").trim().length;
+    var domLen = domText.length;
+    var ratio = fillReadbackRatio(sentLen, domLen);
+    var mismatch = sentLen > 200 && ratio < minFillReadbackRatio(sentLen);
+    sendLog(
+      mismatch ? "warn" : "info",
+      "bridge_delivery_audit",
+      mismatch ? "DOM user message shorter than sent packet" : "DOM user message matches sent packet",
+      {
+        sentLen: sentLen,
+        domLen: domLen,
+        ratio: ratio,
+        sentHash: shortTextHash(sentText),
+        domHash: shortTextHash(domText),
+        packetHash: packetHash || null,
+      }
+    );
+    onDone({
+      ok: !mismatch,
+      sentLen: sentLen,
+      domLen: domLen,
+      ratio: ratio,
+      error: mismatch ? "injection_delivery_mismatch" : null,
+    });
+  }
+
   function waitForSubmitVerification(baselineUserCount, filledText, timeoutMs, onDone) {
     var deadline = Date.now() + (timeoutMs || 8000);
     var filledLen = (filledText || "").trim().length;
+    var minRatio = minFillReadbackRatio(filledLen);
     function poll() {
       var userCount = countUserTurns();
       var composerText = readComposerText();
@@ -675,8 +772,22 @@
         onDone({ ok: true, verifiedBy: "composer_empty" });
         return;
       }
-      if (filledLen > 12 && composerText.length < Math.max(8, filledLen * 0.2)) {
-        onDone({ ok: true, verifiedBy: "composer_shortened" });
+      if (
+        filledLen > 200 &&
+        fillReadbackRatio(filledLen, composerText.length) < minRatio
+      ) {
+        if (Date.now() >= deadline) {
+          onDone({
+            ok: false,
+            error: "fill_incomplete",
+            probe: probeComposer(),
+            userCount: userCount,
+            composerLength: composerText.length,
+            filledLen: filledLen,
+          });
+          return;
+        }
+        setTimeout(poll, 120);
         return;
       }
       if (Date.now() >= deadline) {
@@ -758,7 +869,8 @@
       text.indexOf("=== STORY SO FAR") >= 0 ||
       text.indexOf("=== ROLLING SUMMARY ===") >= 0 ||
       text.indexOf("=== STATE ===") >= 0 ||
-      text.indexOf("=== CURRENT STATE ===") >= 0
+      text.indexOf("=== CURRENT STATE ===") >= 0 ||
+      text.indexOf("=== CANON UPDATE") >= 0
     );
   }
 
@@ -774,17 +886,39 @@
     return String(text).indexOf("[[cgw:utility") >= 0;
   }
 
+  function stripTrailingInjectionBlocks(text) {
+    if (typeof globalThis.__cgwStripTrailingInjectionBlocks === "function") {
+      return globalThis.__cgwStripTrailingInjectionBlocks(text);
+    }
+    if (!text) return "";
+    var markers = [
+      "=== TURN OVERRIDES ===",
+      "=== TURN DIRECTIVE ===",
+      "=== CANON UPDATE (check sources) ===",
+    ];
+    var earliest = text.length;
+    for (var i = 0; i < markers.length; i++) {
+      var idx = text.indexOf(markers[i]);
+      if (idx >= 0 && idx < earliest) earliest = idx;
+    }
+    return earliest < text.length ? text.slice(0, earliest).trim() : text.trim();
+  }
+
   function extractTranscriptPlayerText(text) {
     if (!text) return "";
     if (isUtilityUserMessage(text)) return "";
-    if (!isInjectedContextUserMessage(text)) return sanitizeTranscriptText(text);
     var marker = "=== PLAYER TURN ===";
     var markerIdx = text.indexOf(marker);
     if (markerIdx >= 0) {
       var afterMarker = text.slice(markerIdx + marker.length).replace(/^[\r\n]+/, "");
-      return sanitizeTranscriptText(afterMarker);
+      return sanitizeTranscriptText(stripTrailingInjectionBlocks(afterMarker));
     }
-    return sanitizeTranscriptText(stripContextTags(text));
+    if (!isInjectedContextUserMessage(text) && text.indexOf("[[cgw:") < 0) {
+      return sanitizeTranscriptText(text);
+    }
+    return sanitizeTranscriptText(
+      stripTrailingInjectionBlocks(stripContextTags(text))
+    );
   }
 
   function getLastAssistantNode() {
@@ -955,19 +1089,74 @@
       var baseline = countAssistantTurns();
 
       function continueFillAndSubmit() {
-        var filled = fillComposer(text);
-        if (!filled) {
-          filled = fillComposer(text);
-        }
-        if (!filled) {
-          sendLog("error", "bridge_fill_failed", "fillComposer returned false", {
-            probe: probeComposer(),
+        var expectedLen = (text || "").trim().length;
+
+        function proceedToSubmit() {
+          waitForStableComposerText(text, STABLE_TEXT_MS + 800, function (stable) {
+            if (!stable.ok && expectedLen > 200) {
+              sendLog("error", "bridge_fill_unstable", "Composer text did not stabilize before submit", {
+                expectedLen: expectedLen,
+                readbackLen: stable.length,
+                error: stable.error,
+              });
+              finish({ ok: false, error: stable.error || "composer_text_unstable" });
+              return;
+            }
+            scheduleSubmitAttempts();
           });
-          finish({ ok: false, error: "composer_not_found" });
-          return;
         }
-        sendLog("debug", "bridge_fill_ok", "Composer filled", { probe: probeComposer() });
-        scheduleSubmitAttempts();
+
+        function afterFill(attempt) {
+          var filled = fillComposer(text);
+          if (!filled && attempt < 2) {
+            filled = fillComposer(text);
+          }
+          if (!filled) {
+            sendLog("error", "bridge_fill_failed", "fillComposer returned false", {
+              probe: probeComposer(),
+              attempt: attempt,
+            });
+            finish({ ok: false, error: "composer_not_found" });
+            return;
+          }
+
+          var readback = readComposerText();
+          var readbackLen = readback.length;
+          var ratio = fillReadbackRatio(expectedLen, readbackLen);
+          sendLog("info", "bridge_fill_readback", "Composer fill readback", {
+            expectedLen: expectedLen,
+            readbackLen: readbackLen,
+            ratio: ratio,
+            hashPrefix: shortTextHash(readback),
+            attempt: attempt,
+          });
+
+          if (expectedLen > 200 && ratio < minFillReadbackRatio(expectedLen)) {
+            if (attempt < 2) {
+              setTimeout(function () {
+                afterFill(attempt + 1);
+              }, 100);
+              return;
+            }
+            sendLog("error", "bridge_fill_incomplete", "Composer readback too short after fill", {
+              expectedLen: expectedLen,
+              readbackLen: readbackLen,
+              ratio: ratio,
+            });
+            finish({ ok: false, error: "fill_incomplete" });
+            return;
+          }
+
+          sendLog("debug", "bridge_fill_ok", "Composer filled", {
+            probe: probeComposer(),
+            expectedLen: expectedLen,
+            readbackLen: readbackLen,
+            ratio: ratio,
+          });
+          proceedToSubmit();
+        }
+
+        afterFill(1);
       }
 
       function prepareNativeComposer(onReady) {
@@ -1254,7 +1443,20 @@
           } catch (_clear) {
             /* ignore */
           }
-          finish({ ok: true });
+          var auditText =
+            options && options.displayUserLine && options.displayUserLine.trim()
+              ? options.displayUserLine
+              : text;
+          auditLastUserMessageDelivery(auditText, packetHash, function (audit) {
+            if (!audit.ok) {
+              finish({
+                ok: false,
+                error: audit.error || "injection_delivery_mismatch",
+              });
+              return;
+            }
+            finish({ ok: true });
+          });
         },
       },
       "promptSubmitted"
@@ -1402,7 +1604,7 @@
         post({
           type: "userTurnCount",
           ok: true,
-          count: countUserTurns(),
+          count: countPlayUserTurns(),
           conversationId: getConversationKey(),
         });
         break;

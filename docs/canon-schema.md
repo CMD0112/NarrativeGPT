@@ -20,6 +20,7 @@ Defer full JSON-bag-only storage to a follow-up.
 - **`CanonSchemaMigrationService`** — bumps `AdventureMetadata.CanonSchemaVersion` on load when registry version advances.
 - **`CanonEntityPropertyGraph`** — reflection-based get/set replaces per-type mapper switches in `CanonFieldMapper`.
 - **`CanonFormatGenerator`** — generates `sources/canon-format.md` from the loaded registry (CMD-197). Refreshed on **Refresh export** and shown in **Designer → Sources** (pipeline checklist + upload callout) and **Source Manager** for Project upload.
+- **`NarratorScalesLoader` / `NarratorScalesGenerator`** — generates `sources/narrator-scales.md` from bundled `Adventure/Schema/narrator-scales.json` (preset definitions for play/instruction injection). Same reference-file lifecycle as canon-format.
 - **`CanonValidationService`** — linter for sectioned sources (CMD-198).
 
 JSON shape mirrors `CanonEntityKindSpec` + `CanonFieldSpec` (`format`, `role`, `controlType`, `alternateLabels`). Global schema only — per-adventure custom schemas remain out of scope.

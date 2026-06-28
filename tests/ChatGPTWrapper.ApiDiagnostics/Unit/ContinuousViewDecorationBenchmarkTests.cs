@@ -29,5 +29,6 @@ public sealed class ContinuousViewDecorationBenchmarkTests(PlayComposeTestHost h
         Assert.Contains("interleaveGroupedTurnRoots", text);
         Assert.Contains("__cgwThreadOrdinalMap", text);
         Assert.Contains("scheduleContinuousViewDecorationOnly", text);
+        Assert.Contains("segmentsNeedPhraseHighlightRefresh", text);
     }
 }

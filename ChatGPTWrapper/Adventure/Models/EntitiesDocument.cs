@@ -2,7 +2,7 @@ namespace ChatGPTWrapper.Adventure.Models;
 
 public sealed class EntitiesDocument
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -50,6 +50,12 @@ public sealed class PlayerCharacterSheet
     public string Weaknesses { get; set; } = "";
 
     public string Goals { get; set; } = "";
+
+    public string ImagePath { get; set; } = "";
+
+    public List<string> Tags { get; set; } = [];
+
+    public List<string> Aliases { get; set; } = [];
 
     public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
@@ -123,6 +129,12 @@ public sealed class CompanionEntry
     public string Goals { get; set; } = "";
 
     public string Secrets { get; set; } = "";
+
+    public string ImagePath { get; set; } = "";
+
+    public List<string> Tags { get; set; } = [];
+
+    public List<string> Aliases { get; set; } = [];
 
     public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

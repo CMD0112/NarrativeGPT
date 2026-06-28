@@ -1174,46 +1174,57 @@ public sealed class ChatGptProjectApiService
                 ChatGptApiDiscovery.RecordFailure(ChatGptApiEndpoints.ConversationInit, "POST", initMsg.Status);
             }
 
-            var legacyBody = new Dictionary<string, object?>
+            if (options?.SkipLegacyApiCreate != true)
             {
-                ["gizmo_id"] = gizmoId,
-                ["model"] = "auto",
-            };
-
-            var legacyMsg = await _bridge.SendAsync(
-                core,
-                new
+                var legacyBody = new Dictionary<string, object?>
                 {
-                    action = "apiRequest",
-                    method = "POST",
-                    path = ChatGptApiEndpoints.ConversationsCreate,
-                    body = legacyBody,
-                },
-                cancellationToken: cancellationToken);
+                    ["gizmo_id"] = gizmoId,
+                    ["model"] = "auto",
+                };
 
-            if (legacyMsg.Ok)
-            {
-                ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.ConversationsCreate, "POST");
-                var fromLegacy = TryReadConversationId(legacyMsg.Json);
-                if (!string.IsNullOrWhiteSpace(fromLegacy))
+                var legacyMsg = await _bridge.SendAsync(
+                    core,
+                    new
+                    {
+                        action = "apiRequest",
+                        method = "POST",
+                        path = ChatGptApiEndpoints.ConversationsCreate,
+                        body = legacyBody,
+                    },
+                    cancellationToken: cancellationToken);
+
+                if (legacyMsg.Ok)
                 {
-                    if (legacyMsg.Json is { } legacyJson)
-                        ChatGptConversationSendService.TrySeedParentCache(fromLegacy, legacyJson);
-                    EnsureConversationParentBootstrapped(fromLegacy);
-                    return new CreateProjectConversationResult { ConversationId = fromLegacy };
+                    ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.ConversationsCreate, "POST");
+                    var fromLegacy = TryReadConversationId(legacyMsg.Json);
+                    if (!string.IsNullOrWhiteSpace(fromLegacy))
+                    {
+                        if (legacyMsg.Json is { } legacyJson)
+                            ChatGptConversationSendService.TrySeedParentCache(fromLegacy, legacyJson);
+                        EnsureConversationParentBootstrapped(fromLegacy);
+                        return new CreateProjectConversationResult { ConversationId = fromLegacy };
+                    }
                 }
-            }
-            else
-            {
-                ProjectLinkDiagnostics.Log(
-                    $"ConversationsCreate failed for {gizmoId} status={legacyMsg.Status} error={legacyMsg.Error}");
-                ChatGptApiDiscovery.RecordFailure(ChatGptApiEndpoints.ConversationsCreate, "POST", legacyMsg.Status);
+                else
+                {
+                    ProjectLinkDiagnostics.Log(
+                        $"ConversationsCreate failed for {gizmoId} status={legacyMsg.Status} error={legacyMsg.Error}");
+                    ChatGptApiDiscovery.RecordFailure(ChatGptApiEndpoints.ConversationsCreate, "POST", legacyMsg.Status);
+                }
             }
         }
 
         var uiResult = await TryUiCreateConversationAsync(core, gizmoId, options, cancellationToken);
         if (!string.IsNullOrWhiteSpace(uiResult.ConversationId))
             return uiResult;
+
+        if (options?.SkipClientBootstrap == true)
+        {
+            return new CreateProjectConversationResult
+            {
+                Error = initError ?? "play_provision_no_conversation",
+            };
+        }
 
         var clientId = Guid.NewGuid().ToString();
         if (await TryRegisterClientConversationAsync(core, gizmoId, clientId, cancellationToken))

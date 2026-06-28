@@ -67,7 +67,7 @@ internal static class RenameReconciliationService
         }
 
         if (phraseRules is not null
-            && phraseRules.Any(r => string.Equals(r.Phrase, priorName, StringComparison.OrdinalIgnoreCase)))
+            && phraseRules.Any(r => RuleMatchesRename(r, priorName, context.EntityId, context.Category)))
         {
             plan.PhraseHighlightUpdates.Add($"Phrase highlight \"{priorName}\" → \"{newName}\"");
         }
@@ -149,7 +149,7 @@ internal static class RenameReconciliationService
         }
 
         if (options.UpdatePhraseHighlights && phraseRules is not null)
-            UpdatePhraseHighlights(phraseRules, priorName, newName);
+            UpdatePhraseHighlights(phraseRules, priorName, newName, context.EntityId, context.Category);
     }
 
     private static bool IsRename(CanonEditContext context) =>
@@ -210,12 +210,43 @@ internal static class RenameReconciliationService
         return target;
     }
 
-    private static void UpdatePhraseHighlights(IList<PhraseHighlightRule> rules, string priorName, string newName)
+    private static void UpdatePhraseHighlights(
+        IList<PhraseHighlightRule> rules,
+        string priorName,
+        string newName,
+        Guid? entityId,
+        string? entityCategory)
     {
         foreach (var rule in rules)
         {
+            if (entityId is not null
+                && !string.IsNullOrWhiteSpace(entityCategory)
+                && rule.EntityId == entityId
+                && string.Equals(rule.EntityCategory, entityCategory, StringComparison.OrdinalIgnoreCase))
+            {
+                rule.Phrase = newName;
+                continue;
+            }
+
             if (string.Equals(rule.Phrase, priorName, StringComparison.OrdinalIgnoreCase))
                 rule.Phrase = newName;
         }
+    }
+
+    private static bool RuleMatchesRename(
+        PhraseHighlightRule rule,
+        string priorName,
+        Guid? entityId,
+        string? entityCategory)
+    {
+        if (entityId is not null
+            && !string.IsNullOrWhiteSpace(entityCategory)
+            && rule.EntityId == entityId
+            && string.Equals(rule.EntityCategory, entityCategory, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.Equals(rule.Phrase, priorName, StringComparison.OrdinalIgnoreCase);
     }
 }

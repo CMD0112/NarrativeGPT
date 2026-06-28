@@ -1,7 +1,9 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Format;
+using ChatGPTWrapper.Shell;
 using ChatGPTWrapper.Theme;
 
 namespace ChatGPTWrapper;
@@ -31,13 +33,6 @@ public sealed class UiChromeSettings
     public TranscriptViewModeSettings WeaveSettings { get; set; } = new();
 
     [JsonIgnore]
-    public bool ProseEnhancementsEnabled
-    {
-        get => this.ActiveModeSettings().ProseEnhancementsEnabled;
-        set => this.ActiveModeSettings().ProseEnhancementsEnabled = value;
-    }
-
-    [JsonIgnore]
     public bool HideAssistantEditArtifacts
     {
         get => this.ActiveModeSettings().HideAssistantEditArtifacts;
@@ -48,14 +43,24 @@ public sealed class UiChromeSettings
     public bool HideContextTagsInThread
     {
         get => this.ActiveModeSettings().HideContextTagsInThread;
-        set => this.ActiveModeSettings().HideContextTagsInThread = value;
+        set => SetThreadPacketDisplayPolicy(value, ExpandHiddenContextInThread);
     }
 
     [JsonIgnore]
     public bool ExpandHiddenContextInThread
     {
         get => this.ActiveModeSettings().ExpandHiddenContextInThread;
-        set => this.ActiveModeSettings().ExpandHiddenContextInThread = value;
+        set => SetThreadPacketDisplayPolicy(HideContextTagsInThread, value);
+    }
+
+    internal void SetThreadPacketDisplayPolicy(bool hideContextTags, bool expandHiddenContext)
+    {
+        NativeSettings.HideContextTagsInThread = hideContextTags;
+        ContinuousSettings.HideContextTagsInThread = hideContextTags;
+        WeaveSettings.HideContextTagsInThread = hideContextTags;
+        NativeSettings.ExpandHiddenContextInThread = expandHiddenContext;
+        ContinuousSettings.ExpandHiddenContextInThread = expandHiddenContext;
+        WeaveSettings.ExpandHiddenContextInThread = expandHiddenContext;
     }
 
     [JsonIgnore]
@@ -106,15 +111,34 @@ public sealed class UiChromeSettings
 
     public HighlightColorAssignmentOptions HighlightColorCustomOptions { get; set; } = new();
 
+    public string ActiveHighlightColorGroupingProfileId { get; set; } = HighlightColorGroupingProfileIds.None;
+
+    public List<HighlightColorGroupingProfile> HighlightColorGroupingProfiles { get; set; } = [];
+
+    public HighlightColorGroupingProfile HighlightColorGroupingCustomProfile { get; set; } = new()
+    {
+        Id = HighlightColorGroupingProfileIds.Custom,
+        Name = "Custom",
+    };
+
     public int ChromePreferencesRevision { get; set; }
 
     public int ThemeRevision { get; set; }
 
+    /// <summary>One-shot maintenance for phrase highlight rules (see <see cref="PhraseHighlightRuleService.PruneAmbiguousRules"/>).</summary>
+    public int PhraseHighlightMaintenanceVersion { get; set; }
+
     public ThemeSettings Theme { get; set; } = ThemeApplicationService.CreateDefaultSettings();
+
+    public List<string> RecentPickerColors { get; set; } = [];
+
+    public Dictionary<string, ShellShortcutBinding> ShellShortcutOverrides { get; set; } = new();
 }
 
 internal static class UiChromeStore
 {
+    private const int PhraseHighlightMaintenanceVersion = 4;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -141,8 +165,12 @@ internal static class UiChromeStore
             TranscriptViewModeMigration.Normalize(settings);
             PerModeSettingsMigration.Apply(settings, json);
             NormalizeModeSettings(settings);
+            ApplyPhraseHighlightMaintenance(settings);
             HighlightColorAssignmentService.Normalize(settings);
+            HighlightColorGroupingProfileService.Normalize(settings);
             settings.Theme = ThemeApplicationService.NormalizeSettings(settings.Theme);
+            settings.ShellShortcutOverrides ??= new Dictionary<string, ShellShortcutBinding>();
+            ShellShortcutCatalog.NormalizeOverrides(settings.ShellShortcutOverrides);
             return settings;
         }
         catch
@@ -177,5 +205,35 @@ internal static class UiChromeStore
         settings.NativeSettings.Normalize();
         settings.ContinuousSettings.Normalize();
         settings.WeaveSettings.Normalize();
+        SyncThreadPacketDisplayAcrossModes(settings);
+    }
+
+    private static void SyncThreadPacketDisplayAcrossModes(UiChromeSettings settings)
+    {
+        var hide = settings.NativeSettings.HideContextTagsInThread;
+        var expand = settings.NativeSettings.ExpandHiddenContextInThread;
+        settings.ContinuousSettings.HideContextTagsInThread = hide;
+        settings.WeaveSettings.HideContextTagsInThread = hide;
+        settings.ContinuousSettings.ExpandHiddenContextInThread = expand;
+        settings.WeaveSettings.ExpandHiddenContextInThread = expand;
+    }
+
+    private static void ApplyPhraseHighlightMaintenance(UiChromeSettings settings)
+    {
+        if (settings.PhraseHighlightMaintenanceVersion >= PhraseHighlightMaintenanceVersion)
+            return;
+
+        PhraseHighlightRuleService.PruneAmbiguousRules(settings.NativeSettings.PhraseHighlightRules);
+        PhraseHighlightRuleService.PruneAmbiguousRules(settings.ContinuousSettings.PhraseHighlightRules);
+        PhraseHighlightRuleService.PruneAmbiguousRules(settings.WeaveSettings.PhraseHighlightRules);
+
+        var aliasCatalog = EntityAliasCatalog.BuildFromLibrary();
+        PhraseHighlightRuleService.AlignRulesToEntityCardAliases(settings.NativeSettings.PhraseHighlightRules, aliasCatalog);
+        PhraseHighlightRuleService.AlignRulesToEntityCardAliases(settings.ContinuousSettings.PhraseHighlightRules, aliasCatalog);
+        PhraseHighlightRuleService.AlignRulesToEntityCardAliases(settings.WeaveSettings.PhraseHighlightRules, aliasCatalog);
+        PhraseHighlightRuleService.InferAliasLinkages(settings.NativeSettings.PhraseHighlightRules);
+        PhraseHighlightRuleService.InferAliasLinkages(settings.ContinuousSettings.PhraseHighlightRules);
+        PhraseHighlightRuleService.InferAliasLinkages(settings.WeaveSettings.PhraseHighlightRules);
+        settings.PhraseHighlightMaintenanceVersion = PhraseHighlightMaintenanceVersion;
     }
 }

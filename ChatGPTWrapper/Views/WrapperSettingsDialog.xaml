@@ -1,4 +1,4 @@
-<Window x:Class="ChatGPTWrapper.Views.WrapperSettingsDialog"
+<shell:ShellDialogWindow xmlns:shell="clr-namespace:ChatGPTWrapper.Shell" x:Class="ChatGPTWrapper.Views.WrapperSettingsDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Wrapper settings"
@@ -49,4 +49,4 @@
             <Button Content="Cancel" Padding="12,6" Click="Cancel_Click" IsCancel="True"/>
         </StackPanel>
     </Grid>
-</Window>
+</shell:ShellDialogWindow>

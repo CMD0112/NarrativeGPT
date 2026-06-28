@@ -1,10 +1,11 @@
 using System.IO;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using ChatGPTWrapper.Adventure.Services;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class SourceCompareDialog : Window
+public partial class SourceCompareDialog : ShellDialogWindow
 {
     public static SourceCompareDialog FromPaths(
         string leftPath,

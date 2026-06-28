@@ -215,7 +215,7 @@ public sealed class PlayTurnScopeServiceTests : IDisposable
 
         var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
 
-        Assert.Null(reloaded.Metadata.LinkedConversationId);
+        Assert.Null(PlayThreadBindingService.GetActiveConversationId(reloaded));
         Assert.Equal(1, PlayTurnScopeService.GetNextPacketTurnIndex(reloaded));
         Assert.Empty(PlayTurnScopeService.GetPacketContextTurns(reloaded));
         Assert.True(PlayTurnScopeService.IsFreshPlayThread(reloaded));
@@ -231,7 +231,7 @@ public sealed class PlayTurnScopeServiceTests : IDisposable
         var newUrl = ChatGptUrls.BuildProjectConversationUrl("thread-new", "g-p-test");
         Assert.True(PlayContextSessionCache.TrySyncPlayThreadFromSource(bundle, newUrl));
 
-        Assert.Equal("thread-new", bundle.Metadata.LinkedConversationId);
+        Assert.Equal("thread-new", PlayThreadBindingService.GetActiveConversationId(bundle));
         Assert.Equal(1, PlayTurnScopeService.GetNextPacketTurnIndex(bundle));
         Assert.Empty(PlayTurnScopeService.GetPacketContextTurns(bundle));
     }

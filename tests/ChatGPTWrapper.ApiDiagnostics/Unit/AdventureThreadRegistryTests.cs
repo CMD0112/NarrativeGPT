@@ -43,7 +43,7 @@ public sealed class AdventureThreadRegistryTests
     }
 
     [Fact]
-    public void SyncLegacyFields_reflects_active_design_entry()
+    public void Active_design_entry_persists_pin_and_conversation()
     {
         var bundle = new AdventureBundle
         {
@@ -62,11 +62,9 @@ public sealed class AdventureThreadRegistryTests
         entry.PinnedTabKey = "design-key";
         AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
 
-        Assert.Equal("design-key", bundle.Metadata.PinnedDesignTabKey);
-        Assert.True(bundle.Metadata.UtilitySessions.ContainsKey(GenerationJobId.DesignAdventure));
-        Assert.Equal(
-            "design-conv-1",
-            bundle.Metadata.UtilitySessions[GenerationJobId.DesignAdventure].ConversationId);
+        var active = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design);
+        Assert.Equal("design-key", active!.PinnedTabKey);
+        Assert.Equal("design-conv-1", active.ConversationId);
     }
 
     [Fact]
@@ -93,8 +91,8 @@ public sealed class AdventureThreadRegistryTests
         second.PinnedTabKey = "key-2";
         AdventureThreadRegistryService.SetActivePin(bundle, second.Id, notifyPlayThreadChanged: false);
 
-        Assert.Equal("play-2", bundle.Metadata.LinkedConversationId);
-        Assert.Equal("key-2", bundle.Metadata.PinnedPlayTabKey);
+        Assert.Equal("play-2", AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Play));
+        Assert.Equal("key-2", AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)!.PinnedTabKey);
         Assert.Equal("Chapter 2", AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)!.Label);
     }
 
@@ -120,15 +118,15 @@ public sealed class AdventureThreadRegistryTests
             Metadata = new AdventureMetadata
             {
                 Id = Guid.NewGuid(),
-                LinkedConversationId = "old-play",
-                PinnedPlayTabKey = "old-key",
             },
         };
         AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play, conversationId: "old-play");
+        entry.PinnedTabKey = "old-key";
+        AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
 
         AdventureThreadRegistryService.ReleaseActiveThread(bundle, AdventureThreadKind.Play);
 
-        Assert.Null(bundle.Metadata.LinkedConversationId);
         Assert.Null(AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play));
         Assert.Contains(
             bundle.Metadata.ThreadRegistry,
@@ -169,7 +167,30 @@ public sealed class AdventureThreadRegistryTests
     }
 
     [Fact]
-    public void UpdateConversationId_on_play_entry_syncs_legacy_linked_conversation()
+    public void FormatConnectionSummary_includes_project_and_thread_tails()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                Id = Guid.NewGuid(),
+                LinkedProjectId = "g-p-test",
+            },
+        };
+        var play = AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play, conversationId: "play-conversation-id");
+        AdventureThreadRegistryService.SetActivePin(bundle, play.Id, notifyPlayThreadChanged: false);
+        var design = AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design, conversationId: "design-conversation-id");
+        AdventureThreadRegistryService.SetActivePin(bundle, design.Id, notifyPlayThreadChanged: false);
+
+        var summary = AdventureThreadRegistryService.FormatConnectionSummary(bundle);
+
+        Assert.Contains("Project: g-p-test", summary);
+        Assert.Contains("Play:", summary);
+        Assert.Contains("Design:", summary);
+    }
+
+    [Fact]
+    public void UpdateConversationId_on_play_entry_updates_active_conversation()
     {
         var bundle = new AdventureBundle
         {
@@ -180,9 +201,7 @@ public sealed class AdventureThreadRegistryTests
         AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
 
         AdventureThreadRegistryService.UpdateConversationId(bundle, entry.Id, "conv-updated");
-        AdventureThreadRegistryService.SyncLegacyFields(bundle.Metadata);
 
-        Assert.Equal("conv-updated", bundle.Metadata.LinkedConversationId);
         Assert.Equal(
             "conv-updated",
             AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Play));

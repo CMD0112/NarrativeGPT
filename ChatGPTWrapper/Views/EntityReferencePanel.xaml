@@ -102,16 +102,14 @@
                     <DockPanel LastChildFill="True">
 
                         <Border DockPanel.Dock="Right"
-                                Padding="4,1"
+                                Style="{StaticResource EntitySyncBadgeStyle}"
                                 Margin="6,0,0,0"
-                                CornerRadius="3"
-                                Background="{DynamicResource BgElevatedBrush}"
                                 VerticalAlignment="Top"
-                                Visibility="{Binding SyncBadgeVisibility}">
+                                Visibility="{Binding SyncBadgeVisibility}"
+                                ToolTip="{Binding SyncBadgeTooltip}"
+                                MouseLeftButtonUp="SyncBadge_Click">
                             <TextBlock Text="{Binding SyncBadgeText}"
-                                       FontSize="9"
-                                       FontWeight="SemiBold"
-                                       Foreground="{Binding SyncBadgeBrush}"/>
+                                       Style="{StaticResource EntitySyncBadgeTextStyle}"/>
                         </Border>
 
                         <Border DockPanel.Dock="Right"
@@ -192,7 +190,7 @@
 
     </UserControl.Resources>
 
-    <Grid x:Name="RootGrid">
+    <Grid x:Name="RootGrid" VerticalAlignment="Stretch">
 
         <Grid.ColumnDefinitions>
 
@@ -218,6 +216,21 @@
 
             <WrapPanel x:Name="EntityFilterPanel" Margin="0,0,0,8"/>
 
+            <DockPanel Margin="0,0,0,8">
+                <Menu DockPanel.Dock="Right" Background="Transparent" VerticalAlignment="Center">
+                    <MenuItem Header="Sort" Padding="8,4">
+                        <MenuItem Header="Name" Click="SortName_Click"/>
+                        <MenuItem Header="Recently edited" Click="SortRecentlyEdited_Click"/>
+                        <MenuItem x:Name="PinSortMenuItem" Header="Pinned first" Click="SortPinnedFirst_Click"/>
+                    </MenuItem>
+                </Menu>
+                <TextBox x:Name="EntitySearchBox"
+                         MinHeight="28"
+                         VerticalContentAlignment="Center"
+                         TextChanged="EntitySearchBox_TextChanged"
+                         ToolTip="Filter entities by name, role, tags, or description"/>
+            </DockPanel>
+
             <WrapPanel x:Name="EntityActionsRow" Margin="0,0,0,8">
 
                 <Button Content="Add" Padding="8,4" Margin="0,0,6,4" Click="AddEntity_Click"/>
@@ -228,15 +241,15 @@
 
                 <Menu x:Name="EntityMoreMenu" Background="Transparent" VerticalAlignment="Center" Margin="0,0,0,4">
 
-                    <MenuItem x:Name="EntityMoreMenuItem" Header="More entity actions…" Padding="8,4">
+                    <MenuItem x:Name="EntityMoreMenuItem" Header="More entity actionsΓÇª" Padding="8,4">
 
                         <MenuItem x:Name="PinEntityMenuItem" Header="Pin / Unpin" Click="TogglePinEntity_Click"/>
 
-                        <MenuItem x:Name="RenameEntityMenuItem" Header="Rename…" Click="RenameEntity_Click"/>
+                        <MenuItem x:Name="RenameEntityMenuItem" Header="RenameΓÇª" Click="RenameEntity_Click"/>
 
-                        <MenuItem x:Name="MergeEntityMenuItem" Header="Merge into…" Click="MergeEntity_Click"/>
+                        <MenuItem x:Name="MergeEntityMenuItem" Header="Merge intoΓÇª" Click="MergeEntity_Click"/>
 
-                        <MenuItem x:Name="RetireEntityMenuItem" Header="Retire…" Click="RetireEntity_Click"/>
+                        <MenuItem x:Name="RetireEntityMenuItem" Header="RetireΓÇª" Click="RetireEntity_Click"/>
 
                         <MenuItem x:Name="SuggestEntitiesMenuItem" Header="Suggest entities (AI)"
 
@@ -273,14 +286,18 @@
                 MinHeight="80"
 
                      ToolTip="Double-click or right-click an entry for actions">
-
+            <Grid>
             <ListBox x:Name="EntityList"
+
+                     VerticalAlignment="Stretch"
 
                      Background="Transparent"
 
                      BorderThickness="0"
 
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
 
                      ItemContainerStyle="{StaticResource ShellLibraryListItemStyle}"
 
@@ -298,13 +315,26 @@
                         <MenuItem Header="Delete" Click="DeleteEntity_Click"/>
                         <Separator/>
                         <MenuItem x:Name="EntityRowPinMenuItem" Header="Pin / Unpin" Click="TogglePinEntity_Click"/>
-                        <MenuItem Header="Rename…" Click="RenameEntity_Click"/>
-                        <MenuItem Header="Merge into…" Click="MergeEntity_Click"/>
-                        <MenuItem Header="Retire…" Click="RetireEntity_Click"/>
+                        <MenuItem Header="RenameΓÇª" Click="RenameEntity_Click"/>
+                        <MenuItem Header="Merge intoΓÇª" Click="MergeEntity_Click"/>
+                        <MenuItem Header="RetireΓÇª" Click="RetireEntity_Click"/>
                     </ContextMenu>
                 </ListBox.ContextMenu>
 
             </ListBox>
+
+            <StackPanel x:Name="EmptyStatePanel"
+                        Visibility="Collapsed"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="12">
+                <TextBlock x:Name="EmptyStateText"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           FontSize="{StaticResource FontSizeHint}"/>
+            </StackPanel>
+            </Grid>
 
         </Border>
 
@@ -326,7 +356,7 @@
 
                 Visibility="Collapsed">
 
-            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="420">
+            <ScrollViewer Style="{StaticResource ShellFormScrollViewerStyle}" MaxHeight="420">
 
                 <local:EntityEditFormHost x:Name="InlineEditForm" ShowInlineActions="True"/>
 
@@ -352,7 +382,7 @@
 
                 Visibility="Collapsed">
 
-            <local:EntityWorkspaceHost x:Name="SideWorkspace"/>
+            <local:EntityWorkspaceHost x:Name="SideWorkspace" VerticalAlignment="Stretch"/>
 
         </Border>
 

@@ -24,6 +24,16 @@ internal sealed class CanonEntityKindSpec
 
     public string SnippetProperty { get; init; } = "description";
 
+    public string? ParentCategory { get; init; }
+
+    public CanonEntityCategorySpec? CategorySpec { get; init; }
+
+    public bool ShowTags => CategorySpec?.ShowTags ?? false;
+
+    public bool ShowAliases => CategorySpec?.ShowAliases ?? false;
+
+    public bool ShowImage => CategorySpec?.ShowImage ?? false;
+
     public IReadOnlyList<CanonFieldSpec> Fields { get; init; } = [];
 
     public IReadOnlyList<CanonFieldSpec> ShellFields =>

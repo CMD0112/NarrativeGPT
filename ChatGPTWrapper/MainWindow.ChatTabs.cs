@@ -7,6 +7,7 @@ using System.Windows.Media;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
+using ChatGPTWrapper.Diagnostics;
 
 namespace ChatGPTWrapper;
 
@@ -88,7 +89,8 @@ public partial class MainWindow
 
     private async Task<WebView2> AddChatTabAsync(
         string initialHeader = "New chat",
-        Uri? initialNavigateUri = null)
+        Uri? initialNavigateUri = null,
+        bool selectNewTab = true)
     {
         if (_chatWebViewEnvironment is null)
             throw new InvalidOperationException("WebView2 environment not ready.");
@@ -102,7 +104,30 @@ public partial class MainWindow
         PlayTabPinService.GetOrAssignTabKey(tab);
 
         ChatTabs.Items.Add(tab);
-        ChatTabs.SelectedItem = tab;
+        if (selectNewTab)
+            ChatTabs.SelectedItem = tab;
+
+        UiEventLogger.Debug(
+            "chat_tab_added",
+            "ChatGPT tab opened",
+            new
+            {
+                tabKey = PlayTabPinService.GetOrAssignTabKey(tab),
+                header = initialHeader,
+                uri = initialNavigateUri?.ToString(),
+            });
+
+        await InitializeChatWebViewAsync(wv, tab);
+
+        wv.Source = initialNavigateUri ?? new Uri("https://chatgpt.com");
+
+        return wv;
+    }
+
+    private async Task InitializeChatWebViewAsync(WebView2 wv, TabItem? tabForChrome = null)
+    {
+        if (_chatWebViewEnvironment is null)
+            throw new InvalidOperationException("WebView2 environment not ready.");
 
         await wv.EnsureCoreWebView2Async(_chatWebViewEnvironment);
 
@@ -110,13 +135,12 @@ public partial class MainWindow
 
         GetOrRegisterApiBridge(wv);
 
-        new ChatGptStyleInjection(wv, () => _chrome.ProseEnhancementsEnabled)
+        new ChatGptStyleInjection(wv)
             .Register(pageHost);
 
         new ChatGptContinuousViewInjection(
             wv,
             () => _chrome.TranscriptViewMode,
-            () => _chrome.ProseEnhancementsEnabled,
             () => _chrome.HideAssistantEditArtifacts,
             () => _chrome.PhraseHighlightsEnabled,
             () => _chrome.PhraseHighlightRules,
@@ -124,12 +148,10 @@ public partial class MainWindow
 
         pageHost.Wire();
 
-        WireChatTabChrome(tab, wv);
+        if (tabForChrome is not null)
+            WireChatTabChrome(tabForChrome, wv);
+
         WireAdventureNavigationGuard(wv);
-
-        wv.Source = initialNavigateUri ?? new Uri("https://chatgpt.com");
-
-        return wv;
     }
 
     private void WireChatTabChrome(TabItem tab, WebView2 wv)
@@ -150,7 +172,7 @@ public partial class MainWindow
         };
 
         core.DocumentTitleChanged += (_, _) =>
-            Dispatcher.Invoke(() => UpdateChatTabHeader(tab, wv));
+            _ = Dispatcher.InvokeAsync(() => UpdateChatTabHeader(tab, wv));
 
         core.NavigationCompleted += async (_, e) =>
         {
@@ -170,7 +192,7 @@ public partial class MainWindow
                 }
             }
 
-            Dispatcher.Invoke(() => UpdateChatTabHeader(tab, wv));
+            _ = Dispatcher.InvokeAsync(() => UpdateChatTabHeader(tab, wv));
 
             if (Uri.TryCreate(core.Source, UriKind.Absolute, out var completedUri)
                 && ChatGptUrls.IsTrustedChatGptTopLevelUri(completedUri))
@@ -258,8 +280,7 @@ public partial class MainWindow
 
         var key = PlayTabPinService.GetOrAssignTabKey(tab);
         AdventureThreadRegistryService.EnsureMigrated(bundle);
-        var playPinKey = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)?.PinnedTabKey
-                         ?? bundle.Metadata.PinnedPlayTabKey;
+        var playPinKey = PlayTabPinService.GetPlayPinKey(bundle);
         return !string.IsNullOrWhiteSpace(playPinKey)
                && string.Equals(key, playPinKey, StringComparison.OrdinalIgnoreCase);
     }
@@ -292,7 +313,20 @@ public partial class MainWindow
             return;
 
         if (tab.Content is WebView2 wv)
+        {
+            UiEventLogger.Debug(
+                "chat_tab_closed",
+                "ChatGPT tab closed",
+                new { tabKey = PlayTabPinService.GetTabKey(wv, ChatTabs) });
             _pageHosts.Remove(wv);
+        }
+        else if (_parkedUtilityWorkerTab == tab && _utilityWorkerWebView is { } parkedWv)
+        {
+            ClearUtilityWorkerBackgroundHosting(parkedWv);
+            _pageHosts.Remove(parkedWv);
+            if (ReferenceEquals(_utilityWorkerWebView, parkedWv))
+                _utilityWorkerWebView = null;
+        }
 
         _chatTabTitles.Remove(tab);
         ChatTabs.Items.Remove(tab);

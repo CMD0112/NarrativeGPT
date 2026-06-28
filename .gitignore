@@ -9,6 +9,18 @@ _build*/
 _test*/
 _native*/
 .build-*/
+.build-tmp/
+
+# Ad-hoc build log captures
+build*.txt
+
+# Agent / recovery scratch (repo root)
+/_*.py
+/_*.txt
+/_recovered_xaml/
+/_entity_ref*.xaml
+/_theme_picker_recovered.xaml
+recover_all_log.txt
 
 # .NET artifacts
 *.user

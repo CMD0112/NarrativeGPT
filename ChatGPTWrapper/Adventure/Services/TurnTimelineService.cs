@@ -68,6 +68,19 @@ internal static class TurnTimelineService
             turn.NarratorText = narratorText;
     }
 
+    /// <summary>Removes accepted log turns after an edit invalidation point.</summary>
+    public static int TrimAcceptedTurnsAfterIndex(AdventureBundle bundle, int turnIndex)
+    {
+        var toRemove = bundle.Log.Turns
+            .Where(t => t.Status == TurnStatus.Accepted && t.Index > turnIndex)
+            .ToList();
+
+        foreach (var turn in toRemove)
+            bundle.Log.Turns.Remove(turn);
+
+        return toRemove.Count;
+    }
+
     public static AdventureBundle BranchFrom(AdventureBundle source, int fromTurnIndex, string newTitle)
     {
         var clone = AdventureStore.CreateNew(newTitle, source.Scenario);

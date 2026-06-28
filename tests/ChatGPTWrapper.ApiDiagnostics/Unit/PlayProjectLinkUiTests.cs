@@ -149,4 +149,91 @@ public sealed class PlayProjectLinkUiTests
 
         Assert.False(AdventureProjectBindingService.ShouldDeferLinkedPlayContextAfterProjectLink(bundle));
     }
+
+    [Fact]
+    public void ClearProjectRemoteState_does_not_throw_when_source_manifest_or_entries_null()
+    {
+        var bundle = AdventureStore.CreateNew("Switch test");
+        bundle.Metadata.LinkedProjectId = "g-p-old";
+        bundle.SourceManifest = null!;
+        AdventureProjectBindingService.ClearProjectRemoteState(bundle, "g-p-old");
+
+        Assert.NotNull(bundle.SourceManifest);
+        Assert.Empty(bundle.SourceManifest.Entries);
+    }
+
+    [Fact]
+    public void ClearProjectRemoteState_clears_null_manifest_entries()
+    {
+        var bundle = AdventureStore.CreateNew("Switch test");
+        bundle.Metadata.LinkedProjectId = "g-p-old";
+        bundle.SourceManifest.Entries = null!;
+        AdventureProjectBindingService.ClearProjectRemoteState(bundle, "g-p-old");
+
+        Assert.NotNull(bundle.SourceManifest.Entries);
+        Assert.Empty(bundle.SourceManifest.Entries);
+    }
+
+    [Fact]
+    public void BuildProjectInstructions_does_not_throw_when_settings_collections_null()
+    {
+        var bundle = AdventureStore.CreateNew("Instructions");
+        bundle.Metadata.Settings.ContentBoundaries = null!;
+        bundle.Metadata.Settings.CharacterPortrayalRules = null!;
+
+        var instructions = AdventureProjectBindingService.BuildProjectInstructions(bundle);
+
+        Assert.Contains("narrator", instructions, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void EndSession_does_not_throw_when_session_narrator_overrides_null()
+    {
+        var bundle = AdventureStore.CreateNew("Session");
+        bundle.Metadata.Settings.SessionNarratorOverrides = null!;
+        AdventureSessionService.EnsureSession(bundle);
+
+        var ex = Record.Exception(() => AdventureSessionService.EndSession(bundle));
+
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void Evaluate_does_not_throw_when_settings_and_manifest_collections_null()
+    {
+        var bundle = AdventureStore.CreateNew("Evaluate nulls");
+        bundle.Metadata.Settings = null!;
+        bundle.SourceManifest.Entries = null!;
+
+        var ex = Record.Exception(() => ProjectSourceInjectionService.Evaluate(bundle));
+
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void BuildInstructionDomainCanonical_does_not_throw_when_settings_collections_null()
+    {
+        var bundle = AdventureStore.CreateNew("Canonical");
+        bundle.Metadata.Settings.ContentBoundaries = null!;
+        bundle.Metadata.Settings.CharacterPortrayalRules = null!;
+
+        var ex = Record.Exception(() => InstructionContractService.BuildInstructionDomainCanonical(bundle));
+
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void GetLinkedProjectId_used_for_switch_detects_project_link_record()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                Id = Guid.NewGuid(),
+                ProjectLink = new ProjectLink { GizmoId = "g-p-from-record" },
+            },
+        };
+
+        Assert.Equal("g-p-from-record", AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata));
+    }
 }

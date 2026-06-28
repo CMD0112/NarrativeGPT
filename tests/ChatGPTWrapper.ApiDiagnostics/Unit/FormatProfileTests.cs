@@ -12,10 +12,11 @@ public sealed class FormatProfileTests
         var settings = new UiChromeSettings();
         FormatProfileService.Normalize(settings);
 
-        Assert.Equal(3, settings.NativeSettings.FormatProfiles.Count);
+        Assert.Equal(FormatBuiltInPresetCatalog.All.Count, settings.NativeSettings.FormatProfiles.Count);
         Assert.Equal(FormatProfileIds.Default, settings.NativeSettings.ActiveFormatProfileId);
         Assert.Contains(settings.NativeSettings.FormatProfiles, p => p.Id == FormatProfileIds.Compact && p.IsBuiltIn);
         Assert.Contains(settings.NativeSettings.FormatProfiles, p => p.Id == FormatProfileIds.Relaxed && p.IsBuiltIn);
+        Assert.Contains(settings.NativeSettings.FormatProfiles, p => p.Id == FormatProfileIds.LongFormReading && p.IsBuiltIn);
     }
 
     [Fact]
@@ -82,7 +83,7 @@ public sealed class FormatProfileTests
 
             Assert.True(loaded.ContinuousSettings.AllowFormatValuesOutsideRecommendedRange);
             Assert.Equal(custom.Id, loaded.ContinuousSettings.ActiveFormatProfileId);
-            Assert.Equal(4, loaded.ContinuousSettings.FormatProfiles.Count);
+            Assert.Equal(FormatBuiltInPresetCatalog.All.Count + 1, loaded.ContinuousSettings.FormatProfiles.Count);
             var loadedCustom = FormatProfileLibrary.Find(loaded.ContinuousSettings.FormatProfiles, custom.Id);
             Assert.NotNull(loadedCustom);
             Assert.Equal(88, loadedCustom!.Format.ContentMaxWidthRem);
@@ -172,6 +173,20 @@ public sealed class FormatProfileTests
 
         Assert.Equal(custom.Id, FormatProfileService.ResolveInitialProfileId(settings.NativeSettings));
     }
+
+    [Theory]
+    [MemberData(nameof(AllBuiltInProfileIds))]
+    public void Built_in_profiles_round_trip(string profileId)
+    {
+        var profile = FormatProfileLibrary.BuiltInProfiles.First(p => p.Id == profileId);
+        var clone = profile.Format.Clone();
+
+        Assert.True(FormatProfileService.SettingsMatch(profile.Format, clone));
+        Assert.False(string.IsNullOrWhiteSpace(profile.Description));
+    }
+
+    public static IEnumerable<object[]> AllBuiltInProfileIds() =>
+        FormatBuiltInPresetCatalog.All.Select(d => new object[] { d.Id });
 
     [Fact]
     public void Built_in_profiles_cannot_be_deleted()

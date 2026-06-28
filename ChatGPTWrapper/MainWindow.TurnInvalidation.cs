@@ -30,11 +30,17 @@ public partial class MainWindow
 
         TurnInvalidationService.HandleDomTurnInvalidated(
             bundle,
+            e.LogTurnIndex,
             e.DomTurnId,
             e.Reason,
-            e.Text);
+            e.Text,
+            e.EditRole,
+            e.RevisionGroupId,
+            e.RevisionPrompt,
+            e.AssistantDomTurnId);
 
         AdventureStore.Save(bundle);
+        _ = ApplyThreadOrdinalMapToPlayTabAsync();
     }
 
     private async Task ApplyThreadOrdinalMapToPlayTabAsync()
@@ -47,6 +53,10 @@ public partial class MainWindow
             return;
 
         var map = ThreadMetadataService.BuildOrdinalMap(bundle);
+        var linkMap = ThreadMetadataService.BuildLogTurnLinkMap(bundle);
+        var hideEntries = ThreadMetadataService.BuildRevisionHideEntries(bundle);
         await ChatGptAdventureBridgeInjection.ApplyThreadOrdinalMapAsync(core, map);
+        await ChatGptAdventureBridgeInjection.ApplyLogTurnLinkMapAsync(core, linkMap);
+        await ChatGptAdventureBridgeInjection.ApplyRevisionHideEntriesAsync(core, hideEntries);
     }
 }

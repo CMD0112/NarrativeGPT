@@ -89,7 +89,7 @@ Correct logged text via continuous-view surrogate edit (`TurnInvalidationService
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schemaVersion` | `int` | Migration marker |
+| `schemaVersion` | `int` | Migration marker (6 = registry-only thread binding, CMD-253) |
 | `id` | `Guid` | Adventure id (folder name) |
 | `title` | `string` | Display title |
 | `genre` | `string` | Genre tag |
@@ -99,15 +99,16 @@ Correct logged text via continuous-view surrogate edit (`TurnInvalidationService
 | `status` | `AdventureStatus` | `Active`, `Paused`, `Completed` |
 | `archived` | `bool` | Hidden from default dashboard list |
 | `tags` | `string[]` | User tags |
-| `linkedConversationId` | `string?` | ChatGPT play conversation id |
+| `linkedConversationId` | `string?` | **Legacy** — migrated to play registry entry; stripped at schema 6 |
 | `linkedProjectId` | `string?` | ChatGPT Project (gizmo) id |
 | `linkedProjectHint` | `string?` | Display hint for project |
-| `pinnedPlayTabKey` | `string?` | WebView tab key for play |
-| `pinnedPlayTabTitle` | `string?` | Tab title |
-| `pinnedUtilityTabKey` | `string?` | Utility jobs tab key |
-| `pinnedUtilityTabTitle` | `string?` | Utility tab title |
-| `projectLink` | `ProjectLink?` | Extended link metadata |
-| `utilitySessions` | `dict<string, GenerationUtilitySession>` | Per-job utility threads |
+| `pinnedPlayTabKey` | `string?` | **Legacy** — migrated to play registry entry; stripped at schema 6 |
+| `pinnedPlayTabTitle` | `string?` | **Legacy** tab title |
+| `pinnedPlayTabUrl` | `string?` | **Legacy** tab URL snapshot |
+| `pinnedUtilityTabKey` | `string?` | **Retired** (CMD-248) |
+| `pinnedUtilityTabTitle` | `string?` | **Retired** utility tab title |
+| `projectLink` | `ProjectLink?` | Extended link metadata (gizmo id + canonical URL; no `playConversationId` at schema 6) |
+| `utilitySessions` | `dict<string, GenerationUtilitySession>` | **Legacy** per-job threads; design counters moved to `AdventureThreadEntry.designJobState`; stripped at schema 6 |
 | `utilitySessionArchive` | `GenerationUtilitySessionArchive[]` | Rotated sessions |
 | `entityUtility` | `EntityUtilitySession?` | Legacy — migrated on load |
 | `entityUtilityArchive` | legacy archive | Migrated on load |
@@ -119,13 +120,13 @@ Correct logged text via continuous-view surrogate edit (`TurnInvalidationService
 | `instructionsManuallyPublishedAt` | `DateTimeOffset?` | Manual publish time |
 | `instructionsManuallyPublishedHash` | `string?` | Manual publish hash |
 | `utilityJobGuideOverrides` | `dict<string, UtilityJobGuideOverride>` | Custom job instructions |
-| `threadRegistry` | `AdventureThreadEntry[]` | Registered play/design/utility threads (CMD-221) |
-| `activeThreadIds` | `dict<string, Guid>` | Active entry id per kind (`Play`, `Design`, `Utility`) |
+| `threadRegistry` | `AdventureThreadEntry[]` | Registered play/design threads (source of truth) |
+| `activeThreadIds` | `dict<string, Guid>` | Active entry id per kind (`Play`, `Design`) |
 | `threadRegistryMigratedAt` | `DateTimeOffset?` | Legacy pin migration marker |
-| `pinnedDesignTabKey` | `string?` | Design tab key — synced from active design registry entry |
-| `pinnedDesignTabTitle` | `string?` | Design tab title |
-| `pinnedDesignTabUrl` | `string?` | Design tab URL |
-| `playThreadArchive` | `PlayThreadArchiveEntry[]` | Legacy archive — migrated into registry |
+| `pinnedDesignTabKey` | `string?` | **Legacy** — stripped at schema 6 |
+| `pinnedDesignTabTitle` | `string?` | **Legacy** design tab title |
+| `pinnedDesignTabUrl` | `string?` | **Legacy** design tab URL |
+| `playThreadArchive` | `PlayThreadArchiveEntry[]` | **Legacy** — migrated into registry; stripped at schema 6 |
 | `settings` | `AdventureSettings` | Play/sync/automation settings |
 
 ### AdventureSettings
@@ -135,7 +136,7 @@ Correct logged text via continuous-view surrogate edit (`TurnInvalidationService
 | `maxPacketChars` | 28000 | Packet size limit |
 | `adventureAutomationEnabled` | true | DOM automation for play |
 | `offerStartOnPlay` | true | Prompt to start adventure |
-| `forceFatPackets` | false | Always inline lore |
+| `forceInlineLore` (`forceFatPackets` JSON alias) | false | Debug: always inline fallback lore |
 | `useContextTags` | true | `[[cgw:…]]` packet markers |
 | `tone`, `perspective`, `tense`, `detailLevel`, `violenceLevel`, `difficulty` | see code | Narrator contract |
 | `contentBoundaries` | `[]` | Global content boundaries (one per line) |
@@ -151,7 +152,7 @@ Correct logged text via continuous-view surrogate edit (`TurnInvalidationService
 | `summaryUpdateIntervalTurns` | 5 | Summary interval |
 | `autoContinuityCheck` | false | Continuity job |
 | `autoSyncProjectInstructions` | false | Push instructions via API |
-| `sourcePublishMode` | `Manual` | `Manual` or `ApiSync` |
+| `sourcePublishMode` | `Manual` | Always `Manual` after load (`ApiSync` migrated) |
 | `utilityStoryContext` | object | Story context for utility jobs |
 | `utilityDeliveryMode` | `SeparateThread` | `SeparateThread` or `Inline` |
 | `hideInlineUtilityDuringPlay` | true | Hide utility traffic in UI |
@@ -161,7 +162,7 @@ Correct logged text via continuous-view surrogate edit (`TurnInvalidationService
 ### Enums
 
 - `AdventureStatus`: `Active`, `Paused`, `Completed`
-- `SourcePublishMode`: `Manual`, `ApiSync`
+- `SourcePublishMode`: `Manual` only (legacy `ApiSync` value migrated on load)
 - `UtilityDeliveryMode`: `SeparateThread`, `Inline` (see `UtilityDeliveryMode.cs`)
 
 ---
@@ -264,7 +265,9 @@ Nested:
 
 ## EntitiesDocument
 
-**Schema version:** `EntitiesDocument.CurrentSchemaVersion` (2 as of CMD-194). Version 1 adventures migrate on load via `EntitiesDocumentMigration`. Each entry type may include `extendedFields` (`Dictionary<string, string>`) for schema-defined attributes beyond typed properties.
+**Schema version:** `EntitiesDocument.CurrentSchemaVersion` (3 as of CMD-312). Version 1–2 adventures migrate on load via `EntitiesDocumentMigration`. Each entry type may include `extendedFields` (`Dictionary<string, string>`) for schema-defined attributes beyond typed properties.
+
+**Player character sheet** (`player`): includes `imagePath`, `tags`, `aliases`, and `extendedFields` alongside background, appearance, goals, and other profile fields. Field groups (`identity`, `story`, `capabilities`, `relations`, `custom`) drive grouped sections in `EntityEditDialog`.
 
 **Canon schema version:** `AdventureMetadata.CanonSchemaVersion` (1 as of CMD-205). Bumped on adventure load when the bundled `canon-schema.json` registry version advances via `CanonSchemaMigrationService`.
 

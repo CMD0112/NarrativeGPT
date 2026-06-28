@@ -7,8 +7,6 @@ namespace ChatGPTWrapper;
 /// </summary>
 public sealed class TranscriptViewModeSettings
 {
-    public bool ProseEnhancementsEnabled { get; set; }
-
     public bool HideAssistantEditArtifacts { get; set; }
 
     public bool HideContextTagsInThread { get; set; } = true;
@@ -31,7 +29,6 @@ public sealed class TranscriptViewModeSettings
     public TranscriptViewModeSettings Clone() =>
         new()
         {
-            ProseEnhancementsEnabled = ProseEnhancementsEnabled,
             HideAssistantEditArtifacts = HideAssistantEditArtifacts,
             HideContextTagsInThread = HideContextTagsInThread,
             ExpandHiddenContextInThread = ExpandHiddenContextInThread,
@@ -47,7 +44,6 @@ public sealed class TranscriptViewModeSettings
     {
         ArgumentNullException.ThrowIfNull(other);
 
-        ProseEnhancementsEnabled = other.ProseEnhancementsEnabled;
         HideAssistantEditArtifacts = other.HideAssistantEditArtifacts;
         HideContextTagsInThread = other.HideContextTagsInThread;
         ExpandHiddenContextInThread = other.ExpandHiddenContextInThread;

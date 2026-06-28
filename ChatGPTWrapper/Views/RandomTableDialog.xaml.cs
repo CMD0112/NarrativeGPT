@@ -1,11 +1,12 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class RandomTableDialog : Window
+public partial class RandomTableDialog : ShellDialogWindow
 {
     private readonly AdventureBundle _bundle;
     private readonly RandomTablesDocument _tables;

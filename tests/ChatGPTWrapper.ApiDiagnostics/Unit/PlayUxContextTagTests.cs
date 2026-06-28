@@ -47,7 +47,7 @@ public sealed class ContextTagFormatTests
         var preview = ContextTagFormat.FormatStructuredPreview(packet);
         Assert.Contains("[meta]", preview);
         Assert.Contains("turn=3", preview);
-        Assert.Contains("mode=fat", preview);
+        Assert.Contains("mode=inline", preview);
         Assert.Contains("[instructions]", preview);
         Assert.Contains("[user]", preview);
     }
@@ -55,10 +55,19 @@ public sealed class ContextTagFormatTests
     [Fact]
     public void ExtractTagAttributes_reads_meta_turn_and_mode()
     {
-        var packet = ContextTagFormat.WrapMeta(PacketMode.Thin, 7);
+        var packet = ContextTagFormat.WrapMeta(PacketProfile.MinimalLocal, 5);
+        var attrs = ContextTagFormat.ExtractTagAttributes(packet, "meta");
+        Assert.Equal("5", attrs["turn"]);
+        Assert.Equal("minimal", attrs["mode"]);
+    }
+
+    [Fact]
+    public void WrapMeta_emits_delegated_mode()
+    {
+        var packet = ContextTagFormat.WrapMeta(PacketProfile.SourceDelegated, 7);
         var attrs = ContextTagFormat.ExtractTagAttributes(packet, "meta");
         Assert.Equal("7", attrs["turn"]);
-        Assert.Equal("thin", attrs["mode"]);
+        Assert.Equal("delegated", attrs["mode"]);
     }
 
     [Fact]
@@ -276,6 +285,25 @@ public sealed class PlayContextSessionCacheTests
         PlayContextSessionCache.Invalidate(id);
 
         Assert.False(PlayContextSessionCache.TryGetFresh(id, out _));
+    }
+
+    [Fact]
+    public void ShouldSkipReensureForSource_false_on_wrong_project_conversation_url()
+    {
+        const string convId = "thread-1";
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                Id = Guid.NewGuid(),
+                LinkedProjectId = "g-p-test",
+                LinkedConversationId = convId,
+            },
+        };
+
+        var wrongProjectUrl = ChatGptUrls.BuildProjectConversationUrl(convId, "g-p-other");
+
+        Assert.False(PlayContextSessionCache.ShouldSkipReensureForSource(bundle, wrongProjectUrl));
     }
 
     [Fact]

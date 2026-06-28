@@ -9,7 +9,20 @@
     overlayPaddingYRem: 1.5,
     segmentSpacingRem: 1.25,
     showSegmentDividers: true,
+    showRuledLines: false,
+    proseGuideClipToText: false,
+    ruledLineStyle: "line",
+    ruledLineOpacity: 12,
+    ruledBandOpacity: 6,
+    ruledLineThicknessPx: 1,
+    ruledMarginTickRatio: 0.42,
+    ruledBandInvertPhase: false,
+    ruledUnderlineDashEm: 0.55,
+    ruledUnderlineGapEm: 0.3,
+    ruledZebraContrastRatio: 0.45,
     segmentDividerOpacity: 22,
+    segmentDividerWidthPx: 1,
+    segmentDividerStyle: "solid",
     segmentBorderRadiusPx: 6,
     userFontSizeRem: 0.98,
     userLineHeight: 1.55,
@@ -33,8 +46,6 @@
     userIndentRem: 0,
     assistantIndentRem: 0,
     showRoleLabels: false,
-    enhancedProseLineHeight: 1.68,
-    enhancedProseLetterSpacingEm: 0.012,
     codeFontSizeRem: 0.9375,
     codeLineHeight: 1.55,
     codeBlockPaddingRem: 0.85,
@@ -53,6 +64,7 @@
 
   var COLOR_FIELDS = [
     ["segmentDividerColor", "SegmentDividerColor", "--cgw-cv-segment-divider-color"],
+    ["ruledLineColor", "RuledLineColor", "--cgw-cv-ruled-line-color"],
     ["overlayBackgroundColor", "OverlayBackgroundColor", "--cgw-cv-overlay-background"],
     ["userTextColor", "UserTextColor", "--cgw-cv-user-text"],
     ["userBackgroundColor", "UserBackgroundColor", "--cgw-cv-user-bg"],
@@ -128,9 +140,59 @@
         readField(src, "showSegmentDividers", "ShowSegmentDividers"),
         DEFAULTS.showSegmentDividers
       ),
+      showRuledLines: toBool(
+        readField(src, "showRuledLines", "ShowRuledLines"),
+        DEFAULTS.showRuledLines
+      ),
+      proseGuideClipToText: toBool(
+        readField(src, "proseGuideClipToText", "ProseGuideClipToText"),
+        DEFAULTS.proseGuideClipToText
+      ),
+      ruledLineOpacity: toNumber(
+        readField(src, "ruledLineOpacity", "RuledLineOpacity"),
+        DEFAULTS.ruledLineOpacity
+      ),
+      ruledLineStyle: normalizeRuledLineStyle(
+        readField(src, "ruledLineStyle", "RuledLineStyle")
+      ),
+      ruledBandOpacity: toNumber(
+        readField(src, "ruledBandOpacity", "RuledBandOpacity"),
+        DEFAULTS.ruledBandOpacity
+      ),
+      ruledLineThicknessPx: toNumber(
+        readField(src, "ruledLineThicknessPx", "RuledLineThicknessPx"),
+        DEFAULTS.ruledLineThicknessPx
+      ),
+      ruledMarginTickRatio: toNumber(
+        readField(src, "ruledMarginTickRatio", "RuledMarginTickRatio"),
+        DEFAULTS.ruledMarginTickRatio
+      ),
+      ruledBandInvertPhase: toBool(
+        readField(src, "ruledBandInvertPhase", "RuledBandInvertPhase"),
+        DEFAULTS.ruledBandInvertPhase
+      ),
+      ruledUnderlineDashEm: toNumber(
+        readField(src, "ruledUnderlineDashEm", "RuledUnderlineDashEm"),
+        DEFAULTS.ruledUnderlineDashEm
+      ),
+      ruledUnderlineGapEm: toNumber(
+        readField(src, "ruledUnderlineGapEm", "RuledUnderlineGapEm"),
+        DEFAULTS.ruledUnderlineGapEm
+      ),
+      ruledZebraContrastRatio: toNumber(
+        readField(src, "ruledZebraContrastRatio", "RuledZebraContrastRatio"),
+        DEFAULTS.ruledZebraContrastRatio
+      ),
       segmentDividerOpacity: toNumber(
         readField(src, "segmentDividerOpacity", "SegmentDividerOpacity"),
         DEFAULTS.segmentDividerOpacity
+      ),
+      segmentDividerWidthPx: toNumber(
+        readField(src, "segmentDividerWidthPx", "SegmentDividerWidthPx"),
+        DEFAULTS.segmentDividerWidthPx
+      ),
+      segmentDividerStyle: normalizeSegmentDividerStyle(
+        readField(src, "segmentDividerStyle", "SegmentDividerStyle")
       ),
       segmentBorderRadiusPx: toNumber(
         readField(src, "segmentBorderRadiusPx", "SegmentBorderRadiusPx"),
@@ -202,14 +264,6 @@
       showRoleLabels: toBool(
         readField(src, "showRoleLabels", "ShowRoleLabels"),
         DEFAULTS.showRoleLabels
-      ),
-      enhancedProseLineHeight: toNumber(
-        readField(src, "enhancedProseLineHeight", "EnhancedProseLineHeight"),
-        DEFAULTS.enhancedProseLineHeight
-      ),
-      enhancedProseLetterSpacingEm: toNumber(
-        readField(src, "enhancedProseLetterSpacingEm", "EnhancedProseLetterSpacingEm"),
-        DEFAULTS.enhancedProseLetterSpacingEm
       ),
       codeFontSizeRem: toNumber(
         readField(src, "codeFontSizeRem", "CodeFontSizeRem"),
@@ -318,15 +372,44 @@
     if (stack) lines.push("  " + cssVariable + ": " + stack);
   }
 
+  function normalizeRuledLineStyle(raw) {
+    var text = raw === undefined || raw === null ? "" : String(raw).toLowerCase();
+    if (raw === 1 || text === "1" || text === "band") return "band";
+    if (raw === 2 || text === "2" || text === "paragraph-zebra" || text === "paragraphzebra") {
+      return "paragraph-zebra";
+    }
+    if (raw === 3 || text === "3" || text === "underline") return "underline";
+    if (raw === 4 || text === "4" || text === "margin-rail" || text === "marginrail") {
+      return "margin-rail";
+    }
+    return "line";
+  }
+
+  function normalizeSegmentDividerStyle(raw) {
+    if (raw === 1 || raw === "1" || String(raw).toLowerCase() === "dashed") return "dashed";
+    if (raw === 2 || raw === "2" || String(raw).toLowerCase() === "dotted") return "dotted";
+    return "solid";
+  }
+
   function buildCssBlock(selector, settings) {
-    var borderWidth = settings.showSegmentDividers ? "1px" : "0";
+    var borderWidth = settings.showSegmentDividers
+      ? settings.segmentDividerWidthPx + "px"
+      : "0";
     var lines = [
       "  --cgw-cv-overlay-px: " + rem(settings.overlayPaddingXRem),
       "  --cgw-cv-overlay-py: " + rem(settings.overlayPaddingYRem),
       "  --cgw-cv-content-max-width: " + rem(settings.contentMaxWidthRem),
       "  --cgw-cv-segment-spacing: " + rem(settings.segmentSpacingRem),
       "  --cgw-cv-segment-border-width: " + borderWidth,
+      "  --cgw-cv-segment-divider-style: " + settings.segmentDividerStyle,
       "  --cgw-cv-segment-divider-opacity: " + settings.segmentDividerOpacity,
+      "  --cgw-cv-ruled-line-opacity: " + settings.ruledLineOpacity,
+      "  --cgw-cv-ruled-band-opacity: " + settings.ruledBandOpacity,
+      "  --cgw-cv-ruled-line-thickness: " + settings.ruledLineThicknessPx + "px",
+      "  --cgw-cv-margin-rail-tick: " + settings.ruledMarginTickRatio + "lh",
+      "  --cgw-cv-ruled-underline-dash: " + settings.ruledUnderlineDashEm + "em",
+      "  --cgw-cv-ruled-underline-gap: " + settings.ruledUnderlineGapEm + "em",
+      "  --cgw-cv-zebra-contrast: " + settings.ruledZebraContrastRatio,
       "  --cgw-cv-segment-border-radius: " + settings.segmentBorderRadiusPx + "px",
       "  --cgw-cv-block-margin: " + rem(settings.blockMarginRem),
       "  --cgw-cv-prose-p-margin: " + rem(settings.proseParagraphMarginRem),
@@ -347,8 +430,6 @@
         accentCenterAdjustPx(settings.assistantAccentBorderWidthPx),
       "  --cgw-cv-assistant-indent: " + rem(settings.assistantIndentRem),
       "  --cgw-cv-assistant-bg-opacity: " + settings.assistantBackgroundOpacity,
-      "  --cgw-cv-enhanced-prose-line-height: " + settings.enhancedProseLineHeight,
-      "  --cgw-cv-enhanced-prose-letter-spacing: " + em(settings.enhancedProseLetterSpacingEm),
       "  --cgw-cv-code-font-size: " + rem(settings.codeFontSizeRem),
       "  --cgw-cv-code-line-height: " + settings.codeLineHeight,
       "  --cgw-cv-code-block-padding: " + rem(settings.codeBlockPaddingRem),
@@ -360,6 +441,7 @@
       "  --cgw-cv-heading-h4: " + rem(settings.headingH4ScaleRem),
       "  --cgw-cv-heading-h5: " + rem(settings.headingH5ScaleRem),
       "  --cgw-cv-heading-h6: " + rem(settings.headingH6ScaleRem),
+      "  --cgw-hl-bold-weight-delta: 300",
     ];
 
     for (var j = 0; j < COLOR_FIELDS.length; j++) {
@@ -422,11 +504,64 @@
     var pending =
       'html[data-cgw-continuous-view="1"][data-cgw-cv-pending="1"] #cgw-continuous-view';
     var css =
-      buildCssBlock(active, settings) + buildCssBlock(pending, settings);
-    if (globalThis.__cgwTranscriptViewMode === "weave") {
-      css += buildWeaveCssBlock(settings);
-    }
+      buildCssBlock(active, settings) + buildCssBlock(pending, settings) + buildWeaveCssBlock(settings);
     return css;
+  }
+
+  function needsJsRuledPaint(style, settings) {
+    if (!settings || !settings.showRuledLines) return false;
+    if (style === "paragraph-zebra") return false;
+    if (!settings.proseGuideClipToText) return false;
+    return (
+      style === "line" ||
+      style === "band" ||
+      style === "underline" ||
+      style === "margin-rail"
+    );
+  }
+
+  function isJsRuledStyle(style) {
+    return (
+      style === "line" ||
+      style === "band" ||
+      style === "underline" ||
+      style === "margin-rail"
+    );
+  }
+
+  function applyReadingGuidesAttributes(settings) {
+    var root = document.documentElement;
+    if (!root) return;
+    if (settings.showRuledLines) {
+      var style = normalizeRuledLineStyle(settings.ruledLineStyle);
+      root.setAttribute("data-cgw-ruled-lines", "1");
+      root.setAttribute("data-cgw-ruled-style", style);
+      if (needsJsRuledPaint(style, settings)) {
+        root.setAttribute("data-cgw-ruled-js", "1");
+      } else {
+        root.removeAttribute("data-cgw-ruled-js");
+      }
+      if (settings.ruledBandInvertPhase && (style === "band" || style === "paragraph-zebra")) {
+        root.setAttribute("data-cgw-ruled-band-invert", "1");
+      } else {
+        root.removeAttribute("data-cgw-ruled-band-invert");
+      }
+      if (settings.proseGuideClipToText) {
+        root.setAttribute("data-cgw-ruled-clip", "1");
+      } else {
+        root.removeAttribute("data-cgw-ruled-clip");
+      }
+    } else {
+      root.removeAttribute("data-cgw-ruled-lines");
+      root.removeAttribute("data-cgw-ruled-style");
+      root.removeAttribute("data-cgw-ruled-js");
+      root.removeAttribute("data-cgw-ruled-clip");
+    }
+    if (typeof globalThis.__cgwScheduleReadingGuides === "function") {
+      globalThis.__cgwScheduleReadingGuides();
+    } else if (typeof globalThis.__cgwApplyReadingGuides === "function") {
+      globalThis.__cgwApplyReadingGuides();
+    }
   }
 
   function applyRoleLabelAttribute(settings) {
@@ -475,6 +610,7 @@
     globalThis.__cgwShowContinuousImages = current.showImages !== false;
     applyComposerClearanceGlobals(current);
     applyRoleLabelAttribute(current);
+    applyReadingGuidesAttributes(current);
     if (schedule !== false) {
       globalThis.__cgwFormatSettingsRevision =
         (typeof globalThis.__cgwFormatSettingsRevision === "number"

@@ -6,12 +6,18 @@ internal static class EntitiesDocumentMigration
 {
     public static bool Migrate(EntitiesDocument entities)
     {
-        if (entities.SchemaVersion >= EntitiesDocument.CurrentSchemaVersion)
-            return false;
+        var changed = false;
+        if (entities.SchemaVersion < EntitiesDocument.CurrentSchemaVersion)
+        {
+            entities.ExtendedFieldsEnsureInitialized();
+            entities.SchemaVersion = EntitiesDocument.CurrentSchemaVersion;
+            changed = true;
+        }
 
-        entities.ExtendedFieldsEnsureInitialized();
-        entities.SchemaVersion = EntitiesDocument.CurrentSchemaVersion;
-        return true;
+        if (EntitiesCanonHygieneService.Apply(entities))
+            changed = true;
+
+        return changed;
     }
 }
 
@@ -20,9 +26,15 @@ internal static class EntitiesDocumentMigrationExtensions
     public static void ExtendedFieldsEnsureInitialized(this EntitiesDocument entities)
     {
         entities.Player.ExtendedFields ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        entities.Player.Tags ??= [];
+        entities.Player.Aliases ??= [];
 
         foreach (var entry in entities.Party)
+        {
             entry.ExtendedFields ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            entry.Tags ??= [];
+            entry.Aliases ??= [];
+        }
 
         foreach (var entry in entities.Characters)
             entry.ExtendedFields ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

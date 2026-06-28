@@ -51,14 +51,30 @@ public static class FormatProfileIds
     public const string Compact = "compact";
     public const string Default = "default";
     public const string Relaxed = "relaxed";
+    public const string WideCanvas = "wide-canvas";
+    public const string LongFormReading = "long-form-reading";
+    public const string LowGlare = "low-glare";
+    public const string DyslexiaFriendly = "dyslexia-friendly";
+    public const string HighContrastReading = "high-contrast-reading";
+    public const string SepiaComfort = "sepia-comfort";
+    public const string LiterarySerif = "literary-serif";
+    public const string TechnicalDocs = "technical-docs";
+    public const string NarrativeProse = "narrative-prose";
+    public const string AcademicJournal = "academic-journal";
+    public const string RoleForward = "role-forward";
+    public const string MinimalDistraction = "minimal-distraction";
+    public const string CinematicWeave = "cinematic-weave";
+    public const string MidnightFocus = "midnight-focus";
     public const string Custom = "custom";
 
     public static IReadOnlyList<string> BuiltIn { get; } =
-    [
-        Compact,
-        Default,
-        Relaxed,
-    ];
+        FormatBuiltInPresetCatalog.All.Select(d => d.Id).ToList();
+
+    public static IReadOnlyList<string> ReadabilityBuiltIn { get; } =
+        FormatBuiltInPresetCatalog.All
+            .Where(d => d.Category == FormatPresetCategory.Readability)
+            .Select(d => d.Id)
+            .ToList();
 }
 
 public static class FormatProfileLibrary
@@ -82,27 +98,15 @@ public static class FormatProfileLibrary
             Format = format.Clone(),
         };
 
-    private static IReadOnlyList<FormatProfile> BuildBuiltInProfiles()
-    {
-        return
-        [
-            BuildBuiltIn(FormatProfileIds.Compact, "Compact", "Tighter spacing and smaller type.", FormatPreset.Compact),
-            BuildBuiltIn(FormatProfileIds.Default, "Default", "Balanced reading layout.", FormatPreset.Default),
-            BuildBuiltIn(FormatProfileIds.Relaxed, "Relaxed", "Roomier margins and larger type.", FormatPreset.Relaxed),
-        ];
-    }
-
-    private static FormatProfile BuildBuiltIn(string id, string name, string? description, FormatPreset preset)
-    {
-        var format = ContinuousViewFormatSettings.CreateDefaults();
-        format.ApplyPreset(preset);
-        return new FormatProfile
-        {
-            Id = id,
-            Name = name,
-            Description = description,
-            IsBuiltIn = true,
-            Format = format,
-        };
-    }
+    private static IReadOnlyList<FormatProfile> BuildBuiltInProfiles() =>
+        FormatBuiltInPresetCatalog.All
+            .Select(def => new FormatProfile
+            {
+                Id = def.Id,
+                Name = def.Name,
+                Description = def.Description,
+                IsBuiltIn = true,
+                Format = FormatBuiltInPresetCatalog.CreateSnapshot(def.Id),
+            })
+            .ToList();
 }

@@ -32,6 +32,12 @@ public static class EntityChangePlanBuilder
                 New = context.NewName,
                 Action = EntityTextReplacementAction.Replace,
             });
+
+            if (phraseRules is not null)
+            {
+                var renamePlan = RenameReconciliationService.BuildPlan(bundle, context, CanonReconciliationService.DetectDrift(bundle, context), phraseRules);
+                plan.PhraseHighlightUpdates.AddRange(renamePlan.PhraseHighlightUpdates);
+            }
         }
 
         return plan;

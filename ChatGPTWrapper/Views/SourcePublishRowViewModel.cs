@@ -10,10 +10,14 @@ internal sealed class SourcePublishRowViewModel : INotifyPropertyChanged
 {
     private bool _isPublished;
 
-    public SourcePublishRowViewModel(SourceManifestEntry entry, string sourcesDirectory, Guid adventureId)
+    public SourcePublishRowViewModel(
+        SourceManifestEntry entry,
+        string sourcesDirectory,
+        AdventureBundle bundle)
     {
         Entry = entry;
-        AdventureId = adventureId;
+        Bundle = bundle;
+        AdventureId = bundle.Metadata.Id;
         RelativePath = entry.RelativePath;
         AbsolutePath = Path.Combine(sourcesDirectory, entry.RelativePath);
         _isPublished = entry.IsManuallyCurrent();
@@ -21,6 +25,8 @@ internal sealed class SourcePublishRowViewModel : INotifyPropertyChanged
     }
 
     public SourceManifestEntry Entry { get; }
+
+    public AdventureBundle Bundle { get; }
 
     public Guid AdventureId { get; }
 
@@ -46,7 +52,7 @@ internal sealed class SourcePublishRowViewModel : INotifyPropertyChanged
 
             _isPublished = value;
             if (value)
-                SourceManifestHelper.MarkManuallyPublished(Entry);
+                SourceManifestHelper.MarkManuallyPublished(Entry, AbsolutePath, Bundle);
             else
                 SourceManifestHelper.ClearManualPublish(Entry);
 
@@ -60,6 +66,13 @@ internal sealed class SourcePublishRowViewModel : INotifyPropertyChanged
 
     public void RefreshDisplay()
     {
+        var published = Entry.IsManuallyCurrent();
+        if (_isPublished != published)
+        {
+            _isPublished = published;
+            OnPropertyChanged(nameof(IsPublished));
+        }
+
         var sectionHint = SectionDiffService.GetChangedSectionsSincePublish(Entry);
         var sectionSuffix = sectionHint.Count > 0
             ? $" ({sectionHint.Count} sections changed)"
@@ -88,4 +101,18 @@ internal sealed class SourcePublishRowViewModel : INotifyPropertyChanged
 
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+internal sealed class SourceHistoryRowViewModel
+{
+    public SourceHistoryRowViewModel(SourceFileHistoryEntry entry)
+    {
+        Entry = entry;
+        DisplayLabel =
+            $"{entry.ArchivedAt.LocalDateTime:g} · {SourceManifestHelper.ShortHash(entry.Sha256)} · {entry.Reason}";
+    }
+
+    public SourceFileHistoryEntry Entry { get; }
+
+    public string DisplayLabel { get; }
 }

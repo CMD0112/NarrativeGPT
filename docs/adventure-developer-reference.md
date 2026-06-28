@@ -232,84 +232,79 @@ Responses: `turnComplete`, `conversationId`, `pong`, `probeResult`, `bridgeReady
 
 ---
 
-## 5. Prompt packets (source-delegated vs fat fallback)
+## 5. Prompt packets (three profiles)
 
-> **Delegation paradigm:** Thin packets carry session delta; static lore is retrieved from Project sources and custom instructions. Full matrix: [instruction-sources-paradigm.md](instruction-sources-paradigm.md).
+> **Delegation paradigm:** Source-delegated packets carry session delta; static lore is retrieved from Project sources and custom instructions. Full matrix: [instruction-sources-paradigm.md](instruction-sources-paradigm.md).
 
-**Builder:** `PromptPacketBuilder.cs` + `PromptInjectionService.cs` + `ProjectSourceInjectionService.cs`
+**Builder:** `PromptPacketBuilder.cs` + `PacketProfileResolver.cs` + `PromptInjectionService.cs` + `ProjectSourceInjectionService.cs`
 
-When `UseContextTags` is enabled (default), adventure context is wrapped in `[[cgw:…]]` blocks (`sources`, `instructions`, `state`, `cards`, `memory`, `transcript`, `meta`). **User prose is appended untagged** after the tagged context (not inside `[[cgw:player]]`).
+When `UseContextTags` is enabled (default), adventure context is wrapped in `[[cgw:…]]` blocks (`sources`, `instructions`, `state`, `cards`, `memory`, `transcript`, `meta`). **User prose is appended untagged** after the tagged context.
 
-### Mode selection
+### Profile selection
 
-**Source-delegated packets** (internally `PacketMode.Thin`) when ALL of:
+`PacketProfileResolver.Resolve(bundle, userChoseInlineFallback)`:
 
-- `ForceFatPackets` is false
-- `LinkedProjectId` is set
-- `SourceManifest` has lore entries exported
-- **Manual publish:** every lore file marked **Published** (local hash matches upload confirmation)
-- **API sync:** every manifest entry is `InSync`
+| Profile | When |
+|---------|------|
+| **SourceDelegated** | Linked Project + every lore file manually **Published** |
+| **MinimalLocal** | No linked Project |
+| **InlineFallback** | `ForceInlineLore` (debug), or user clicks **No** on the publish warning and proceeds |
 
-Otherwise **fat fallback** — static lore is embedded inline in the packet.
-
-Readiness is evaluated by `ProjectSourceInjectionService.Evaluate()`. When a Project is linked but not ready, **Send** shows a non-blocking warning and offers **Sync now**; the send proceeds with fat packets if you decline.
+Readiness is evaluated by `ProjectSourceInjectionService.Evaluate()` (manual publish only). When linked but unpublished, **Send** shows a non-blocking warning; default preview uses delegated-shaped pointers with `Sources not ready:` in ALWAYS RETRIEVE. **Inline fallback** only when the user proceeds after the warning or `ForceInlineLore` is enabled.
 
 ### Source-delegated packet sections (in order)
 
-When `UseSectionInjection` is enabled (default for new adventures):
-
-1. **`[[cgw:sources v="2"]]`** — baseline pointers, this-turn retrieval hints, and inline excerpts (`ContextPointerResolver`)
-   - **ALWAYS RETRIEVE** — baseline sections the model should fetch each turn (`opening`, `rules`, `player` when the section index is populated)
-   - When the section index is empty but sources are **ready** (delegation allowed): synced-file fallback lists Project source files to retrieve instead of bare `(none)`
-   - When sources are **not ready** (unpublished, out of sync, or no Project): explicit `Sources not ready: {reason}` plus optional suggested action — same semantics as the Play settings readiness banner (`ProjectSourceInjectionService.Evaluate`)
-   - When there is no linked Project: `(none)` is expected in ALWAYS RETRIEVE
-2. Short narrator pointer (defer static lore and style to Project instructions + sources)
+1. **`[[cgw:sources v="2"]]`** — baseline pointers, this-turn retrieval hints (`ContextPointerResolver`)
+   - **ALWAYS RETRIEVE** — baseline sections (`opening`, `rules`, `player`, …)
+   - When ready: synced-file fallback if section index empty
+   - When not ready: `Sources not ready: {reason}` + suggested action
+2. Short narrator pointer
 3. Story so far (local cache)
 4. State delta
 5. Pinned memory
-6. Recent transcript (last 6 accepted turns, `[[cgw:transcript]]`)
-
-Legacy path (`UseSectionInjection == false`): file-level pointers plus triggered card names only.
+6. Recent transcript (last 6 accepted turns)
 
 (User prose merged at send time.)
 
-**Delegated max size:** `min(MaxPacketChars, 8000)`.
+**Delegated / minimal max size:** `min(MaxPacketChars, 8000)`.
 
-### Fat packet sections (in order)
+### Minimal local packet sections
 
-1. Narrator system instructions (perspective, tense, detail, tone, difficulty)
-2. Content boundaries (if any)
-3. Scenario block (setting, role, genre, opening)
-4. Plot essentials
-5. World rules
-6. Author's note
-7. Story so far (rolling summary)
-8. Current state (location, objectives, …)
-9. Triggered lore cards (full content)
-10. Pinned memory
-11. Entity excerpts (keyword-matched)
+Same section-injection v2 shape as delegated, but:
 
-(User prose is merged after tagged context at send time — see `AssembleWithUser`.)
+- `[[cgw:sources]]` notes no Project linked
+- Inline **scenario opening** only (no plot/world/cast/contract bodies)
+- Session deltas (state, memory, transcript, summary)
+
+### Inline fallback packet sections (in order)
+
+1. Full `[[cgw:sources v="2"]]` or inline sources block
+2. Narrator system instructions (perspective, tense, detail, tone, difficulty)
+3. Content boundaries, portrayal rules, instruction contract
+4. Scenario, plot essentials, world rules, author's note
+5. Story so far, current state, triggered cards, pinned memory, entity excerpts
+
+**Inline max size:** full `MaxPacketChars`; 12 transcript turns.
 
 ### Injection dialog — Sources tab (publish hub)
 
-`PlayPromptInjectionDialog` **Sources** tab is the primary publish surface:
+`PlayPromptInjectionDialog` **Sources** tab readiness banner:
 
-- **Manual publish only** — copy instructions, drag files to ChatGPT Project, mark **Published**
-- **Instructions** — Copy instructions, preview, open project settings
-- **Source files** — Refresh export, open folder, per-file **Published** checklist, copy/preview; use **Manage sources…** for full Source Manager
-- **Edit sources with AI** — `propose_source_edits` utility job + review queue
-- **API sync diagnostics** — Source Manager → **API sync diagnostics…** (deprecated primary workflow)
+- Green **Source-delegated** when all lore files published
+- Yellow **Publish sources to enable delegation** when linked but unpublished
+- Gray **Minimal local — link a Project for source retrieval** when unlinked
 
-The **Next send** tab meta line shows mode and readiness, e.g. `Source-delegated (manual publish, 6 files)` or `Fat fallback — 2 source files need manual publish`.
+Settings → Advanced automation: **Force inline lore (debug)** (`forceInlineLore` / JSON `forceFatPackets`).
+
+The **Next send** tab meta line shows profile label, e.g. `Source-delegated (manual publish, 4 files)` or `Inline fallback — 2 need publish`.
 
 ### Play link status
 
-When linked and delegated (manual): `Sources: published (N files) | source-delegated packets`
+When linked and delegated: `Sources: published (N files) | source-delegated packets`
 
-When linked and delegated (API): `Sources: synced (N files) | source-delegated packets`
+When linked but not ready: `Sources: N need publish | inline fallback`
 
-When linked but not ready: `Sources: N need publish | fat fallback` (manual) or `N out of sync | fat fallback` (API)
+When unlinked: `No Project — minimal local`
 
 ### Trimming
 

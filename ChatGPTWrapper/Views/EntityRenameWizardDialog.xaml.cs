@@ -1,13 +1,14 @@
 using System.ComponentModel;
 using System.IO;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class EntityRenameWizardDialog : Window
+public partial class EntityRenameWizardDialog : ShellDialogWindow
 {
     private readonly AdventureBundle _bundle;
     private readonly CanonEditContext _context;
@@ -45,6 +46,8 @@ public partial class EntityRenameWizardDialog : Window
         var report = CanonReconciliationService.DetectDrift(_bundle, _context);
         var preview = CanonReconciliationService.BuildPushPreview(_bundle, report);
         var parts = new List<string> { plan.Summary, $"{_rows.Count(r => r.Action != EntityTextReplacementAction.Skip)} mention(s) will be updated." };
+        if (plan.PhraseHighlightUpdates.Count > 0)
+            parts.Add(string.Join(Environment.NewLine, plan.PhraseHighlightUpdates));
         foreach (var file in preview.Keys.Take(3))
         {
             var path = Path.Combine(ProjectSourceExportService.SourcesDirectory(_bundle), file);

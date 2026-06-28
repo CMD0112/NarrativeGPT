@@ -26,7 +26,16 @@
             <TextBlock x:Name="TitleBlock" Grid.Column="1" FontSize="{StaticResource FontSizeTitle}"
                        FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"
                        TextTrimming="CharacterEllipsis"/>
-            <Menu Grid.Column="2" Background="Transparent" VerticalAlignment="Center">
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <StackPanel Style="{StaticResource ShellCommandBarStyle}">
+                    <Button x:Name="ThreadsButton"
+                            Content="Threads…"
+                            Style="{StaticResource ShellCommandBarPrimarySlot}"
+                            Margin="0,0,8,0"
+                            ToolTip="Open Threads hub — project link, play/design pins, delivery"
+                            Click="ManageThreads_Click"/>
+                </StackPanel>
+                <Menu Background="Transparent" VerticalAlignment="Center">
                 <MenuItem x:Name="HeaderMoreMenu" Header="More…" Padding="10,4">
                     <MenuItem x:Name="HeaderLinkProjectMenuItem"
                               Header="Change Project…"
@@ -50,8 +59,11 @@
                               Header="Import framework draft"
                               Click="ImportDraft_Click"
                               Visibility="Collapsed"/>
+                    <Separator/>
+                    <MenuItem Header="Canon inbox…" Click="CanonInbox_Click"/>
                 </MenuItem>
-            </Menu>
+                </Menu>
+            </StackPanel>
             <Button x:Name="LinkProjectButton" Grid.Column="2" Visibility="Collapsed" Click="LinkProject_Click"/>
         </Grid>
 
@@ -64,7 +76,36 @@
                        FontSize="{StaticResource FontSizeBody}"/>
         </Border>
 
-        <local:EntityCanonCommitBar x:Name="CanonHealthBar" Grid.Row="2" PlansChanged="CanonHealthBar_PlansChanged"/>
+        <StackPanel Grid.Row="2">
+        <Border x:Name="CanonSyncNoticeBanner"
+                Background="{StaticResource SuccessSubtleBrush}"
+                BorderBrush="{StaticResource SuccessBrush}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource RadiusControl}"
+                Padding="8,6"
+                Margin="0,0,0,6"
+                Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="CanonSyncNoticeText"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
+                    <Button Content="View diff" Padding="8,3" Margin="0,0,6,0" Click="ViewLastCanonSyncDiff_Click"/>
+                    <Button Content="Open Source Manager" Padding="8,3" Margin="0,0,6,0" Click="OpenSourceManagerFromBanner_Click"/>
+                    <Button Content="×"
+                            Padding="6,0"
+                            VerticalAlignment="Top"
+                            ToolTip="Dismiss"
+                            Click="DismissCanonSyncNotice_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+        <local:EntityCanonCommitBar x:Name="CanonHealthBar" PlansChanged="CanonHealthBar_PlansChanged"/>
+        </StackPanel>
 
         <Border Grid.Row="3" Style="{StaticResource ShellCardStyle}" Margin="0,0,0,8">
             <StackPanel>
@@ -113,7 +154,7 @@
             </Border>
         </Expander>
 
-        <ScrollViewer Grid.Row="6" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="6" Style="{StaticResource ShellFormScrollViewerStyle}">
             <StackPanel x:Name="DraftPanel" Margin="4"/>
         </ScrollViewer>
         <!-- Parking host when Cast step is not active (panel is reparented into DraftPanel on Cast). -->

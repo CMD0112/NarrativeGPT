@@ -9,20 +9,23 @@ namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 public sealed class ProjectSourceInjectionTests
 {
     private static AdventureBundle CreateLinkedBundle(
-        bool inSync = true,
-        bool forceFat = false,
+        bool published = true,
+        bool forceInlineLore = false,
         string? projectId = "g-p-test")
     {
         var entries = new List<SourceManifestEntry>
         {
-            new() { RelativePath = "scenario.md", SyncState = SourceSyncState.InSync },
-            new() { RelativePath = "world.md", SyncState = SourceSyncState.InSync },
-            new() { RelativePath = "plot.md", SyncState = SourceSyncState.InSync },
-            new() { RelativePath = "cast.md", SyncState = SourceSyncState.InSync },
+            new() { RelativePath = "scenario.md", LocalSha256 = "hash-scenario" },
+            new() { RelativePath = "world.md", LocalSha256 = "hash-world" },
+            new() { RelativePath = "plot.md", LocalSha256 = "hash-plot" },
+            new() { RelativePath = "cast.md", LocalSha256 = "hash-cast" },
         };
 
-        if (!inSync)
-            entries[0].SyncState = SourceSyncState.LocalNewer;
+        if (published)
+        {
+            foreach (var entry in entries)
+                SourceManifestHelper.MarkManuallyPublished(entry);
+        }
 
         return new AdventureBundle
         {
@@ -32,8 +35,8 @@ public sealed class ProjectSourceInjectionTests
                 LinkedProjectId = projectId,
                 Settings = new AdventureSettings
                 {
-                    ForceFatPackets = forceFat,
-                    SourcePublishMode = SourcePublishMode.ApiSync,
+                    ForceInlineLore = forceInlineLore,
+                    SourcePublishMode = SourcePublishMode.Manual,
                 },
             },
             Scenario = new ScenarioDocument
@@ -52,7 +55,7 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Evaluate_linked_and_in_sync_can_delegate()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: true);
         bundle.SourceManifest.RefreshSyncedFlag();
 
         var readiness = ProjectSourceInjectionService.Evaluate(bundle);
@@ -65,15 +68,15 @@ public sealed class ProjectSourceInjectionTests
     }
 
     [Fact]
-    public void Evaluate_local_newer_blocks_delegation()
+    public void Evaluate_unpublished_blocks_delegation()
     {
-        var bundle = CreateLinkedBundle(inSync: false);
+        var bundle = CreateLinkedBundle(published: false);
 
         var readiness = ProjectSourceInjectionService.Evaluate(bundle);
 
         Assert.False(readiness.CanDelegateStaticContent);
-        Assert.Contains("out of sync", readiness.BlockingReason, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(1, readiness.OutOfSyncCount);
+        Assert.Contains("manual publish", readiness.BlockingReason, StringComparison.OrdinalIgnoreCase);
+        Assert.True(readiness.NeedsRepublishCount > 0);
     }
 
     [Fact]
@@ -91,12 +94,12 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Evaluate_force_fat_blocks_even_when_synced()
     {
-        var bundle = CreateLinkedBundle(inSync: true, forceFat: true);
+        var bundle = CreateLinkedBundle(published: true, forceInlineLore: true);
 
         var readiness = ProjectSourceInjectionService.Evaluate(bundle);
 
         Assert.False(readiness.CanDelegateStaticContent);
-        Assert.Contains("Force fat packets", readiness.BlockingReason);
+        Assert.Contains("Force inline lore", readiness.BlockingReason);
     }
 
     [Fact]
@@ -114,7 +117,7 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void BuildProjectSourcesSection_lists_synced_files_with_pointers()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: true);
         bundle.Metadata.Settings.UseSectionInjection = false;
         var readiness = ProjectSourceInjectionService.Evaluate(bundle);
 
@@ -131,7 +134,7 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Delegated_packet_contains_source_pointers_not_scenario_body()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: true);
         bundle.Metadata.Settings.UseContextTags = true;
         bundle.Metadata.Settings.UseSectionInjection = true;
         PopulateSectionManifest(bundle);
@@ -151,7 +154,7 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Delegated_packet_includes_transcript_tag_when_turns_exist()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: true);
         bundle.Metadata.Settings.UseContextTags = true;
         bundle.SourceManifest.RefreshSyncedFlag();
         bundle.Metadata.LinkedConversationId = "thread-1";
@@ -168,27 +171,45 @@ public sealed class ProjectSourceInjectionTests
     }
 
     [Fact]
-    public void Fat_packet_contains_full_scenario_when_not_delegated()
+    public void InlineFallback_packet_contains_full_scenario_when_user_proceeds_unpublished()
     {
-        var bundle = CreateLinkedBundle(inSync: false);
+        var bundle = CreateLinkedBundle(published: false);
         bundle.Metadata.Settings.UseContextTags = false;
-        bundle.Metadata.Settings.UseSectionInjection = false;
 
-        var ctx = PromptPacketBuilder.BuildContext(bundle, "look around");
+        var ctx = PromptPacketBuilder.BuildContext(bundle, "look around", userChoseInlineFallback: true);
 
         Assert.Equal(PacketMode.Fat, ctx.Mode);
+        Assert.Equal(PacketProfile.InlineFallback, ctx.Profile);
         Assert.Contains("=== SCENARIO ===", ctx.ContextText);
         Assert.Contains("A haunted castle on the moor", ctx.ContextText);
     }
 
     [Fact]
+    public void MinimalLocal_packet_contains_opening_not_world_rules_when_unlinked()
+    {
+        var bundle = CreateLinkedBundle(projectId: null);
+        bundle.Metadata.Settings.UseContextTags = true;
+
+        var ctx = PromptPacketBuilder.BuildContext(bundle, "look around");
+
+        Assert.Equal(PacketMode.Thin, ctx.Mode);
+        Assert.Equal(PacketProfile.MinimalLocal, ctx.Profile);
+        Assert.Contains("[[cgw:sources", ctx.ContextText);
+        Assert.Contains("No ChatGPT Project linked", ctx.ContextText);
+        Assert.Contains("Opening:", ctx.ContextText);
+        Assert.Contains("haunted castle", ctx.ContextText);
+        Assert.DoesNotContain("=== WORLD RULES ===", ctx.ContextText);
+        Assert.DoesNotContain("Content boundaries:", ctx.ContextText);
+    }
+
+    [Fact]
     public void FormatLinkStatusSources_reflects_delegation_and_fallback()
     {
-        var synced = ProjectSourceInjectionService.Evaluate(CreateLinkedBundle(inSync: true));
+        var synced = ProjectSourceInjectionService.Evaluate(CreateLinkedBundle(published: true));
         Assert.Contains("source-delegated", ProjectSourceInjectionService.FormatLinkStatusSources(synced));
 
-        var unsynced = ProjectSourceInjectionService.Evaluate(CreateLinkedBundle(inSync: false));
-        Assert.Contains("fat fallback", ProjectSourceInjectionService.FormatLinkStatusSources(unsynced));
+        var unsynced = ProjectSourceInjectionService.Evaluate(CreateLinkedBundle(published: false));
+        Assert.Contains("inline fallback", ProjectSourceInjectionService.FormatLinkStatusSources(unsynced));
     }
 
     [Fact]
@@ -203,23 +224,21 @@ public sealed class ProjectSourceInjectionTests
                     preview.IndexOf("[instructions]", StringComparison.Ordinal));
     }
 
-    // CMD-72 AC4 — api sync blocked path
     [Fact]
-    public void Fat_packet_surfaces_blocking_reason_in_sources_when_baseline_empty()
+    public void Unpublished_linked_packet_surfaces_blocking_reason_in_sources_when_baseline_empty()
     {
-        var bundle = CreateLinkedBundle(inSync: false);
+        var bundle = CreateLinkedBundle(published: false);
         bundle.Metadata.Settings.UseContextTags = true;
-        bundle.Metadata.Settings.UseSectionInjection = true;
 
         var ctx = PromptPacketBuilder.BuildContext(bundle, "look around");
 
-        Assert.Equal(PacketMode.Fat, ctx.Mode);
+        Assert.Equal(PacketMode.Thin, ctx.Mode);
+        Assert.Equal(PacketProfile.SourceDelegated, ctx.Profile);
         var sources = ContextTagFormat.ExtractBlock(ctx.ContextText, "sources");
         Assert.NotNull(sources);
         Assert.Contains("ALWAYS RETRIEVE", sources);
         Assert.Contains("Sources not ready:", sources);
-        Assert.Contains("out of sync", sources, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Open source sync", sources, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("manual publish", sources, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("- (none)", sources);
     }
 
@@ -227,7 +246,7 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Delegated_packet_surfaces_synced_file_fallback_when_baseline_empty()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: true);
         bundle.Metadata.Settings.UseContextTags = true;
         bundle.Metadata.Settings.UseSectionInjection = true;
         bundle.SourceManifest.RefreshSyncedFlag();
@@ -246,7 +265,7 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Ready_adventure_turn1_always_retrieve_lists_baseline_pointers_not_none_AC3()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: true);
         bundle.Metadata.Settings.UseContextTags = true;
         bundle.Metadata.Settings.UseSectionInjection = true;
         PopulateSectionManifest(bundle);
@@ -268,7 +287,7 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Ready_manual_publish_turn1_always_retrieve_lists_baseline_pointers_not_none_AC3()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: true);
         bundle.Metadata.Settings.UseContextTags = true;
         bundle.Metadata.Settings.UseSectionInjection = true;
         bundle.Metadata.Settings.SourcePublishMode = SourcePublishMode.Manual;
@@ -294,14 +313,12 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Blocked_manual_publish_turn1_surfaces_readiness_warning_not_none_AC4()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: false);
         bundle.Metadata.Settings.UseContextTags = true;
-        bundle.Metadata.Settings.UseSectionInjection = true;
-        bundle.Metadata.Settings.SourcePublishMode = SourcePublishMode.Manual;
 
         var ctx = PromptPacketBuilder.BuildContext(bundle, "Begin");
 
-        Assert.Equal(PacketMode.Fat, ctx.Mode);
+        Assert.Equal(PacketMode.Thin, ctx.Mode);
         var sources = ContextTagFormat.ExtractBlock(ctx.ContextText, "sources");
         Assert.NotNull(sources);
         Assert.Contains("Sources not ready:", sources);
@@ -313,9 +330,8 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Blocked_adventure_sources_warning_matches_evaluate_blocking_reason_AC4()
     {
-        var bundle = CreateLinkedBundle(inSync: false);
+        var bundle = CreateLinkedBundle(published: false);
         bundle.Metadata.Settings.UseContextTags = true;
-        bundle.Metadata.Settings.UseSectionInjection = true;
         var readiness = ProjectSourceInjectionService.Evaluate(bundle);
 
         var ctx = PromptPacketBuilder.BuildContext(bundle, "Begin");
@@ -325,15 +341,15 @@ public sealed class ProjectSourceInjectionTests
         Assert.NotNull(readiness.BlockingReason);
         Assert.Contains(readiness.BlockingReason, sources);
         var status = ProjectSourceInjectionService.FormatLinkStatusSources(readiness);
-        Assert.Contains("out of sync", status, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("out of sync", sources, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("inline fallback", status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("manual publish", sources, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("- (none)", sources);
     }
 
     [Fact]
     public void Delegated_tagged_packet_formats_sections_with_line_breaks()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: true);
         bundle.Metadata.Settings.UseContextTags = true;
         bundle.Metadata.Settings.UseSectionInjection = true;
         bundle.Summary.RollingSummary = "poato";
@@ -438,7 +454,7 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Evaluate_manual_mode_requires_published_lore_files()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: true);
         bundle.Metadata.Settings.SourcePublishMode = SourcePublishMode.Manual;
         foreach (var entry in bundle.SourceManifest.Entries)
         {
@@ -454,7 +470,7 @@ public sealed class ProjectSourceInjectionTests
     [Fact]
     public void Evaluate_manual_mode_blocks_when_not_published()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: false);
         bundle.Metadata.Settings.SourcePublishMode = SourcePublishMode.Manual;
 
         var readiness = ProjectSourceInjectionService.Evaluate(bundle);
@@ -463,21 +479,20 @@ public sealed class ProjectSourceInjectionTests
     }
 
     [Fact]
-    public void FormatLinkStatusSources_api_sync_out_of_sync_includes_manual_hint()
+    public void FormatLinkStatusSources_unpublished_includes_inline_fallback_hint()
     {
-        var bundle = CreateLinkedBundle(inSync: false);
+        var bundle = CreateLinkedBundle(published: false);
         var readiness = ProjectSourceInjectionService.Evaluate(bundle);
         var status = ProjectSourceInjectionService.FormatLinkStatusSources(readiness);
 
-        Assert.Contains("out of sync", status, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Manual publish", status, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Source Manager", status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("inline fallback", status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("publish", status, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void Evaluate_manual_mode_probe_differ_does_not_block_delegation()
     {
-        var bundle = CreateLinkedBundle(inSync: true);
+        var bundle = CreateLinkedBundle(published: true);
         bundle.Metadata.Settings.SourcePublishMode = SourcePublishMode.Manual;
         foreach (var entry in bundle.SourceManifest.Entries.Where(e => SourceManifestHelper.IsLoreSourceFile(e.RelativePath)))
         {

@@ -1,4 +1,5 @@
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.NarratorScales;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -62,6 +63,32 @@ public static class NarratorOverrideResolver
             GetSessionOverrides(bundle)?.Difficulty,
             bundle.Metadata.Settings.Difficulty);
 
+    public static string ResolveViolenceLevel(AdventureBundle bundle) =>
+        Coalesce(
+            bundle.Metadata.Settings.PlayTurnOverrides.ViolenceLevel,
+            GetSessionOverrides(bundle)?.ViolenceLevel,
+            bundle.Metadata.Settings.ViolenceLevel?.Trim() ?? "moderate");
+
+    public static string ResolveNarrativePacing(AdventureBundle bundle) =>
+        Coalesce(
+            bundle.Metadata.Settings.PlayTurnOverrides.NarrativePacing,
+            GetSessionOverrides(bundle)?.NarrativePacing,
+            bundle.Metadata.Settings.NarrativePacing);
+
+    public static string ResolveConsequenceWeight(AdventureBundle bundle) =>
+        Coalesce(
+            bundle.Metadata.Settings.PlayTurnOverrides.ConsequenceWeight,
+            GetSessionOverrides(bundle)?.ConsequenceWeight,
+            bundle.Metadata.Settings.ConsequenceWeight);
+
+    public static NarratorOverrideScope ReadPersistedScope(AdventureSettings settings) =>
+        Enum.TryParse<NarratorOverrideScope>(settings.LastNarratorOverrideScope, ignoreCase: true, out var scope)
+            ? scope
+            : NarratorOverrideScope.Turn;
+
+    public static void PersistScope(AdventureSettings settings, NarratorOverrideScope scope) =>
+        settings.LastNarratorOverrideScope = scope.ToString();
+
     public static string? GetScopedOverride(
         AdventureBundle bundle,
         NarratorParameter parameter,
@@ -90,7 +117,7 @@ public static class NarratorOverrideResolver
                 SetSessionOverride(GetOrCreateSessionOverrides(bundle), parameter, normalized);
                 break;
             case NarratorOverrideScope.Adventure:
-                SetAdventureBaseline(bundle, parameter, normalized ?? GetAdventureBaseline(bundle, parameter));
+                ApplyAdventureBaseline(bundle, parameter, normalized);
                 break;
         }
     }
@@ -131,14 +158,20 @@ public static class NarratorOverrideResolver
         AddChipIfSet(chips, "length", settings.PlayTurnOverrides.ResponseLength);
         AddChipIfSet(chips, "detail", settings.PlayTurnOverrides.DetailLevel);
         AddChipIfSet(chips, "tone", settings.PlayTurnOverrides.Tone);
-        AddChipIfSet(chips, "difficulty", settings.PlayTurnOverrides.Difficulty);
+        AddChipIfSet(chips, "combat", settings.PlayTurnOverrides.Difficulty);
+        AddChipIfSet(chips, "violence", settings.PlayTurnOverrides.ViolenceLevel);
+        AddChipIfSet(chips, "pacing", settings.PlayTurnOverrides.NarrativePacing);
+        AddChipIfSet(chips, "consequences", settings.PlayTurnOverrides.ConsequenceWeight);
 
         if (session is not null)
         {
             AddChipIfSet(chips, "session length", session.ResponseLength);
             AddChipIfSet(chips, "session detail", session.DetailLevel);
             AddChipIfSet(chips, "session tone", session.Tone);
-            AddChipIfSet(chips, "session difficulty", session.Difficulty);
+            AddChipIfSet(chips, "session combat", session.Difficulty);
+            AddChipIfSet(chips, "session violence", session.ViolenceLevel);
+            AddChipIfSet(chips, "session pacing", session.NarrativePacing);
+            AddChipIfSet(chips, "session consequences", session.ConsequenceWeight);
         }
 
         if (!string.IsNullOrWhiteSpace(settings.PlayTurnOverrides.TurnDirective))
@@ -153,10 +186,25 @@ public static class NarratorOverrideResolver
         var session = GetSessionOverrides(bundle);
         var lines = new List<string>();
 
-        AddLineIfDifferent(lines, "Response length", ResolveResponseLength(bundle), "normal");
-        AddLineIfDifferent(lines, "Detail level", ResolveDetailLevel(bundle), settings.DetailLevel);
-        AddLineIfDifferent(lines, "Tone", ResolveTone(bundle), ResolveBaselineTone(bundle));
-        AddLineIfDifferent(lines, "Difficulty", ResolveDifficulty(bundle), settings.Difficulty);
+        AddLineIfDifferent(lines, NarratorScaleLabels.ResponseLength, ResolveResponseLength(bundle), "normal");
+        AddLineIfDifferent(lines, NarratorScaleLabels.DetailLevel, ResolveDetailLevel(bundle), settings.DetailLevel);
+        AddLineIfDifferent(lines, NarratorScaleLabels.Tone, ResolveTone(bundle), ResolveBaselineTone(bundle));
+        AddLineIfDifferent(lines, NarratorScaleLabels.CombatDifficulty, ResolveDifficulty(bundle), settings.Difficulty);
+        AddLineIfDifferent(lines, NarratorScaleLabels.ViolenceLevel, ResolveViolenceLevel(bundle), settings.ViolenceLevel?.Trim() ?? "moderate");
+        AddLineIfDifferent(lines, NarratorScaleLabels.NarrativePacing, ResolveNarrativePacing(bundle), settings.NarrativePacing);
+        AddLineIfDifferent(lines, NarratorScaleLabels.ConsequenceWeight, ResolveConsequenceWeight(bundle), settings.ConsequenceWeight);
+
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var line = lines[i];
+            var colon = line.IndexOf(':');
+            if (colon <= 0)
+                continue;
+
+            var label = line[..colon].Trim();
+            var value = line[(colon + 1)..].Trim();
+            lines[i] = NarratorScalesResolver.ExpandOverrideLine(label, value);
+        }
 
         if (!string.IsNullOrWhiteSpace(session?.TemporaryAddendum))
             lines.Add($"Session note: {session.TemporaryAddendum.Trim()}");
@@ -207,6 +255,12 @@ public static class NarratorOverrideResolver
             return null;
         }
 
+        if ((parameter is NarratorParameter.NarrativePacing or NarratorParameter.ConsequenceWeight)
+            && string.Equals(trimmed, "balanced", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         return trimmed;
     }
 
@@ -243,6 +297,9 @@ public static class NarratorOverrideResolver
             NarratorParameter.DetailLevel => bundle.Metadata.Settings.PlayTurnOverrides.DetailLevel,
             NarratorParameter.Tone => bundle.Metadata.Settings.PlayTurnOverrides.Tone,
             NarratorParameter.Difficulty => bundle.Metadata.Settings.PlayTurnOverrides.Difficulty,
+            NarratorParameter.ViolenceLevel => bundle.Metadata.Settings.PlayTurnOverrides.ViolenceLevel,
+            NarratorParameter.NarrativePacing => bundle.Metadata.Settings.PlayTurnOverrides.NarrativePacing,
+            NarratorParameter.ConsequenceWeight => bundle.Metadata.Settings.PlayTurnOverrides.ConsequenceWeight,
             _ => null,
         };
 
@@ -258,6 +315,9 @@ public static class NarratorOverrideResolver
             NarratorParameter.DetailLevel => session.DetailLevel,
             NarratorParameter.Tone => session.Tone,
             NarratorParameter.Difficulty => session.Difficulty,
+            NarratorParameter.ViolenceLevel => session.ViolenceLevel,
+            NarratorParameter.NarrativePacing => session.NarrativePacing,
+            NarratorParameter.ConsequenceWeight => session.ConsequenceWeight,
             _ => null,
         };
     }
@@ -269,6 +329,9 @@ public static class NarratorOverrideResolver
             NarratorParameter.DetailLevel => bundle.Metadata.Settings.DetailLevel,
             NarratorParameter.Tone => ResolveBaselineTone(bundle),
             NarratorParameter.Difficulty => bundle.Metadata.Settings.Difficulty,
+            NarratorParameter.ViolenceLevel => bundle.Metadata.Settings.ViolenceLevel?.Trim() ?? "moderate",
+            NarratorParameter.NarrativePacing => bundle.Metadata.Settings.NarrativePacing,
+            NarratorParameter.ConsequenceWeight => bundle.Metadata.Settings.ConsequenceWeight,
             _ => null,
         };
 
@@ -290,6 +353,15 @@ public static class NarratorOverrideResolver
                 break;
             case NarratorParameter.Difficulty:
                 overrides.Difficulty = value;
+                break;
+            case NarratorParameter.ViolenceLevel:
+                overrides.ViolenceLevel = value;
+                break;
+            case NarratorParameter.NarrativePacing:
+                overrides.NarrativePacing = value;
+                break;
+            case NarratorParameter.ConsequenceWeight:
+                overrides.ConsequenceWeight = value;
                 break;
         }
     }
@@ -313,10 +385,25 @@ public static class NarratorOverrideResolver
             case NarratorParameter.Difficulty:
                 overrides.Difficulty = value;
                 break;
+            case NarratorParameter.ViolenceLevel:
+                overrides.ViolenceLevel = value;
+                break;
+            case NarratorParameter.NarrativePacing:
+                overrides.NarrativePacing = value;
+                break;
+            case NarratorParameter.ConsequenceWeight:
+                overrides.ConsequenceWeight = value;
+                break;
         }
     }
 
-    private static void SetAdventureBaseline(AdventureBundle bundle, NarratorParameter parameter, string? value)
+    internal static void SetAdventureBaseline(
+        AdventureBundle bundle,
+        NarratorParameter parameter,
+        string? value) =>
+        ApplyAdventureBaseline(bundle, parameter, value);
+
+    private static void ApplyAdventureBaseline(AdventureBundle bundle, NarratorParameter parameter, string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
             return;
@@ -332,6 +419,15 @@ public static class NarratorOverrideResolver
                 break;
             case NarratorParameter.Difficulty:
                 settings.Difficulty = value;
+                break;
+            case NarratorParameter.ViolenceLevel:
+                settings.ViolenceLevel = value;
+                break;
+            case NarratorParameter.NarrativePacing:
+                settings.NarrativePacing = value;
+                break;
+            case NarratorParameter.ConsequenceWeight:
+                settings.ConsequenceWeight = value;
                 break;
         }
     }

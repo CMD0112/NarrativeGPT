@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using ChatGPTWrapper.Diagnostics;
 
 namespace ChatGPTWrapper.ChatGptApi;
 
@@ -73,6 +74,13 @@ internal static class ProjectLinkDiagnostics
             var line = $"[{DateTimeOffset.Now:u}] {message}{Environment.NewLine}";
             lock (Gate)
                 File.AppendAllText(LogPath, line, Encoding.UTF8);
+
+            DiagnosticsMirror.WriteText(
+                DiagnosticsChannel.Api,
+                DiagnosticsLevel.Info,
+                "link_project",
+                message,
+                source: "link-project.log");
         }
         catch
         {

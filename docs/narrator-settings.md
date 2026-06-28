@@ -2,7 +2,7 @@
 
 How narrator controls in the adventure **play side panel** work today: UI surfaces, three override scopes, packet injection, and persistence.
 
-**Related:** [Adventure Panel Reference](adventure-panel.md) · [Instruction Contract Guide](instruction-contract-guide.md) · [Prompt Construction Guide](prompt-construction-guide.md) · [Data Model Reference](data-model-reference.md)
+**Related:** [Adventure Panel Reference](adventure-panel.md) · [Instruction Channels Glossary](instruction-channels.md) · [Instruction Contract Guide](instruction-contract-guide.md) · [Prompt Construction Guide](prompt-construction-guide.md) · [Data Model Reference](data-model-reference.md)
 
 ---
 
@@ -13,27 +13,66 @@ Narrator settings let you modulate **how the model narrates the next response** 
 | Layer | What it controls | Where to edit |
 |-------|------------------|---------------|
 | **Instruction contract** | Perspective, tense, boundaries, portrayal rules, author's note | Play settings → **Settings**, Design → Instructions |
-| **Adventure defaults** | Baseline detail, tone, difficulty (`AdventureSettings`) | Play settings → **Settings** (Adventure section) |
-| **Narrator overrides** | Temporary shifts to length, detail, tone, difficulty, directives | Play side panel **Narrator** expander, Play settings → **Next send**, **Advanced…** dialog |
+| **Adventure defaults** | Baseline detail, tone, pacing, combat difficulty, violence, consequence weight (`AdventureSettings`) | Play settings → **Behavior**, Design → Instructions |
+| **Narrator overrides** | Temporary shifts to all narrator scale dimensions plus directives | Play side panel **Injection** expander and Play settings → **Injection** tab |
 
 Overrides do **not** replace the instruction contract. They append optional blocks to the merged play packet at send time (`NarratorOverrideResolver.AppendOverrideBlocks`), layered on top of whatever `PromptPacketBuilder` already assembled.
+
+**Injection policy** (section includes, presets, transcript depth) lives in `AdventureSettings.injectionPolicy` and is edited on Play settings → **Injection** tab or via quick toggles in the cockpit. See [Prompt Construction Guide — Play injection policy](prompt-construction-guide.md#play-injection-policy).
+
+---
+
+## Scale definitions (`narrator-scales.md`)
+
+Preset selectors like `Combat difficulty: balanced` or `Tone: grim` are meaningless to the model without definitions. The wrapper auto-generates **`sources/narrator-scales.md`** on adventure create and export — a cross-adventure reference file (like `canon-format.md`) with two categories:
+
+| Category | Dimensions | Play UI | Contract baseline |
+|----------|------------|---------|-------------------|
+| **Narration (delivery)** | Response length, Detail level, Tone, Narrative pacing | Injection panel + Play settings → Injection — overridable per send/session/adventure | Instructions designer |
+| **Combat & stakes** | Combat difficulty, Violence level, Consequence weight | Same — all overridable per send/session/adventure | Instructions designer |
+
+| File | Role |
+|------|------|
+| `instructions-snippet.md` | **Which** scales are active (adventure baseline selectors) |
+| `narrator-scales.md` | **What each selector means** — model must **inspect and read** full preset sections |
+| Turn/session overrides | Change selectors only; packets point to `narrator-scales.md` § dimension/preset |
+
+**Model instruction:** Packets and `instructions-snippet.md` tell the model to **open and read** `narrator-scales.md` from Project Files and apply the **Summary**, **Narration behavior**, and **Avoid** bullets for each active selector — not to guess from labels alone.
+
+**Upload:** Source Manager → Refresh export → upload `narrator-scales.md` with `canon-format.md` and lore → mark **Published**.
+
+**Play packets:** Fat fallback includes categorized active-scale summaries; turn overrides expand to `Combat difficulty: hard — … (inspect narrator-scales.md § combat-difficulty/hard)`.
+
+Combo tooltips in the Injection panel show preset summaries from the same catalog.
 
 ---
 
 ## Where to find controls
 
-### Session cockpit — Narrator expander
+### Session cockpit — Injection expander
 
 **File:** `ChatGPTWrapper/Views/AdventurePlayView.xaml`
 
-In Play mode, the left (or right, per layout) companion panel includes a **Session** cockpit with a **Narrator** expander. Controls:
+In Play mode, the left (or right, per layout) companion panel includes a **Session** cockpit with an **Injection** expander (formerly “Narrator”). This is the **live injection control surface** (CMD-296):
+
+| Area | Purpose |
+|------|---------|
+| **Live preview** | `InjectionPacketPreviewControl` — delegation badge, char budget bar, section list (Reference / Delta / Omitted / Trimmed), delta callouts, packet body |
+| **Quick policy** | Preset combo (Compact / Standard / Full), Summary / Transcript / Memory toggles |
+| **Narrator behavior** | Scene profiles, scope selector; **Narration** (length/detail/tone/pacing) and **Combat & stakes** (difficulty/violence/consequences) |
+| **Play settings…** | Opens Play settings → **Injection** tab (full editor + staging preview; synced with cockpit) |
+
+Preview refreshes when narrator or injection policy controls change, or when the expander opens. **Play settings** uses a split-pane layout: tabs on the left, shared live preview on the right (`InjectionPreviewCoordinator` + `PrepareSend` staging).
+
+**Adventure default** scope shows a warning: baseline edits are contract changes — use Play settings → Settings for boundaries and portrayal rules.
 
 | Control | Purpose |
 |---------|---------|
 | **Scene profile** | One-shot preset applying coordinated values to the active scope |
 | **Active override chips** | Summary of turn + session overrides currently set |
 | **Apply changes to** | Scope selector: **This send**, **Session**, or **Adventure default** |
-| **Length / Detail / Tone / Difficulty** | Per-parameter combo boxes |
+| **Narration** | Length, Detail, Tone, Pacing — delivery overrides |
+| **Combat & stakes** | Combat difficulty, Violence, Consequence weight — all editable with scope |
 | **Reset scope** | Clears overrides for the selected scope only |
 | **Advanced…** | Opens `NarratorAdvancedDialog` |
 
@@ -41,24 +80,38 @@ Changes save immediately to `adventure.json` via `AdventureStore.Save`.
 
 ### Narrow panel — Narrator flyout
 
-When the play side panel content width is below **280px** (`PlayResponsiveTiers.ShellHeaderFullChrome`), inline narrator combos hide and a **Narrator…** menu appears instead:
+When the play side panel content width is below **280px** (`PlayResponsiveTiers.ShellHeaderFullChrome`), inline narrator combos hide and an **Injection…** menu appears instead:
 
-- **Expand narrator panel** — expands the Narrator expander
+- **Expand injection panel** — expands the Injection expander
 - **Advanced…** — same dialog as the inline button
 
 Implementation: `PlayLayoutCapabilities.UseShellHeaderFlyouts` toggles visibility in `AdventurePlayView.ApplyLayout`.
 
-### Play settings — Next send tab
+### Play settings — Injection tab
 
 **File:** `ChatGPTWrapper/Views/PlayPromptInjectionDialog.xaml`
 
-The **Next send** tab exposes the same four parameters, but **only at turn scope** (`NarratorOverrideScope.Turn`). It also includes:
+The **Injection** tab (first tab) controls `PlayInjectionPolicy`:
+
+| Control | Effect |
+|---------|--------|
+| **Preset** | Compact / Standard / Full — sets `maxPacketChars`, transcript depth, attachment mode |
+| **Section includes** | Summary, state, memory, transcript, lore cards, source pointers, attachment guidance |
+| **Max packet slider** | Live budget feedback in preview panel |
+| **Advanced formatting** | `useContextTags`, `useSectionInjection` |
+| **Narrator behavior** | `NarratorBehaviorPanel` — scene profiles, scope (This send / Session / Adventure default), all seven scale dimensions; synced with cockpit via store reload |
+
+Changes apply to a **staging bundle** for preview before OK; narrator edits on this tab use the selected scope (not turn-only). OK persists to `adventure.json` and reloads the cockpit panel.
+
+### Play settings — Play packet tab
+
+**File:** `ChatGPTWrapper/Views/PlayPromptInjectionDialog.xaml`
+
+The **Play packet** tab focuses on send inputs (not duplicate narrator combos):
 
 - Continuation queue and fallback player line
+- Hint linking narrator overrides to the **Injection** tab
 - Live merged packet preview (shows override blocks when present)
-- **Reset overrides** — clears all turn overrides
-
-Use this tab when you want to tune the next packet while inspecting the full merged preview.
 
 ### Advanced dialog
 
@@ -81,17 +134,19 @@ Turn directive and session addendum are always stored in their respective scopes
 |-------|----------|---------|----------|
 | **Turn** | This send | `metadata.settings.playTurnOverrides` | Cleared after a **successful** play send (`MainWindow.PlayInjection.cs` calls `ClearTurnOverrides`) |
 | **Session** | Session | `metadata.settings.sessionNarratorOverrides[sessionId]` | Active play session (`bundle.CurrentSessionId`); removed when session ends (`AdventureSessionService.EndSession`) |
-| **Adventure** | Adventure default | `metadata.settings.detailLevel`, `.tone`, `.difficulty` | Until changed again in Play settings or cockpit |
+| **Adventure** | Adventure default | `metadata.settings` baseline fields (detail, tone, difficulty, violence, narrativePacing, consequenceWeight) | Until changed again in Play settings or cockpit |
 
 ### Resolution order (effective value per send)
 
-For each of the four parameters, the effective value is:
+For each narrator scale parameter, the effective value is:
 
 ```
 turn override  →  session override  →  adventure baseline
 ```
 
-Implemented in `NarratorOverrideResolver.ResolveResponseLength`, `ResolveDetailLevel`, `ResolveTone`, and `ResolveDifficulty`.
+Implemented in `NarratorOverrideResolver.Resolve*` methods for all seven scale dimensions.
+
+**Scope sync:** `metadata.settings.lastNarratorOverrideScope` persists the last selected scope so cockpit and Play settings reopen consistently. Cockpit saves immediately; an open Play settings dialog reloads narrator bindings when the cockpit changes.
 
 **Tone baseline** prefers `settings.Tone`; if empty, falls back to `scenario.Tone` (`ResolveBaselineTone`).
 
@@ -105,6 +160,7 @@ Normalization (`NormalizeOverrideValue`):
 
 - Whitespace and the inherit label → `null`
 - Response length `"normal"` at turn/session scope → `null` (treated as inherit)
+- Narrative pacing / consequence weight `"balanced"` at turn/session scope → `null`
 
 ### Adventure scope limitations
 
@@ -151,13 +207,45 @@ Default adventure baseline: `medium`.
 
 Custom text is accepted via editable combo.
 
-### Difficulty
+### Combat difficulty
+
+Combat & stakes category — how hard challenges are and how punishing failures are (not the same as narration tone or detail).
 
 | Preset | Packet value |
 |--------|--------------|
 | Easy, Balanced, Moderate, Hard, Brutal | same id |
 
-Default adventure baseline: `balanced`.
+Default adventure baseline: `balanced`. Override per send/session in Injection panel; definitions in `narrator-scales.md` § `combat-difficulty`.
+
+### Violence level
+
+Combat & stakes category — how graphic violence may be depicted. Overridable per send/session; adventure baseline in Instructions designer.
+
+| Preset | Packet value |
+|--------|--------------|
+| None, Mild, Moderate, Intense | same id |
+
+Default: `moderate`. Definitions in `narrator-scales.md` § `violence-level`.
+
+### Narrative pacing
+
+Narration category — beat tempo and scene transitions (distinct from response length).
+
+| Preset | Packet value |
+|--------|--------------|
+| Deliberate, Balanced, Brisk | same id |
+
+Default: `balanced`. Definitions in `narrator-scales.md` § `narrative-pacing`.
+
+### Consequence weight
+
+Combat & stakes category — permanence of harm, loss, and failure.
+
+| Preset | Packet value |
+|--------|--------------|
+| Forgiving, Balanced, Lasting | same id |
+
+Default: `balanced`. Definitions in `narrator-scales.md` § `consequence-weight`.
 
 ---
 
@@ -165,15 +253,15 @@ Default adventure baseline: `balanced`.
 
 Scene profiles apply a coordinated preset to **all parameters defined by the profile** at the **currently selected scope** in the cockpit.
 
-| Profile | Length | Detail | Tone | Description |
+| Profile | Length | Detail | Tone | Pacing | Description |
 |---------|--------|--------|------|-------------|
-| **Action** | brief | low | tense | Combat and chase — short, punchy |
-| **Exploration** | long | high | lyrical | Discovery and travel — rich sensory |
-| **Introspection** | normal | medium | hopeful | Reflective, inner monologue |
+| **Action** | brief | low | tense | brisk | Combat and chase — short, punchy |
+| **Exploration** | long | high | lyrical | deliberate | Discovery and travel — rich sensory |
+| **Introspection** | normal | medium | hopeful | deliberate | Reflective, inner monologue |
 | **Social** | normal | medium | dramatic | Dialogue-forward scenes |
 | **Lore** | expansive | cinematic | lyrical | History, myth, exposition |
 
-Profiles do **not** set difficulty. After applying a profile, the scene profile combo resets to inherit (index 0) on rebind.
+Profiles do **not** set combat difficulty or violence. After applying a profile, the scene profile combo resets to inherit (index 0) on rebind.
 
 `NarratorPresetLibrary.ApplySceneProfile` calls `SetScopedOverride` for each entry in the profile dictionary.
 

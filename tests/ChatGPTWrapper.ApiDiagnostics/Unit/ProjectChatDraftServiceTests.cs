@@ -84,8 +84,10 @@ public sealed class ProjectChatDraftServiceTests
 
         ProjectChatDraftService.Cancel(bundle);
 
-        Assert.Equal("conv-old", bundle.Metadata.LinkedConversationId);
-        Assert.Equal("tab-1", bundle.Metadata.PinnedPlayTabKey);
+        Assert.Equal("conv-old", PlayThreadBindingService.GetActiveConversationId(bundle));
+        Assert.Equal(
+            "tab-1",
+            AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)?.PinnedTabKey);
         Assert.False(ProjectChatDraftService.IsActive(bundle));
     }
 
@@ -104,6 +106,23 @@ public sealed class ProjectChatDraftServiceTests
         var source = ChatGptUrls.BuildProjectUrl("g-p-util");
 
         Assert.True(ProjectChatDraftService.ShouldSuppressPlayAutomation(bundle, null, null, source));
+    }
+
+    [Fact]
+    public void ShouldSuppressPlayAutomation_false_on_bound_play_thread_conversation()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-play",
+                LinkedConversationId = "conv-play",
+            },
+        };
+
+        var source = ChatGptUrls.BuildProjectConversationUrl("conv-play", "g-p-play");
+
+        Assert.False(ProjectChatDraftService.ShouldSuppressPlayAutomation(bundle, null, null, source));
     }
 
     [Fact]
@@ -176,6 +195,25 @@ public sealed class ProjectChatDraftServiceTests
                 source,
                 bundle,
                 AdventureNavigationIntent.Play));
+    }
+
+    [Fact]
+    public void TryAutoBeginOnProjectPage_skips_when_play_mode_active()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                Id = Guid.NewGuid(),
+                LinkedProjectId = "g-p-auto",
+                LinkedConversationId = "conv-play",
+            },
+        };
+
+        var source = ChatGptUrls.BuildProjectUrl("g-p-auto");
+
+        Assert.False(ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, source, playModeActive: true));
+        Assert.False(ProjectChatDraftService.IsActive(bundle));
     }
 
     [Fact]

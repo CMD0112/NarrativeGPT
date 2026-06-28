@@ -64,7 +64,7 @@ public partial class MainWindow
         {
             var targetUrl = ChatGptUrls.ResolveProjectConversationUrl(conversationId, gizmoId, core.Source);
             core.Navigate(targetUrl);
-            await WaitForChatGptNavigationAsync(core);
+            await WaitForChatGptNavigationAsync(core, expectedDestination: targetUrl);
         }
 
         if (!IsAcceptableUtilityUiConversation(bundle, core.Source, conversationId))
@@ -194,6 +194,33 @@ public partial class MainWindow
 
         var isDesignJob = IsDesignGenerationJob(jobId);
         var isDesignSourceJob = jobId is GenerationJobId.ProposeJsonImport or GenerationJobId.ProposeSourceEdits;
+
+        if (!isDesignJob)
+        {
+            var route = UtilityJobRouter.Resolve(
+                bundle,
+                jobId,
+                UtilityJobTrigger.ManualCompanion);
+            if (route.Lane == UtilityRouteLane.Blocked)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                    SetPlayComposeStatus(FormatUtilityRouteBlocked(jobId, route.Reason)));
+                return new GenerationJobResult
+                {
+                    Success = false,
+                    Error = route.Reason ?? "utility_route_blocked",
+                };
+            }
+
+            if (route.Lane == UtilityRouteLane.WorkerOutbox)
+            {
+                return await EnqueueWorkerUtilityJobAsync(
+                    adventureId,
+                    bundle,
+                    jobId,
+                    context);
+            }
+        }
 
         WebView2 wv;
         CoreWebView2 core;
@@ -383,11 +410,10 @@ public partial class MainWindow
         if (result.Success && result.ProposalCount > 0)
         {
             status = jobId == GenerationJobId.ProposeJsonImport
-                ? $"Queued {result.ProposalCount} JSON import proposal(s)."
-                : $"Extracted {result.ProposalCount} proposal(s).";
+                ? $"Queued {result.ProposalCount} JSON import proposal(s) — review in Review proposals."
+                : $"Extracted {result.ProposalCount} proposal(s) — review in Review proposals.";
 
-            if (jobId == GenerationJobId.ProposeJsonImport)
-                _designView.TryOpenJsonImportReviewDialog();
+            _designView.TryOpenProposalReviewHubAfterJob(jobId, result.ProposalCount);
         }
         else if (!result.Success && result.SkippedReason is null)
             status = FormatDesignJobStatusError(jobId, result.Error);
@@ -413,6 +439,14 @@ public partial class MainWindow
         return $"{jobId} failed: {error ?? "unknown"}";
     }
 
+    private static string FormatUtilityRouteBlocked(string jobId, string? reason) =>
+        reason switch
+        {
+            "utility_worker_not_ready" =>
+                $"{jobId} blocked: utility worker not ready — open Threads hub → Utility worker and verify capabilities (lane policy is worker-only).",
+            _ => $"{jobId} blocked: {reason ?? "utility route unavailable"}.",
+        };
+
     private void HandleGenerationJobUiResult(string jobId, GenerationJobResult result)
     {
         if (_appMode != AppMode.Play)
@@ -423,9 +457,18 @@ public partial class MainWindow
             status = PendingReviewService.FormatReviewHint(jobId, result.ProposalCount);
         else if (!result.Success && result.SkippedReason is null)
         {
-            status = string.Equals(result.Error, "rate_limited", StringComparison.OrdinalIgnoreCase)
-                ? $"{jobId} failed: rate limited — wait ~30s and retry."
-                : $"{jobId} failed: {result.Error ?? "unknown"}";
+            status = result.Error switch
+            {
+                "play_thread_unlinked" =>
+                    $"{jobId} failed: play thread not linked — pin the active browser tab (Session tab or Threads hub).",
+                "utility_worker_not_ready" =>
+                    $"{jobId} blocked: utility worker not ready — open Threads hub → Utility worker and verify capabilities (lane policy is worker-only).",
+                "rate_limited" =>
+                    $"{jobId} failed: rate limited — wait ~30s and retry.",
+                "no_proposals_parsed" =>
+                    $"{jobId}: no proposals parsed — check utility worker chat or retry the job.",
+                _ => $"{jobId} failed: {result.Error ?? "unknown"}",
+            };
         }
         else if (result.Success && result.ProposalCount == 0 && result.Error is not null)
             status = $"{jobId}: no proposals ({result.Error}).";
@@ -436,7 +479,9 @@ public partial class MainWindow
 
         if (!string.IsNullOrWhiteSpace(status))
         {
-            if (_activeAdventureId is { } adventureId)
+            if (result.RanOnUtilityWorker)
+                status += " · utility worker";
+            else if (_activeAdventureId is { } adventureId)
             {
                 var bundle = AdventureStore.Load(adventureId);
                 if (bundle is not null && UtilityDeliveryModeService.UsesInlineDelivery(bundle))
@@ -451,6 +496,9 @@ public partial class MainWindow
         {
             SetPlayComposeStatus(result.StoryContextStatusHint);
         }
+
+        if (result.Success && result.ProposalCount > 0)
+            _playView?.TryOpenProposalReviewHubAfterJob(jobId, result.ProposalCount);
     }
 
     private async Task<UtilityStoryContextBuildResult> BuildLiveStoryContextPreviewAsync(Guid adventureId, string jobId)
@@ -480,6 +528,49 @@ public partial class MainWindow
     private async Task RunScheduledJobsAfterTurnAsync(AdventureBundle bundle, TurnRecord turn)
     {
         var jobs = GenerationJobScheduler.GetJobsAfterTurn(bundle, turn);
+        if (jobs.Count == 0)
+            return;
+
+        if (PlayUtilityInjectionService.UsesInjectionFirst(bundle))
+        {
+            PlayUtilityInjectionService.EnqueueAfterTurn(bundle, turn, jobs);
+            AdventureStore.Save(bundle);
+            var pendingWorker = UtilityOutboxService.PendingCount(bundle.Metadata.Id);
+            await Dispatcher.InvokeAsync(() =>
+                SetPlayComposeStatus(
+                    pendingWorker > 0
+                        ? $"Queued {jobs.Count} utility job(s); {pendingWorker} on worker outbox."
+                        : $"Queued {jobs.Count} utility job(s) for next send."));
+            if (pendingWorker > 0 && _activeAdventureId is { } advId)
+                _ = ProcessWorkerOutboxAsync(advId);
+            return;
+        }
+
+        _ = RunLegacyScheduledJobsAfterTurnAsync(bundle, turn);
+    }
+
+    private async Task WaitForPlaySendGateReleaseAsync()
+    {
+        for (var attempt = 0; attempt < 120; attempt++)
+        {
+            if (await _playSendGate.WaitAsync(0))
+            {
+                _playSendGate.Release();
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+    }
+
+    private async Task RunLegacyScheduledJobsAfterTurnAsync(AdventureBundle bundle, TurnRecord turn)
+    {
+        await WaitForPlaySendGateReleaseAsync();
+
+        var jobs = GenerationJobScheduler.GetJobsAfterTurn(bundle, turn);
+        if (jobs.Count == 0)
+            return;
+
         foreach (var jobId in jobs)
             await RunGenerationJobForActiveAdventureAsync(jobId, new GenerationJobContext { Turn = turn });
     }

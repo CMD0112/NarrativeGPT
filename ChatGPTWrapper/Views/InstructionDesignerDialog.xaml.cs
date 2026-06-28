@@ -1,4 +1,5 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
@@ -6,7 +7,7 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class InstructionDesignerDialog : Window
+public partial class InstructionDesignerDialog : ShellDialogWindow
 {
     private readonly AdventureBundle _bundle;
     private bool _suppressRefresh;
@@ -14,10 +15,8 @@ public partial class InstructionDesignerDialog : Window
 
     private static readonly string[] PerspectivePresets = ["second person", "first person", "third person limited", "third person omniscient"];
     private static readonly string[] TensePresets = ["present", "past"];
-    private static readonly string[] DetailPresets = ["low", "medium", "high"];
-    private static readonly string[] TonePresets = ["neutral", "dramatic", "whimsical", "grim", "hopeful"];
-    private static readonly string[] DifficultyPresets = ["easy", "moderate", "hard"];
-    private static readonly string[] ViolencePresets = ["none", "mild", "moderate", "intense"];
+    private static readonly string[] DetailPresets = ["low", "medium", "high", "cinematic"];
+    private static readonly string[] TonePresets = ["neutral", "dramatic", "whimsical", "grim", "hopeful", "tense", "lyrical"];
 
     public bool Saved { get; private set; }
 
@@ -70,8 +69,10 @@ public partial class InstructionDesignerDialog : Window
         BindCombo(TenseBox, TensePresets, settings.Tense);
         BindCombo(DetailBox, DetailPresets, settings.DetailLevel);
         BindCombo(ToneBox, TonePresets, settings.Tone);
-        BindCombo(DifficultyBox, DifficultyPresets, settings.Difficulty);
-        BindCombo(ViolenceBox, ViolencePresets, settings.ViolenceLevel);
+        BindCombo(DifficultyBox, NarratorPresetLibrary.PresetPacketValues("combat-difficulty"), settings.Difficulty);
+        BindCombo(ViolenceBox, NarratorPresetLibrary.PresetPacketValues("violence-level"), settings.ViolenceLevel);
+        BindCombo(NarrativePacingBox, NarratorPresetLibrary.PresetPacketValues("narrative-pacing"), settings.NarrativePacing);
+        BindCombo(ConsequenceWeightBox, NarratorPresetLibrary.PresetPacketValues("consequence-weight"), settings.ConsequenceWeight);
         AuthorsNoteBox.Text = _bundle.Scenario.AuthorsNote;
         BoundariesBox.Text = string.Join(Environment.NewLine, settings.ContentBoundaries);
         PortrayalBox.Text = InstructionContractService.SerializeCharacterPortrayalRules(
@@ -112,7 +113,9 @@ public partial class InstructionDesignerDialog : Window
             InstructionContractService.ParseCharacterPortrayalRules(PortrayalBox.Text) ?? [],
             AddendumBox.Text,
             ReadCombo(DifficultyBox),
-            ReadCombo(ViolenceBox));
+            ReadCombo(ViolenceBox),
+            ReadCombo(NarrativePacingBox),
+            ReadCombo(ConsequenceWeightBox));
     }
 
     private void RefreshPreview()

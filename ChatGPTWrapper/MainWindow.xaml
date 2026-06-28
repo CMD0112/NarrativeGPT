@@ -78,7 +78,8 @@
                         <Border Style="{StaticResource ShellCardStyle}"
                                 CornerRadius="{DynamicResource RadiusControl}"
                                 Padding="2"
-                                VerticalAlignment="Center">
+                                VerticalAlignment="Center"
+                                Margin="0,0,8,0">
                             <StackPanel Orientation="Horizontal">
                                 <Button x:Name="ShellPlayModeButton"
                                         Content="Play"
@@ -90,6 +91,15 @@
                                         Click="ShellDesignModeButton_Click"/>
                             </StackPanel>
                         </Border>
+                        <Button x:Name="ShellPlayFocusButton"
+                                Content="Focus chat"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Visibility="Collapsed"
+                                Click="ShellPlayFocusButton_Click">
+                            <Button.ToolTip>
+                                <ToolTip>Hide both companion columns for maximum chat width. Restore prior layout when toggled off.</ToolTip>
+                            </Button.ToolTip>
+                        </Button>
                     </StackPanel>
                 </StackPanel>
 
@@ -126,8 +136,21 @@
                             </MenuItem.Header>
                         </MenuItem>
                         <Separator/>
-                        <MenuItem Header="Format…"
+                        <MenuItem x:Name="FormatMenuItem"
+                                  Header="Format…"
                                   Click="FormatButton_Click"/>
+                        <MenuItem x:Name="PlaySettingsMenuItem"
+                                  Header="Play settings…"
+                                  Visibility="Collapsed"
+                                  Click="PlaySettingsMenuItem_Click"/>
+                        <MenuItem x:Name="FocusChatMenuItem"
+                                  Header="Focus chat"
+                                  Visibility="Collapsed"
+                                  Click="FocusChatMenuItem_Click"/>
+                        <Separator/>
+                        <MenuItem x:Name="KeyboardShortcutsMenuItem"
+                                  Header="Keyboard shortcuts…"
+                                  Click="KeyboardShortcutsMenuItem_Click"/>
                     </MenuItem>
                 </Menu>
 
@@ -140,7 +163,9 @@
                         <MenuItem Header="New tab" Click="NewTabButton_Click"/>
                         <MenuItem Header="Reload" Click="ReloadButton_Click"/>
                         <Separator/>
-                        <MenuItem Header="Preferences…" Click="PreferencesMenuItem_Click"/>
+                        <MenuItem x:Name="PreferencesMenuItem"
+                                    Header="Preferences…"
+                                    Click="PreferencesMenuItem_Click"/>
                     </MenuItem>
                 </Menu>
             </Grid>
@@ -184,7 +209,7 @@
                     HorizontalAlignment="Center"
                     Panel.ZIndex="1"
                     Visibility="Collapsed"
-                    ToolTip="Hide adventure panel"
+                    ToolTip="Hide left companion panel (Ctrl+Alt+L)"
                     Click="CollapsePlaySidePanelButton_Click">
                 <Path Data="M7 4 L3 10 L7 16"
                       Stroke="{DynamicResource TextMutedBrush}"
@@ -218,10 +243,20 @@
                 </StackPanel>
             </Button>
             <Grid Grid.Column="2">
+                <Grid x:Name="UtilityWorkerBackgroundHost"
+                      Width="960"
+                      Height="720"
+                      HorizontalAlignment="Left"
+                      VerticalAlignment="Top"
+                      Margin="-20000,-20000,0,0"
+                      Panel.ZIndex="0"
+                      Visibility="Collapsed"
+                      IsHitTestVisible="False"
+                      ClipToBounds="False"/>
                 <TabControl x:Name="ChatTabs"
+                            Panel.ZIndex="1"
                             Style="{StaticResource ShellChatTabControlStyle}"
                             VerticalAlignment="Stretch"
-                            VerticalContentAlignment="Top"
                             Background="{DynamicResource BgBaseBrush}"
                             Foreground="{DynamicResource TextPrimaryBrush}"/>
                 <views:PlayPromptComposer x:Name="PlayPromptComposer"
@@ -247,7 +282,7 @@
                     HorizontalAlignment="Center"
                     Panel.ZIndex="1"
                     Visibility="Collapsed"
-                    ToolTip="Hide notes panel"
+                    ToolTip="Hide notes / right panel (Ctrl+Alt+N)"
                     Click="CollapsePlayNotesPanelButton_Click">
                 <Path Data="M3 4 L7 10 L3 16"
                       Stroke="{DynamicResource TextMutedBrush}"

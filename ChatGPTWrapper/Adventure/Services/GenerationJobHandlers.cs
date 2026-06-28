@@ -40,6 +40,10 @@ internal sealed class GenerationJobContext
 
     public bool SuppressInlineGuide { get; set; }
 
+    public bool UtilityContextAssembled { get; set; }
+
+    public UtilityContextManifest? UtilityContextManifest { get; set; }
+
     public AdventureDesignStep? DesignStep { get; init; }
 }
 
@@ -72,6 +76,9 @@ internal sealed class GenerationJobResult
     public List<DesignStepProposal> DesignProposals { get; init; } = [];
 
     public AdventureDesignStep? DesignStep { get; init; }
+
+    /// <summary>True when the job ran on the utility worker lane (not play-thread inline/injection).</summary>
+    public bool RanOnUtilityWorker { get; init; }
 }
 
 internal static class GenerationJobHandlers
@@ -143,6 +150,8 @@ internal static class GenerationJobHandlers
                 context.UserPrompt!,
             GenerationJobId.SynthesizeSource when !string.IsNullOrWhiteSpace(context.UserPrompt) =>
                 context.UserPrompt!,
+            GenerationJobId.UtilityWorkerPing =>
+                BuildWorkerPingPrompt(context.UserPrompt ?? Guid.NewGuid().ToString("N")[..8]),
             _ => throw new InvalidOperationException($"Missing context for job {jobId}"),
         };
 
@@ -191,10 +200,12 @@ internal static class GenerationJobHandlers
 
     private static string BuildPlayThreadLine(AdventureBundle bundle)
     {
-        if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
+        var conversationId = PlayThreadBindingService.GetActiveConversationId(bundle)
+                               ?? bundle.Metadata.LinkedConversationId;
+        if (string.IsNullOrWhiteSpace(conversationId))
             return "";
 
-        return $"Play thread: {bundle.Metadata.LinkedConversationId}";
+        return $"Play thread: {conversationId}";
     }
 
     private static string AppendPlayThreadLine(AdventureBundle bundle, string core)
@@ -286,6 +297,13 @@ internal static class GenerationJobHandlers
                     ProposalCount = 0,
                     DisplayText = responseText,
                 },
+            GenerationJobId.UtilityWorkerPing =>
+                new GenerationJobResult
+                {
+                    Success = IsWorkerPingResponseValid(responseText, context?.UserPrompt),
+                    ProposalCount = 0,
+                    DisplayText = responseText,
+                },
             _ => new GenerationJobResult { Success = false, Error = "unknown_job" },
         };
     }
@@ -304,6 +322,8 @@ internal static class GenerationJobHandlers
         GenerationJobId.ProcessTurn => true,
         GenerationJobId.DesignExtractStep => true,
         GenerationJobId.ProposeJsonImport => true,
+        GenerationJobId.UtilityWorkerPing => true,
+        GenerationJobId.ContinuityCheck => true,
         _ => false,
     };
 
@@ -337,6 +357,8 @@ internal static class GenerationJobHandlers
         {
             if (string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
                 return SourceJsonImportService.IsParseableResponse(responseText);
+            if (string.Equals(jobId, GenerationJobId.UtilityWorkerPing, StringComparison.OrdinalIgnoreCase))
+                return IsSettledWorkerPingResponse(responseText);
             return !string.IsNullOrWhiteSpace(EntityExtractionService.TryNormalizeJsonObjectResponse(responseText));
         }
 
@@ -366,6 +388,10 @@ internal static class GenerationJobHandlers
         {
             if (string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
                 return SourceJsonImportService.IsSettledResponse(responseText, streamComplete);
+            if (string.Equals(jobId, GenerationJobId.UtilityWorkerPing, StringComparison.OrdinalIgnoreCase))
+                return IsSettledWorkerPingResponse(responseText);
+            if (string.Equals(jobId, GenerationJobId.ContinuityCheck, StringComparison.Ordinal))
+                return IsSettledContinuityCheckResponse(responseText, streamComplete);
             return IsSettledProcessTurnResponse(responseText, streamComplete);
         }
 
@@ -790,8 +816,7 @@ internal static class GenerationJobHandlers
                 var summaryText = summaryEl.GetString()?.Trim() ?? "";
                 if (!string.IsNullOrWhiteSpace(summaryText))
                 {
-                    bundle.Summary.ProposedSummary = summaryText;
-                    bundle.Summary.PendingReview = true;
+                    SummaryReviewService.QueueProposal(bundle, summaryText);
                     total++;
                 }
             }
@@ -909,8 +934,7 @@ internal static class GenerationJobHandlers
         if (string.IsNullOrWhiteSpace(text))
             return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "no_proposals_parsed" };
 
-        bundle.Summary.ProposedSummary = text;
-        bundle.Summary.PendingReview = true;
+        SummaryReviewService.QueueProposal(bundle, text);
         return new GenerationJobResult { Success = true, ProposalCount = 1 };
     }
 
@@ -1059,6 +1083,30 @@ internal static class GenerationJobHandlers
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
             return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "parse_failed" };
+        }
+    }
+
+    private static bool IsSettledContinuityCheckResponse(string responseText, bool streamComplete)
+    {
+        var normalized = EntityExtractionService.TryNormalizeJsonObjectResponse(responseText);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+
+            if (!doc.RootElement.TryGetProperty("warnings", out var warnings))
+                return streamComplete;
+
+            return warnings.ValueKind == JsonValueKind.Array
+                   && (streamComplete || warnings.GetArrayLength() > 0);
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 
@@ -1244,5 +1292,56 @@ internal static class GenerationJobHandlers
             text = fenceMatch.Groups[1].Value.Trim();
 
         return text.Trim();
+    }
+
+    public static string BuildWorkerPingPrompt(string probeId) =>
+        $$"""
+        Utility worker capability probe.
+        Reply with JSON only (no markdown fences):
+        { "pong": true, "probeId": "{{probeId}}" }
+        """;
+
+    public static bool IsWorkerPingResponseValid(string? responseText, string? probeId)
+    {
+        if (string.IsNullOrWhiteSpace(responseText) || string.IsNullOrWhiteSpace(probeId))
+            return false;
+
+        var payload = NormalizeCapturedJobResponse(responseText);
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("pong", out var pong) || pong.ValueKind != JsonValueKind.True)
+                return false;
+            if (!root.TryGetProperty("probeId", out var id))
+                return false;
+            return string.Equals(id.GetString(), probeId, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    internal static bool IsSettledWorkerPingResponse(string? responseText)
+    {
+        if (string.IsNullOrWhiteSpace(responseText))
+            return false;
+
+        var payload = NormalizeCapturedJobResponse(responseText);
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("probeId", out var id))
+                return false;
+
+            var probeId = id.GetString();
+            return IsWorkerPingResponseValid(payload, probeId);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 }

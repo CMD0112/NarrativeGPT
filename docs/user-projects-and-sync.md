@@ -24,13 +24,13 @@ Link adventures to **ChatGPT Projects** so lore lives in Project source files (r
 
 All paths open **Link ChatGPT Project** (`ProjectWorkspaceDialog`), starting on the **Projects** tab with the list refreshed automatically.
 
-If project discovery fails, use **Advanced: URL** on the Projects tab and paste a URL like `https://chatgpt.com/g/g-p-…` or the raw gizmo id.
+If project discovery fails, use **Paste URL** on the Projects tab and paste a URL like `https://chatgpt.com/g/g-p-…` or the raw gizmo id.
 
 ---
 
 ## Link ChatGPT Project dialog
 
-`ProjectWorkspaceDialog` has three tabs:
+`ProjectWorkspaceDialog` has three tabs when linked (Projects, Connection, Sources). On first link, only **Projects** and **Connection** appear — **Sources** unlocks after linking.
 
 ### Connection tab
 
@@ -46,12 +46,17 @@ If project discovery fails, use **Advanced: URL** on the Projects tab and paste 
 
 ### Projects tab (default)
 
-Opens first when you link from the dashboard or Play mode. Projects load automatically; use **Refresh** if the list is stale.
+Opens first when you link from the dashboard or Play mode. Projects load automatically; use **Refresh** if the list is stale. When not fully signed in, an inline warning on this tab links to the **Connection** tab.
 
-- **From list** — select a project, then **Link project** (or double-click a row)
+Mode selector (radio chips, not nested tabs):
+
+- **From list** — select a project, then **Link Project** (or double-click a row). Selection context appears above the list.
 - **Create new** — name is pre-filled from the adventure title
-- **Advanced: URL** — link by pasted URL or gizmo id
-- **Link project** — binds the selected project to the active adventure (enabled on this tab only)
+- **Paste URL** — link by pasted URL or gizmo id
+
+**Link options** expander (collapsed by default): sync via API, push narrator instructions, create play thread.
+
+**Link Project** / **Switch Project** — fixed footer label; runs binding flow (enabled on Projects tab only when inputs are valid).
 
 ### Sources tab
 
@@ -79,14 +84,13 @@ Managed by `ProjectSourceExportService`. The Sources tab and **Source Manager** 
 
 ---
 
-## Publish modes
+## Publish workflow
 
-| Mode | Behavior |
-|------|----------|
-| **Manual** (default) | You copy instructions and drag files into the ChatGPT Project UI. Wrapper tracks what you confirmed as published. |
-| **ApiSync** (advanced) | Programmatic upload/attach via ChatGPT's internal API. May fail if ChatGPT changes endpoints; use diagnostics if needed. |
+**Manual publish** is the only active workflow. Export locally, upload to ChatGPT Project, mark **Published** in Source Manager.
 
-Set in **Play settings → Sources** or adventure settings. See [instruction-sources-paradigm.md § Publish modes](instruction-sources-paradigm.md#publish-modes).
+**Remote sync diagnostics** (Source Manager) can repair remote bindings when troubleshooting — not the primary publish path.
+
+See [instruction-sources-paradigm.md § Publish workflow](instruction-sources-paradigm.md#publish-workflow-manual-only).
 
 ### Manual publish walkthrough
 
@@ -124,16 +128,16 @@ In **Source Sync** dialog:
 
 ---
 
-## Thin vs fat play packets (what you see)
+## Packet profiles (what you see)
 
-| Condition | Packet type | What you notice in **Context** viewer |
-|-----------|-------------|--------------------------------------|
-| No linked Project | **Fat** | Full scenario, world, memory inline |
-| Project linked, sources **not** all InSync | **Fat** | Full lore inline (fallback) |
-| Project linked, all manifest files **InSync** | **Thin** | Pointers only; lore delegated to Project RAG |
-| **Force fat packets** enabled in settings | **Fat** | Always full inline |
+| Condition | Profile | What you notice in **Context** viewer |
+|-----------|---------|--------------------------------------|
+| No linked Project | **Minimal local** | Opening + session deltas; pointers note to link a Project |
+| Project linked, sources **not** all published | **Source-delegated** (preview) or **Inline fallback** (after send warning → No) | Preview: pointers + `Sources not ready`; inline: full lore |
+| Project linked, all lore files **Published** | **Source-delegated** | Pointers only; lore delegated to Project RAG |
+| **Force inline lore (debug)** enabled | **Inline fallback** | Always full inline |
 
-Thin packets are smaller and rely on ChatGPT retrieving from Project files. If narration "forgets" lore, check sync status — one out-of-sync file forces fat mode.
+Source-delegated packets are smaller and rely on ChatGPT retrieving from Project files. If narration "forgets" lore, publish sources in Source Manager — unpublished files block delegation.
 
 Play link status line (play header) shows conversation URL, project link health, and sync summary. Format documented in [adventure-developer-reference.md §6](adventure-developer-reference.md#play-status-line-format).
 
@@ -142,9 +146,8 @@ Play link status line (play header) shows conversation URL, project link health,
 ## Mid-play sync workflow
 
 1. Edit `world.md` (or other source) locally via **Source Manager**
-2. Open **Source Sync** — file shows **LocalNewer**
-3. **Apply safe** to push (ApiSync) or manually upload and confirm published (Manual mode)
-4. Next play turn uses **thin** packets once all files are **InSync**
+2. **Refresh export** → upload to ChatGPT Project → mark **Published**
+3. Next play turn uses **source-delegated** packets once all core lore files are published
 
 ---
 
@@ -167,12 +170,11 @@ If automation fails, use manual fallback: copy the packet from Context, paste in
 2. **Adventures** → **Link Project…** or Play → **Link Project**.
 3. **Connection** → **Test connection** (signed in, device cookie).
 4. **Projects** → **Refresh** or **Advanced: URL**.
-5. Link with sync/instructions → **Sources** tab shows sync plan.
-6. **Apply safe** / **Apply all**; resolve conflicts before apply-all.
+5. Link project → **Sources** tab shows publish status.
+6. **Manage sources…** → export, upload, mark Published.
 7. **Copy diagnostics** if listing fails.
-8. Edit `world.md` locally → sync → **LocalNewer** → push.
-9. Edit in ChatGPT UI → sync → **RemoteNewer** → pull.
-10. **Context** shows thin packets only when all files are **InSync**.
+8. Edit `world.md` locally → re-export → re-publish.
+9. **Context** shows source-delegated packets when all lore files are published.
 
 ---
 

@@ -24,6 +24,7 @@ WPF views, dialogs, and shell structure. Play view deep-dive: [adventure-panel.m
 | `MainWindow.UtilityWebView.cs` | Utility-thread WebView for separate delivery |
 | `MainWindow.Theme.cs` | Theme customization dialog |
 | `MainWindow.ShellStatus.cs` | Status line, breadcrumbs |
+| `MainWindow.ShellShortcuts.cs` | Centralized keyboard shortcuts, focus-chat toggle |
 | `MainWindow.ThreadLogSync.cs` | Thread log sync |
 | `MainWindow.TurnInvalidation.cs` | Turn invalidation |
 
@@ -40,8 +41,8 @@ WPF views, dialogs, and shell structure. Play view deep-dive: [adventure-panel.m
 
 | Component | Opens from | Purpose |
 |-----------|------------|---------|
-| `ContinuousViewFormatDialog` | View → Format… / Preferences hub | Presets, reading layout (per-role typography), colors, highlights, thread display; live sample preview (CMD-80, CMD-146) |
-| `PreferencesHubDialog` | ⋯ → Preferences… | Routes to theme, format, wrapper settings, play settings shortcut |
+| `ContinuousViewFormatDialog` | View → Format… / Preferences hub | **Essentials** tab (common reading controls), per-category format refinement panel (suggested + common tweaks), settings search, profile presets, reading layout, colors, highlights, thread display; rich live sample preview (CMD-80, CMD-146, CMD-306) |
+| `PreferencesHubDialog` | ⋯ → Preferences… | Taxonomy-grouped hub v2: global cards (appearance, reading/format, storage), reading mode summary, active-adventure shortcuts |
 | `PhraseHighlightsEditorControl` | Embedded in Format dialog | Reusable rule list editor (standalone `PhraseHighlightsDialog` removed) |
 | `TextPromptDialog` | Various | Generic text input prompt |
 
@@ -90,15 +91,15 @@ In-shell Do/Say/Story input when wrapper composer is disabled.
 
 | Tab (XAML name) | Content |
 |-----------------|---------|
-| Next send | Continuation queue, fallback player line, **turn overrides** (response length, detail), live merged preview |
-| World | Summary, location, objectives, author's note |
-| AI Actions | Per-job guide overrides, run jobs |
-| Session | Utility sessions, tab pins, inline utility peek |
-| Play surface | Attachment context, quick-action visibility, **layout presets** (Writer / GM / Minimal), per-tab placement (Left / Right / Hidden) including Notes |
-| Settings | Perspective, tone, boundaries, automation toggles, max packet size, force fat packets, context tags |
-| Memory & cards | Pinned memory, cards review |
-| Sources | Published checkboxes, manifest status, sync shortcuts |
-| History | Send history viewer |
+| Next send | Send scope — continuation queue, turn overrides, packet preview |
+| World | Adventure — summary, location, objectives, author's note |
+| Play surface | Adventure — layout presets, side panel tab placement |
+| Behavior | Adventure — narrator contract, automation toggles, advanced automation expander |
+| Session | Session — utility sessions, tab pins, inline utility peek |
+| Sources | Adventure — publish checkboxes; primary path is SourceManagerDialog |
+| Memory & cards | Adventure — pinned memory, cards review |
+| AI Actions | Session — per-job overrides and run buttons |
+| History | Session — send history viewer |
 
 ### ScenarioCreationDialog
 
@@ -132,10 +133,11 @@ New adventure: title, genre, opening situation, optional library import.
 
 | Dialog | Purpose |
 |--------|---------|
-| `EntityEditDialog` | Modal entity editor — wraps shared `EntityEditFormHost`. Open from Play → Reference (double-click), Design → Cast → **Canon entities**, or inline/side-panel when `EntityReferencePanelOptions.EditMode` is not `Modal`. |
-| `EntityEditFormHost` | Shared schema-driven form body (portrait, shell fields, extras) used by `EntityEditDialog` and embedded panel edit modes. |
+| `EntityEditDialog` | Resizable modal entity editor — header card (portrait, badges, sync), tabs **Profile · Sources · Mentions · History**, grouped profile sections, extended-fields editor, sticky footer. All entity CRUD from Play → Reference and Design → Cast. |
+| `EntityEditFormHost` | Shared schema-driven form body (portrait, shell fields, extras, **phrase highlight** card for Characters/Player/Party/Locations) used by `EntityEditDialog` and embedded panel edit modes. |
 | `LibrariesDialog` | Browse/import scenario, world, character libraries |
 | `SearchDialog` | Full-text search hits across adventure |
+| `KeyboardShortcutsDialog` | View → Keyboard shortcuts… | Grouped list of default shell chords (`ShellShortcutCatalog`) |
 | `RandomTableDialog` | Roll on random tables |
 
 ---
@@ -177,7 +179,7 @@ Shared responsive rules for adventure surfaces. Tokens live in `Themes/WrapperTo
 | Draft panel | Scrollable; source prompt panel shows inline out-of-order warnings |
 | **Canon entities** (Cast step) | Inline card in draft scroll — after cast fields, before Additional notes; full schema categories via `EntityReferencePanel` |
 
-Shared entity UI: `EntityReferencePanel` + `EntityReferenceEditService` (also hosts Play → Reference tab). Panel supports `EditMode`: `Modal` (default), `Inline`, `SidePanel`, or `Auto` (compact → modal, medium → inline, wide → side panel).
+Shared entity UI: `EntityReferencePanel` + `EntityReferenceEditService` (also hosts Play → Reference tab). Companion list only — **dialog-only** editing via `EntityEditDialog` (`EditMode` defaults to `Modal`; `Auto` also resolves to modal).
 
 ### Adventures dashboard (`AdventureDashboardView`)
 
@@ -189,14 +191,168 @@ Shared entity UI: `EntityReferencePanel` + `EntityReferenceEditService` (also ho
 
 ### Dialog minimum widths
 
-| Dialog | Min width | Notes |
-|--------|-----------|-------|
-| `PlayPromptInjectionDialog` | 720px | Wider fields (CMD-20) |
-| `InstructionDesignerDialog` | 760px | Split preview |
-| `ContinuousViewFormatDialog` | 800px | Presets-first IA; role-grouped typography; color catalog; sample preview (CMD-80, CMD-146) |
-| `AdventureRenameDialog` | 360px | `SizeToContent=Height` (CMD-15) |
+Tier defaults use theme keys `DialogMinWidthSmall/Medium/Large` and `DialogMinHeightSmall/Medium/Large` in `WrapperControls.xaml`. All modal shell dialogs inherit `ShellDialogWindow` (see [Dialog viewport sizing](#dialog-viewport-sizing-cmd-279)) unless listed as SizeToContent exceptions.
+
+| Tier | Min (W×H) | Default target | Examples |
+|------|-----------|----------------|----------|
+| **Small** | 440×400 | ~520×420 | Recap, Search, RandomTable, Libraries, ConversationFiles, EntityRetire/Merge, CanonInbox, NarratorAdvanced, CastPhraseImport, FormatSystemFontPicker |
+| **Medium** | 480×400 | ~640–720×520 | PreferencesHub, PlayHandoff, AdventureThreadManager, CanonReconcile, ContextViewer, HighlightColorAssignment, ScenarioCreation, EntityRenameWizard, AdventureDesignWizard, ProjectWorkspace |
+| **Large** | 640×520 | ~760–1080×680–1040 | PlayPromptInjection (920×760), ThemeCustomization (860×720), InstructionDesigner, JsonImportReview, SourceManager/Compare/Sync, EntityEdit, EntityChangePlanDiffPreview, ContinuousViewFormat |
+
+| Dialog | Default (W×H) | Notes |
+|--------|---------------|-------|
+| `PlayPromptInjectionDialog` | 920×760 | Split tabs + live preview column; body `MinHeight="360"` |
+| `ThemeCustomizationDialog` | 860×720 | Tab body `MinHeight="320"` |
+| `InstructionDesignerDialog` | 960×720 | Editor `*` row `MinHeight="320"` |
+| `JsonImportReviewDialog` | 920×640 | Review pane `MinHeight="280"` |
+| `ContinuousViewFormatDialog` | 1080×1040 | Essentials-first IA; refinement expander (CMD-80, CMD-146, CMD-306) |
+| `PreferencesHubDialog` | 520×640 | Resizable; no `SizeToContent` cap |
+| `AdventureRenameDialog` | 360×auto | `SizeToContent=Height` exception |
 
 See also [prompt-construction-guide.md — Preview/send parity](prompt-construction-guide.md#previewsend-parity-cmd-56--cmd-60) (CMD-56) and [adventure-panel.md](adventure-panel.md).
+
+---
+
+## WPF scroll & overflow layout contract (CMD-278 / CMD-285)
+
+Authoritative rules for shell **dialogs** and settings surfaces. Theme keys live in `Themes/WrapperControls.xaml`; play companion responsive layout is a separate contract above ([Layout contract](#layout-contract-cmd-61--cmd-91), [adventure-panel.md](adventure-panel.md)).
+
+**Related:** [settings-ux-taxonomy.md](settings-ux-taxonomy.md) (discovery for tabbed settings) · [CMD-279](https://linear.app/cmd0112/issue/CMD-279) (dialog migration) · [CMD-286](https://linear.app/cmd0112/issue/CMD-286) (nested-scroll enforcement)
+
+### Dialog layout tiers
+
+Apply on each `Window` explicitly (see `WrapperControls.xaml` `DialogMinWidth*` keys):
+
+| Tier | Min size | Default | Resize | Scroll pattern |
+|------|----------|---------|--------|----------------|
+| **Small form** | 440×400 | ~520×420 | Yes | `ShellFormScrollViewerStyle` in `Grid` `*` row |
+| **Medium editor** | 480×400 | ~640–720×520 | Yes | Form or tab scroll per decision tree |
+| **Large workspace** | 640×520 | ~760–920×680 | Grip | Form scroll and/or split `*` + side panel |
+
+**Height budget:** The scroll host must sit in a `Grid` row with `Height="*"` (or a fixed `MaxHeight` cap). Never place `ShellFormScrollViewerStyle` / `ShellTabScrollViewerStyle` as the direct child of a `Window` without a star row — content grows unbounded and scrollbars stay inert.
+
+Large editors with heavy header chrome (profile bars, hint blocks) should also set `MinHeight` on the body `*` row (e.g. `PlayPromptInjectionDialog` 360px, `ThemeCustomizationDialog` 320px) and collapse optional chrome into `Expander` controls so the scroll host keeps vertical budget.
+
+### Dialog viewport sizing (CMD-279)
+
+All wrapper modal dialogs use **`ShellDialogWindow`** (`ChatGPTWrapper/Shell/ShellDialogWindow.cs`) instead of raw `Window`, except `MainWindow`.
+
+**On open (`ContentRendered`):**
+
+1. Set `MaxWidth` / `MaxHeight` from `SystemParameters.WorkArea` (24px margin) via `DialogViewportLayout`.
+2. If `%LocalAppData%\ChatGPTWrapper\dialog-layouts.json` has valid saved bounds for the dialog's layout key → restore them.
+3. Else apply XAML design `Width` / `Height`.
+4. Clamp position to the work area (respects `WindowStartupLocation="CenterOwner"` when no saved position).
+
+**On close:** when `ActualWidth` / `ActualHeight` differ from design defaults (~4px tolerance), persist bounds to `dialog-layouts.json` (camelCase keys matching layout key, e.g. `playPromptInjectionDialog`).
+
+**Layout key:** `protected virtual string LayoutKey => GetType().Name` unless overridden.
+
+**Opt-out flags:**
+
+| Flag | Default | Use when |
+|------|---------|----------|
+| `PersistLayout` | `true` | `WrapperSettingsDialog` (`SizeToContent`, `NoResize`) |
+| `ApplyDesignSizeOnOpen` | `true` | `ThemeColorPickerDialog` (expander-driven sizing); `TextPromptDialog` when multiline |
+| `RestorePersistedSizeOnOpen` | `true` | `AdventureRenameDialog`, `SyncFromThreadDialog` (`SizeToContent=Height`) |
+
+**SizeToContent exceptions** (clamp max only; no forced design size / no persist unless user resized):
+
+- `WrapperSettingsDialog` — full opt-out
+- `AdventureRenameDialog`, `SyncFromThreadDialog` — `MaxHeight` clamp only
+- `TextPromptDialog` — height `SizeToContent` for single-line prompts
+- Ad-hoc `SizeToContent` prompts in `SourceManagerDialog` — call `DialogViewportLayout` helpers directly
+
+`ThemeColorPickerDialog` calls `ReapplyViewportLayout()` after expander changes; initial open still flows through the base class.
+
+### Scroll style map
+
+| Style key | Based on | Use when |
+|-----------|----------|----------|
+| `WrapperInteriorScrollViewerStyle` | implicit `ScrollViewer` | Base pixel scroll; `CanContentScroll=False`, `PanningMode=VerticalOnly` |
+| `ShellFormScrollViewerStyle` | interior | Single-column forms, wizards, reconcile/rename dialogs — body in `*` row |
+| `ShellTabScrollViewerStyle` | interior + `Margin="8"` | **Each** `TabItem` body in tabbed settings (`PlayPromptInjectionDialog`, `PlayHandoffDialog`, `ProjectWorkspaceDialog` tabs) |
+| `WrapperInteriorScrollBarStyle` | `ScrollBar` | Wider thumb + inset track for nested panels (format tabs, highlight lists) |
+
+**Pixel vs logical scroll**
+
+| Host | `CanContentScroll` | Why |
+|------|-------------------|-----|
+| `StackPanel` / `WrapPanel` inside `Shell*ScrollViewerStyle` | **False** (default) | Panels do not implement `IScrollInfo`; logical scroll breaks thumb drag |
+| `ListBox`, `ListView`, `DataGrid` | **True** (theme default) | Virtualized / item-scrolling hosts in a `*` row with `VerticalScrollBarVisibility=Auto` |
+
+Implicit `ScrollViewer` style sets `CanContentScroll=False` globally. Only items controls opt into logical scroll via `ScrollViewer.CanContentScroll`.
+
+### Decision tree
+
+```
+Tabbed settings dialog?
+├─ Yes → TabControl with Stretch content alignment (theme default)
+│         └─ Each tab page: ShellTabScrollViewerStyle wrapping tab body
+└─ No → Single form or wizard
+          └─ Grid: Auto header/footer rows + * body
+                └─ ShellFormScrollViewerStyle on *
+
+Split list + detail?
+├─ List in * column → ListBox/ListView (theme scroll) or capped preview host
+└─ Detail in * column → ShellFormScrollViewerStyle or ShellTabScrollViewerStyle
+
+Read-only monospace dump (JSON, diff, log)?
+└─ TextBox in * row, AcceptsReturn, VerticalScrollBarVisibility=Auto
+   (no outer ScrollViewer — single scroll tier)
+
+Multiline field inside tab/form scroll?
+└─ Default: VerticalScrollBarVisibility=Disabled + MinHeight (outer panel scrolls)
+   Exception: capped preview zone (see below)
+```
+
+### Trap patterns (CMD-278)
+
+| Trap | Symptom | Fix |
+|------|---------|-----|
+| **Unbounded scroll root** | Scrollbar visible but wheel/thumb do nothing | `Grid` + `*` row + shell scroll style |
+| **Tab content not stretched** | Tab page grows with content; outer scroll inert | `TabControl` `HorizontalContentAlignment` / `VerticalContentAlignment` = `Stretch` (theme); tab body uses `ShellTabScrollViewerStyle` |
+| **Logical scroll on panels** | Thumb jumps or does not track content | `CanContentScroll=False` on form/tab `ScrollViewer` |
+| **Broken control templates** | ComboBox popup or scrollbar thumb stuck | Bind `ScrollViewer.*` on `ComboBox`; transparent `RepeatButton` on `ScrollBar` track (theme) |
+| **Nested scroll traps** | Wheel stuck on inner `TextBox` | Disable inner `VerticalScrollBarVisibility` unless capped preview exception |
+| **List without height budget** | List expands dialog; no list scroll | List host in `*` row; theme `ListBox`/`ListView` vertical scroll |
+
+### Nested scroll policy (summary)
+
+Full enforcement: [CMD-286](https://linear.app/cmd0112/issue/CMD-286).
+
+| Zone | Inner `TextBox` scroll | Rule |
+|------|------------------------|------|
+| **Panel scroll** (default) | `Disabled` + `MinHeight` | Outer `ShellTabScrollViewerStyle` / `ShellFormScrollViewerStyle` receives wheel |
+| **Capped preview** | `Auto` when `MaxHeight` ≤ ~160px | Read-only diff/snippet previews (`PlayPromptInjectionDialog`, `JsonImportReviewDialog`) |
+| **Monospace dump** | `Auto` in `*` row | No outer `ScrollViewer` wrapper |
+
+### ComboBox & ScrollBar requirements
+
+- **ComboBox:** `ScrollViewer.HorizontalScrollBarVisibility` / `VerticalScrollBarVisibility` = `Auto` on the style; `MaxDropDownHeight` = 240. Popup list scrolls independently of dialog body scroll.
+- **ScrollBar:** Default 10px thumb; `WrapperInteriorScrollBarStyle` 12px with inset track for dense nested panels. Page up/down `RepeatButton` templates must stay **transparent** so only the thumb captures drag.
+- **Editable ComboBox:** Use `ComboBoxEditableTextBoxStyle` — not the standalone `TextBox` chrome (nested `PART_ContentHost` with hidden scrollbars).
+
+### Documented exceptions
+
+| Surface | Pattern | Rationale |
+|---------|---------|-----------|
+| `ContinuousViewFormatDialog` | Custom tab interior scroll + `WrapperInteriorScrollBarStyle` | Wide format editor; Essentials + category tabs predate full migration ([CMD-279](https://linear.app/cmd0112/issue/CMD-279)) |
+| `EntityReferencePanel` inline preview | `ShellFormScrollViewerStyle` + `MaxHeight="420"` | Capped side preview below entity list |
+| `EntityRenameWizardDialog` | Nested `ShellFormScrollViewerStyle` + `MaxHeight="200"` on alias list | Wizard step sub-panel cap |
+| `ShellAppBarTabControlStyle` | Horizontal `ScrollViewer` around `TabPanel` | Chat tab strip overflow — not a form body |
+| Play / Design companion panels | `PlayLayoutCoordinator` breakpoints | In-session cockpit layout — not shell dialog contract ([CMD-126](https://linear.app/cmd0112/issue/CMD-126)) |
+| `InjectionPacketPreviewControl` | Standalone `ScrollViewer` on preview body | Embedded control; parent dialog supplies `*` budget |
+
+**Exception process:** New raw `ScrollViewer` (no `Shell*` style) requires a PR note citing which exception row applies or an update to this table. Prefer shell styles for all new dialogs.
+
+### PR review checklist (scroll)
+
+- [ ] Dialog body scroll uses `ShellFormScrollViewerStyle` or per-tab `ShellTabScrollViewerStyle`
+- [ ] Scroll host is in a `Grid` `*` row (or documented exception)
+- [ ] No `CanContentScroll=True` on `StackPanel` hosts
+- [ ] Multiline fields inside tab scroll use `VerticalScrollBarVisibility=Disabled` unless capped preview
+- [ ] `ListBox`/`DataGrid` in split layouts sit in `*` column with theme scroll enabled
 
 ---
 
@@ -208,7 +364,7 @@ Runtime theme customization (CMD-111) updates WPF resource keys and WebView `--c
 |------|------|
 | `WrapperTokens.xaml` | Color, spacing, font tokens (defaults; overridden at runtime) |
 | `WrapperChrome.xaml` | Window chrome, toolbar |
-| `WrapperControls.xaml` | Shared control styles |
+| `WrapperControls.xaml` | Shared control styles; scroll contract header + `ShellFormScrollViewerStyle` / `ShellTabScrollViewerStyle` |
 
 Theme code lives in `ChatGPTWrapper/Theme/` (`ThemeSettings`, `ThemeTokenCatalog`, `ThemePresetLibrary`, `ThemeApplicationService`). Format transcript colors use `ChatGPTWrapper/Format/FormatTokenCatalog` and `FormatCssBuilder`, injected via `continuous-format-settings.js`. WebView injection prepends `BuildCssVariableBlock` in `ChatGptStyleInjection`.
 
@@ -256,7 +412,7 @@ Context menus: `AdventurePlayView` **More actions…**, `AdventureDashboardView`
 | Legacy wrapper | `cgw-play-compose.js` overlay | Same postMessage path; custom attach UI + CDP pre-upload |
 | In-shell adapter | `PlayPromptComposer` (hidden) | Merged preview + cached text sync only |
 
-Toggle legacy wrapper via Play settings → *Use custom wrapper composer*.
+Native ChatGPT composer is always used; legacy wrapper composer UI was removed (CMD-263).
 
 ---
 

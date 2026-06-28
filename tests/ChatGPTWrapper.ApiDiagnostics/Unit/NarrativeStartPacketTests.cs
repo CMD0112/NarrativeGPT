@@ -34,7 +34,7 @@ public sealed class NarrativeStartPacketTests : IDisposable
     public void BuildStartPlayerDirective_lists_core_source_files()
     {
         var bundle = AdventureStore.CreateNew("Start directive");
-        bundle.Metadata.Settings.ForceFatPackets = true;
+        bundle.Metadata.Settings.ForceInlineLore = true;
         AdventureStore.Save(bundle);
 
         var directive = AdventureBootstrapService.BuildStartPlayerDirective(bundle);
@@ -70,7 +70,7 @@ public sealed class NarrativeStartPacketTests : IDisposable
     {
         var bundle = AdventureStore.CreateNew("Opening scenario");
         bundle.Metadata.LinkedProjectId = "g-p-hook";
-        bundle.Metadata.Settings.ForceFatPackets = true;
+        bundle.Metadata.Settings.ForceInlineLore = true;
         bundle.Metadata.Settings.UseSectionInjection = false;
         bundle.Scenario.OpeningSituation = "The storm breaks over the red keep.";
         AdventureStore.Save(bundle);

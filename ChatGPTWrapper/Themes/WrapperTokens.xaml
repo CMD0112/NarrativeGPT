@@ -61,10 +61,16 @@
     <Color x:Key="{x:Static SystemColors.MenuTextColorKey}">#EDEDF0</Color>
     <Color x:Key="{x:Static SystemColors.HighlightColorKey}">#3A3A44</Color>
     <Color x:Key="{x:Static SystemColors.HighlightTextColorKey}">#EDEDF0</Color>
+    <Color x:Key="{x:Static SystemColors.ControlDarkColorKey}">#161618</Color>
+    <Color x:Key="{x:Static SystemColors.ControlLightColorKey}">#32323A</Color>
     <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#161618"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#1E1E22"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkBrushKey}" Color="#161618"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}" Color="#32323A"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#EDEDF0"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#1E1E22"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#3A3A44"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#EDEDF0"/>
     <SolidColorBrush x:Key="ContextMenuBackground" Color="#1E1E22"/>
     <SolidColorBrush x:Key="ContextMenuForeground" Color="#EDEDF0"/>
     <SolidColorBrush x:Key="MenuPopupBrush" Color="#1E1E22"/>

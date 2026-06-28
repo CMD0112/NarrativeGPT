@@ -88,7 +88,9 @@ public partial class AdventureDashboardView : UserControl
 
         try
         {
-            await Task.Run(RefreshList);
+            var all = await Task.Run(AdventureStore.ListIndex);
+            _all = all;
+            ApplyFilter();
         }
         finally
         {

@@ -57,7 +57,8 @@ public partial class MainWindow
         if (bundle is null)
             return;
 
-        _designView.SetThreadStatus(DesignTabPinService.FormatDesignThreadStatus(bundle));
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        _designView.SetThreadStatus(AdventureThreadRegistryService.FormatConnectionSummary(bundle));
         _designView.ApplyCombinedDraftModeBanner(DesignTabPinService.FormatDesignDraftBanner(bundle));
     }
 
@@ -77,6 +78,9 @@ public partial class MainWindow
 
         if (DesignTabPinService.TryFindWebViewOnEligibleDesignConversation(ChatTabs, bundle) is { } sessionTab)
             return sessionTab;
+
+        if (ThreadWebViewResolver.TryFindExisting(ChatTabs, bundle, AdventureThreadKind.Design) is { } resolved)
+            return resolved;
 
         if (_appMode == AppMode.Design && GetActiveWebView() is { } active)
         {
@@ -118,7 +122,7 @@ public partial class MainWindow
                     && AdventureNavigationService.ShouldNavigateToDesignTarget(coreBeforeNav.Source, bundle, browseUrl))
                 {
                     coreBeforeNav.Navigate(browseUrl);
-                    await WaitForChatGptNavigationAsync(coreBeforeNav);
+                    await WaitForChatGptNavigationAsync(coreBeforeNav, expectedDestination: browseUrl);
                 }
             }
 
@@ -130,6 +134,11 @@ public partial class MainWindow
             if (selectTab)
                 SelectTabForWebView(wv);
             return wv;
+        }
+
+        if (!ThreadWebViewResolver.HasPersistedSession(bundle, AdventureThreadKind.Design))
+        {
+            return null;
         }
 
         wv = await RestoreDesignWebViewAsync(bundle, selectTab, ensureThread, preserveCurrentPage);
@@ -189,7 +198,7 @@ public partial class MainWindow
             && AdventureNavigationService.ShouldNavigateToDesignTarget(navCore.Source, bundle, targetUrl))
         {
             navCore.Navigate(targetUrl);
-            await WaitForChatGptNavigationAsync(navCore);
+            await WaitForChatGptNavigationAsync(navCore, expectedDestination: targetUrl);
         }
     }
 
@@ -199,18 +208,9 @@ public partial class MainWindow
         bool ensureThread,
         bool preserveCurrentPage = false)
     {
-        WebView2? wv = GetActiveWebView();
-        if (wv is null)
-        {
-            foreach (var item in ChatTabs.Items)
-            {
-                if (item is TabItem { Content: WebView2 existing })
-                {
-                    wv = existing;
-                    break;
-                }
-            }
-        }
+        await EnsureChatWebViewEnvironmentReadyAsync();
+
+        WebView2? wv = ThreadWebViewResolver.SelectForRestore(ChatTabs, bundle, AdventureThreadKind.Design);
 
         if (wv is null)
         {
@@ -230,6 +230,8 @@ public partial class MainWindow
             await WireDesignWebViewWithoutNavigationAsync(wv);
         else
             await ApplyDesignWebViewNavigationAsync(bundle, wv, ensureThread);
+
+        DesignTabPinService.TryRestorePinFromWebView(bundle, wv, ChatTabs);
 
         if (selectTab)
             SelectTabForWebView(wv);
@@ -431,7 +433,7 @@ public partial class MainWindow
         if (!AdventureNavigationService.IsOnLinkedProjectPage(core.Source, reloaded))
         {
             core.Navigate(projectUrl);
-            await WaitForChatGptNavigationAsync(core);
+            await WaitForChatGptNavigationAsync(core, expectedDestination: projectUrl);
         }
 
         reloaded = AdventureStore.Load(adventureId) ?? reloaded;
@@ -615,6 +617,7 @@ public partial class MainWindow
         };
         view.OpenSourceManagerAsync = async () => { await OpenSourceManagerDialogAsync(view.AdventureId!.Value); };
         view.GetPhraseHighlightRules = () => _chrome.PhraseHighlightRules;
+        view.CommitPhraseHighlightRules = CommitPhraseHighlightRules;
     }
 
     private void OnDesignBack(object? sender, EventArgs e)

@@ -12,8 +12,7 @@ public sealed class PendingReviewServiceTests
         var bundle = AdventureTestData.CreateLinkedBundle();
         bundle.Entities.ReviewQueue.Add(new EntityReviewItem { EntityType = "character" });
         bundle.Memory.ReviewQueue.Add(new MemoryEntry { Text = "A fact" });
-        bundle.Summary.PendingReview = true;
-        bundle.Summary.ProposedSummary = "New summary";
+        SummaryReviewService.QueueProposal(bundle, "New summary");
         bundle.Cards.ReviewQueue.Add(new CardReviewItem { ProposedChange = """{"name":"Tower"}""" });
 
         var counts = PendingReviewService.GetCounts(bundle);
@@ -26,11 +25,11 @@ public sealed class PendingReviewServiceTests
     }
 
     [Fact]
-    public void FormatReviewHint_includes_destination_for_memories()
+    public void FormatReviewHint_points_to_review_hub()
     {
         var hint = PendingReviewService.FormatReviewHint(GenerationJobId.ProposeMemories, 2);
 
         Assert.Contains("propose_memories", hint);
-        Assert.Contains("Memory & cards", hint);
+        Assert.Contains("Review all", hint);
     }
 }

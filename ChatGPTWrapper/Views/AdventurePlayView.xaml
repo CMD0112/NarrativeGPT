@@ -33,9 +33,15 @@
                        TextTrimming="CharacterEllipsis"/>
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                 <StackPanel x:Name="HeaderCommandBar" Style="{StaticResource ShellCommandBarStyle}">
+                    <Button x:Name="ThreadsButton"
+                            Content="Threads…"
+                            Style="{StaticResource ShellCommandBarPrimarySlot}"
+                            Margin="0,0,8,0"
+                            ToolTip="Open Threads hub — project link, play/design pins, delivery"
+                            Click="ManageThreads_Click"/>
                     <Button x:Name="PlaySettingsButton"
                             Content="Play settings…"
-                            Style="{StaticResource ShellCommandBarPrimarySlot}"
+                            Style="{StaticResource ShellCommandBarSecondarySlot}"
                             Margin="0,0,8,0"
                             ToolTip="Play settings — packets, world, session, sources"
                             Click="PlaySettings_Click"/>
@@ -55,6 +61,11 @@
                                   Header="Rename…"
                                   Click="Rename_Click"/>
                         <Separator/>
+                        <MenuItem x:Name="ManageThreadsMenuItem"
+                                  Header="Manage threads…"
+                                  Click="ManageThreads_Click"
+                                  ToolTip="View, switch, and archive play and design thread slots"/>
+                        <Separator/>
                         <MenuItem x:Name="HeaderContinueDesignMenuItem"
                                   Header="Continue design…"
                                   Click="ContinueDesign_Click"/>
@@ -71,29 +82,28 @@
                 Style="{StaticResource ShellCardStyle}"
                 Margin="0,0,0,8">
             <StackPanel>
-                <Border x:Name="PendingReviewPinnedRow"
+                <Border x:Name="PendingReviewBar"
                         Background="{StaticResource WarningSubtleBrush}"
+                        BorderBrush="{StaticResource WarningBrush}"
+                        BorderThickness="1"
                         CornerRadius="{StaticResource RadiusControl}"
-                        Padding="8,6"
+                        Padding="10,8"
                         Margin="0,0,0,6"
-                        Visibility="Collapsed"
-                        Cursor="Hand"
-                        MouseLeftButtonUp="PendingReviewPinnedRow_Click">
+                        Visibility="Collapsed">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="PendingReviewPinnedText"
-                                   FontWeight="SemiBold"
+                        <TextBlock x:Name="PendingReviewText"
                                    TextWrapping="Wrap"
                                    VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="1"
-                                   Text="Review →"
-                                   Foreground="{DynamicResource AccentLinkBrush}"
-                                   FontSize="{StaticResource FontSizeHint}"
-                                   VerticalAlignment="Center"
-                                   Margin="8,0,0,0"/>
+                        <Button Grid.Column="1"
+                                Content="Review all…"
+                                Padding="12,4"
+                                Margin="10,0,0,0"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Click="ReviewProposals_Click"/>
                     </Grid>
                 </Border>
                 <Border x:Name="CanonSyncNoticeBanner"
@@ -205,9 +215,10 @@
                                 <RadioButton x:Name="NarratorScopeAdventureRadio" Content="Adventure default"
                                              GroupName="NarratorScope" Checked="NarratorScope_Changed"/>
                             </StackPanel>
-                            <Grid Margin="0,0,0,4">
+                            <TextBlock Text="Narration (delivery)" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,4"/>
+                            <Grid Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="72"/>
+                                    <ColumnDefinition Width="88"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
@@ -229,11 +240,35 @@
                                 <ComboBox x:Name="ToneQuickCombo" Grid.Row="2" Grid.Column="1" Padding="4,2" Margin="0,0,0,6"
                                           IsEditable="True" SelectionChanged="NarratorParameter_Changed"
                                           LostFocus="NarratorParameter_Changed"/>
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Difficulty" VerticalAlignment="Center"
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Pacing" VerticalAlignment="Center"
                                            Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,0,8,6"/>
-                                <ComboBox x:Name="DifficultyQuickCombo" Grid.Row="3" Grid.Column="1" Padding="4,2" Margin="0,0,0,6"
+                                <ComboBox x:Name="NarrativePacingCombo" Grid.Row="3" Grid.Column="1" Padding="4,2" Margin="0,0,0,6"
+                                          SelectionChanged="NarratorParameter_Changed"/>
+                            </Grid>
+                            <TextBlock Text="Combat &amp; stakes" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,4"/>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="88"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Combat diff." VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,0,8,6"/>
+                                <ComboBox x:Name="DifficultyQuickCombo" Grid.Row="0" Grid.Column="1" Padding="4,2" Margin="0,0,0,6"
                                           IsEditable="True" SelectionChanged="NarratorParameter_Changed"
                                           LostFocus="NarratorParameter_Changed"/>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Violence" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,0,8,6"/>
+                                <ComboBox x:Name="ViolenceCombo" Grid.Row="1" Grid.Column="1" Padding="4,2" Margin="0,0,0,6"
+                                          SelectionChanged="NarratorParameter_Changed"/>
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Consequences" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,0,8,6"/>
+                                <ComboBox x:Name="ConsequenceWeightCombo" Grid.Row="2" Grid.Column="1" Padding="4,2" Margin="0,0,0,6"
+                                          SelectionChanged="NarratorParameter_Changed"/>
                             </Grid>
                             <WrapPanel Margin="0,4,0,0">
                                 <Button Content="Reset scope" Padding="6,2" Margin="0,0,8,4"
@@ -277,33 +312,6 @@
                     </StackPanel>
                 </Expander>
 
-                <Expander x:Name="ReviewsExpander" Header="Reviews" IsExpanded="False">
-                    <Border x:Name="PendingReviewBanner"
-                            Background="{StaticResource WarningSubtleBrush}"
-                            CornerRadius="{StaticResource RadiusControl}"
-                            Padding="8"
-                            Margin="0,4,0,0"
-                            Visibility="Collapsed">
-                        <StackPanel>
-                            <TextBlock x:Name="PendingReviewHeader"
-                                       FontWeight="SemiBold"
-                                       TextWrapping="Wrap"
-                                       Margin="0,0,0,6"/>
-                            <WrapPanel>
-                                <Button x:Name="ReviewProposalsButton" Content="Review…" Padding="8,4" Margin="0,0,6,0"
-                                        Click="ReviewProposals_Click"/>
-                                <Button x:Name="ReviewMemoriesButton" Content="Memories" Padding="8,4" Margin="0,0,6,0"
-                                        Click="ReviewMemories_Click" Visibility="Collapsed"/>
-                                <Button x:Name="ReviewSummaryButton" Content="Summary" Padding="8,4" Margin="0,0,6,0"
-                                        Click="ReviewSummary_Click" Visibility="Collapsed"/>
-                                <Button x:Name="ReviewEntitiesButton" Content="Entities" Padding="8,4" Margin="0,0,6,0"
-                                        Click="ReviewEntities_Click" Visibility="Collapsed"/>
-                                <Button x:Name="ReviewCardsButton" Content="Cards" Padding="8,4" Margin="0,0,0,0"
-                                        Click="ReviewCards_Click" Visibility="Collapsed"/>
-                            </WrapPanel>
-                        </StackPanel>
-                    </Border>
-                </Expander>
             </StackPanel>
         </Border>
 
@@ -312,16 +320,14 @@
                 <DockPanel x:Name="ReferenceTabRoot" Margin="4">
                     <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                         <Border x:Name="ReviewQueueBanner"
-                                Background="{StaticResource WarningSubtleBrush}"
+                                Background="{DynamicResource BgElevatedBrush}"
+                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                BorderThickness="1"
                                 CornerRadius="{StaticResource RadiusControl}"
                                 Padding="8"
                                 Margin="0,0,0,8"
                                 Visibility="Collapsed">
                             <StackPanel>
-                                <TextBlock x:Name="ReviewQueueHeader"
-                                           FontWeight="SemiBold"
-                                           TextWrapping="Wrap"
-                                           Margin="0,0,0,6"/>
                                 <ListBox x:Name="ReviewQueueList"
                                          MaxHeight="120"
                                          ItemContainerStyle="{StaticResource ShellLibraryListItemStyle}"
@@ -332,8 +338,10 @@
                                             Click="AcceptReviewItem_Click"/>
                                     <Button Content="Dismiss" Padding="8,4" Margin="0,0,6,0"
                                             Click="DismissReviewItem_Click"/>
-                                    <Button Content="Edit…" Padding="8,4"
+                                    <Button Content="Edit…" Padding="8,4" Margin="0,0,6,0"
                                             Click="EditReviewItem_Click"/>
+                                    <Button Content="Review all…" Padding="8,4"
+                                            Click="ReviewProposals_Click"/>
                                 </WrapPanel>
                             </StackPanel>
                         </Border>

@@ -232,19 +232,6 @@ internal static class PlayTurnScopeService
         return turn.SessionId == activeSessionId;
     }
 
-    private static string? GetActivePlayConversationId(AdventureBundle bundle)
-    {
-        AdventureThreadRegistryService.EnsureMigrated(bundle);
-        var legacy = bundle.Metadata.LinkedConversationId;
-        var fromRegistry = AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Play);
-
-        // During rollout, some paths still write LinkedConversationId directly.
-        if (!string.IsNullOrWhiteSpace(legacy)
-            && !string.Equals(legacy, fromRegistry, StringComparison.OrdinalIgnoreCase))
-        {
-            return legacy;
-        }
-
-        return fromRegistry ?? legacy;
-    }
+    private static string? GetActivePlayConversationId(AdventureBundle bundle) =>
+        PlayThreadBindingService.GetActiveConversationId(bundle);
 }

@@ -57,7 +57,7 @@ public sealed class AdventureProjectBindingService
     {
         await EnsureSessionAsync(core, cancellationToken);
 
-        if (BlocksCreateWhenAlreadyLinked(bundle.Metadata.LinkedProjectId, allowRecreate))
+        if (BlocksCreateWhenAlreadyLinked(GetLinkedProjectId(bundle.Metadata), allowRecreate))
         {
             return new ProjectBindingResult
             {
@@ -128,7 +128,7 @@ public sealed class AdventureProjectBindingService
     public static bool ShouldDeferLinkedPlayContextAfterProjectLink(AdventureBundle? bundle) =>
         bundle is not null
         && HasLinkedProject(bundle)
-        && string.IsNullOrWhiteSpace(bundle.Metadata.PinnedPlayTabKey)
+        && !PlayTabPinService.HasPlayTabOrConversationBinding(bundle)
         && PlayTurnScopeService.IsFreshPlayThread(bundle);
 
     internal static bool ShouldProvisionPlayThreadOnLink(bool createPlayThread, AdventureStatus status) =>
@@ -189,7 +189,7 @@ public sealed class AdventureProjectBindingService
 
     public static void ClearProjectLink(AdventureBundle bundle)
     {
-        var previousGizmoId = bundle.Metadata.LinkedProjectId;
+        var previousGizmoId = GetLinkedProjectId(bundle.Metadata);
         bundle.Metadata.LinkedProjectId = null;
         bundle.Metadata.LinkedConversationId = null;
         bundle.Metadata.LinkedProjectHint = null;
@@ -202,11 +202,35 @@ public sealed class AdventureProjectBindingService
         bundle.Metadata.PinnedDesignTabKey = null;
         bundle.Metadata.PinnedDesignTabTitle = null;
         bundle.Metadata.PinnedDesignTabUrl = null;
+        ClearProjectRemoteState(bundle, previousGizmoId);
+
+        AdventureStore.Save(bundle, allowLinkMetadataOverwrite: true);
+    }
+
+    internal static void ClearProjectRemoteState(AdventureBundle bundle, string? previousGizmoId)
+    {
+        EnsureSourceManifest(bundle);
         SourceManifestHelper.ClearRemoteBindings(bundle.SourceManifest);
         if (!string.IsNullOrWhiteSpace(previousGizmoId))
             ProjectRemoteListCache.Invalidate(previousGizmoId);
 
-        AdventureStore.Save(bundle, allowLinkMetadataOverwrite: true);
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        AdventureThreadRegistryService.ReleaseActiveThread(bundle, AdventureThreadKind.Play);
+        AdventureThreadRegistryService.ReleaseActiveThread(bundle, AdventureThreadKind.Design);
+        bundle.Metadata.PinnedUtilityTabKey = null;
+        bundle.Metadata.PinnedUtilityTabTitle = null;
+    }
+
+    internal static void EnsureSourceManifest(AdventureBundle bundle)
+    {
+        bundle.SourceManifest ??= new SourceManifest();
+        bundle.SourceManifest.Entries ??= [];
+    }
+
+    internal static void PrepareBundleForProjectLink(AdventureBundle bundle)
+    {
+        UtilityStoryContextSettingsService.EnsureDefaults(bundle.Metadata);
+        EnsureSourceManifest(bundle);
     }
 
     public async Task<ProjectBindingResult> LinkExistingAsync(
@@ -265,24 +289,16 @@ public sealed class AdventureProjectBindingService
         IProgress<string>? syncProgress,
         CancellationToken cancellationToken)
     {
-        var previousGizmoId = bundle.Metadata.LinkedProjectId;
+        PrepareBundleForProjectLink(bundle);
+
+        var previousGizmoId = GetLinkedProjectId(bundle.Metadata);
         var projectChanged = !string.IsNullOrWhiteSpace(previousGizmoId)
                              && !ChatGptUrls.GizmoIdsEqual(previousGizmoId, gizmoId);
 
         if (projectChanged)
         {
-            SourceManifestHelper.ClearRemoteBindings(bundle.SourceManifest);
-            ProjectRemoteListCache.Invalidate(previousGizmoId);
+            ClearProjectRemoteState(bundle, previousGizmoId);
             ProjectRemoteListCache.Invalidate(gizmoId);
-            bundle.Metadata.LinkedConversationId = null;
-            bundle.Metadata.PinnedPlayTabKey = null;
-            bundle.Metadata.PinnedPlayTabTitle = null;
-            bundle.Metadata.PinnedPlayTabUrl = null;
-            bundle.Metadata.PinnedUtilityTabKey = null;
-            bundle.Metadata.PinnedUtilityTabTitle = null;
-            bundle.Metadata.PinnedDesignTabKey = null;
-            bundle.Metadata.PinnedDesignTabTitle = null;
-            bundle.Metadata.PinnedDesignTabUrl = null;
         }
 
         bundle.Metadata.LinkedProjectId = gizmoId;
@@ -300,16 +316,15 @@ public sealed class AdventureProjectBindingService
 
         if (shouldCreatePlayThread)
         {
-            var created = await _api.CreateProjectConversationDetailedAsync(
-                core,
-                gizmoId,
-                cancellationToken: cancellationToken);
-            if (!PlayThreadRotationService.ShouldRejectApiConversation(created))
-                conversationId = created.ConversationId;
-            else if (string.IsNullOrWhiteSpace(conversationId))
+            var convs = await _api.ListProjectConversationsAsync(core, gizmoId, cancellationToken);
+            conversationId = convs
+                .OrderByDescending(c => c.UpdatedAt ?? DateTimeOffset.MinValue)
+                .FirstOrDefault()
+                ?.Id;
+            if (!string.IsNullOrWhiteSpace(conversationId))
             {
-                var convs = await _api.ListProjectConversationsAsync(core, gizmoId, cancellationToken);
-                conversationId = convs.OrderByDescending(c => c.UpdatedAt).FirstOrDefault()?.Id;
+                ProjectLinkDiagnostics.Log(
+                    $"Link: listed play thread {conversationId} for {gizmoId} (pending pin — not auto-navigating)");
             }
         }
         else if (!isDesigning && projectChanged)
@@ -317,20 +332,26 @@ public sealed class AdventureProjectBindingService
             conversationId = null;
         }
 
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+
         if (!string.IsNullOrWhiteSpace(conversationId))
+        {
+            PlayThreadBindingService.MarkPendingPin(bundle, conversationId);
+            bundle.Metadata.PinnedPlayTabUrl = ChatGptUrls.BuildProjectUrl(gizmoId);
+        }
+        else
+        {
+            if (!isDesigning && projectChanged)
+                PlayThreadBindingService.MarkUnbound(bundle);
+
+            bundle.Metadata.PinnedPlayTabUrl = ChatGptUrls.BuildProjectUrl(gizmoId);
+        }
+
+        if (bundle.Metadata.SchemaVersion < 6)
         {
             bundle.Metadata.LinkedConversationId = conversationId;
             if (bundle.Metadata.ProjectLink is not null)
                 bundle.Metadata.ProjectLink.PlayConversationId = conversationId;
-            bundle.Metadata.PinnedPlayTabUrl =
-                ChatGptUrls.BuildProjectConversationUrl(conversationId, gizmoId);
-        }
-        else
-        {
-            bundle.Metadata.LinkedConversationId = isDesigning ? bundle.Metadata.LinkedConversationId : null;
-            if (bundle.Metadata.ProjectLink is not null)
-                bundle.Metadata.ProjectLink.PlayConversationId = null;
-            bundle.Metadata.PinnedPlayTabUrl = ChatGptUrls.BuildProjectUrl(gizmoId);
         }
 
         AdventureStore.Save(bundle);

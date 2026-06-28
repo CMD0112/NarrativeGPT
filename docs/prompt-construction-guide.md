@@ -4,7 +4,7 @@ How the wrapper builds text sent to ChatGPT — play packets, bootstrap/start pa
 
 **Documentation hub:** [INDEX.md](INDEX.md)
 
-Related docs: [adventure-panel.md](adventure-panel.md) · [instruction-sources-paradigm.md](instruction-sources-paradigm.md) · [user-projects-and-sync.md](user-projects-and-sync.md) · [utility-job-orchestration.md](utility-job-orchestration.md) · [services-reference.md](services-reference.md)
+Related docs: [adventure-panel.md](adventure-panel.md) · [instruction-sources-paradigm.md](instruction-sources-paradigm.md) · [injection-policy-adr.md](injection-policy-adr.md) · [user-projects-and-sync.md](user-projects-and-sync.md) · [utility-job-orchestration.md](utility-job-orchestration.md) · [services-reference.md](services-reference.md)
 
 ---
 
@@ -59,18 +59,19 @@ flowchart TB
 
 Most play-related text flows through **`PromptPacketBuilder`**.
 
-### Thin vs fat mode
+### Packet profiles
 
-`PromptPacketBuilder.UseThinPackets(bundle)` returns true when `ProjectSourceInjectionService.CanDelegateStaticContent(bundle)` — Project is linked, sources are published, and the manifest is ready. In thin mode, lore is delegated to Project source files; the packet carries pointers and meta instead of full inline text.
+`PacketProfileResolver.Resolve(bundle, userChoseInlineFallback)` selects **SourceDelegated**, **MinimalLocal**, or **InlineFallback**. See [Injection Policy ADR](injection-policy-adr.md).
 
-| Mode | When | Context block |
-|------|------|---------------|
-| **Thin** | Project sources in sync | `[[cgw:meta]]`, ALWAYS RETRIEVE / THIS TURN pointers, optional `[[cgw:instructions]]` |
-| **Fat** | No project or sources out of sync | Full contract sections, cards, memories, summary inline |
+| Profile | When | Context block |
+|---------|------|---------------|
+| **SourceDelegated** | Linked + all lore published | `[[cgw:meta mode="delegated"]]`, ALWAYS RETRIEVE / THIS TURN pointers |
+| **MinimalLocal** | No linked Project | Opening + deltas; `mode="minimal"` |
+| **InlineFallback** | `ForceInlineLore` or user proceeds after publish warning | Full contract, cards, lore inline; `mode="inline"` |
 
 ### Build steps
 
-1. **`BuildContext`** — assemble the context block (thin delegated or fat inline).
+1. **`BuildContext`** — assemble the context block per resolved profile.
 2. **`AssembleWithUser`** — append the player line (with or without `[[cgw:player]]` wrapper depending on `UseContextTags`).
 3. **Trim** — enforce `MaxChars` unless attachment policy skips trim.
 
@@ -78,6 +79,41 @@ Most play-related text flows through **`PromptPacketBuilder`**.
 
 - Attachment guidance (`InjectAttachmentGuidance`)
 - Attachment manifest section
+
+Then appends turn/session override blocks and canon-update notice. See [Injection Policy ADR](injection-policy-adr.md) for assembly order and deduplication rules.
+
+### Assembly order (normative)
+
+Per [injection-policy-adr.md](injection-policy-adr.md):
+
+1. Resolve delegation (`CanDelegateStaticContent`)
+2. Classify sections (reference / delta / conditional-inline)
+3. Assemble context at full fidelity
+4. Append override blocks (deltas only)
+5. Apply budget / trim (`ContextBudgetAllocator`, `MaxPacketChars`)
+6. Merge player line
+
+Never trim before deduplication. Start packets with section-injection v2 omit redundant file lists from the player directive when pointers fan out via `freshNarrativeBootstrap`.
+
+### Play injection policy
+
+Authors configure optional packet sections via `AdventureSettings.injectionPolicy` (`PlayInjectionPolicy`):
+
+| Field | Builder effect |
+|-------|----------------|
+| `includeSummary` | Rolling summary / story-so-far block |
+| `includeState` | State delta (mandatory when thin-delegated) |
+| `includePinnedMemory` | Pinned memory block |
+| `includeTranscript` | Recent transcript tail |
+| `transcriptMaxTurns` | `0` → 6 (delegated/minimal) / 12 (inline fallback) defaults |
+| `includeTriggeredCards` | Lore cards + trigger pointers |
+| `includeSourcesPointers` | `[[cgw:sources]]` block (mandatory when thin-delegated) |
+
+**Presets** (`InjectionPresetLibrary`): `compact` (12k chars, 2 transcript turns), `standard` (28k), `full` (40k, Full attachment mode).
+
+**Preview:** `InjectionPreviewCoordinator` runs `PrepareSend` on a JSON-cloned staging bundle so Play settings and the cockpit preview match send without persisting until OK.
+
+Key files: `PlayInjectionPolicyService.cs`, `InjectionPreviewCoordinator.cs`, `InjectionPacketPreviewControl.xaml`.
 
 ### Context pointer resolution (thin mode)
 
@@ -330,17 +366,37 @@ flowchart LR
 
 ## Review checklist (architecture)
 
-Use this when auditing or changing prompt construction:
+Use this when auditing or changing prompt construction. **Normative dedup and assembly rules:** [injection-policy-adr.md](injection-policy-adr.md).
 
 1. **Parity** — Does preview use the same builder as live send? (`PrepareSend` vs direct `Build`)
 2. **Mode** — Is thin/fat choice correct for project sync state?
 3. **Turn scope** — Does `[[cgw:meta turn="N"]]` reflect session-scoped accepted turns, not global log noise?
 4. **Bootstrap policy** — Should turn 1 / start packet use different pointer rules than turn 2+?
 5. **Signal source** — What text drives alias matching (player line vs summary vs attachment tokens)?
-6. **Duplication** — Is opening hook prose repeated in meta, pointers, and player line?
-7. **Trim** — What gets cut when over `MaxChars`?
+6. **Duplication** — Thin path must not inline contract or lore reachable via Project/sources (see `InjectionPolicyGuard`, `InjectionPolicyGoldenTests`)
+7. **Trim** — What gets cut when over `MaxChars`? Trim runs after dedup assembly.
 8. **Job context** — Are utility jobs omitting redundant transcript slices when story context already includes them?
 9. **Design vs play boundary** — Does design chat traffic leak into play transcript or turn counter?
+10. **Attachments** — Native metadata feeds `PrepareSend`; filename tokens enrich card triggers; Minimal trims after assembly ([attachment-aware-context-injection.md](Enhancements/attachment-aware-context-injection.md))
+
+### CMD-56 sign-off (2026-06-22)
+
+Architecture review completed against [injection-policy-adr.md](injection-policy-adr.md) and CMD-292 phases 0–3:
+
+| Checklist item | Status | Evidence |
+|----------------|--------|----------|
+| Parity | Pass | `PlayPromptInjectionDialog` + Play cockpit Injection panel call `PromptInjectionService.PrepareSend` (same path as live send) |
+| Mode | Pass | Thin/fat via `ProjectSourceInjectionService`; `InjectionPolicyGoldenTests` |
+| Turn scope | Pass | `[[cgw:meta turn="N"]]` from session-scoped turns; existing turn-meta tests |
+| Bootstrap policy | Pass | Start packet omits redundant file list when section-injection v2 + thin |
+| Signal source | Pass | Player line + attachment filename tokens + rolling summary |
+| Duplication | Pass | `InjectionPolicyGuard` + golden tests (CMD-294) |
+| Trim | Pass | `ContextBudgetAllocator` records trimmed sections; manifest in preview (CMD-295) |
+| Job context | Pass | Utility jobs use dedicated builders; no play packet bleed |
+| Design vs play | Pass | Separate design/play WebViews and thread bindings |
+| Attachments | Pass | `AttachmentSendPolicy`, `AttachmentContextModeTests`, CMD-297 |
+
+Remaining follow-ups: Phase 4 API path parity (CMD-297 doc). Instruction channel glossary shipped ([instruction-channels.md](instruction-channels.md), CMD-289).
 
 ---
 

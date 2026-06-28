@@ -75,7 +75,7 @@ internal static class AdventureStore
             }
         }
 
-        foreach (var (id, path) in AdventureLocationStore.All)
+        foreach (var (id, path) in AdventureLocationStore.All.ToList())
         {
             if (seen.Contains(id))
                 continue;
@@ -124,6 +124,15 @@ internal static class AdventureStore
             bundle.Metadata.Genre = bundle.Scenario.Genre;
 
         AdventureSourceFileService.EnsureLayout(bundle);
+        try
+        {
+            ProjectSourceExportService.ExportForce(bundle);
+        }
+        catch
+        {
+            /* export may fail on empty scenario; manifest still valid */
+        }
+
         Save(bundle);
         return bundle;
     }
@@ -148,8 +157,9 @@ internal static class AdventureStore
         var deliveryMigrated = AdventureMetadataMigration.MigrateUtilityDeliveryMode(meta);
 
         var threadRegistryMigrated = AdventureMetadataMigration.MigrateThreadRegistry(meta);
+        var bindingRetired = AdventureMetadataMigration.MigrateThreadBindingRetirement(meta);
 
-        if (linkMigrated || threadRegistryMigrated || deliveryMigrated || deprecatedPlayMigrated)
+        if (linkMigrated || threadRegistryMigrated || deliveryMigrated || deprecatedPlayMigrated || bindingRetired)
             WriteJson(MetadataPath(id), meta);
 
         var entities = LoadJson<EntitiesDocument>(EntitiesPath(id)) ?? new();
@@ -177,17 +187,82 @@ internal static class AdventureStore
                 ?? new AdventureDesignWorkspace(),
         };
 
+        var bindingTrustMigrated = AdventureMetadataMigration.MigratePlayThreadBindingTrust(bundle);
         SectionInjectionMigrationService.TryMigrateIfNeeded(bundle);
         var sourcesBootstrapped = AdventureSourceFileService.TryBootstrapLocalSourcesFromDesignWorkspace(bundle);
         var manifestReconciled = AdventureSourceFileService.ReconcileManifest(bundle);
+        var loreMaterialized = AdventureProjectBindingService.HasLinkedProject(bundle)
+            && ProjectSourceInjectionService.EnsureLoreSourcesMaterialized(bundle);
         var sourcesPushed = CanonReconciliationService.TryAutoPushSourcesFromJsonOnLoad(bundle);
         var queuePruned = ProjectSourceImportService.PruneStaleImportRemovalProposals(bundle);
         if (queuePruned > 0)
             ProjectSourceImportService.DeduplicateSourceEditReviewQueue(bundle);
         AdventureSessionService.RestoreActiveSessionOnLoad(bundle);
-        if (entitiesMigrated || canonSchemaMigrated || sourcesBootstrapped > 0 || manifestReconciled || sourcesPushed || queuePruned > 0)
-            Save(bundle);
+        PlaySettingsStore.HydrateContinuationQueue(bundle);
+        SummaryReviewService.EnsureRevisionFields(bundle.Summary);
+        SummaryReviewService.Normalize(bundle.Summary);
+        var workerPinReconciled = UtilityWorkerPinService.TryReconcilePinFromCapabilities(bundle);
+        var needsPersist = entitiesMigrated || canonSchemaMigrated || sourcesBootstrapped > 0 || manifestReconciled
+            || loreMaterialized || sourcesPushed || queuePruned > 0 || bindingTrustMigrated || workerPinReconciled;
+        if (needsPersist)
+        {
+            var scope = entitiesMigrated || canonSchemaMigrated || sourcesBootstrapped > 0 || manifestReconciled
+                || loreMaterialized || sourcesPushed || queuePruned > 0 || bindingTrustMigrated
+                ? AdventureSaveScope.All
+                : AdventureSaveScope.Metadata;
+            Save(bundle, scope);
+        }
         return bundle;
+    }
+
+    /// <summary>
+    /// Refreshes an in-memory bundle from disk without replacing the object reference
+    /// (keeps shared narrator sessions and cockpit/dialog bundle pointers stable).
+    /// </summary>
+    public static bool ReloadInto(AdventureBundle target, bool preserveNarratorSettings = false)
+    {
+        var fresh = Load(target.Metadata.Id);
+        if (fresh is null)
+            return false;
+
+        CopyBundleState(fresh, target, preserveNarratorSettings);
+        return true;
+    }
+
+    private static void CopyBundleState(AdventureBundle from, AdventureBundle to, bool preserveNarratorSettings)
+    {
+        AdventureSettings? narratorSnapshot = null;
+        if (preserveNarratorSettings)
+            narratorSnapshot = NarratorSettingsSession.CaptureNarratorBaseline(to.Metadata.Settings);
+
+        to.Scenario = CloneJson(from.Scenario);
+        to.Log = CloneJson(from.Log);
+        to.Summary = CloneJson(from.Summary);
+        to.State = CloneJson(from.State);
+        to.Memory = CloneJson(from.Memory);
+        to.Entities = CloneJson(from.Entities);
+        to.Cards = CloneJson(from.Cards);
+        to.Continuity = CloneJson(from.Continuity);
+        to.PromptHistory = CloneJson(from.PromptHistory);
+        to.UtilityExchanges = CloneJson(from.UtilityExchanges);
+        to.ThreadMetadata = CloneJson(from.ThreadMetadata);
+        to.Notes = from.Notes;
+        to.SourceManifest = CloneJson(from.SourceManifest);
+        to.ContextIndex = CloneJson(from.ContextIndex);
+        to.DesignWorkspace = CloneJson(from.DesignWorkspace);
+        to.ContinuationQueue = from.ContinuationQueue.ToList();
+        to.CurrentSessionId = from.CurrentSessionId;
+
+        to.Metadata.Settings = CloneJson(from.Metadata.Settings);
+        to.Metadata.UtilityJobGuideOverrides = CloneJson(
+            from.Metadata.UtilityJobGuideOverrides
+            ?? new Dictionary<string, UtilityJobGuideOverride>(StringComparer.OrdinalIgnoreCase));
+
+        if (from.Metadata.UtilityWorkerCapabilities is not null)
+            to.Metadata.UtilityWorkerCapabilities = CloneJson(from.Metadata.UtilityWorkerCapabilities);
+
+        if (preserveNarratorSettings && narratorSnapshot is not null)
+            NarratorSettingsSession.ApplyNarratorBaseline(to.Metadata.Settings, narratorSnapshot);
     }
 
     public static SourceManifest LoadSourceManifest(Guid id)
@@ -219,19 +294,43 @@ internal static class AdventureStore
         Directory.CreateDirectory(dir);
 
         bundle.Metadata.LastPlayedAt = DateTimeOffset.UtcNow;
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        PreserveThreadRegistryFromDisk(bundle.Metadata, id);
+        PreserveUtilityWorkerBindingFromDisk(bundle.Metadata, id);
         if (!allowLinkMetadataOverwrite)
             PreserveLinkMetadataFromDisk(bundle.Metadata, id);
 
+        if (bundle.Metadata.SchemaVersion >= 6)
+            AdventureMetadataMigration.StripLegacyThreadBindingFields(bundle.Metadata);
+
+        AdventureMetadataMigration.MigrateThreadBindingRetirement(bundle.Metadata);
+
         if (scope.HasFlag(AdventureSaveScope.Metadata))
+        {
+            SettingsMergeService.MergeTransportOnMetadataSave(
+                bundle.Metadata.Settings,
+                id,
+                caller: scope == AdventureSaveScope.Metadata ? "MetadataOnly" : scope.ToString());
+            MergeUtilityWorkerCapabilitiesForSave(bundle.Metadata, id);
             WriteJson(MetadataPath(id), bundle.Metadata);
+        }
         if (scope.HasFlag(AdventureSaveScope.Scenario))
             WriteJson(ScenarioPath(id), bundle.Scenario);
         if (scope.HasFlag(AdventureSaveScope.Log))
             WriteJson(LogPath(id), bundle.Log);
         if (scope.HasFlag(AdventureSaveScope.Summary))
+        {
+            SummaryReviewService.EnsureRevisionFields(bundle.Summary);
+            SummaryReviewService.Normalize(bundle.Summary);
+            if (scope != AdventureSaveScope.Summary)
+                SummaryReviewService.PreserveOnFullSave(bundle.Summary, id);
             WriteJson(SummaryPath(id), bundle.Summary);
+        }
         if (scope.HasFlag(AdventureSaveScope.State))
+        {
+            PlaySettingsStore.MirrorContinuationQueue(bundle);
             WriteJson(StatePath(id), bundle.State);
+        }
         if (scope.HasFlag(AdventureSaveScope.Memory))
             WriteJson(MemoryPath(id), bundle.Memory);
         if (scope.HasFlag(AdventureSaveScope.Entities))
@@ -263,26 +362,86 @@ internal static class AdventureStore
     /// Persists play-settings UI changes without overwriting structured canon
     /// (<c>entities.json</c> / most of <c>scenario.json</c>) that may have been updated elsewhere.
     /// </summary>
-    public static void SavePlaySettingsFromDialog(AdventureBundle ui)
+    public static void SavePlaySettingsFromDialog(AdventureBundle ui) =>
+        PlaySettingsStore.Commit(ui);
+
+    /// <summary>
+    /// Copies utility-job review proposals from disk into a dialog bundle when the UI opened before they landed.
+    /// </summary>
+    internal static void SyncReviewDomainsFromDisk(AdventureBundle target)
     {
-        var disk = ReadBundleDocumentsFromDisk(ui.Metadata.Id);
+        var disk = ReadBundleDocumentsFromDisk(target.Metadata.Id);
         if (disk is null)
             return;
 
-        disk.Metadata.Settings = CloneJson(ui.Metadata.Settings);
-        disk.Summary = CloneJson(ui.Summary);
-        disk.State = CloneJson(ui.State);
-        disk.Scenario.AuthorsNote = ui.Scenario.AuthorsNote;
-        disk.ContinuationQueue = ui.ContinuationQueue.ToList();
-        disk.Cards = CloneJson(ui.Cards);
-        disk.Memory = CloneJson(ui.Memory);
-        disk.Continuity = CloneJson(ui.Continuity);
-        disk.UtilityExchanges = CloneJson(ui.UtilityExchanges);
-        disk.ThreadMetadata = CloneJson(ui.ThreadMetadata);
-        disk.SourceManifest = CloneJson(ui.SourceManifest);
+        SummaryReviewService.SyncFromDisk(target.Summary, disk.Summary);
 
-        Save(disk, AdventureSaveScope.PlaySettingsDialog);
+        if (disk.Memory.ReviewQueue.Count > 0 && target.Memory.ReviewQueue.Count == 0)
+            target.Memory.ReviewQueue = CloneJson(disk.Memory.ReviewQueue);
+
+        if (disk.Cards.ReviewQueue.Count > 0 && target.Cards.ReviewQueue.Count == 0)
+            target.Cards.ReviewQueue = CloneJson(disk.Cards.ReviewQueue);
+
+        SyncUtilityWorkerCapabilitiesFromDisk(target);
     }
+
+    /// <summary>
+    /// Refreshes utility worker probe results when another surface verified while this bundle was open.
+    /// </summary>
+    internal static void SyncUtilityWorkerCapabilitiesFromDisk(AdventureBundle target)
+    {
+        var disk = ReadBundleDocumentsFromDisk(target.Metadata.Id);
+        if (disk?.Metadata.UtilityWorkerCapabilities is null)
+            return;
+
+        var diskCaps = disk.Metadata.UtilityWorkerCapabilities;
+        var targetCaps = target.Metadata.UtilityWorkerCapabilities;
+
+        if (targetCaps is null)
+        {
+            target.Metadata.UtilityWorkerCapabilities = CloneJson(diskCaps);
+            return;
+        }
+
+        var diskAt = diskCaps.LastProbedAt ?? DateTimeOffset.MinValue;
+        var targetAt = targetCaps.LastProbedAt ?? DateTimeOffset.MinValue;
+
+        if (diskAt >= targetAt)
+            target.Metadata.UtilityWorkerCapabilities = CloneJson(diskCaps);
+
+        UtilityWorkerPinService.TryReconcilePinFromCapabilities(target);
+    }
+
+    /// <summary>
+    /// Keeps the newest utility worker probe when concurrent saves race (e.g. verify vs play settings).
+    /// </summary>
+    private static void MergeUtilityWorkerCapabilitiesForSave(AdventureMetadata incoming, Guid id)
+    {
+        var onDisk = LoadJson<AdventureMetadata>(MetadataPath(id));
+        if (onDisk?.UtilityWorkerCapabilities is null)
+            return;
+
+        var incomingCaps = incoming.UtilityWorkerCapabilities;
+        var diskCaps = onDisk.UtilityWorkerCapabilities;
+
+        if (incomingCaps is null)
+        {
+            incoming.UtilityWorkerCapabilities = diskCaps;
+            return;
+        }
+
+        var incomingAt = incomingCaps.LastProbedAt ?? DateTimeOffset.MinValue;
+        var diskAt = diskCaps.LastProbedAt ?? DateTimeOffset.MinValue;
+
+        if (diskAt > incomingAt)
+            incoming.UtilityWorkerCapabilities = diskCaps;
+    }
+
+    internal static SummaryDocument? ReadSummaryFromDisk(Guid id) =>
+        LoadJson<SummaryDocument>(SummaryPath(id));
+
+    internal static AdventureMetadata? ReadMetadataFromDisk(Guid id) =>
+        LoadJson<AdventureMetadata>(MetadataPath(id));
 
     internal static AdventureBundle? ReadBundleDocumentsFromDisk(Guid id)
     {
@@ -450,21 +609,162 @@ internal static class AdventureStore
         }
     }
 
+    private static void PreserveThreadRegistryFromDisk(AdventureMetadata incoming, Guid id)
+    {
+        var existing = LoadJson<AdventureMetadata>(MetadataPath(id));
+        if (existing is null)
+            return;
+
+        if (incoming.ThreadRegistry is null || incoming.ThreadRegistry.Count == 0)
+        {
+            if (existing.ThreadRegistry is { Count: > 0 })
+            {
+                incoming.ThreadRegistry = existing.ThreadRegistry;
+                incoming.ActiveThreadIds = existing.ActiveThreadIds;
+                incoming.ThreadRegistryMigratedAt ??= existing.ThreadRegistryMigratedAt;
+            }
+
+            return;
+        }
+
+        if (existing.ThreadRegistry is not { Count: > 0 })
+            return;
+
+        PreserveThreadRegistryKindFromDisk(incoming, existing, AdventureThreadKind.UtilityWorker);
+        PreserveThreadRegistryKindFromDisk(incoming, existing, AdventureThreadKind.Design);
+        PreserveThreadRegistryKindFromDisk(incoming, existing, AdventureThreadKind.Play);
+    }
+
+    private static void PreserveThreadRegistryKindFromDisk(
+        AdventureMetadata incoming,
+        AdventureMetadata existing,
+        AdventureThreadKind kind)
+    {
+        incoming.ThreadRegistry ??= [];
+        incoming.ActiveThreadIds ??= new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+
+        var existingEntry = ResolveThreadRegistryEntryForPreserve(existing, kind);
+        if (existingEntry is null || string.IsNullOrWhiteSpace(existingEntry.ConversationId))
+            return;
+
+        var incomingEntry = incoming.ThreadRegistry.FirstOrDefault(e => e.Kind == kind);
+        if (incomingEntry is null)
+        {
+            incoming.ThreadRegistry.Add(CloneJson(existingEntry));
+            if (existing.ActiveThreadIds?.TryGetValue(
+                    AdventureThreadRegistryService.KindKey(kind),
+                    out var activeId) == true)
+            {
+                incoming.ActiveThreadIds[AdventureThreadRegistryService.KindKey(kind)] = activeId;
+            }
+
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(incomingEntry.ConversationId))
+            incomingEntry.ConversationId = existingEntry.ConversationId;
+
+        if (string.IsNullOrWhiteSpace(incomingEntry.PinnedTabKey)
+            && !string.IsNullOrWhiteSpace(existingEntry.PinnedTabKey))
+        {
+            incomingEntry.PinnedTabKey = existingEntry.PinnedTabKey;
+        }
+
+        if (string.IsNullOrWhiteSpace(incomingEntry.PinnedTabTitle)
+            && !string.IsNullOrWhiteSpace(existingEntry.PinnedTabTitle))
+        {
+            incomingEntry.PinnedTabTitle = existingEntry.PinnedTabTitle;
+        }
+
+        if (string.IsNullOrWhiteSpace(incomingEntry.PinnedTabUrl)
+            && !string.IsNullOrWhiteSpace(existingEntry.PinnedTabUrl))
+        {
+            incomingEntry.PinnedTabUrl = existingEntry.PinnedTabUrl;
+        }
+    }
+
+    private static AdventureThreadEntry? ResolveThreadRegistryEntryForPreserve(
+        AdventureMetadata metadata,
+        AdventureThreadKind kind)
+    {
+        if (metadata.ThreadRegistry is not { Count: > 0 })
+            return null;
+
+        if (metadata.ActiveThreadIds?.TryGetValue(AdventureThreadRegistryService.KindKey(kind), out var activeId) == true)
+        {
+            var active = metadata.ThreadRegistry.FirstOrDefault(e => e.Id == activeId);
+            if (active is not null)
+                return active;
+        }
+
+        return metadata.ThreadRegistry.FirstOrDefault(e =>
+            e.Kind == kind && e.Status == AdventureThreadStatus.Active)
+               ?? metadata.ThreadRegistry.FirstOrDefault(e => e.Kind == kind);
+    }
+
+    private static void PreserveUtilityWorkerBindingFromDisk(AdventureMetadata incoming, Guid id)
+    {
+        var existing = LoadJson<AdventureMetadata>(MetadataPath(id));
+        if (existing is null)
+            return;
+
+        incoming.UtilitySessions ??= new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase);
+        if (!incoming.UtilitySessions.ContainsKey(UtilityWorkerSessionService.SessionJobId)
+            && existing.UtilitySessions?.TryGetValue(
+                UtilityWorkerSessionService.SessionJobId,
+                out var workerSession) == true
+            && workerSession is not null)
+        {
+            incoming.UtilitySessions[UtilityWorkerSessionService.SessionJobId] = CloneJson(workerSession);
+        }
+    }
+
     private static void PreserveLinkMetadataFromDisk(AdventureMetadata incoming, Guid id)
     {
-        if (!string.IsNullOrWhiteSpace(incoming.LinkedProjectId))
-            return;
-
         var existing = LoadJson<AdventureMetadata>(MetadataPath(id));
-        if (existing is null || string.IsNullOrWhiteSpace(existing.LinkedProjectId))
+        if (existing is null)
             return;
 
-        incoming.LinkedProjectId = existing.LinkedProjectId;
-        incoming.LinkedProjectHint = existing.LinkedProjectHint ?? incoming.LinkedProjectHint;
-        incoming.LinkedConversationId = existing.LinkedConversationId ?? incoming.LinkedConversationId;
-        incoming.ProjectLink = existing.ProjectLink ?? incoming.ProjectLink;
-        incoming.PinnedPlayTabUrl = existing.PinnedPlayTabUrl ?? incoming.PinnedPlayTabUrl;
-        incoming.PinnedDesignTabUrl = existing.PinnedDesignTabUrl ?? incoming.PinnedDesignTabUrl;
+        if (string.IsNullOrWhiteSpace(incoming.LinkedProjectId)
+            && !string.IsNullOrWhiteSpace(existing.LinkedProjectId))
+        {
+            incoming.LinkedProjectId = existing.LinkedProjectId;
+            incoming.LinkedProjectHint = existing.LinkedProjectHint ?? incoming.LinkedProjectHint;
+        }
+
+        incoming.ProjectLink ??= existing.ProjectLink;
+
+        if (existing.SchemaVersion >= 7
+            && incoming.ThreadRegistry is { Count: > 0 }
+            && existing.ThreadRegistry is { Count: > 0 })
+        {
+            var incomingPlay = incoming.ThreadRegistry.FirstOrDefault(e => e.Kind == AdventureThreadKind.Play);
+            var existingPlay = existing.ThreadRegistry.FirstOrDefault(e => e.Kind == AdventureThreadKind.Play);
+            if (incomingPlay is not null
+                && existingPlay is not null
+                && string.IsNullOrWhiteSpace(incomingPlay.PinnedTabUrl)
+                && !string.IsNullOrWhiteSpace(existingPlay.PinnedTabUrl))
+            {
+                incomingPlay.PinnedTabUrl = existingPlay.PinnedTabUrl;
+            }
+        }
+
+        if (existing.SchemaVersion >= 6)
+            return;
+
+        incoming.LinkedConversationId ??= existing.LinkedConversationId;
+        incoming.PinnedPlayTabKey ??= existing.PinnedPlayTabKey;
+        incoming.PinnedPlayTabTitle ??= existing.PinnedPlayTabTitle;
+        incoming.PinnedPlayTabUrl ??= existing.PinnedPlayTabUrl;
+        incoming.PinnedDesignTabKey ??= existing.PinnedDesignTabKey;
+        incoming.PinnedDesignTabTitle ??= existing.PinnedDesignTabTitle;
+        incoming.PinnedDesignTabUrl ??= existing.PinnedDesignTabUrl;
+
+        if (incoming.UtilitySessions is null || incoming.UtilitySessions.Count == 0)
+        {
+            if (existing.UtilitySessions is { Count: > 0 })
+                incoming.UtilitySessions = existing.UtilitySessions;
+        }
     }
 
     private static void WriteJson<T>(string path, T value)

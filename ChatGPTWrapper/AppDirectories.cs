@@ -1,4 +1,5 @@
 using System.IO;
+using ChatGPTWrapper.Shell;
 
 namespace ChatGPTWrapper;
 
@@ -11,6 +12,7 @@ internal static class AppDirectories
     internal static string? TestRootOverride { get; set; }
 
     private static string? _adventuresDirectoryOverride;
+    private static string? _initializedConfigRoot;
 
     /// <summary>Fixed config root (settings, WebView2, libraries) — not overridden by adventures path.</summary>
     public static string ConfigRoot =>
@@ -57,10 +59,11 @@ internal static class AppDirectories
         _adventuresDirectoryOverride = Path.GetFullPath(path.Trim());
     }
 
+    internal static void ResetStoresForTests() => _initializedConfigRoot = null;
+
     public static void EnsureCreated()
     {
-        WrapperSettingsStore.Initialize();
-        AdventureLocationStore.Initialize();
+        EnsureStoresInitialized();
 
         Directory.CreateDirectory(Root);
         Directory.CreateDirectory(StylesDirectory);
@@ -73,5 +76,17 @@ internal static class AppDirectories
         Directory.CreateDirectory(Path.Combine(LibrariesDirectory, "characters"));
         Directory.CreateDirectory(Path.Combine(LibrariesDirectory, "presets"));
         Directory.CreateDirectory(Path.Combine(LibrariesDirectory, "templates"));
+    }
+
+    private static void EnsureStoresInitialized()
+    {
+        var configRoot = ConfigRoot;
+        if (string.Equals(_initializedConfigRoot, configRoot, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        WrapperSettingsStore.Initialize();
+        DialogLayoutStore.Initialize();
+        AdventureLocationStore.Initialize();
+        _initializedConfigRoot = configRoot;
     }
 }

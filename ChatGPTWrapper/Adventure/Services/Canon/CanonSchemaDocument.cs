@@ -6,12 +6,33 @@ internal sealed class CanonSchemaDocument
 {
     public int SchemaVersion { get; init; } = 1;
 
+    public List<CanonCategoryDocument> Categories { get; init; } = [];
+
     public List<CanonKindDocument> Kinds { get; init; } = [];
+}
+
+internal sealed class CanonCategoryDocument
+{
+    public required string CategoryId { get; init; }
+
+    public required string DisplayLabel { get; init; }
+
+    public bool ShowTags { get; init; }
+
+    public bool ShowAliases { get; init; }
+
+    public bool ShowImage { get; init; }
+
+    public List<CanonFieldDocument> ListShellFields { get; init; } = [];
+
+    public List<CanonFieldDocument> SingletonShellFields { get; init; } = [];
 }
 
 internal sealed class CanonKindDocument
 {
     public required string KindId { get; init; }
+
+    public string ParentCategory { get; init; } = "";
 
     public required string CollectionKey { get; init; }
 

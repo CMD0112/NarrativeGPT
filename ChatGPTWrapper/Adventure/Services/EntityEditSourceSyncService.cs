@@ -140,6 +140,12 @@ internal static class EntityEditSourceSyncService
     {
         EntityChangePlanQueueService.Discard(bundle, plan.PlanId);
 
+        IList<PhraseHighlightRule>? mutablePhraseRules = null;
+        if (phraseRules is not null)
+        {
+            mutablePhraseRules = phraseRules as IList<PhraseHighlightRule> ?? phraseRules.ToList();
+        }
+
         switch (plan.Intent)
         {
             case EntityChangeIntent.Merge:
@@ -173,9 +179,9 @@ internal static class EntityEditSourceSyncService
                 {
                     AddPriorNameAsAlias = plan.Intent == EntityChangeIntent.Rename,
                     UpdateContextIndex = true,
-                    UpdatePhraseHighlights = phraseRules is not null,
+                    UpdatePhraseHighlights = mutablePhraseRules is not null,
                 },
-                phraseRules is null ? null : phraseRules.ToList());
+                mutablePhraseRules);
         }
 
         if (plan.Intent == EntityChangeIntent.Delete)

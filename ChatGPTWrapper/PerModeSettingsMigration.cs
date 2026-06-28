@@ -46,8 +46,6 @@ internal static class PerModeSettingsMigration
 
     private static void MergeFromJson(JsonElement root, TranscriptViewModeSettings snapshot)
     {
-        if (TryReadBool(root, "proseEnhancementsEnabled", out var prose))
-            snapshot.ProseEnhancementsEnabled = prose;
         if (TryReadBool(root, "hideAssistantEditArtifacts", out var hideEdits))
             snapshot.HideAssistantEditArtifacts = hideEdits;
         if (TryReadBool(root, "hideContextTagsInThread", out var hideContext))

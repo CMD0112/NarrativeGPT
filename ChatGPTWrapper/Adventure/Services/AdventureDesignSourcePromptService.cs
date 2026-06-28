@@ -83,6 +83,11 @@ internal static class AdventureDesignSourcePromptService
             "Canon format reference",
             "Section templates, field labels, party/NPC rules — auto-generated; upload to Project Files",
             AdventureDesignStep.Sources),
+        new(
+            SectionSchema.NarratorScalesFile,
+            "Narrator scales reference",
+            "Preset definitions for length, detail, tone, difficulty, violence — auto-generated; upload to Project Files",
+            AdventureDesignStep.Sources),
     ];
 
     public static IReadOnlyList<string> PromptPipelineOrder { get; } =

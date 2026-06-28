@@ -13,7 +13,8 @@ All paths are under `%LocalAppData%\ChatGPTWrapper\` unless noted.
 | `link-project.log` | Project linking, API errors, attach/upload attempts |
 | `project-discovery-trace.jsonl` | Project list discovery (sidebar, bootstrap, DOM) |
 | `sync-trace.jsonl` | Source sync operations with phase timing |
-| `play-send-trace.jsonl` | Play prompt send pipeline steps |
+| `play-send-trace.jsonl` | Play prompt send pipeline steps (Info+ always) |
+| `wrapper-diagnostics.jsonl` | Unified extended diagnostics (all channels; **only when extended mode enabled**) |
 | `api-diagnostic-report.json` / `.txt` | Live API diagnostic test output |
 | `api-client-profile.json` | Captured API client headers/profile |
 | `source-sync-perf-report.json` / `.txt` | Source sync performance benchmarks |
@@ -30,7 +31,61 @@ All paths are under `%LocalAppData%\ChatGPTWrapper\` unless noted.
 
 ---
 
-## Blank or broken WebView
+## Extended diagnostics (verbose)
+
+Extended logging is **off by default** to avoid performance impact. Enable at launch:
+
+```text
+ChatGPT Wrapper.exe --extended-diagnostics
+```
+
+Or from the repo: `.\run.ps1 -ExtendedDiagnostics`
+
+Optional UI-only logging (without full extended mode):
+
+```text
+ChatGPT Wrapper.exe --log-ui-events
+```
+
+Environment variables (same effect): `CGW_EXTENDED_DIAGNOSTICS=1`, `CGW_LOG_UI_EVENTS=1`.
+
+### Agent-oriented unified log
+
+When extended mode is on, **`wrapper-diagnostics.jsonl`** is the primary artifact to attach for Cursor agents. Each line is JSON with:
+
+| Field | Meaning |
+|-------|---------|
+| `sessionId` | Correlate all lines from one app launch |
+| `adventureId` | Top-level adventure scope when the event is adventure-specific (e.g. `play_requested`) |
+| `channel` | `program`, `ui`, `webview`, `page`, `play_send`, `compose`, `bridge`, `api`, `sync`, `navigation` |
+| `event` | Stable event name (e.g. `session_start`, `page_message_in`, `navigation_completed`) |
+| `level` | `debug`, `info`, `warn`, `error` |
+| `runIdShort` | Play-send or sync run id when applicable |
+
+The first line is `session_start` with log paths, an `agentHint`, and a `triage` object listing high-signal event names. The last line is `session_end` with `warnings`, `errors`, and `hadFaults`. Legacy text logs (`link-project.log`, `sync-trace.jsonl`) are **mirrored** into the unified file under the `api` / `sync` channels.
+
+| File | When written |
+|------|----------------|
+| `play-send-trace.jsonl` | Play send Info/Warn/Error always; Debug only in extended mode |
+| `wrapper-diagnostics.jsonl` | **All channels** when `--extended-diagnostics` is set; UI Info/Warn/Error when `--log-ui-events` only |
+| Session id | Included in every unified line as `sessionId` — correlate with `session_start` |
+
+Page scripts receive `globalThis.__cgwExtendedDiagnostics` after bootstrap. Debug-level JS logs (compose, bridge, scroll forwarding) are suppressed unless extended mode is on. Inbound WebView `postMessage` traffic is recorded as `page_message_in` (payload truncated to 8 KB).
+
+### Play / shell triage (extended mode)
+
+Reproduce with `.\run.ps1 -ExtendedDiagnostics`, then filter `wrapper-diagnostics.jsonl` by `sessionId` from `session_start`.
+
+| Symptom | Log pattern |
+|---------|-------------|
+| **Play does nothing** | `play_requested` without `play_session_start` → startup fault before mode switch; check `play_session_start_failed`, `async_task_failed`, or `exception` on the same `sessionId` |
+| **Stale adventure id** | `orphaned_adventure_session` — `adventureId` set while `mode` is Browse/Adventures (often after a swallowed async fault) |
+| **Library instead of cockpit** | `app_mode_changed` with `mode: Play` but `layout.adventureHostContent` ≠ `AdventurePlayView`; or missing `play_host_content_set` |
+| **Wheel scroll jumps / resets to top** | `scroll_wheel_direct` with rising `before`/`after`, then `before:0` on next tick; many `scroll_wheel_bound` lines with alternating `clientHeight` — resize/geometry loop fighting scroll; check `scroll_position_restore_gap` |
+
+**Scroll / composer debugging:** search for `scroll_wheel_forward`, `play_send_arm_state`, and `play_pin_reconciled`.
+
+---
 
 **Symptoms:** ChatGPT tab stays white, never loads, or shows WebView2 error.
 
@@ -105,17 +160,8 @@ Resolve each **Conflict** row: Keep local, Keep remote, or Skip — then **Apply
 
 When ChatGPT UI deletes a project file but the manifest still references it:
 
-1. Sync plan shows **MissingRemote**
-2. **Apply safe** may re-upload local copy (ApiSync mode)
-3. Or clear stale `remoteFileId` via sync reconcile and re-push
-4. See [adventure-developer-reference.md — Recovering from browser-deleted files](adventure-developer-reference.md#recovering-from-browser-deleted--404-project-files)
-
-### ApiSync attach/upload errors
-
-1. Open **API sync diagnostics** from Source Manager
-2. Check `link-project.log` for attach attempt sequence
-3. Try **Manual** publish mode as workaround
-4. Copy `api-client-profile.json` when reporting issues
+1. Sync plan (diagnostics) may show **MissingRemote**
+2. Re-upload local copy manually or use **Remote sync diagnostics…** to repair bindings
 
 ---
 
@@ -154,15 +200,15 @@ See [Utility Job Orchestration](utility-job-orchestration.md) for the full pipel
 
 ---
 
-## Thin packets but model forgets lore
+## Source-delegated packets but model forgets lore
 
-**Cause:** Manifest may show InSync but Project files not actually attached/retrieved by ChatGPT.
+**Cause:** Manifest may show published but Project files not actually attached/retrieved by ChatGPT.
 
 **Fixes:**
 
 1. Open ChatGPT Project UI — verify files are present.
-2. Re-confirm manual publish or re-apply ApiSync push.
-3. Temporarily enable **Force fat packets** in adventure settings.
+2. Re-confirm manual publish in Source Manager.
+3. For debugging only: enable **Force inline lore (debug)** in Play settings → Advanced automation.
 4. Run **Probe** from Source Manager to verify remote hashes.
 
 ---
@@ -213,7 +259,7 @@ Include when possible:
 2. `link-project.log` (last 50 lines)
 3. `api-diagnostic-report.txt` if API-related
 4. App version / portable vs dev build
-5. Whether Manual or ApiSync publish mode
+5. Whether lore files are marked Published in Source Manager
 
 ---
 

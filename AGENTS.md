@@ -26,7 +26,7 @@ Two documents define taxonomy and workflow. **Update both in the same session** 
 | Workspace (agents) | `docs/linear-issue-reference.md` |
 | Human mirror | [Issue Taxonomy & Workflow Guide](https://linear.app/cmd0112/document/issue-taxonomy-and-workflow-guide-1d30b366d19d) |
 
-**Triggers:** new/renamed/retired labels, label description or parent changes, status changes, promotion rules, staging lanes, git↔status policy, issue/epic templates.
+**Triggers:** new/renamed/retired labels, label description or parent changes, status changes, promotion rules, staging lanes, git↔status policy, issue/epic templates, attachment/upload policy.
 
 **Workflow:**
 
@@ -45,7 +45,9 @@ Do not leave taxonomy or workflow changes in only one place. Full procedure: **M
 - Search existing issues before creating duplicates.
 - Issue descriptions: Context → Acceptance criteria → Technical notes → Test plan (if **Needs Manual QA**) → Related.
 - **Done** leaf issues: add **Verified**, remove **Needs Manual QA**.
+- **Done — Review Later:** work accepted for now but may need revisit (edge cases, feedback, follow-up) — comment why; add **Verified** if current scope met. See reference for **Done** vs **Done — Review Later**.
 - PR linkage: `Fixes CMD-XX` (auto-close) vs `Ref CMD-XX` (manual QA).
+- **Attachments:** unlimited Linear uploads — attach repro/QA screenshots and recordings to issues when they aid triage; never upload secrets. See **Issue attachments** in the reference.
 - If no status fits: post a **Status recommendation** callout to the user; do not invent statuses.
 
 ## General documentation

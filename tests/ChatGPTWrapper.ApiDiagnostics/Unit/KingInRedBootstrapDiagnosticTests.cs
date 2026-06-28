@@ -6,6 +6,7 @@ using ChatGPTWrapper.Adventure.Stores;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 /// <summary>Diagnostic against the user's real adventure folder when present locally.</summary>
+[Collection(nameof(IsolatedAppRootCollection))]
 [Trait("Category", "Unit")]
 public sealed class KingInRedBootstrapDiagnosticTests
 {
@@ -48,6 +49,7 @@ public sealed class KingInRedBootstrapDiagnosticTests
                 File.Copy(from, Path.Combine(dest, name));
         }
 
+        var priorOverride = AppDirectories.TestRootOverride;
         AppDirectories.TestRootOverride = tempRoot;
         AppDirectories.EnsureCreated();
 
@@ -56,19 +58,23 @@ public sealed class KingInRedBootstrapDiagnosticTests
             var bundle = AdventureStore.Load(KingInRedId);
             Assert.NotNull(bundle);
 
+            ProjectSourceInjectionService.EnsureLoreSourcesMaterialized(bundle!);
+
             Assert.True(
                 AdventureSourceFileService.HasLocalLoreSourceFiles(bundle!),
-                "Load should bootstrap lore sources from design workspace history");
+                "Load + materialize should produce lore sources for linked adventures");
+
+            var loreEntries = bundle!.SourceManifest.Entries
+                .Where(e => SourceManifestHelper.IsCoreLoreFile(e.RelativePath))
+                .ToList();
+            Assert.NotEmpty(loreEntries);
 
             var sourcesDir = AdventureSourceFileService.SourcesDirectory(bundle!);
-            Assert.True(File.Exists(Path.Combine(sourcesDir, "cast.md")), "cast.md missing after load");
-            Assert.False(
-                string.IsNullOrWhiteSpace(bundle!.DesignWorkspace.PendingBootstrapNotice),
-                "PendingBootstrapNotice should be set after load-time bootstrap");
+            Assert.True(File.Exists(Path.Combine(sourcesDir, "cast.md")), "cast.md missing after materialize");
         }
         finally
         {
-            AppDirectories.TestRootOverride = null;
+            AppDirectories.TestRootOverride = priorOverride;
             try
             {
                 Directory.Delete(tempRoot, recursive: true);

@@ -62,10 +62,12 @@ Master catalog of user-facing settings, toggles, menus, dialogs, and in-session 
 
 | Control | Surface | Entry path | Owner | Persistence | Scope | Status |
 |---------|---------|------------|-------|-------------|-------|--------|
+| Reading mode summary | Global | Preferences hub | PreferencesHubDialog | display only | global | active |
 | Appearance & theme… | Global | Preferences hub | ThemeCustomizationDialog | `ui-chrome.json` → `theme` | global | active |
-| Continuous view & format… | Global | Preferences hub | ContinuousViewFormatDialog | `ui-chrome.json` | per-mode | active |
-| Wrapper settings… | Global | Preferences hub | WrapperSettingsDialog | `wrapper-settings.json` | wrapper | active |
-| Play session settings… | Play/Design | Preferences hub (when adventure loaded) | PlayPromptInjectionDialog | `adventure.json` | adventure | duplicate |
+| Reading & format… | Global | Preferences hub / View → Format… | ContinuousViewFormatDialog | `ui-chrome.json` | per-mode | active |
+| Storage & paths… | Global | Preferences hub | WrapperSettingsDialog | `wrapper-settings.json` | wrapper | active |
+| Play settings shortcuts | Play/Design | Preferences hub (active adventure) | PlayPromptInjectionDialog | adventure.json | adventure | active |
+| Jump: Behavior / Layout / Sources / Session | Play/Design | Preferences hub | PlayPromptInjectionDialog tabs | adventure.json | adventure/session | active |
 
 ---
 
@@ -87,6 +89,7 @@ Master catalog of user-facing settings, toggles, menus, dialogs, and in-session 
 | Built-in presets | Global | Presets tab | ThemeCustomizationDialog | same | global | active |
 | User presets CRUD | Global | Presets tab | ThemeCustomizationDialog | same | global | active |
 | Semantic color tokens | Global | Colors tab | ThemeCustomizationDialog | `theme.customOverrides` | global | active |
+| Theme color picker (Pick…) | Global | Colors tab | ThemeColorPickerDialog via ColorPickerWorkflow | same + `recentPickerColors[]` | global | active |
 | Shell typography | Global | Typography tab | ThemeCustomizationDialog | `theme.fontFamily`, sizes | global | active |
 | Spacing & shape | Global | Spacing tab | ThemeCustomizationDialog | `theme.space*`, `radius*` | global | active |
 | Import/export theme JSON | Global | Advanced tab | ThemeCustomizationDialog | `ui-chrome.json` | global | active |
@@ -105,10 +108,11 @@ Master catalog of user-facing settings, toggles, menus, dialogs, and in-session 
 | Code & heading fonts | Global | Code & headings | ContinuousViewFormatDialog | `codeFontFamily`, `headingFontFamily` | per-mode | active |
 | Browse system font | Global | Font family custom | FormatSystemFontPickerWindow | custom stack string | per-mode | active |
 | Named font weights | Global | Font weight combos | ContinuousViewFormatDialog | `*FontWeight` | per-mode | active |
-| Color pickers (role tokens) | Global | Colors tab | ContinuousViewFormatDialog | `*Color` fields | per-mode | active |
+| Color pickers (role tokens) | Global | Colors tab / Pick… | ThemeColorPickerDialog via ColorPickerWorkflow | `*Color` fields; `recentPickerColors[]` in chrome | per-mode + global recent | active |
 | Thread display toggles | Global | Thread display | ContinuousViewFormatDialog | per-mode bucket flags | per-mode | active |
-| Enhanced prose toggle | Global | Thread display | ContinuousViewFormatDialog | `proseEnhancementsEnabled` | per-mode | legacy-partial |
 | Phrase highlights editor | Global | Highlights tab | PhraseHighlightsEditorControl | `phraseHighlightRules[]` | per-mode | active |
+| Format preview phrase sample | Global | Format dialog preview | FormatPreviewControl | live rules from Highlights tab | per-mode | active |
+| Entity phrase highlight card | Adventure | EntityEditDialog / EntityEditFormHost | `phraseHighlightRules[]` via chrome | per-mode | active |
 | Advanced numeric bounds | Global | Advanced | ContinuousViewFormatDialog | `allowFormatValuesOutsideRecommendedRange` | per-mode | active |
 | Import/export format JSON | Global | Advanced | ContinuousViewFormatDialog | profiles / working copy | per-mode | active |
 
@@ -120,7 +124,13 @@ Master catalog of user-facing settings, toggles, menus, dialogs, and in-session 
 
 | Tab (XAML) | Control (representative) | Persistence key | Scope | Status |
 |------------|--------------------------|-----------------|-------|--------|
-| **Next send** | Continuation queue | runtime + adventure | send | active |
+| **Injection** | Preset (Compact/Standard/Full/Custom) | `injectionPolicy.injectionPresetId`, preset fields | adventure | active |
+| **Injection** | Section includes (summary, state, memory, transcript, cards, sources, attachment guidance) | `injectionPolicy.*` | adventure | active |
+| **Injection** | Max packet slider | `maxPacketChars` | adventure | active |
+| **Injection** | Transcript max turns | `injectionPolicy.transcriptMaxTurns` | adventure | active |
+| **Injection** | Use context tags / section injection v2 | `useContextTags`, `useSectionInjection` | adventure | active |
+| **Injection** | Live preview panel | — | send | active |
+| **Play packet** | Continuation queue | runtime + adventure | send | active |
 | **Next send** | Fallback player line | adventure | send | active |
 | **Next send** | Turn overrides (length, detail, tone) | `playTurnOverrides` | send | active |
 | **Next send** | Packet preview / View full | — | send | active |
@@ -160,6 +170,8 @@ Master catalog of user-facing settings, toggles, menus, dialogs, and in-session 
 | Sources… | Header | SourceManagerDialog | — | adventure | active |
 | Link Project / Link now | Header / banner | ProjectWorkspaceDialog | adventure.json | adventure | active |
 | Rename / Continue design | More… | dialogs / mode switch | adventure.json | adventure | active |
+| **Injection** (cockpit) | Preset combo, Summary/Transcript/Memory toggles | `injectionPolicy` | adventure | active |
+| **Injection** (cockpit) | Live preview control | — | send | active |
 | Narrator scene profiles | Session cockpit | in-panel | session overrides | session | active |
 | Narrator inherit/preset combos | Session cockpit | in-panel | session/adventure/send | send/session | active |
 | Advanced… (narrator) | Session cockpit | NarratorAdvancedDialog | turn overrides | send | duplicate |

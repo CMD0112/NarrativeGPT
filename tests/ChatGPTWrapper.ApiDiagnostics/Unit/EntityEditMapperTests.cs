@@ -65,6 +65,42 @@ public sealed class EntityEditMapperTests
     }
 
     [Fact]
+    public void Party_load_apply_round_trip_preserves_cast_shell_fields()
+    {
+        var id = Guid.NewGuid();
+        var entities = new EntitiesDocument
+        {
+            Party =
+            [
+                new CompanionEntry
+                {
+                    Id = id,
+                    Name = "Anwen",
+                    Condition = "Healthy",
+                    Relationship = "Ally",
+                    Tags = ["healer", "party"],
+                    Aliases = ["Anwen Silverveil"],
+                },
+            ],
+        };
+
+        var loaded = EntityEditMapper.Load(entities, id, "Party", Guid.NewGuid());
+        Assert.NotNull(loaded);
+        Assert.True(loaded!.ShowTags);
+        Assert.True(loaded.ShowAliases);
+        Assert.Equal("healer, party", loaded.TagsText);
+        Assert.Equal("Anwen Silverveil", loaded.AliasesText);
+
+        loaded.TagsText = "support, loyal";
+        loaded.AliasesText = "Anwen S.";
+
+        Assert.True(EntityEditMapper.Apply(entities, loaded));
+        var companion = entities.Party.Single();
+        Assert.Equal(["support", "loyal"], companion.Tags);
+        Assert.Equal(["Anwen S."], companion.Aliases);
+    }
+
+    [Fact]
     public void Party_load_apply_round_trip()
     {
         var id = Guid.NewGuid();

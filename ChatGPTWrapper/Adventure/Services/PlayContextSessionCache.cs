@@ -64,22 +64,42 @@ internal static class PlayContextSessionCache
         TryBindConversationFromUrl(bundle, source);
         TrySyncConversationFromUrl(bundle, source);
 
-        var conversationId = bundle.Metadata.LinkedConversationId;
+        var conversationId = PlayThreadBindingService.GetActiveConversationId(bundle);
+        var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
+        if (!string.IsNullOrWhiteSpace(conversationId)
+            && !string.IsNullOrWhiteSpace(gizmoId)
+            && AdventurePlayContextService.IsOnPlayConversationPage(source, conversationId, gizmoId))
+        {
+            if (!TryGetFresh(bundle.Metadata.Id, out var cached)
+                || !string.Equals(cached.Source, source, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(cached.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase))
+            {
+                Record(bundle.Metadata.Id, source, conversationId, composerFound: true);
+            }
+
+            return true;
+        }
+
+        if (!PlayThreadBindingService.IsVerified(bundle))
+        {
+            return AdventureNavigationService.IsOnLinkedProjectPage(source, bundle)
+                   && ProjectChatDraftService.IsActive(bundle.Metadata.Id);
+        }
+
         if (string.IsNullOrWhiteSpace(conversationId))
         {
             return AdventureNavigationService.IsOnLinkedProjectPage(source, bundle);
         }
 
-        var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
         if (string.IsNullOrWhiteSpace(gizmoId)
             || !AdventurePlayContextService.IsOnPlayConversationPage(source, conversationId, gizmoId))
         {
             return false;
         }
 
-        if (!TryGetFresh(bundle.Metadata.Id, out var cached)
-            || !string.Equals(cached.Source, source, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(cached.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase))
+        if (!TryGetFresh(bundle.Metadata.Id, out var verifiedCached)
+            || !string.Equals(verifiedCached.Source, source, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(verifiedCached.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase))
         {
             Record(bundle.Metadata.Id, source, conversationId, composerFound: true);
         }
@@ -95,7 +115,7 @@ internal static class PlayContextSessionCache
 
     public static bool TryBindConversationFromUrl(AdventureBundle bundle, string? source)
     {
-        if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
+        if (!string.IsNullOrWhiteSpace(PlayThreadBindingService.GetActiveConversationId(bundle)))
             return false;
 
         return TryApplyConversationFromUrl(bundle, source, out _);
@@ -139,21 +159,16 @@ internal static class PlayContextSessionCache
             }
         }
 
-        if (string.Equals(bundle.Metadata.LinkedConversationId, parsed, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(
+                PlayThreadBindingService.GetActiveConversationId(bundle),
+                parsed,
+                StringComparison.OrdinalIgnoreCase))
+        {
             return false;
+        }
 
         conversationId = parsed;
-        var previous = bundle.Metadata.LinkedConversationId;
-        PlayTurnScopeService.OnPlayThreadChanged(bundle, previous, parsed);
-
-        AdventureThreadRegistryService.EnsureMigrated(bundle);
-        var playEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)
-                          ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play);
-        AdventureThreadRegistryService.UpdateConversationId(bundle, playEntry.Id, parsed);
-
-        bundle.Metadata.LinkedConversationId = parsed;
-        if (bundle.Metadata.ProjectLink is not null)
-            bundle.Metadata.ProjectLink.PlayConversationId = parsed;
+        PlayThreadBindingService.MarkPendingPin(bundle, parsed);
 
         if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId)
             && ChatGptUrls.TryParseGizmoId(uri, out var gizmoId)

@@ -97,6 +97,24 @@ public sealed class EntityCanonParadigmTests : IDisposable
     }
 
     [Fact]
+    public void CanonInboxService_suppresses_entity_proposals_when_review_banner_visible()
+    {
+        var bundle = AdventureStore.CreateNew("Inbox dedup");
+        bundle.Entities.ReviewQueue.Add(new EntityReviewItem
+        {
+            EntityType = "character",
+            ProposedChange = "Proposed NPC",
+        });
+        AdventureStore.Save(bundle);
+
+        var all = CanonInboxService.ListItems(bundle);
+        var suppressed = CanonInboxService.ListItems(bundle, suppressEntityProposals: true);
+
+        Assert.Contains(all, i => i.Type == CanonInboxItemType.EntityProposal);
+        Assert.DoesNotContain(suppressed, i => i.Type == CanonInboxItemType.EntityProposal);
+    }
+
+    [Fact]
     public void EntitySyncStatusService_reports_in_sync_for_fresh_entity()
     {
         var id = Guid.NewGuid();

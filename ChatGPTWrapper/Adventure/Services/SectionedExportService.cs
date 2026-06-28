@@ -143,7 +143,7 @@ internal static class SectionedExportService
         var sb = new StringBuilder("# Cast\n");
         var p = bundle.Entities.Player;
 
-        var playerBody = CanonFieldMapper.BuildFreeformBody(p, CanonSchemaRegistry.Player);
+        var playerBody = CanonFieldMapper.BuildPlayerCastBody(p);
 
         if (!string.IsNullOrWhiteSpace(playerBody))
         {
@@ -167,14 +167,15 @@ internal static class SectionedExportService
             {
                 var slug = SectionSlugHelper.FromName(c.Name);
                 var body = CanonFieldMapper.BuildEntryBody(c, CanonSchemaRegistry.Party);
-                AppendEntry(sb, slug, c.Name, [], body);
+                var aliases = BuildAliases(c.Name, c.Aliases);
+                AppendEntry(sb, slug, c.Name, aliases, body);
                 sections.Add(new SectionManifestEntry
                 {
                     Id = $"party/{slug}",
                     ParentId = "party",
                     Kind = "person",
                     Title = c.Name,
-                    Aliases = [c.Name],
+                    Aliases = aliases,
                     BodyCache = body,
                     SourceEntityId = c.Id.ToString(),
                 });

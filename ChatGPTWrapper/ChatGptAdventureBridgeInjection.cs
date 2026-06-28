@@ -1,3 +1,4 @@
+using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.ChatGptApi;
 using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
@@ -44,8 +45,9 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
             if (string.IsNullOrEmpty(type) || type.StartsWith("cgwCompose", StringComparison.Ordinal))
                 return;
 
-            if (string.Equals(type, "cgwPlaySendLog", StringComparison.Ordinal))
-                return;
+        if (string.Equals(type, "cgwPlaySendLog", StringComparison.Ordinal)
+            || string.Equals(type, "cgwDiagnosticsLog", StringComparison.Ordinal))
+            return;
 
             HandleMessage(type, root);
         });
@@ -226,6 +228,10 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
             + "}");
     }
 
+    /// <summary>Utility worker tabs should always show job traffic regardless of play hide settings.</summary>
+    public static Task ApplyUtilityWorkerTabVisibilityAsync(CoreWebView2 core) =>
+        ApplyInlineUtilityPreferencesAsync(core, hideDuringPlay: false, showTraffic: true);
+
     public static Task ApplyPlaySurfaceActionsAsync(
         CoreWebView2 core,
         IReadOnlyDictionary<string, string> actions)
@@ -241,6 +247,18 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
     {
         var json = JsonSerializer.Serialize(ordinalMap);
         return core.ExecuteScriptAsync($"globalThis.__cgwThreadOrdinalMap={json};");
+    }
+
+    public static Task ApplyLogTurnLinkMapAsync(CoreWebView2 core, IReadOnlyDictionary<int, LogTurnLink> linkMap)
+    {
+        var json = JsonSerializer.Serialize(linkMap);
+        return core.ExecuteScriptAsync($"globalThis.__cgwLogTurnLinkMap={json};");
+    }
+
+    public static Task ApplyRevisionHideEntriesAsync(CoreWebView2 core, IReadOnlyList<RevisionHideEntry> entries)
+    {
+        var json = JsonSerializer.Serialize(entries);
+        return core.ExecuteScriptAsync($"globalThis.__cgwRevisionHideEntries={json};");
     }
 
     public void SendCommand(CoreWebView2 core, object command)
@@ -358,7 +376,13 @@ public sealed class AdventureBridgeMessage
         bool submitFound,
         int? assistantTurnCount,
         string? domTurnId,
-        string? reason)
+        string? reason,
+        int? logTurnIndex,
+        string? editRole,
+        bool usedFallback,
+        string? revisionGroupId,
+        string? revisionPrompt,
+        string? assistantDomTurnId)
     {
         Type = type;
         RawJson = rawJson;
@@ -372,6 +396,12 @@ public sealed class AdventureBridgeMessage
         AssistantTurnCount = assistantTurnCount;
         DomTurnId = domTurnId;
         Reason = reason;
+        LogTurnIndex = logTurnIndex;
+        EditRole = editRole;
+        UsedFallback = usedFallback;
+        RevisionGroupId = revisionGroupId;
+        RevisionPrompt = revisionPrompt;
+        AssistantDomTurnId = assistantDomTurnId;
     }
 
     public string? Type { get; }
@@ -397,6 +427,18 @@ public sealed class AdventureBridgeMessage
     public string? DomTurnId { get; }
 
     public string? Reason { get; }
+
+    public int? LogTurnIndex { get; }
+
+    public string? EditRole { get; }
+
+    public bool UsedFallback { get; }
+
+    public string? RevisionGroupId { get; }
+
+    public string? RevisionPrompt { get; }
+
+    public string? AssistantDomTurnId { get; }
 
     public static AdventureBridgeMessage FromJson(string? type, string rawJson, JsonElement root)
     {
@@ -440,6 +482,33 @@ public sealed class AdventureBridgeMessage
             ? reasonEl.GetString()
             : null;
 
+        int? logTurnIndex = null;
+        if (root.TryGetProperty("logTurnIndex", out var logIdxEl) && logIdxEl.ValueKind == JsonValueKind.Number
+            && logIdxEl.TryGetInt32(out var logIdxValue))
+        {
+            logTurnIndex = logIdxValue;
+        }
+
+        var editRole = root.TryGetProperty("editRole", out var roleEl) && roleEl.ValueKind == JsonValueKind.String
+            ? roleEl.GetString()
+            : null;
+
+        var usedFallback =
+            root.TryGetProperty("usedFallback", out var fbEl) && fbEl.ValueKind == JsonValueKind.True;
+
+        var revisionGroupId =
+            root.TryGetProperty("revisionGroupId", out var rgEl) && rgEl.ValueKind == JsonValueKind.String
+                ? rgEl.GetString()
+                : null;
+        var revisionPrompt =
+            root.TryGetProperty("revisionPrompt", out var rpEl) && rpEl.ValueKind == JsonValueKind.String
+                ? rpEl.GetString()
+                : null;
+        var assistantDomTurnId =
+            root.TryGetProperty("assistantDomTurnId", out var adEl) && adEl.ValueKind == JsonValueKind.String
+                ? adEl.GetString()
+                : null;
+
         return new AdventureBridgeMessage(
             type,
             rawJson,
@@ -452,7 +521,13 @@ public sealed class AdventureBridgeMessage
             submitFound,
             assistantTurnCount,
             domTurnId,
-            reason);
+            reason,
+            logTurnIndex,
+            editRole,
+            usedFallback,
+            revisionGroupId,
+            revisionPrompt,
+            assistantDomTurnId);
     }
 }
 

@@ -67,6 +67,13 @@ internal static class ProjectSourceFileTemplates
             Summary = "Model-facing section/field templates — upload to Project Files with lore",
             InlineHint = "Section headers, ### entries, Id slugs, labeled fields, party vs npc rules.",
         },
+        new()
+        {
+            RelativePath = SectionSchema.NarratorScalesFile,
+            Role = "Narrator scales",
+            Summary = "Definitions for response length, detail, tone, difficulty, and violence presets",
+            InlineHint = "## active-scales; dimension sections with ### preset definitions; scene profiles.",
+        },
     ];
 
     private static readonly Dictionary<string, SourceFileTemplate> ByPath =

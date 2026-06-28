@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Services.PlayLayout;
@@ -18,6 +19,9 @@ public partial class AdventureDesignView : UserControl
     private bool _suppressTabChange;
     private bool _suppressFieldChange;
     private string? _bootstrapRecoveryBanner;
+    private EntityEditSourceSyncResult? _lastCanonSyncResult;
+    private DispatcherTimer? _canonSyncNoticeTimer;
+    private bool _canonSyncNoticePersistent;
 
     public event EventHandler? BackRequested;
 
@@ -67,6 +71,11 @@ public partial class AdventureDesignView : UserControl
         WireEntityReferencePanel();
     }
 
+    public Action<IReadOnlyList<PhraseHighlightRule>>? CommitPhraseHighlightRules { get; set; }
+
+    public void RefreshActiveEntityHighlightState() =>
+        EntityReferencePanel.RefreshActiveHighlightState();
+
     private void WireEntityReferencePanel()
     {
         EntityReferencePanel.Configure(
@@ -76,10 +85,12 @@ public partial class AdventureDesignView : UserControl
                 ShowAiActions = false,
                 ShowMoreMenu = false,
                 PromptCanonReconcile = true,
+                EditMode = EntityReferenceEditMode.Modal,
             },
             new EntityReferenceEditCallbacks
             {
                 GetPhraseHighlightRules = () => GetPhraseHighlightRules?.Invoke(),
+                CommitPhraseHighlightRules = rules => CommitPhraseHighlightRules?.Invoke(rules),
                 OpenSourceManagerAsync = () => OpenSourceManagerAsync?.Invoke() ?? Task.CompletedTask,
                 OnBundleReloaded = bundle =>
                 {
@@ -89,18 +100,23 @@ public partial class AdventureDesignView : UserControl
                 OnStatusRefreshRequested = () => DesignStatusRefreshRequested?.Invoke(this, EventArgs.Empty),
                 OnSourceSyncCompleted = result =>
                 {
+                    _lastCanonSyncResult = result;
                     if (_bundle is not null)
                         CanonHealthBar.Bind(_bundle);
                     if (result.Synced)
                     {
                         RefreshPipelineChecklist();
                         if (!string.IsNullOrWhiteSpace(result.Summary))
-                            SetStatus(result.Summary);
+                            ShowCanonSyncNotice(result.Summary, result);
                     }
                     else if (result.Staged)
                     {
                         SetStatus(result.Summary ?? "Entity change staged — use Sync canon when ready.");
+                        if (!string.IsNullOrWhiteSpace(result.Summary))
+                            ShowCanonSyncNotice(result.Summary, result);
                     }
+
+                    RefreshCanonSyncNoticeIfResolved();
                     DesignStatusRefreshRequested?.Invoke(this, EventArgs.Empty);
                 },
             });
@@ -210,6 +226,9 @@ public partial class AdventureDesignView : UserControl
 
     public void SetThreadStatus(string line) => ThreadStatusBlock.Text = line;
 
+    private void ThreadStatus_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
+        ManageThreadsRequested?.Invoke(this, EventArgs.Empty);
+
     public void SetDraftModeBanner(string? line)
     {
         if (string.IsNullOrWhiteSpace(line))
@@ -304,7 +323,103 @@ public partial class AdventureDesignView : UserControl
         EntityReferencePanel.LoadBundle(_bundle);
         RefreshPipelineChecklist();
         RefreshUi();
+        RefreshCanonSyncNoticeIfResolved();
         SetStatus("Canon synced to local sources.");
+    }
+
+    public void ShowCanonSyncNotice(string message, EntityEditSourceSyncResult? syncResult = null)
+    {
+        if (CanonHealthBar.Visibility == Visibility.Visible)
+        {
+            HideCanonSyncNotice();
+            return;
+        }
+
+        _canonSyncNoticePersistent = CanonSyncNoticePolicy.RequiresVerification(_bundle, syncResult);
+        CanonSyncNoticeText.Text = message;
+        CanonSyncNoticeBanner.Visibility = Visibility.Visible;
+
+        _canonSyncNoticeTimer?.Stop();
+        _canonSyncNoticeTimer = null;
+        if (!_canonSyncNoticePersistent)
+        {
+            _canonSyncNoticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(14) };
+            _canonSyncNoticeTimer.Tick += (_, _) => HideCanonSyncNotice();
+            _canonSyncNoticeTimer.Start();
+        }
+    }
+
+    private void RefreshCanonSyncNoticeIfResolved()
+    {
+        if (CanonSyncNoticeBanner.Visibility != Visibility.Visible || !_canonSyncNoticePersistent)
+            return;
+
+        if (!CanonSyncNoticePolicy.RequiresVerification(_bundle, _lastCanonSyncResult))
+            HideCanonSyncNotice();
+    }
+
+    private void HideCanonSyncNotice()
+    {
+        _canonSyncNoticeTimer?.Stop();
+        _canonSyncNoticeTimer = null;
+        _canonSyncNoticePersistent = false;
+        CanonSyncNoticeBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void DismissCanonSyncNotice_Click(object sender, RoutedEventArgs e) =>
+        HideCanonSyncNotice();
+
+    private void ViewLastCanonSyncDiff_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null || _lastCanonSyncResult is null)
+            return;
+
+        var dlg = new EntityChangePlanDiffPreviewDialog(_bundle, _lastCanonSyncResult)
+        {
+            Owner = Window.GetWindow(this),
+        };
+        dlg.ShowDialog();
+    }
+
+    private async void OpenSourceManagerFromBanner_Click(object sender, RoutedEventArgs e)
+    {
+        if (OpenSourceManagerAsync is not null)
+            await OpenSourceManagerAsync();
+    }
+
+    private void CanonInbox_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null)
+            return;
+
+        var dlg = new CanonInboxDialog(_bundle) { Owner = Window.GetWindow(this) };
+        dlg.NavigateRequested += (_, item) => NavigateCanonInboxItem(item);
+        dlg.ShowDialog();
+    }
+
+    private async void NavigateCanonInboxItem(CanonInboxItem item)
+    {
+        if (_bundle is null)
+            return;
+
+        switch (item.Destination)
+        {
+            case CanonInboxDestination.ReferenceTab:
+                AdventureDesignService.GoToStep(_bundle, AdventureDesignStep.Cast);
+                Save();
+                SyncTabToStep();
+                RefreshUi();
+                break;
+            case CanonInboxDestination.SourcesSettings:
+            case CanonInboxDestination.SourceManager:
+            case CanonInboxDestination.JsonImportReview:
+                if (OpenSourceManagerAsync is not null)
+                    await OpenSourceManagerAsync();
+                break;
+            case CanonInboxDestination.CommitBar:
+                CanonHealthBar.Bind(_bundle);
+                break;
+        }
     }
 
     private void UpdatePipelineExpanderForStep(AdventureDesignStep step)
@@ -445,6 +560,12 @@ public partial class AdventureDesignView : UserControl
         if (string.Equals(relativePath, SectionSchema.CanonFormatFile, StringComparison.OrdinalIgnoreCase))
         {
             OpenCanonFormatReferenceFile();
+            return;
+        }
+
+        if (string.Equals(relativePath, SectionSchema.NarratorScalesFile, StringComparison.OrdinalIgnoreCase))
+        {
+            OpenNarratorScalesReferenceFile();
             return;
         }
 
@@ -898,6 +1019,7 @@ public partial class AdventureDesignView : UserControl
 
         var panel = new StackPanel();
         AppendCanonFormatReferenceCallout(panel, sourcesDir, muted);
+        AppendNarratorScalesReferenceCallout(panel, sourcesDir, muted);
 
         panel.Children.Add(new TextBlock
         {
@@ -1670,6 +1792,32 @@ public partial class AdventureDesignView : UserControl
         }
     }
 
+    public void TryOpenProposalReviewHubAfterJob(string jobId, int proposalCount)
+    {
+        if (_bundle is null || proposalCount <= 0)
+            return;
+
+        OpenProposalReviewHub(ProposalReviewService.ResolveCategoryForJob(jobId));
+    }
+
+    public void OpenProposalReviewHub(ProposalReviewCategory? focusCategory = null)
+    {
+        if (_bundle is null)
+            return;
+
+        var fresh = AdventureStore.Load(_bundle.Metadata.Id) ?? _bundle;
+        var dlg = new ProposalReviewHubDialog(fresh, focusCategory)
+        {
+            Owner = Window.GetWindow(this),
+        };
+        dlg.ShowDialog();
+
+        _bundle = AdventureStore.Load(_bundle.Metadata.Id);
+        RefreshUi();
+        if (dlg.ChangesSaved)
+            SetStatus("Proposal review updated.");
+    }
+
     public bool TryOpenJsonImportReviewDialog() =>
         _bundle is not null
         && _bundle.Scenario.JsonImportReviewQueue.Count > 0
@@ -1729,11 +1877,11 @@ public partial class AdventureDesignView : UserControl
 
         var reviewBtn = new Button
         {
-            Content = "Review JSON import…",
+            Content = "Review proposals…",
             Padding = new Thickness(8, 4, 8, 4),
             Margin = new Thickness(8, 0, 0, 0),
         };
-        reviewBtn.Click += (_, _) => ShowJsonImportReviewDialog();
+        reviewBtn.Click += (_, _) => OpenProposalReviewHub(ProposalReviewCategory.JsonImport);
         Grid.SetColumn(reviewBtn, 1);
         banner.Children.Add(reviewBtn);
 
@@ -1856,6 +2004,117 @@ public partial class AdventureDesignView : UserControl
 
         Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         SetStatus($"Opened {SectionSchema.CanonFormatFile}");
+    }
+
+    private void AppendNarratorScalesReferenceCallout(
+        StackPanel panel,
+        string sourcesDir,
+        System.Windows.Media.Brush muted)
+    {
+        if (_bundle is null)
+            return;
+
+        AdventureSourceFileService.EnsureLayout(_bundle);
+        var scalesPath = AdventureSourceFileService.ResolveAbsolutePath(_bundle, SectionSchema.NarratorScalesFile);
+        var present = File.Exists(scalesPath);
+        var entry = _bundle.SourceManifest.Entries.FirstOrDefault(e =>
+            string.Equals(e.RelativePath, SectionSchema.NarratorScalesFile, StringComparison.OrdinalIgnoreCase));
+        var uploaded = entry?.IsManuallyCurrent() ?? false;
+        var accent = (System.Windows.Media.Brush)FindResource("AccentPrimaryBrush");
+
+        var status = !present
+            ? "Missing — run Refresh export in Source Manager or regenerate from JSON."
+            : uploaded
+                ? "Ready on disk and marked uploaded to Project."
+                : "Ready on disk — upload to ChatGPT Project → Files and mark Published in Source Manager.";
+
+        var callout = new StackPanel();
+        callout.Children.Add(new TextBlock
+        {
+            Text = "Narrator scales reference (narrator-scales.md)",
+            Style = (Style)FindResource("ShellSectionHeaderStyle"),
+            Margin = new Thickness(0, 0, 0, 4),
+        });
+        callout.Children.Add(CreateHintText(
+            "Auto-generated definitions for narrator preset selectors (length, detail, tone, difficulty, violence). Upload with canon-format and lore so packets and instructions resolve meaningfully.",
+            new Thickness(0, 0, 0, 4)));
+        callout.Children.Add(new TextBlock
+        {
+            Text = status,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = HintFontSize,
+            Foreground = uploaded ? (System.Windows.Media.Brush)FindResource("SuccessBrush") : accent,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        var menu = new Menu { Background = System.Windows.Media.Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left };
+        var root = new MenuItem { Header = "Narrator scales…", Padding = new Thickness(10, 4, 10, 4) };
+
+        var openItem = new MenuItem { Header = "Open narrator-scales.md", IsEnabled = present };
+        openItem.Click += (_, _) => OpenNarratorScalesReferenceFile();
+        root.Items.Add(openItem);
+
+        var copyItem = new MenuItem
+        {
+            Header = "Copy for Project upload",
+            IsEnabled = present,
+            ToolTip = "Copy file contents to paste into ChatGPT Project → Files",
+        };
+        copyItem.Click += (_, _) =>
+        {
+            if (!present)
+                return;
+
+            Clipboard.SetText(File.ReadAllText(scalesPath));
+            SetStatus("Copied narrator-scales.md to clipboard — paste into ChatGPT Project → Files.");
+        };
+        root.Items.Add(copyItem);
+
+        var sourceMgrItem = new MenuItem
+        {
+            Header = "Open Source Manager",
+            ToolTip = "Refresh export, drag files to Project, and mark Published",
+        };
+        sourceMgrItem.Click += async (_, _) =>
+        {
+            if (OpenSourceManagerAsync is not null)
+                await OpenSourceManagerAsync();
+            else
+            {
+                Directory.CreateDirectory(sourcesDir);
+                Process.Start(new ProcessStartInfo(sourcesDir) { UseShellExecute = true });
+                SetStatus($"Opened {sourcesDir}");
+            }
+        };
+        root.Items.Add(sourceMgrItem);
+
+        menu.Items.Add(root);
+        callout.Children.Add(menu);
+
+        panel.Children.Add(new Border
+        {
+            Style = (Style)FindResource("ShellCardStyle"),
+            Background = (System.Windows.Media.Brush)FindResource("AccentSubtleBrush"),
+            Margin = new Thickness(0, 0, 0, 12),
+            Child = callout,
+        });
+    }
+
+    private void OpenNarratorScalesReferenceFile()
+    {
+        if (_bundle is null)
+            return;
+
+        AdventureSourceFileService.EnsureLayout(_bundle);
+        var path = AdventureSourceFileService.ResolveAbsolutePath(_bundle, SectionSchema.NarratorScalesFile);
+        if (!File.Exists(path))
+        {
+            SetStatus("narrator-scales.md is missing — run Refresh export in Source Manager.");
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        SetStatus($"Opened {SectionSchema.NarratorScalesFile}");
     }
 
     private void PersistFieldsFromUi()

@@ -32,6 +32,11 @@ internal static class UtilityStoryContextSettingsService
     {
         metadata.Settings ??= new AdventureSettings();
         metadata.Settings.UtilityStoryContext ??= new UtilityStoryContextSettings();
+        metadata.Settings.ContentBoundaries ??= [];
+        metadata.Settings.CharacterPortrayalRules ??= [];
+        metadata.Settings.SessionNarratorOverrides ??=
+            new Dictionary<string, PlaySessionNarratorOverrides>(StringComparer.OrdinalIgnoreCase);
+        metadata.Settings.PlayTurnOverrides ??= new PlayTurnOverrideSettings();
     }
 
     public static void SetJobOverride(AdventureBundle bundle, string jobId, UtilityStoryContextSettings? settings)

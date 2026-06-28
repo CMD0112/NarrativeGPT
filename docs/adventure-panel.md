@@ -64,6 +64,8 @@ Implementation: `SetAppMode()` in `MainWindow.Adventures.cs`.
 
 Each side panel has its own collapse rail and resizable splitter (left: 200–640px as `PlaySidePanelWidth`; right: 180–480px as `PlayNotesPanelWidth`). Collapse state persists per adventure as `PlaySidePanelCollapsed` and `PlayNotesPanelCollapsed`. The right column hides automatically when no tabs or notes are assigned to the right host.
 
+**Focus chat:** Shell **Focus chat** (play header) or **View → Focus chat** (`Ctrl+Alt+0`) collapses **both** companion columns in one step and restores the prior widths/collapse state when toggled off. Per-panel rail pills remain available. Focus mode is session-only (not persisted to adventure metadata).
+
 **Layout customization:** Play settings → **Play surface** offers named presets (Writer, GM, Minimal) and per-tab placement (`Reference`, `Warnings`, `State`, `Notes` → Left / Right / Hidden). `PlayPanelLayoutService` and `PlayLayoutPresetLibrary` apply placement; `NavigateToPlayTab` expands the correct column and selects the tab in either host.
 
 - Entering play: `StartPlayModeAsync(adventureId)` loads the bundle, wires events, and calls `EnsurePlaySessionAsync` to validate or prompt for a **pinned play tab**.
@@ -135,12 +137,12 @@ The play sidebar is a **tabbed play companion**: session cockpit, reference enti
 | Title | `Metadata.Title`. |
 | **Play settings…** / **Sources…** | Primary `ShellCommandBarStyle` actions. Sources shown when linked or attention needed. |
 | **More…** | Rename, Link/Change Project (when banner hidden), Continue design. |
-| **◀ / ▶ left collapse toggle** | Grip capsule + chevron between left panel and chat — click chevron to hide/show; drag grip to resize (200–640px, `PlaySidePanelWidth`). Double-click grip for recommended width. |
-| **◀ / ▶ right collapse toggle** | Same grip family between chat and right companion host. Tooltip shows first line of notes when notes are on the right. Drag to resize (180–480px, `PlayNotesPanelWidth`). |
+| **◀ / ▶ left collapse toggle** | Grip capsule + chevron between left panel and chat — click chevron to hide/show (`Ctrl+Alt+L`); drag grip to resize (200–640px, `PlaySidePanelWidth`). Double-click grip for recommended width. |
+| **◀ / ▶ right collapse toggle** | Same grip family between chat and right companion host (`Ctrl+Alt+N`). Tooltip shows first line of notes when notes are on the right. Drag to resize (180–480px, `PlayNotesPanelWidth`). |
 
 ### Session cockpit
 
-Expanders: **Session** (pin / thread / sources), **Narrator** (scene profiles, scoped overrides with inherit, advanced directive), **AI tools** (wrap panel or **AI tools…** flyout below 280px), **Reviews** (pending-review banner with Memories / Summary / Entities / Cards shortcuts; `ShellBadgeStyle` count on expander header).
+Expanders: **Session** (pin / thread / sources), **Injection** (live packet preview + narrator overrides; packet-only badge), **AI tools** (wrap panel or **AI tools…** flyout below 280px), **Reviews** (pending-review banner with Memories / Summary / Entities / Cards shortcuts; `ShellBadgeStyle` count on expander header).
 
 A slim **pending review** row above expanders stays visible when review items exist. Review queue in the Reference tab appears only when navigated via Entities / `FocusEntityReviewQueue` (deduped from cockpit).
 
@@ -215,7 +217,7 @@ Linked Project play context is prepared when entering Play mode. Subsequent Send
 | **Wrapper composer** | Last messages not covered; scroll host reserves bottom inset |
 | **Attachment send** | Merged packet includes `=== ATTACHMENTS (staged with this turn) ===` when files staged |
 
-**Canonical play record:** The linked ChatGPT play thread is the narrative source of truth. Accepted turns in `log.json` are a derived cache synced on user prompt via `ThreadLogSyncService` + `SyncFromThreadDialog`. `thread-metadata.json` maps DOM ordinals. Turns are logged automatically on Send. Correct text via continuous-view surrogate edit — not local-only Undo/Edit turn.
+**Canonical play record:** The linked ChatGPT play thread is the narrative source of truth. Accepted turns in `log.json` are a derived cache synced on user prompt via `ThreadLogSyncService` + `SyncFromThreadDialog`. `thread-metadata.json` maps per-message linkage. Turns are logged automatically on Send. Correct text via continuous-view or weave context-menu edit (user or narrator); editing turn *N* supersedes later turns symmetrically. See [play-thread-canonical-adr.md](play-thread-canonical-adr.md).
 
 ### Panel layout customization (shipped)
 
@@ -230,9 +232,11 @@ Play settings → **Play surface**:
 
 Custom edits to the placement grid clear the active preset (`PlayLayoutPresetId` → null).
 
-### Narrator overrides (session cockpit + Next send)
+### Injection control surface (session cockpit + Next send)
 
 > **Full reference:** [Narrator Settings](narrator-settings.md) — scopes, scene profiles, advanced dialog, packet injection, persistence, and code map.
+
+The **Injection** expander is the live control surface for packet-level behavior. It shows a preview with section manifest (`[reference]` / `[delta]` / trimmed) and narrator overrides below. **Play settings → Next send** provides full packet text and turn directive.
 
 Narrator behavior can be modulated at three scopes:
 
@@ -260,7 +264,7 @@ Session note: …
 Keep this exchange terse and tactical.
 ```
 
-Configure from Play settings → **Next send** or the session cockpit **Narrator** expander. Below 280px panel width, use the **Narrator…** flyout to expand controls or open Advanced.
+Configure from Play settings → **Next send** or the session cockpit **Injection** expander. Below 280px panel width, use the **Injection…** flyout to expand controls or open Advanced.
 
 ---
 
@@ -404,20 +408,20 @@ Legacy entry point — opens **Play settings → Settings** tab (`PlayPromptInje
 | Element | Purpose |
 |---------|---------|
 | **Refresh** | Reload project list from ChatGPT |
-| `LinkedProjectBanner` | Warning when already linked; disables create-new tab |
-| **From list** | Select project from `ProjectList`; double-click or Link |
-| **Create new** | `NewProjectNameBox` — creates gizmo via API (blocked if already linked) |
-| **Advanced: URL** | Paste project URL or `g-p-…` id |
-| **Export and sync sources** | `SyncSourcesCheck` (default on) |
-| **Push narrator instructions** | `UpdateInstructionsCheck` (default off) |
-| **Create or pick play thread** | `CreateThreadCheck` (default on) |
-| **Link project** | Runs binding flow |
+| `ConnectionWarningPanel` | Inline sign-in hint + shortcut to Connection tab |
+| `LinkedProjectBanner` | Warning when already linked |
+| **From list** / **Create new** / **Paste URL** | Mode selector (radio chips) |
+| `ProjectList` | Select project; double-click or **Link Project** |
+| `NewProjectNameBox` | Create-new mode — creates gizmo via API |
+| `ManualUrlBox` | Paste URL mode |
+| **Link options** expander | `SyncSourcesCheck`, `UpdateInstructionsCheck`, `CreateThreadCheck` |
+| **Link Project** / **Switch Project** | Fixed footer primary action; context in `SelectedProjectLine` / `LinkActionHintLine` |
 
 #### Sources tab
 
 Same sync grid as `SourceSyncDialog` (file, state, action dropdown): **Refresh plan**, **Apply safe**, **Apply all**.
 
-**Footer:** Copy diagnostics, **Link project**, Close, **Done (linked)**.
+**Footer:** Copy diagnostics, **Link Project** / **Switch Project**, Close, **Done (linked)**. Shell command bar layout at 860×700 default size. Sources tab hidden until a project is linked.
 
 ---
 
@@ -508,12 +512,12 @@ Adventures build **prompt packets** from scenario, state, memory, entities, and 
 
 | Concept | User doc | Developer doc |
 |---------|----------|---------------|
-| Thin vs fat packets | [Instruction vs Sources](instruction-sources-paradigm.md) | [§5 Prompt packets](adventure-developer-reference.md#5-prompt-packets-source-delegated-vs-fat-fallback) |
+| Packet profiles | [Instruction vs Sources](instruction-sources-paradigm.md) | [§5 Prompt packets](adventure-developer-reference.md#5-prompt-packets-three-profiles) |
 | Project linking | [Projects & Source Sync](user-projects-and-sync.md) | [§6 Project linking](adventure-developer-reference.md#6-chatgpt-project-linking) |
 | Source publish/sync | [Projects & Source Sync](user-projects-and-sync.md) | [§7 Source export and sync](adventure-developer-reference.md#7-source-export-and-sync) |
 | Packet construction | [Prompt Construction Guide](prompt-construction-guide.md) | [adventure-developer-reference.md](adventure-developer-reference.md) |
 
-**Thin (source-delegated) packets** require a linked ChatGPT Project with all lore files **Published** (manual) or **InSync** (API). Otherwise the app uses **fat fallback** — lore inlined in every packet. Check readiness in Play settings → **Sources** or the play footer status line.
+**Source-delegated packets** require a linked ChatGPT Project with all lore files **Published**. Unlinked adventures use **minimal local** packets (opening + deltas). Linked but unpublished adventures show a send warning; **inline fallback** only if you proceed. Check readiness in Play settings → **Sources** or the play footer status line.
 
 **Data model and persistence:** JSON documents under `%LocalAppData%\ChatGPTWrapper\adventures\{guid}\`. See [Data Model Reference](data-model-reference.md) and [adventure-developer-reference.md §2–3](adventure-developer-reference.md#2-data-model).
 
@@ -622,7 +626,7 @@ Default mode is **manual publish** (`SourcePublishMode.Manual`).
    - Check **Published** in the wrapper when the Project copy matches local canonical content.
 4. Optional: **Play settings → Settings** → push/sync **Project instructions** (narrator contract) if you edited boundaries or portrayal rules.
 
-**Readiness gate:** Source-delegated (thin) packets require every lore file **Published** (manual) or **InSync** (API sync diagnostics). Until ready, sends use **fat fallback** — lore is inlined in the packet instead of delegated to Project files.
+**Readiness gate:** Source-delegated packets require every lore file **Published**. Until ready, preview uses delegated-shaped pointers with `Sources not ready:`; **inline fallback** only when you proceed after the send warning.
 
 Check status in:
 
@@ -739,7 +743,7 @@ Design thread rotation uses the same draft guard: **Start new design thread…**
 | Turn | Expect |
 |------|--------|
 | 2+ | `turn="N"` increments; `[[cgw:transcript]]` includes prior accepted turns on the **active** thread/session |
-| Source edits | Re-export → re-publish → next send picks up delegated pointers or fat fallback per readiness |
+| Source edits | Re-export → re-publish → next send picks up delegated pointers or inline fallback per readiness |
 | Branch | **Branch** copies timeline to a new adventure id; original unchanged |
 
 #### Quick decision tree
@@ -781,9 +785,21 @@ Sync dialog **CapabilitiesHint** points to API capabilities diagnostics path.
 | **Archived adventures** | Flag toggled but grid shows all adventures regardless of archive state. |
 | **Recap button** | Implemented in code-behind but hidden in XAML. |
 | **ProjectLinkWizard** | Superseded by `ProjectWorkspaceDialog`; wizard file retained. |
-| **Entity editing** | Play → **Reference** tab and Design → **Cast** → **Canon entities** use `EntityReferencePanel` (entity list in the side panel; **Edit** opens a modal `EntityEditDialog` so the panel stays uncluttered). Wide layouts can opt into `EntityWorkspaceHost` side panel via explicit `EditMode.SidePanel`. Schema-driven CRUD on `entities.json`. On save, **EntityEditSourceSyncService** auto-exports to `sources/*.md` and applies cross-canon renames; residual drift opens **Reconcile canon** or click session status **Sources out of sync — click to repair**. Row badges show in sync / sources stale / needs publish. Post-sync green banner: **View diff · Open Source Manager**. Review-queue accept/edit remains Play-only. See [entity-canon-change-paradigm.md](entity-canon-change-paradigm.md). |
+| **Entity editing** | Play → **Reference** tab and Design → **Cast** → **Canon entities** use `EntityReferencePanel` for list/filter/search only; **all** create/edit opens `EntityEditDialog` (dialog-only policy). Schema-driven CRUD on `entities.json`. On save, **EntityEditSourceSyncService** auto-exports to `sources/*.md`; residual drift opens **Reconcile canon** or click row sync badges. Post-sync green banner (**View diff · Open Source Manager**) is suppressed when the staged canon commit bar is visible. **Canon inbox** aggregates pending work (entity proposals deduped from Play review banner when that banner is open). Review-queue accept/edit remains Play-only. JSON archive export includes `entity-media/`. See [entity-canon-change-paradigm.md](entity-canon-change-paradigm.md). |
+
+### Play / Design entity parity
+
+| Capability | Play Reference | Design Cast |
+|------------|----------------|-------------|
+| CRUD, rename/merge/retire | Yes (toolbar + context + More) | Yes (toolbar + context; More hidden) |
+| Pin / AI suggest / expand | Yes | No (by design) |
+| Review queue accept | Yes | No |
+| Canon inbox entry | Footer menu | Header **More…** menu |
+| Post-sync notice | `CanonSyncNoticeBanner` | Same banner pattern |
+| Edit mode | Dialog only | Dialog only |
+| Pinned field in editor | Yes | Hidden (`ShowPinToggle=false`) |
 | **Automation off** | Every turn copies packet to clipboard; user pastes response manually. |
-| **Thin / source-delegated packets** | Require linked Project **and** published/in-sync sources; otherwise fat fallback. Blocked linked adventures surface `Sources not ready: …` in `[[cgw:sources]]` ALWAYS RETRIEVE (not silent `(none)`). |
+| **Source-delegated packets** | Require linked Project **and** published lore; unlinked uses minimal local. Blocked linked adventures surface `Sources not ready: …` in `[[cgw:sources]]` ALWAYS RETRIEVE (not silent `(none)`). |
 | **Duplicate remote files** | Same basename with multiple ChatGPT file ids → LocalOnly + RemoteOnly pairs; use **Reconcile duplicates…** to remove orphans (confirm before delete). Planner also auto-collapses pairs when possible. |
 | **Ghost / 404 project files** | Listed on project but not downloadable; browser shows `{"detail":"Not found."}`. Delete in ChatGPT UI, Refresh plan, Apply all. Banner may show listed-not-downloadable or stale-binding counts. |
 | **Unmanaged remote files** | Files on Project not matched to manifest paths are listed as unmatched; sync dialog leaves them unchanged unless reconciled. |

@@ -36,8 +36,7 @@ internal static class CanonEntityResolver
     {
         if (string.Equals(uiCategory, "Player", StringComparison.OrdinalIgnoreCase))
         {
-            if (!string.IsNullOrWhiteSpace(entities.Player.Name))
-                yield return entities.Player;
+            yield return entities.Player;
             yield break;
         }
 
@@ -94,6 +93,9 @@ internal static class CanonEntityResolver
             ConceptEntry c => c.Id,
             QuestEntry q => q.Id,
             InventoryEntry i => i.Id,
+            MysteryEntry m => m.Id,
+            ConflictEntry c => c.Id,
+            ConsequenceEntry c => c.Id,
             CustomEntry c => c.Id,
             _ => Guid.Empty,
         };
@@ -102,16 +104,17 @@ internal static class CanonEntityResolver
     private static IEnumerable<object> GetCollection(EntitiesDocument entities, CanonEntityKindSpec spec) =>
         spec.CollectionKey switch
         {
-            "party" => entities.Party.Cast<object>(),
-            "characters" => entities.Characters.Cast<object>(),
-            "locations" => entities.Locations.Cast<object>(),
-            "factions" => entities.Factions.Cast<object>(),
-            "concepts" => entities.Concepts.Cast<object>(),
-            "quests" => entities.Quests.Cast<object>(),
-            "inventory" => entities.Inventory.Cast<object>(),
-            "mysteries" => entities.Mysteries.Cast<object>(),
-            "conflicts" => entities.Conflicts.Cast<object>(),
-            "consequences" => entities.Consequences.Cast<object>(),
+            "party" => (entities.Party ?? []).Cast<object>(),
+            "characters" => (entities.Characters ?? []).Cast<object>(),
+            "locations" => (entities.Locations ?? []).Cast<object>(),
+            "factions" => (entities.Factions ?? []).Cast<object>(),
+            "concepts" => (entities.Concepts ?? []).Cast<object>(),
+            "quests" => (entities.Quests ?? []).Cast<object>(),
+            "inventory" => (entities.Inventory ?? []).Cast<object>(),
+            "mysteries" => (entities.Mysteries ?? []).Cast<object>(),
+            "conflicts" => (entities.Conflicts ?? []).Cast<object>(),
+            "consequences" => (entities.Consequences ?? []).Cast<object>(),
+            "custom" => (entities.CustomEntries ?? []).Cast<object>(),
             _ => [],
         };
 
@@ -140,6 +143,18 @@ internal static class CanonEntityResolver
             case "inventory" when entity is InventoryEntry i:
                 entities.Inventory.Add(i);
                 break;
+            case "mysteries" when entity is MysteryEntry m:
+                entities.Mysteries.Add(m);
+                break;
+            case "conflicts" when entity is ConflictEntry c:
+                entities.Conflicts.Add(c);
+                break;
+            case "consequences" when entity is ConsequenceEntry c:
+                entities.Consequences.Add(c);
+                break;
+            case "custom" when entity is CustomEntry c:
+                entities.CustomEntries.Add(c);
+                break;
         }
     }
 
@@ -153,6 +168,10 @@ internal static class CanonEntityResolver
             "concepts" => entities.Concepts.RemoveAll(e => e.Id == id) > 0,
             "quests" => entities.Quests.RemoveAll(e => e.Id == id) > 0,
             "inventory" => entities.Inventory.RemoveAll(e => e.Id == id) > 0,
+            "mysteries" => entities.Mysteries.RemoveAll(e => e.Id == id) > 0,
+            "conflicts" => entities.Conflicts.RemoveAll(e => e.Id == id) > 0,
+            "consequences" => entities.Consequences.RemoveAll(e => e.Id == id) > 0,
+            "custom" => entities.CustomEntries.RemoveAll(e => e.Id == id) > 0,
             _ => false,
         };
 }

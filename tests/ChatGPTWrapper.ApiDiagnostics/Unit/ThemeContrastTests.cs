@@ -96,6 +96,13 @@ public sealed class ThemeContrastTests
         Assert.Empty(ThemeContrast.ValidateTokens(resolved.Tokens));
     }
 
+    [Fact]
+    public void EnsureReadable_darkens_light_yellow_on_light_assistant_canvas()
+    {
+        var adjusted = ThemeContrast.EnsureReadable("#E8E8E8", "#F5F5F5");
+        Assert.True(ThemeContrast.IsReadable(adjusted, "#F5F5F5"));
+    }
+
     public static IEnumerable<object[]> PresetIds =>
         ThemePresetIds.AllBuiltIn.Select(id => new object[] { id });
 }

@@ -8,7 +8,7 @@ Canonical workspace reference for **creating and updating** Linear issues on tea
 
 **Dual canon:** `docs/linear-issue-reference.md` and the Linear taxonomy doc must stay aligned. Agents are required to update **both** whenever labels, statuses, or workflow policy change (see [Maintaining this reference](#maintaining-this-reference) and `.cursor/rules/linear-issues.mdc`).
 
-**Last synced with Linear labels:** 2026-06-18
+**Last synced with Linear labels:** 2026-06-25
 
 ---
 
@@ -22,6 +22,7 @@ Canonical workspace reference for **creating and updating** Linear issues on tea
 6. **Status** — match [workflow statuses](#workflow-statuses); use the disambiguation table; if none fit, [recommend a new status](#recommending-a-new-status) to the user before forcing a wrong one.
 7. **Relations** — set `blockedBy` / parent epic when applicable.
 8. **PR linkage** — branch name or `Fixes CMD-XX` / `Ref CMD-XX` per [linear-integration.md](linear-integration.md).
+9. **Attachments** — upload evidence when it aids triage or QA (see [Issue attachments](#issue-attachments)); never upload secrets.
 
 ---
 
@@ -63,7 +64,7 @@ Omit when the issue is pure WPF chrome with no named subsystem (see note below).
 | **Continuous View** | Segment model, CSS/formatting, ordering, overlay behavior in continuous transcript view | `ContinuousViewFormatDialog`; segment ordering; CV preview | Play packet construction (use **Play Packet**); browse chrome unrelated to CV (use **Browse** area) |
 | **Sources** | `sources/*.md`, Source Manager, publish/sync, deterministic or LLM import/export | `SourceManagerDialog`; source sync; JSON import from sources | Instruction snippet contract (use **Instructions**); `log.json` (use **Metadata**) |
 | **Instructions** | Instruction contract, OOC canon, Instructions Designer, `instructions-snippet.md` | Instruction designer; contract validation; publish instructions to Project | Lore body in source files (use **Sources**); runtime packet tags (use **Play Packet**) |
-| **Utility Jobs** | Generation jobs, utility thread, parse log, background AI actions orchestrated as jobs | `GenerationJobHandlers`; utility thread reuse; job readiness gate | Ad-hoc play-turn send (use **Play Packet** + **Play** area) |
+| **Utility Jobs** | Play-thread utility orchestration: generation jobs, AI actions, schema responses, hidden utility traffic, structured retrieval | `GenerationJobHandlers`; injection-driven utility execution; `UtilityParseLogService` | Ad-hoc play-turn send without job orchestration (use **Play Packet** + **Play** area); design-thread-only source jobs (use **Design** + **Sources**) |
 | **Metadata** | `log.json`, `thread-metadata.json`, turn timeline, chat records, persistence of session metadata | Turn timeline; thread metadata migration; chat record shape | Source lore content (use **Sources**); packet injection strings (use **Play Packet**) |
 | **Composer** | Native or wrapper composer UI, attachments, in-chat file staging/I/O | Attachment staging; composer file picker; play compose bridge | Packet builder logic without composer UI (use **Play Packet**) |
 
@@ -241,6 +242,20 @@ Statuses express **where an issue is in its lifecycle**. They are not interchang
 
 **Auto-close:** `Fixes CMD-XX` in PR may set **Done** on merge if no manual QA required.
 
+#### Done — Review Later
+
+**Use when:** Work is **complete and accepted for now**, but may need to be revisited if new context, edge cases, feedback, or follow-up requirements emerge.
+
+- PR merged and current acceptance criteria met for the known scope
+- Shipped solution is good enough to stop active work, with documented caveats or open questions
+- Spike or time-boxed outcome accepted pending future evaluation
+
+**Do not use when:** Work is fully verified with no expected revisit → **Done** + **Verified**. Code merged but manual QA not run when **Needs Manual QA** applies → stay **In Review**. Implementation incomplete → **In Progress** / **In Review**. Abandoned or won't pursue → **Out of Scope** / **Canceled**.
+
+**Agent default:** **Comment** when closing here — note what might trigger revisit (edge cases, feedback, follow-up ideas). Add **Verified** if current scope is met; remove **Needs Manual QA**. Link follow-up issues in **Related** when they exist.
+
+**Auto-close:** Git automations do **not** set this status — choose it manually when **Done** is too strong a close.
+
 ---
 
 ### Canceled
@@ -301,6 +316,8 @@ Statuses express **where an issue is in its lifecycle**. They are not interchang
 | CI green, ready to click merge | **Ready to Merge** | Done |
 | Superseded design direction | **Out of Scope** | Duplicate, Canceled |
 | Flaky WebView glitch, no repro | **Could Not Reproduce** | Out of Scope |
+| Shipped, accepted for now, may revisit | **Done — Review Later** | Done, In Review |
+| Fully verified, no expected revisit | **Done** + **Verified** | Done — Review Later |
 
 ### Staging lanes (solo dev)
 
@@ -312,6 +329,7 @@ Statuses express **where an issue is in its lifecycle**. They are not interchang
 | **Committed** | Backlog | Scheduled work, priority-ordered |
 | **Someday** | Icebox | Not committed to current milestone |
 | **Shipped** | Done + **Verified** | Closed and audit-confirmed |
+| **Shipped (provisional)** | Done — Review Later | Accepted for now; may revisit |
 | **Closed** | Out of Scope, Duplicate, Canceled, Could Not Reproduce | Will not pursue |
 
 ### Status flow
@@ -332,7 +350,8 @@ Icebox → Backlog → Todo → In Progress → In Review → Ready to Merge →
 | In Progress → In Review | PR opened for review (non-draft) |
 | In Review → Ready to Merge | CI green (often automatic) |
 | Ready to Merge → In Review | After merge when manual QA remains |
-| In Review → Done | Manual QA passed or fully automated coverage |
+| In Review → Done | Manual QA passed or fully automated coverage; no expected revisit |
+| In Review → Done — Review Later | Accepted for now; document what may trigger revisit |
 | Any → Blocked | `blockedBy` added; issue is committed but waiting |
 | Blocked → Todo | All blockers Done; clear `blockedBy` |
 | → Done | Add **Verified** on leaf issues; remove **Needs Manual QA** |
@@ -345,7 +364,8 @@ Icebox → Backlog → Todo → In Progress → In Review → Ready to Merge →
 4. **Cap In Progress** at 2–3 issues; prefer updating existing issues over opening duplicates.
 5. **Epic Done:** Epic may be **Done** when core scope shipped even if optional children remain; list open children in the epic description.
 6. **Wave / plan labels** (**Shell UX Plan**, **shell-ux-wave**): do not move past **In Review** until epic sign-off.
-7. **Comment** when moving to **Blocked**, **Out of Scope**, or **Could Not Reproduce** — future readers need the why.
+7. **Comment** when moving to **Blocked**, **Out of Scope**, **Could Not Reproduce**, or **Done — Review Later** — future readers need the why.
+8. **Done — Review Later** vs **Done:** use **Done — Review Later** when work is accepted for now but may need revisit; use **Done** + **Verified** when fully verified with no expected follow-up.
 
 ### Recommending a new status
 
@@ -441,6 +461,62 @@ What must be true before the epic is **Done**.
 | Status change rationale | **Comment** (brief) |
 | Post-merge QA result | **Comment** + move to **Done** + add **Verified** |
 
+### Issue attachments
+
+**Plan:** CMD0112 has **unlimited file uploads** on Linear. Prefer attaching visual or binary evidence to issues instead of pasting large blobs into descriptions or chat-only notes.
+
+#### Where to attach
+
+| Target | Use when | MCP / method |
+|--------|----------|--------------|
+| **Issue attachment** | Persistent evidence tied to the ticket — repro, before/after, QA proof | `prepare_attachment_upload` → PUT bytes → `create_attachment_from_upload` |
+| **Comment + attachment** | New evidence during implementation or QA (progress update) | Same upload flow on the issue; reference the file in the comment |
+| **Link attachment** | External canonical source already hosted elsewhere | `save_issue` `attachments: [{ url, title }]` — PRs, GitHub blobs, docs URLs |
+| **Description only** | Small inline context — short text, markdown links, tiny ASCII | No file upload |
+
+Issue attachments appear on the issue record and survive status changes. Use **link attachments** for PRs and repo docs; use **file uploads** for screenshots, recordings, exports, and logs that only exist locally.
+
+#### When agents should upload
+
+Upload when the file **materially helps** someone reproduce, review, or verify the issue:
+
+| Situation | Typical attachments |
+|-----------|---------------------|
+| **Bug** / **Regression** | Screenshot or short recording of wrong behavior; annotated UI state |
+| **Needs Manual QA** | Before/after screenshots from a real play/design session; short clip of repro steps |
+| **Post-merge QA** | Pass/fail evidence when closing to **Done** + **Verified** |
+| **WebView** / **ChatGPT Fragile** | DOM/UI screenshot, trimmed console excerpt (scrubbed), selector context |
+| **Feature** / **Improvement** (UI) | Mockup, layout comparison, or “expected vs actual” when words are insufficient |
+| **Spike** | Findings diagram or export when too large for the description |
+
+**Do not upload** when a GitHub PR, commit, or `docs/*.md` link already holds the artifact. **Do not upload** build outputs, whole repos, or redundant duplicates of PR diff content.
+
+#### When not to upload
+
+- **Secrets** — `.env`, credentials, session cookies, API tokens, personal data
+- **Unbounded logs** — full WebView/network dumps unless trimmed and scrubbed
+- **Replaceable repo content** — cite `docs/…` or the PR instead
+- **Chat-only handoff** — if the user needs the file in Linear for tracking, attach it to the issue
+
+#### MCP upload workflow (preferred)
+
+Use direct upload for anything beyond a few KB. **Do not** use deprecated `create_attachment` (base64 through MCP) except as a last resort for tiny files.
+
+1. **Create or locate the issue** — attachments require an existing issue id (e.g. `CMD-123`).
+2. **`prepare_attachment_upload`** — pass `issue`, `filename`, `contentType`, exact `size` (bytes), optional `title`/`subtitle`.
+3. **PUT raw bytes** — `curl -X PUT --data-binary @path` (or equivalent) to `uploadRequest.url` with **every** header from `uploadRequest.headers` verbatim (signed URL; expires in ~60s).
+4. **`create_attachment_from_upload`** — pass `issue` and `assetUrl` from step 2.
+
+**Sequencing:** finish prepare → PUT → finalize for **one file** before starting the next. Do not batch multiple `prepare_attachment_upload` calls — earlier signed URLs expire while later files are prepared.
+
+**Limits:** single file < 2 GB (Linear API). With unlimited plan, prefer attaching over omitting evidence for size reasons alone; still avoid huge unhelpful dumps.
+
+#### Naming and titles
+
+- **Filename:** descriptive and stable — `play-packet-duplicate-meta.png`, not `Screenshot 2026-06-21.png`.
+- **Title:** what the image proves — `Repro: duplicate turn meta on re-send`.
+- **Subtitle (optional):** session context — `Play thread, CV overlay enabled`.
+
 ### Agent create defaults
 
 | Field | Default unless user specifies otherwise |
@@ -457,6 +533,7 @@ What must be true before the epic is **Done**.
 - **Prefer** `save_issue` / `save_comment` over silent local-only notes.
 - **Sync labels** when scope shifts (e.g. Bug → Improvement after investigation).
 - **Link PRs** in comments with https GitHub URLs.
+- **Attach evidence** to the issue when triage or QA benefits (see [Issue attachments](#issue-attachments)); unlimited uploads enabled.
 - **Cite issues** in chat as `https://linear.app/cmd0112/issue/CMD-XX` (see `.cursor/rules/linear-issue-links.mdc`).
 
 ---
@@ -474,6 +551,7 @@ What must be true before the epic is **Done**.
 | New / renamed status | Team workflow settings | Status reference + promotion rules | `linear-integration.md` if git-linked |
 | Workflow / QA / epic policy | Linear taxonomy doc | Matching section | Agent status rules |
 | Issue body templates | Both docs | This file | `.cursor/rules/linear-issues.mdc` if essentials change |
+| Attachment / upload policy | Linear taxonomy doc | [Issue attachments](#issue-attachments) | Agent update discipline |
 | Git ↔ status automations | Linear + taxonomy doc | Status + promotion sections | `linear-integration.md` |
 
 ### Sync workflow (either direction)

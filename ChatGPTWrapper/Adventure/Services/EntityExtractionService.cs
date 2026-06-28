@@ -533,6 +533,9 @@ internal static class EntityExtractionService
 
     private static bool ApplyConcept(EntitiesDocument entities, string name, string desc, string category, string action)
     {
+        if (EntitiesCanonHygieneService.NameOwnedByOtherCategory(entities, name, out _))
+            return false;
+
         var existing = entities.Concepts.FirstOrDefault(c =>
             string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (existing is not null && string.Equals(action, "update", StringComparison.OrdinalIgnoreCase))

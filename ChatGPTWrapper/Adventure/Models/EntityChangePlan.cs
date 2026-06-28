@@ -56,16 +56,28 @@ public sealed class EntityChangePlan
 
     public List<string> AffectedFiles { get; set; } = [];
 
+    public List<string> PhraseHighlightUpdates { get; set; } = [];
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
-    public string Summary =>
-        Intent switch
+    public string Summary
+    {
+        get
         {
-            EntityChangeIntent.Rename => $"Rename {PriorName} → {NewName}",
-            EntityChangeIntent.Delete => $"Delete {PriorName ?? NewName}",
-            EntityChangeIntent.Merge => $"Merge into {NewName}",
-            EntityChangeIntent.Retire => $"Retire {PriorName ?? NewName}",
-            EntityChangeIntent.Create => $"Create {NewName}",
-            _ => $"Update {NewName ?? PriorName}",
-        };
+            var baseSummary = Intent switch
+            {
+                EntityChangeIntent.Rename => $"Rename {PriorName} → {NewName}",
+                EntityChangeIntent.Delete => $"Delete {PriorName ?? NewName}",
+                EntityChangeIntent.Merge => $"Merge into {NewName}",
+                EntityChangeIntent.Retire => $"Retire {PriorName ?? NewName}",
+                EntityChangeIntent.Create => $"Create {NewName}",
+                _ => $"Update {NewName ?? PriorName}",
+            };
+
+            if (PhraseHighlightUpdates.Count == 0)
+                return baseSummary;
+
+            return $"{baseSummary} · {PhraseHighlightUpdates.Count} highlight rule{(PhraseHighlightUpdates.Count == 1 ? "" : "s")}";
+        }
+    }
 }

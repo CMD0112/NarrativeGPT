@@ -3,7 +3,7 @@
 
   var kernel = globalThis.__cgwPageKernel;
   var composerDom = globalThis.__cgwComposerDom;
-  var COMPOSE_VERSION = 24;
+  var COMPOSE_VERSION = 29;
   var MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
   var MAX_ATTACHMENTS = 10;
   var DOM_FALLBACK_STASH_KEY = "__cgwDomFallbackAttachmentStash";
@@ -59,6 +59,16 @@
   function relocateNativeComposerChrome(anchor, root) {
     var cd = composer();
     if (cd) cd.relocateNativeComposerChrome(anchor, root);
+    syncWrapperComposeTheme(root);
+  }
+
+  function syncWrapperComposeTheme(root) {
+    root = root || getMounted();
+    if (!root) return;
+    var cd = composer();
+    if (cd && typeof cd.syncComposeThemeFromNative === "function") {
+      cd.syncComposeThemeFromNative(root);
+    }
   }
 
   function restoreNativeFromOffscreen() {
@@ -234,18 +244,32 @@
         ) {
           return;
         }
-        ev.preventDefault();
-        ev.stopPropagation();
-        ev.stopImmediatePropagation();
-        if (!canInterceptNativeSend()) {
-          var state = globalThis.__cgwPlayComposeState || {};
-          sendLog("warn", "compose_send_blocked", "Native send blocked while host is busy", {
+        var state = globalThis.__cgwPlayComposeState || {};
+        var interceptAllowed = canInterceptNativeSend();
+        sendLog("debug", "compose_native_submit_click", "Native composer submit clicked", {
+          passthrough: !!globalThis.__cgwNativeComposePassthrough,
+          busy: !!state.busy,
+          sendInFlight: sendInFlight,
+          globalInFlight: !!globalThis.__cgwComposeSendInFlight,
+          bridgeAutomation: !!globalThis.__cgwBridgeAutomationActive,
+          interceptAllowed: interceptAllowed,
+        });
+        if (!interceptAllowed) {
+          sendLog("warn", "compose_send_blocked", "Native send blocked; intercept unavailable", {
+            passthrough: !!globalThis.__cgwNativeComposePassthrough,
             busy: !!state.busy,
             sendInFlight: sendInFlight,
             globalInFlight: !!globalThis.__cgwComposeSendInFlight,
+            bridgeAutomation: !!globalThis.__cgwBridgeAutomationActive,
           });
+          ev.preventDefault();
+          ev.stopPropagation();
+          ev.stopImmediatePropagation();
           return;
         }
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
         triggerNativeSend("submit-click");
       },
       true
@@ -286,6 +310,7 @@
         }
         if (current && current.node && mounted) {
           relocateNativeComposerChrome(current.node, mounted);
+          syncWrapperComposeTheme(mounted);
         }
       }
     );
@@ -303,15 +328,17 @@
   function startMountPoll() {
     stopMountPoll();
     if (getMounted()) return;
+    globalThis.__cgwComposeAllowBodyFallback = false;
     var attempts = 0;
     mountPollTimer = setInterval(function () {
       if (!globalThis.__cgwWrapperComposer) {
         stopMountPoll();
         return;
       }
+      if (attempts >= 30) globalThis.__cgwComposeAllowBodyFallback = true;
       mountWrapperComposer();
       attempts++;
-      if (attempts >= 20 || getMounted()) stopMountPoll();
+      if (attempts >= 60 || getMounted()) stopMountPoll();
     }, 150);
   }
 
@@ -423,6 +450,11 @@
     if (!sendBtn) return;
     var state = globalThis.__cgwPlayComposeState || {};
     var root = getMounted();
+    if (state.sendEnabled === false) {
+      sendBtn.disabled = true;
+      updateUploadFooter(root);
+      return;
+    }
     if (state.busy || sendInFlight || anyAttachmentUploading()) {
       sendBtn.disabled = true;
       updateUploadFooter(root);
@@ -744,7 +776,12 @@
     if (!input) return;
     input.style.height = "auto";
     var next = Math.min(input.scrollHeight, 200);
-    input.style.height = Math.max(24, next) + "px";
+    var height = Math.max(24, next);
+    input.style.height = height + "px";
+    var multiline = height > 28;
+    input.classList.toggle("cgw-compose-multiline", multiline);
+    var main = input.closest(".cgw-compose-main");
+    if (main) main.classList.toggle("cgw-compose-multiline", multiline);
   }
 
   function getMounted() {
@@ -1113,14 +1150,14 @@
 
     root.innerHTML =
       '<div class="cgw-compose-wrap">' +
-      '<div class="cgw-compose-shell">' +
+      '<div class="cgw-compose-shell" data-composer-surface="true">' +
       '<div class="cgw-compose-attachments" hidden></div>' +
       '<div class="cgw-compose-main">' +
       '<button type="button" class="cgw-compose-attach" aria-label="Attach files" title="Attach files">' +
       attachIconSvg() +
       "</button>" +
       '<input type="file" class="cgw-compose-file-input" multiple tabindex="-1" aria-hidden="true" />' +
-      '<textarea class="cgw-compose-input" rows="1" aria-label="Message ChatGPT" placeholder="Message ChatGPT"></textarea>' +
+      '<textarea class="cgw-compose-input" rows="1" aria-label="Message ChatGPT" placeholder="Ask anything"></textarea>' +
       '<button type="button" class="cgw-compose-send" aria-label="Send message" title="Send (Enter)" disabled>' +
       sendIconSvg() +
       "</button>" +
@@ -1226,8 +1263,16 @@
     var anchorInfo = findComposerAnchor();
     if (!anchorInfo || !anchorInfo.node) return;
 
-    var anchor = anchorInfo.node;
     var existing = getMounted();
+    var existingLive = !!(existing && existing.isConnected);
+
+    // Avoid docking to document.body while ChatGPT's native composer is still hydrating.
+    if (anchorInfo.mode === "fixed" && anchorInfo.node === document.body) {
+      if (existingLive && !existing.classList.contains("cgw-compose-fixed")) return;
+      if (!existingLive && !globalThis.__cgwComposeAllowBodyFallback) return;
+    }
+
+    var anchor = anchorInfo.node;
 
     if (existing && anchor.contains(existing)) {
       if (anchorInfo.mode === "fixed") {
@@ -1258,6 +1303,7 @@
 
     paintComposeDomFromState(globalThis.__cgwPlayComposeState || {}, {});
     relocateNativeComposerChrome(anchor, root);
+    syncWrapperComposeTheme(root);
     isolateNativeComposerFocus();
     if (typeof applyPlaySurfaceActions === "function") applyPlaySurfaceActions();
     bindComposerInsetObserver();
@@ -1306,6 +1352,16 @@
     if (typeof state.status === "string" && footer) {
       footer.textContent = state.status;
     }
+
+    if (state.injectionArmed === false && state.injectionArmReason && footer) {
+      footer.textContent =
+        (state.status ? state.status + " — " : "") +
+        "Injection disarmed (" +
+        state.injectionArmReason +
+        ")";
+    }
+
+    root.classList.toggle("cgw-compose-disarmed", state.injectionArmed === false);
   }
 
   function applyComposeState(patch) {
@@ -1446,17 +1502,106 @@
     });
   }
 
+  function wrapperInputConsumesWheel(target, e) {
+    var root =
+      target && target.closest
+        ? target.closest("#cgw-play-composer-root")
+        : null;
+    if (!root) return false;
+    var input = root.querySelector(".cgw-compose-input");
+    if (!input || (target !== input && !input.contains(target))) return false;
+    if (input.scrollHeight <= input.clientHeight + 2) return false;
+    var atTop = input.scrollTop <= 0;
+    var atBottom =
+      input.scrollTop + input.clientHeight >= input.scrollHeight - 2;
+    if (e.deltaY < 0 && !atTop) return true;
+    if (e.deltaY > 0 && !atBottom) return true;
+    return false;
+  }
+
+  function composeDiagScroll(eventName, message, data) {
+    if (!globalThis.__cgwExtendedDiagnostics) return;
+    var k = globalThis.__cgwPageKernel;
+    if (k && k.bus && typeof k.bus.diagnosticsLog === "function") {
+      k.bus.diagnosticsLog("debug", eventName, message, data, "play-compose", "compose");
+    }
+  }
+
+  function bindNativeTranscriptWheelForward() {
+    if (globalThis.__cgwComposeNativeWheelForwardBound) return;
+    globalThis.__cgwComposeNativeWheelForwardBound = true;
+    document.addEventListener(
+      "wheel",
+      function (e) {
+        if (globalThis.__cgwContinuousViewEnabled) return;
+        if (!globalThis.__cgwWrapperComposer) return;
+        if (!e.target || !e.target.closest) return;
+        if (!e.target.closest("#cgw-play-composer-root")) return;
+        if (wrapperInputConsumesWheel(e.target, e)) return;
+        var host =
+          document.querySelector(".cgw-transcript-scroll-host") ||
+          document.querySelector("main");
+        if (!host || host.scrollHeight <= host.clientHeight + 2) {
+          composeDiagScroll("scroll_wheel_skip", "native_no_scroll_host", {
+            deltaY: e.deltaY,
+            hasHost: !!host,
+          });
+          return;
+        }
+        var max = Math.max(0, host.scrollHeight - host.clientHeight);
+        var before = host.scrollTop;
+        host.scrollTop = Math.max(0, Math.min(max, host.scrollTop + e.deltaY));
+        composeDiagScroll("scroll_wheel_native_forward", "Native mode wheel over composer", {
+          deltaY: e.deltaY,
+          before: before,
+          after: host.scrollTop,
+          max: max,
+        });
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      { passive: false, capture: true }
+    );
+  }
+
+  function notifyContinuousViewComposerLayout() {
+    if (typeof globalThis.__cgwUpdateComposerClearance === "function") {
+      globalThis.__cgwUpdateComposerClearance();
+    }
+    if (!globalThis.__cgwContinuousViewEnabled) return;
+    var container = document.getElementById("cgw-continuous-view");
+    if (!container) return;
+    var host =
+      (container.parentElement &&
+        container.parentElement.classList &&
+        container.parentElement.classList.contains("cgw-transcript-scroll-host") &&
+        container.parentElement) ||
+      document.querySelector(".cgw-transcript-scroll-host");
+    if (host && typeof globalThis.__cgwSyncOverlayGeometry === "function") {
+      globalThis.__cgwSyncOverlayGeometry(host, container, { preserveScroll: true });
+    }
+  }
+
   function updateComposerScrollInset() {
     var root = document.getElementById("cgw-play-composer-root");
     var height = root ? root.getBoundingClientRect().height : 0;
     var inset = Math.max(0, Math.ceil(height + 12));
+    var cvActive =
+      !!globalThis.__cgwContinuousViewEnabled ||
+      !!document.getElementById("cgw-continuous-view");
     document.documentElement.style.setProperty("--cgw-composer-inset", inset + "px");
     document.querySelectorAll(".cgw-transcript-scroll-host").forEach(function (host) {
-      host.style.paddingBottom = inset + "px";
+      if (cvActive) {
+        host.style.removeProperty("padding-bottom");
+      } else {
+        host.style.paddingBottom = inset + "px";
+      }
     });
+    notifyContinuousViewComposerLayout();
   }
 
   function bindComposerInsetObserver() {
+    bindNativeTranscriptWheelForward();
     if (globalThis.__cgwComposerInsetObserver) return;
     var root = document.getElementById("cgw-play-composer-root");
     if (!root || typeof ResizeObserver === "undefined") {

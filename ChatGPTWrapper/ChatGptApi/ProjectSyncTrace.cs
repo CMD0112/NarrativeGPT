@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ChatGPTWrapper.Diagnostics;
 
 namespace ChatGPTWrapper.ChatGptApi;
 
@@ -352,6 +353,18 @@ internal static class ProjectSyncTrace
             ? ""
             : $"[run={run.RunIdShort}] [{entry.Phase ?? "sync"}/{entry.Category}] ";
         ProjectLinkDiagnostics.LogMirror($"{mirrorPrefix}{message}");
+
+        DiagnosticsMirror.MirrorSyncEvent(
+            eventName,
+            entry.Level ?? "info",
+            entry.Category,
+            message,
+            runId: run?.RunId,
+            runIdShort: run?.RunIdShort,
+            adventureId: run?.AdventureId,
+            durationMs: durationMs,
+            outcome: outcome,
+            data: data);
     }
 
     internal static void CompleteRun(

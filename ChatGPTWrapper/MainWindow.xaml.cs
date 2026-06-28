@@ -1,5 +1,8 @@
+using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Theme;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -22,9 +25,11 @@ public partial class MainWindow : Window
         ConfigureChatTabsChrome();
         WireShellStatusBarHandlers();
         UpdateModeButtonStyles();
+        InitializeShellShortcuts();
 
         Loaded += (_, _) =>
         {
+            PhraseHighlightRulesChanged += OnPhraseHighlightRulesChanged;
             StartBrowserTabsInitialization(async () =>
             {
                 InitializeAdventureUi();
@@ -42,6 +47,21 @@ public partial class MainWindow : Window
                 GetOrRegisterAdventureBridge(active);
                 ApplyWrapperComposerToPlayTab(true);
             }
+
+            if (GetActiveWebView() is { } wv && DiagnosticsOptions.Extended)
+            {
+                UiEventLogger.Debug(
+                    "chat_tab_selected",
+                    "Active ChatGPT tab changed",
+                    new
+                    {
+                        tabKey = PlayTabPinService.GetTabKey(wv, ChatTabs),
+                        source = wv.CoreWebView2?.Source,
+                        appMode = _appMode.ToString(),
+                    });
+            }
+
+            SyncUtilityWorkerWebViewParking();
         };
     }
 
@@ -130,11 +150,25 @@ public partial class MainWindow : Window
             _chrome,
             ResolveActiveAdventureIdForFormatImport,
             (settings, persist, preview) => ApplyDialogSettings(settings, persist, preview),
-            ApplyThemeSettings)
+            ApplyThemeSettings,
+            OpenThreadsHubFromPreferences,
+            () => _appMode == AppMode.Design,
+            GetPlayThreadUserMessageCountAsync)
         {
             Owner = this,
         };
         dialog.ShowDialog();
+    }
+
+    private void OpenThreadsHubFromPreferences()
+    {
+        if (_activeAdventureId is not { } id)
+            return;
+
+        var kind = _appMode == AppMode.Design
+            ? AdventureThreadKind.Design
+            : AdventureThreadKind.Play;
+        OpenThreadManagerDialog(id, kind);
     }
 
     private void FormatButton_Click(object sender, RoutedEventArgs e)
@@ -154,8 +188,11 @@ public partial class MainWindow : Window
     {
         TranscriptViewModeSettingsExtensions.CopyAllModeSettings(settings, _chrome);
         _chrome.ActiveHighlightColorProfileId = settings.ActiveHighlightColorProfileId;
-        _chrome.HighlightColorProfiles = (settings.HighlightColorProfiles ?? []).Select(p => p.Clone()).ToList();
-        _chrome.HighlightColorCustomOptions = (settings.HighlightColorCustomOptions ?? new HighlightColorAssignmentOptions()).Clone();
+        _chrome.HighlightColorProfiles = settings.HighlightColorProfiles.Select(p => p.Clone()).ToList();
+        _chrome.HighlightColorCustomOptions = settings.HighlightColorCustomOptions.Clone();
+        _chrome.ActiveHighlightColorGroupingProfileId = settings.ActiveHighlightColorGroupingProfileId;
+        _chrome.HighlightColorGroupingProfiles = settings.HighlightColorGroupingProfiles.Select(p => p.Clone()).ToList();
+        _chrome.HighlightColorGroupingCustomProfile = settings.HighlightColorGroupingCustomProfile.Clone();
 
         if (settings.TranscriptViewMode != _chrome.TranscriptViewMode)
         {
@@ -193,7 +230,7 @@ public partial class MainWindow : Window
                 || !ChatGptUrls.IsTrustedChatGptTopLevelUri(uri))
                 continue;
 
-            _ = ChatGptStyleInjection.ReapplyAsync(core, _chrome.ProseEnhancementsEnabled);
+            _ = ChatGptStyleInjection.ReapplyAsync(core);
         }
     }
 
@@ -205,6 +242,9 @@ public partial class MainWindow : Window
 
     internal void ApplyPacketDisplayToAllTabs()
     {
+        if (_chrome.IsTranscriptOverlayActive)
+            return;
+
         var script = ChatGptContextTagsInjection.BuildPreferenceScript(
             _chrome.HideContextTagsInThread,
             _chrome.ExpandHiddenContextInThread);
@@ -231,7 +271,7 @@ public partial class MainWindow : Window
             || !ChatGptUrls.IsTrustedChatGptTopLevelUri(uri))
             return;
 
-        _ = ChatGptStyleInjection.ReapplyAsync(core, _chrome.ProseEnhancementsEnabled);
+        _ = ChatGptStyleInjection.ReapplyAsync(core);
     }
 
     internal void ApplyContinuousViewToActiveTab()
@@ -250,5 +290,11 @@ public partial class MainWindow : Window
                 _chrome,
                 _chrome.ChromePreferencesRevision);
         }
+    }
+
+    private void OnPhraseHighlightRulesChanged(object? sender, EventArgs e)
+    {
+        _playView?.RefreshActiveEntityHighlightState();
+        _designView?.RefreshActiveEntityHighlightState();
     }
 }

@@ -1,11 +1,14 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using System.Windows.Input;
 
 namespace ChatGPTWrapper.Views;
 
-internal partial class TextPromptDialog : Window
+internal partial class TextPromptDialog : ShellDialogWindow
 {
+    protected override bool ApplyDesignSizeOnOpen => ResizeMode == ResizeMode.CanResizeWithGrip;
+
     public string ResultText { get; private set; } = "";
 
     public TextPromptDialog(

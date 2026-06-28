@@ -68,7 +68,6 @@ See [WebView Bridges](webview-bridges.md) for command reference.
 | File | Feature ID | Purpose |
 |------|------------|---------|
 | `wrapper-overrides.css` | `style` | General ChatGPT UI tweaks |
-| `prose-enhancements.css` | `style` | Typography when prose enhancements on |
 
 ### Third-party (optional runtime)
 
@@ -85,9 +84,8 @@ These files are **not** in the `ChatGPT_files/` source tree. `ChatGptContinuousV
 
 1. ChatGPT native styles
 2. `wrapper-overrides.css` (bundled)
-3. `prose-enhancements.css` (if enabled)
-4. Feature CSS (`continuous-transcript-view.css`, `weave-transcript-view.css`, `cgw-play-compose.css`, `cgw-context-tags.css`)
-5. `user-overrides.css` (local app data)
+3. Feature CSS (`continuous-transcript-view.css`, `weave-transcript-view.css`, `cgw-play-compose.css`, `cgw-context-tags.css`)
+4. `user-overrides.css` (local app data)
 
 `ChatGptStyleInjection` injects bundled + user CSS on injectable pages.
 
@@ -104,7 +102,6 @@ Set or consumed across assets:
 | `__cgwSetContinuousView(enabled)` | chrome-preferences / CV | Toggle continuous mode |
 | `__cgwContinuousViewEnabled` | continuous-transcript-view | Mode flag |
 | `__cgwContinuousViewSchedule()` | multiple | Trigger transcript rebuild |
-| `__cgwProseEnhancementsEnabled` | C# | Prose CSS flag |
 | `__cgwPhraseHighlightsEnabled` | C# | Highlight rules active |
 | `__cgwPhraseHighlightStyleFp` | C# | Rule fingerprint for rebuild |
 | `__cgwWrapperComposer` | play-compose | Wrapper composer instance |

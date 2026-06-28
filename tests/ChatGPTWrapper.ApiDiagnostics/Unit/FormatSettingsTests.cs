@@ -157,6 +157,66 @@ public sealed class FormatSettingsTests
         Assert.Equal("Arial, sans-serif", FormatFontFamilies.ToCustomStack("Arial"));
     }
 
+    [Fact]
+    public void ProseGuideClipToText_defaults_false_and_round_trips()
+    {
+        var format = ContinuousViewFormatSettings.CreateDefaults();
+        Assert.False(format.ProseGuideClipToText);
+
+        format.ProseGuideClipToText = true;
+        var clone = format.Clone();
+        Assert.True(clone.ProseGuideClipToText);
+
+        var copy = ContinuousViewFormatSettings.CreateDefaults();
+        copy.CopyFrom(format);
+        Assert.True(copy.ProseGuideClipToText);
+    }
+
+    [Fact]
+    public void Continuous_reading_guides_asset_exports_apply_hook()
+    {
+        var js = WrapperAssetTestHelpers.ReadAsset("continuous-reading-guides.js");
+        Assert.Contains("__cgwApplyReadingGuides", js);
+        Assert.Contains("data-cgw-ruled-clip", js);
+        Assert.Contains("getClientRects", js);
+
+        var formatJs = WrapperAssetTestHelpers.ReadAsset("continuous-format-settings.js");
+        Assert.Contains("proseGuideClipToText", formatJs);
+        Assert.Contains("data-cgw-ruled-js", formatJs);
+    }
+
+    [Fact]
+    public void Format_css_reading_guides_emits_customization_variables()
+    {
+        var format = ContinuousViewFormatSettings.CreateDefaults();
+        format.ShowSegmentDividers = true;
+        format.SegmentDividerWidthPx = 2;
+        format.SegmentDividerStyle = SegmentDividerStyle.Dashed;
+        format.RuledLineStyle = RuledLineStyle.Band;
+        format.RuledBandOpacity = 9;
+        format.RuledLineThicknessPx = 2;
+        format.RuledLineColor = "#88AACC";
+
+        var css = FormatCssPreview.BuildCssText(format);
+
+        Assert.Contains("--cgw-cv-segment-border-width: 2px", css);
+        Assert.Contains("--cgw-cv-segment-divider-style: dashed", css);
+        Assert.Contains("--cgw-cv-ruled-band-opacity: 9", css);
+        Assert.Contains("--cgw-cv-ruled-line-thickness: 2px", css);
+        Assert.Contains("--cgw-cv-ruled-line-color: #88AACC", css);
+    }
+
+    [Fact]
+    public void Format_css_weave_variables_emitted_regardless_of_mode()
+    {
+        var format = ContinuousViewFormatSettings.CreateDefaults();
+        format.AssistantLineHeight = 1.72;
+
+        var css = FormatCssPreview.BuildCssText(format);
+
+        Assert.Contains("--cgw-weave-body-line-height: 1.72", css);
+    }
+
     private static IEnumerable<string> ExtractCssVariablesFromJsBuildBlock(string js)
     {
         var match = Regex.Match(js, @"function buildCssBlock[\s\S]*?var lines = \[([\s\S]*?)\];");

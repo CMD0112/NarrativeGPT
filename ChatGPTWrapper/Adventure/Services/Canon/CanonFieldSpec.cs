@@ -16,6 +16,8 @@ internal sealed class CanonFieldSpec
 
     public CanonFieldRole Role { get; init; } = CanonFieldRole.Extra;
 
+    public string FieldGroup { get; init; } = CanonFieldGroup.Story;
+
     public bool IsTypedProperty { get; init; } = true;
 
     public IReadOnlyList<string> AlternateLabels { get; init; } = [];

@@ -15,8 +15,9 @@ public static class CastHighlightColorAssignment
     public static IReadOnlyList<string> BuildPalette(
         HighlightColorAssignmentOptions options,
         ResolvedTheme theme,
-        string canvasBackgroundHex) =>
-        HighlightColorAssignmentEngine.BuildPalette(options, theme, canvasBackgroundHex);
+        string canvasBackgroundHex,
+        int? minimumDistinctColors) =>
+        HighlightColorAssignmentEngine.BuildPalette(options, theme, canvasBackgroundHex, minimumDistinctColors);
 
     public static string AssignColor(
         string role,
@@ -45,7 +46,8 @@ public static class CastHighlightColorAssignment
         IReadOnlyDictionary<string, string> characterColors,
         ISet<string> usedColors,
         int discoveryIndex,
-        ResolvedTheme? theme)
+        ResolvedTheme? theme,
+        IReadOnlyList<string>? reservedForegroundColors = null)
     {
         theme ??= ThemeRuntime.Current;
         var context = new HighlightColorAssignmentContext
@@ -59,6 +61,8 @@ public static class CastHighlightColorAssignment
             CharacterColors = characterColors,
             UsedColors = usedColors,
             DiscoveryIndex = discoveryIndex,
+            AssignmentSalt = options.AssignmentSalt,
+            ReservedForegroundColors = reservedForegroundColors ?? [],
         };
 
         return HighlightColorAssignmentEngine.AssignColor(context);

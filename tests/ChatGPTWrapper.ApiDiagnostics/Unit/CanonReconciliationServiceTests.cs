@@ -178,6 +178,75 @@ public sealed class CanonReconciliationServiceTests
     }
 
     [Fact]
+    public void DetectDrift_no_drift_when_manifest_hash_stale_but_disk_matches_json()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(entryCount: 4);
+        bundle.Entities.Characters.Add(new CharacterEntry
+        {
+            Name = "Mara",
+            Description = "Apothecary.",
+        });
+
+        try
+        {
+            AdventureTestData.WriteLocalSources(bundle);
+            var castPath = Path.Combine(ProjectSourceExportService.SourcesDirectory(bundle), SectionSchema.CastFile);
+            var castEntry = bundle.SourceManifest.Entries.First(e =>
+                string.Equals(e.RelativePath, SectionSchema.CastFile, StringComparison.OrdinalIgnoreCase));
+            castEntry.LocalSha256 = "deadbeef";
+            castEntry.Sha256 = "deadbeef";
+
+            var report = CanonReconciliationService.DetectDrift(bundle, new CanonEditContext
+            {
+                Category = "Characters",
+            });
+
+            Assert.False(report.HasDrift);
+            Assert.Equal(
+                ProjectSourceExportService.ComputeNormalizedSha256FromFile(castPath),
+                castEntry.EffectiveLocalSha256,
+                StringComparer.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            AdventureTestData.DeleteBundle(bundle);
+        }
+    }
+
+    [Fact]
+    public void Load_heals_stale_manifest_hash_without_false_unresolved_drift()
+    {
+        var bundle = AdventureStore.CreateNew("Heal manifest on load");
+        bundle.Entities.Characters.Add(new CharacterEntry
+        {
+            Name = "Scout",
+            Description = "Tracker.",
+        });
+        ProjectSourceExportService.ExportForce(bundle);
+        AdventureStore.Save(bundle);
+
+        var working = AdventureStore.Load(bundle.Metadata.Id)!;
+        var castEntry = working.SourceManifest.Entries.First(e =>
+            string.Equals(e.RelativePath, SectionSchema.CastFile, StringComparison.OrdinalIgnoreCase));
+        castEntry.LocalSha256 = "stale-manifest-hash";
+        castEntry.Sha256 = "stale-manifest-hash";
+        AdventureStore.SaveSourceManifestOnly(working);
+
+        var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
+        var reloadedCast = reloaded.SourceManifest.Entries.First(e =>
+            string.Equals(e.RelativePath, SectionSchema.CastFile, StringComparison.OrdinalIgnoreCase));
+        Assert.False(CanonReconciliationService.HasUnresolvedDrift(reloaded));
+        Assert.False(CanonHealthService.Analyze(reloaded).NeedsAttention);
+        Assert.Equal(
+            ProjectSourceExportService.ComputeNormalizedSha256FromFile(
+                Path.Combine(ProjectSourceExportService.SourcesDirectory(reloaded), SectionSchema.CastFile)),
+            reloadedCast.EffectiveLocalSha256,
+            StringComparer.OrdinalIgnoreCase);
+
+        AdventureTestData.DeleteBundle(bundle);
+    }
+
+    [Fact]
     public void MarkUnresolvedDrift_preserves_entities_after_save_and_load()
     {
         var bundle = AdventureTestData.CreateLinkedBundle(entryCount: 4);

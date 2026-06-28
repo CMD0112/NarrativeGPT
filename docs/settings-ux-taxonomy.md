@@ -2,13 +2,13 @@
 
 Architecture decision record for settings scope, categories, discovery rules, and deprecation policy. [CMD-262](https://linear.app/cmd0112/issue/CMD-262) under epic [CMD-254](https://linear.app/cmd0112/issue/CMD-254).
 
-**Related:** [Inventory](settings-interactables-inventory.md) · [Audit findings](settings-interactables-audit.md) · [Appearance & theme](appearance-theme-settings.md) · [UI Components](ui-components.md)
+**Related:** [Inventory](settings-interactables-inventory.md) · [Audit findings](settings-interactables-audit.md) · [Appearance & theme](appearance-theme-settings.md) · [UI Components](ui-components.md) · [WPF scroll & overflow layout](ui-components.md#wpf-scroll--overflow-layout-contract-cmd-278--cmd-285)
 
 ---
 
 ## Status
 
-**Accepted** (W0–W2, CMD-254 balanced track). Hub v2 implementation deferred to [CMD-264](https://linear.app/cmd0112/issue/CMD-264).
+**Accepted** (W0–W2). Hub v2 implemented in [CMD-264](https://linear.app/cmd0112/issue/CMD-264) (W5).
 
 ---
 
@@ -54,6 +54,8 @@ Settings apply at nested scopes; inner scopes override outer defaults for a sing
 | Link Project / sync files | Play → Sources… | Dashboard → Link Project |
 | Layout side panels in play | Play settings → Play surface | — |
 
+Tabbed settings dialogs (`PlayPromptInjectionDialog`, `ContinuousViewFormatDialog`, Preferences hub) must follow the [WPF scroll & overflow layout contract](ui-components.md#wpf-scroll--overflow-layout-contract-cmd-278--cmd-285): per-tab `ShellTabScrollViewerStyle`, no nested `TextBox` wheel traps, pixel scroll on form hosts.
+
 **Duplicates policy (W2):**
 
 - Dashboard **Wrapper settings** / **Storage settings** → open **Preferences hub** (not direct WrapperSettingsDialog).
@@ -66,12 +68,12 @@ Settings apply at nested scopes; inner scopes override outer defaults for a sing
 
 | Tier | Audience | Placement |
 |------|----------|-----------|
-| **Essential** | All users | View menu transcript + Format; Preferences hub top cards |
+| **Essential** | All users | View menu transcript + Format **Essentials** tab; format refinement panel; Preferences hub top cards |
 | **Common** | Regular players | Play settings World/Settings; theme presets |
 | **Advanced** | Power users | Format Advanced tab; automation toggles; import/export |
 | **Developer** | Maintainers | Force fat packets, Prefer DOM send, bridge diagnostics, packet preview |
 
-CMD-264 will add explicit **Advanced automation** expander in Play settings for developer-tier toggles.
+CMD-264 will add explicit **Advanced automation** expander in Play settings for developer-tier toggles (**done** in CMD-263).
 
 ---
 
@@ -99,8 +101,8 @@ UI removed or dead; **JSON fields retained** for backward compatibility unless a
 | **A** Inventory & audits | CMD-255, CMD-256–261 | W0–W1 | **Done** (docs) |
 | **B** Taxonomy ADR | CMD-262 | W2 | **Done** (this doc) |
 | **C** Deprecation cleanup | CMD-263 | W2–W3 | **In progress** (advanced automation expander; dead dialogs removed) |
-| **D** Format/fonts/colors | CMD-178, CMD-146, CMD-176 | W3 | CMD-178/176 Done; CMD-146 In Review |
-| **E** Preferences hub v2 | CMD-264, CMD-20 | W5 | Deferred |
+| **D** Format/fonts/colors | CMD-178, CMD-146, CMD-176, **CMD-306** | W3–W4 | CMD-306 phase 3: Essentials tab, refinement panel, diagnostics, rich preview |
+| **E** Preferences hub v2 | CMD-264, CMD-20 | W5 | **In progress** (hub v2 + play tab regroup) |
 | **F** Dashboard revamp | CMD-110, CMD-214–218 | W6 | Deferred |
 | **G** Theme / Weave wave 2 | CMD-111, CMD-156, CMD-158 | W3–W4 | CMD-158 In Progress |
 

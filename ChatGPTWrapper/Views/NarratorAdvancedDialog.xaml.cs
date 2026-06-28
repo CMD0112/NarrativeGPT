@@ -1,10 +1,11 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class NarratorAdvancedDialog : Window
+public partial class NarratorAdvancedDialog : ShellDialogWindow
 {
     private readonly AdventureBundle _bundle;
     private readonly NarratorOverrideScope _emphasisScope;

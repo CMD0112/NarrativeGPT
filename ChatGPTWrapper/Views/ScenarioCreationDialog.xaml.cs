@@ -1,9 +1,10 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using ChatGPTWrapper.Adventure.Models;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class ScenarioCreationDialog : Window
+public partial class ScenarioCreationDialog : ShellDialogWindow
 {
     public ScenarioDocument? ResultScenario { get; private set; }
 

@@ -13,14 +13,33 @@ public static class EntityReferenceEditService
         EntityReferenceRow? row,
         bool isNew)
     {
+        if (!isNew && row is null
+            && string.Equals(categoryFilter, "Player", StringComparison.OrdinalIgnoreCase))
+        {
+            return EntityEditMapper.Load(
+                bundle.Entities,
+                EntityEditMapper.PlayerEntityId,
+                "Player",
+                bundle.Metadata.Id);
+        }
+
+        if (!isNew && row is null)
+            return null;
+
         var category = isNew ? categoryFilter : EntityEditMapper.CategoryForEntityKind(row!.Kind);
         return isNew
             ? EntityEditMapper.CreateNew(category, bundle.Metadata.Id)
             : EntityEditMapper.Load(bundle.Entities, row!.Id, category, bundle.Metadata.Id);
     }
 
-    public static string ResolveCategory(string categoryFilter, EntityReferenceRow? row, bool isNew) =>
-        isNew ? categoryFilter : EntityEditMapper.CategoryForEntityKind(row!.Kind);
+    public static string ResolveCategory(string categoryFilter, EntityReferenceRow? row, bool isNew)
+    {
+        if (!isNew && row is null
+            && string.Equals(categoryFilter, "Player", StringComparison.OrdinalIgnoreCase))
+            return "Player";
+
+        return isNew ? categoryFilter : EntityEditMapper.CategoryForEntityKind(row!.Kind);
+    }
 
     public static bool TryCommitModel(
         AdventureBundle bundle,
@@ -34,7 +53,23 @@ public static class EntityReferenceEditService
         bool promptRenameWizard = true)
     {
         if (deleted)
+        {
+            if (callbacks?.GetPhraseHighlightRules?.Invoke() is { } highlightRules
+                && callbacks.CommitPhraseHighlightRules is not null
+                && PhraseHighlightRuleService.SupportsHighlightLinkage(category))
+            {
+                var rules = highlightRules.Select(r => r.Clone()).ToList();
+                PhraseHighlightRuleService.DisableLinkedRules(
+                    rules,
+                    category,
+                    model.Id,
+                    model.Name,
+                    EntityEditMapper.ParseTags(model.AliasesText));
+                callbacks.CommitPhraseHighlightRules(rules);
+            }
+
             EntityEditMapper.Delete(bundle.Entities, model);
+        }
         else if (!EntityEditMapper.Apply(bundle.Entities, model))
             return false;
 
@@ -79,6 +114,9 @@ public static class EntityReferenceEditService
         AdventureStore.Save(bundle);
         callbacks?.OnSourceSyncCompleted?.Invoke(syncResult);
 
+        if (isRename && callbacks?.GetPhraseHighlightRules?.Invoke() is not null)
+            callbacks.CommitPhraseHighlightRules?.Invoke(callbacks.GetPhraseHighlightRules()!);
+
         if (syncResult.Staged)
         {
             callbacks?.OnStatusRefreshRequested?.Invoke();
@@ -109,12 +147,13 @@ public static class EntityReferenceEditService
             return false;
 
         var priorName = model.IsNew ? null : model.Name;
-        var dlg = new EntityEditDialog(model) { Owner = owner };
+        var dlg = new EntityEditDialog(bundle, model, category, callbacks) { Owner = owner };
         if (dlg.ShowDialog() != true)
             return false;
 
-        return TryCommitModel(
+        return TryFinishEntityEditorSave(
             bundle,
+            dlg.FormHost,
             model,
             dlg.Deleted,
             category,
@@ -123,6 +162,83 @@ public static class EntityReferenceEditService
             callbacks,
             promptCanonReconcile,
             promptRenameWizard);
+    }
+
+    /// <summary>
+    /// Commits entity and/or phrase-highlight changes. Highlight-only edits persist to chrome
+    /// and do not trigger canon source export or reconcile prompts.
+    /// </summary>
+    public static bool TryFinishEntityEditorSave(
+        AdventureBundle bundle,
+        EntityEditFormHost form,
+        EntityEditModel model,
+        bool deleted,
+        string category,
+        string? priorName,
+        Window? owner,
+        EntityReferenceEditCallbacks? callbacks,
+        bool promptCanonReconcile,
+        bool promptRenameWizard = true)
+    {
+        if (deleted)
+        {
+            return TryCommitModel(
+                bundle,
+                model,
+                deleted: true,
+                category,
+                priorName,
+                owner,
+                callbacks,
+                promptCanonReconcile,
+                promptRenameWizard);
+        }
+
+        if (!form.TryHarvestModel(out var validationMessage))
+        {
+            if (!string.IsNullOrWhiteSpace(validationMessage))
+            {
+                MessageBox.Show(
+                    owner,
+                    validationMessage,
+                    "Entity editor",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
+            return false;
+        }
+
+        var highlightChanged = form.HasHighlightChanges();
+        var entityChanged = form.HasEntityChanges();
+
+        if (!entityChanged && !model.IsNew)
+        {
+            if (highlightChanged)
+                form.TryCommitHighlightRulesIfChanged();
+            return true;
+        }
+
+        if (!TryCommitModel(
+                bundle,
+                model,
+                deleted: false,
+                category,
+                priorName,
+                owner,
+                callbacks,
+                promptCanonReconcile,
+                promptRenameWizard))
+        {
+            return false;
+        }
+
+        if (highlightChanged)
+            form.TryCommitHighlightRulesIfChanged();
+        else if (entityChanged)
+            form.TrySyncEntityAliasHighlights();
+
+        return true;
     }
 
     public static bool TryDelete(

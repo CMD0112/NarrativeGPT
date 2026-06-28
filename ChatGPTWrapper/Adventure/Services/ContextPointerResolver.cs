@@ -45,6 +45,9 @@ internal static class ContextPointerResolver
         var combined = signals.PlayerText + " " + signals.SummaryText;
         foreach (var indexed in index.MatchAlias(combined))
         {
+            if (IsNonBaselineScoringExcluded(indexed.FileName))
+                continue;
+
             var inPlayer = indexed.Section.Aliases.Any(a => SectionSlugHelper.ContainsToken(signals.PlayerText, a))
                            || SectionSlugHelper.ContainsToken(signals.PlayerText, indexed.Section.Title);
             var score = inPlayer ? 35 : 15;
@@ -61,7 +64,7 @@ internal static class ContextPointerResolver
                 continue;
 
             var indexed = ResolveTarget(index, entry.Target);
-            if (indexed is null)
+            if (indexed is null || IsNonBaselineScoringExcluded(indexed.FileName))
                 continue;
 
             Add(MakePointer(indexed, triggerHit ? 25 : 10, PointerSource.Trigger, signals));
@@ -70,7 +73,12 @@ internal static class ContextPointerResolver
         if (!string.IsNullOrWhiteSpace(signals.AttachmentTokens))
         {
             foreach (var indexed in index.MatchAlias(signals.AttachmentTokens))
+            {
+                if (IsNonBaselineScoringExcluded(indexed.FileName))
+                    continue;
+
                 Add(MakePointer(indexed, 20, PointerSource.Attachment, signals));
+            }
         }
 
         var filtered = candidates.Values
@@ -171,6 +179,12 @@ internal static class ContextPointerResolver
         return string.IsNullOrWhiteSpace(phrase)
                || !signals.SummaryText.Contains(phrase, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Reference files (narrator-scales.md, canon-format.md) are Project RAG canon — never score-match for inline excerpts.
+    /// </summary>
+    private static bool IsNonBaselineScoringExcluded(string fileName) =>
+        SectionSchema.IsReferenceSourceFile(fileName);
 
     private static ContextPointer MakePointer(
         IndexedSection indexed,

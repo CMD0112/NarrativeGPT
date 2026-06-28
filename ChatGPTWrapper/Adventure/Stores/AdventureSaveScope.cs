@@ -21,7 +21,7 @@ public enum AdventureSaveScope
     ContextIndex = 1 << 14,
     DesignWorkspace = 1 << 15,
 
-    /// <summary>Play settings dialog — never writes entities.json or log.json.</summary>
+    /// <summary>Play settings dialog — never writes entities.json, log.json, or source-manifest.json.</summary>
     PlaySettingsDialog = Metadata
                            | Scenario
                            | Summary
@@ -30,8 +30,7 @@ public enum AdventureSaveScope
                            | Cards
                            | Continuity
                            | UtilityExchanges
-                           | ThreadMetadata
-                           | SourceManifest,
+                           | ThreadMetadata,
 
     /// <summary>Design mode entry — status/workspace only; never overwrites entities or sources.</summary>
     DesignSessionSwitch = Metadata | DesignWorkspace,

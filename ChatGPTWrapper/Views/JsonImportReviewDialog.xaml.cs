@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using System.Windows.Media;
 using ChatGPTWrapper.Adventure.Models;
@@ -8,7 +9,7 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class JsonImportReviewDialog : Window
+public partial class JsonImportReviewDialog : ShellDialogWindow
 {
     private readonly Guid _adventureId;
     private readonly ObservableCollection<JsonImportReviewRow> _rows = [];

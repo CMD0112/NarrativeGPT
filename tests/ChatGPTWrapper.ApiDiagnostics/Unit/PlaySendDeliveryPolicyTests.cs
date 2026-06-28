@@ -16,14 +16,14 @@ public sealed class PlaySendDeliveryPolicyTests
         };
 
     [Fact]
-    public void Default_prefer_dom_for_new_settings()
+    public void Default_prefer_api_for_new_settings()
     {
         var settings = new AdventureSettings();
-        Assert.True(settings.PreferDomPlaySend);
+        Assert.False(settings.PreferDomPlaySend);
     }
 
     [Fact]
-    public void PreferDom_true_skips_api_text_capture_regenerate_utility_and_warmup()
+    public void PreferDom_true_skips_api_text_capture_regenerate_and_warmup_but_not_worker_lane()
     {
         var bundle = Bundle(preferDom: true);
 
@@ -34,6 +34,8 @@ public sealed class PlaySendDeliveryPolicyTests
         Assert.False(PlaySendDeliveryPolicy.ShouldPrefetchApiWarmup(bundle));
         Assert.False(PlaySendDeliveryPolicy.ShouldUseApiUtilitySend(
             bundle,
+            UtilityConversationReadinessLevel.Registered));
+        Assert.True(PlaySendDeliveryPolicy.ShouldUseApiWorkerLaneSend(
             UtilityConversationReadinessLevel.Registered));
     }
 

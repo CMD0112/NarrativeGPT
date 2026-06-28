@@ -38,7 +38,11 @@ public static class HighlightColorProfileIds
     public const string WarmSpectrum = "warm-spectrum";
     public const string MonochromeRoles = "monochrome-roles";
     public const string NeonCyber = "neon-cyber";
+    public const string NeonArcade = "neon-arcade";
+    public const string NeonSynthwave = "neon-synthwave";
+    public const string NeonToxic = "neon-toxic";
     public const string EarthTones = "earth-tones";
+    public const string MaxDistinct = "max-distinct";
     public const string Custom = "custom";
 
     public static IReadOnlyList<string> BuiltIn { get; } =
@@ -56,7 +60,11 @@ public static class HighlightColorProfileIds
         WarmSpectrum,
         MonochromeRoles,
         NeonCyber,
+        NeonArcade,
+        NeonSynthwave,
+        NeonToxic,
         EarthTones,
+        MaxDistinct,
     ];
 }
 
@@ -85,157 +93,203 @@ public static class HighlightColorProfileLibrary
         Find(BuiltInProfiles, id)?.Options.Clone()
         ?? Find(BuiltInProfiles, HighlightColorProfileIds.ThemeHarmony)!.Options.Clone();
 
+    private static HighlightColorAssignmentOptions DynamicOptions(
+        HighlightAssignmentStrategy strategy = HighlightAssignmentStrategy.OptimalDistinct,
+        HighlightPaletteSource paletteSource = HighlightPaletteSource.ThemeSemantic,
+        Action<HighlightColorAssignmentOptions>? configure = null)
+    {
+        var options = new HighlightColorAssignmentOptions
+        {
+            PaletteSource = paletteSource,
+            AssignmentStrategy = strategy,
+            GeneratedColorCount = 0,
+            AvoidDuplicateColors = true,
+        };
+        configure?.Invoke(options);
+        return options;
+    }
+
     private static IReadOnlyList<HighlightColorAssignmentProfile> BuildBuiltInProfiles() =>
     [
         Profile(
             HighlightColorProfileIds.ThemeHarmony,
             "Theme harmony",
-            "Theme semantic seeds plus golden-angle hues; player uses accent; aliases match parent.",
-            new HighlightColorAssignmentOptions()),
+            "Evenly spaced theme hues sized to your cast; each name gets the most distinct readable color.",
+            DynamicOptions()),
 
         Profile(
             HighlightColorProfileIds.SemanticCast,
             "Semantic cast",
-            "Role buckets on theme palette — player, party, and cast each get distinct regions.",
-            new HighlightColorAssignmentOptions
-            {
-                AssignmentStrategy = HighlightAssignmentStrategy.RoleBuckets,
-            }),
+            "Role buckets with optimal distinct colors within each group — player, party, and cast stay separated.",
+            DynamicOptions(HighlightAssignmentStrategy.RoleBuckets)),
 
         Profile(
             HighlightColorProfileIds.StableCast,
             "Stable identity",
-            "Same name always maps to the same color; ignores discovery order.",
-            new HighlightColorAssignmentOptions
-            {
-                AssignmentStrategy = HighlightAssignmentStrategy.StableHash,
-            }),
+            "Same name maps to the same slot on a scaling palette; reroll shifts assignments via salt.",
+            DynamicOptions(HighlightAssignmentStrategy.StableHash)),
 
         Profile(
             HighlightColorProfileIds.SequentialSpectrum,
             "Sequential spectrum",
-            "Walks the palette in cast discovery order (player, party, characters, aliases).",
-            new HighlightColorAssignmentOptions
-            {
-                AssignmentStrategy = HighlightAssignmentStrategy.Sequential,
-                AvoidDuplicateColors = false,
-            }),
+            "Walks a scaling palette in discovery order; allows palette reuse for very large casts.",
+            DynamicOptions(configure: o => o.AvoidDuplicateColors = false)),
 
         Profile(
             HighlightColorProfileIds.ClassicFixed,
             "Classic fixed",
-            "Legacy eight-color list with contrast adjustment.",
-            new HighlightColorAssignmentOptions
-            {
-                PaletteSource = HighlightPaletteSource.FixedClassic,
-                AssignmentStrategy = HighlightAssignmentStrategy.Sequential,
-                AvoidDuplicateColors = false,
-            }),
+            "Legacy eight-color anchors expanded dynamically for large adventures.",
+            DynamicOptions(
+                HighlightAssignmentStrategy.StableHash,
+                HighlightPaletteSource.FixedClassic)),
 
         Profile(
             HighlightColorProfileIds.EditorSwatches,
             "Editor swatches",
-            "Phrase editor preset swatches with stable hash assignment.",
-            new HighlightColorAssignmentOptions
-            {
-                PaletteSource = HighlightPaletteSource.FixedEditorSwatches,
-                AssignmentStrategy = HighlightAssignmentStrategy.StableHash,
-            }),
+            "Manual picker swatches as seeds with dynamic hue expansion and stable assignment.",
+            DynamicOptions(
+                HighlightAssignmentStrategy.StableHash,
+                HighlightPaletteSource.FixedEditorSwatches)),
 
         Profile(
             HighlightColorProfileIds.PastelCast,
             "Pastel cast",
-            "Soft low-saturation hues for gentle reading.",
-            new HighlightColorAssignmentOptions
+            "Soft low-saturation dynamic palette for gentle reading on any cast size.",
+            DynamicOptions(configure: o =>
             {
-                Saturation = 0.38,
-                Lightness = 0.72,
-                GeneratedColorCount = 20,
-            }),
+                o.Saturation = 0.38;
+                o.Lightness = 0.72;
+            })),
 
         Profile(
             HighlightColorProfileIds.VividStage,
             "Vivid stage",
-            "High-saturation theatrical colors on theme hue wheel.",
-            new HighlightColorAssignmentOptions
-            {
-                Saturation = 0.86,
-                Lightness = 0.55,
-                AssignmentStrategy = HighlightAssignmentStrategy.RoleBuckets,
-            }),
+            "High-saturation dynamic hues with role bucket separation.",
+            DynamicOptions(
+                HighlightAssignmentStrategy.RoleBuckets,
+                configure: o =>
+                {
+                    o.Saturation = 0.86;
+                    o.Lightness = 0.55;
+                })),
 
         Profile(
             HighlightColorProfileIds.HighContrast,
             "High contrast",
-            "Even hue wheel with stricter WCAG contrast (7:1).",
-            new HighlightColorAssignmentOptions
-            {
-                PaletteSource = HighlightPaletteSource.EvenHueWheel,
-                MinContrastRatio = 7.0,
-                GeneratedColorCount = 12,
-                AssignmentStrategy = HighlightAssignmentStrategy.StableHash,
-            }),
+            "Even hue wheel (7:1 contrast) that scales with import size.",
+            DynamicOptions(
+                HighlightAssignmentStrategy.StableHash,
+                HighlightPaletteSource.EvenHueWheel,
+                configure: o => o.MinContrastRatio = 7.0)),
 
         Profile(
             HighlightColorProfileIds.CoolSpectrum,
             "Cool spectrum",
-            "Cyan-forward hues stepping every 30° from accent link.",
-            new HighlightColorAssignmentOptions
+            "Cyan-forward dynamic wheel stepping every 30° from accent link.",
+            DynamicOptions(configure: o =>
             {
-                HueAnchor = HighlightHueAnchor.AccentLink,
-                HueStepDegrees = 30,
-                Saturation = 0.70,
-            }),
+                o.HueAnchor = HighlightHueAnchor.AccentLink;
+                o.HueStepDegrees = 30;
+                o.Saturation = 0.70;
+            })),
 
         Profile(
             HighlightColorProfileIds.WarmSpectrum,
             "Warm spectrum",
-            "Amber-forward hues stepping every 30° from warning.",
-            new HighlightColorAssignmentOptions
+            "Amber-forward dynamic wheel stepping every 30° from warning.",
+            DynamicOptions(configure: o =>
             {
-                HueAnchor = HighlightHueAnchor.Warning,
-                HueStepDegrees = 30,
-                Saturation = 0.72,
-                Lightness = 0.58,
-            }),
+                o.HueAnchor = HighlightHueAnchor.Warning;
+                o.HueStepDegrees = 30;
+                o.Saturation = 0.72;
+                o.Lightness = 0.58;
+            })),
 
         Profile(
             HighlightColorProfileIds.MonochromeRoles,
             "Monochrome roles",
-            "Accent-only hues with role bucket separation.",
-            new HighlightColorAssignmentOptions
-            {
-                PaletteSource = HighlightPaletteSource.ThemeAccentOnly,
-                AssignmentStrategy = HighlightAssignmentStrategy.RoleBuckets,
-                GeneratedColorCount = 20,
-            }),
+            "Accent-only dynamic hues with role bucket separation.",
+            DynamicOptions(
+                HighlightAssignmentStrategy.RoleBuckets,
+                HighlightPaletteSource.ThemeAccentOnly)),
 
         Profile(
             HighlightColorProfileIds.NeonCyber,
             "Neon cyber",
-            "Neon seed colors expanded with golden-angle generation.",
-            new HighlightColorAssignmentOptions
+            "Electric cyan/magenta/lime seeds plus golden-angle expansion — scales for large casts.",
+            DynamicOptions(configure: o =>
             {
-                PaletteSource = HighlightPaletteSource.CustomSeeds,
-                CustomSeedColors = HighlightColorCatalog.NeonCyberSeeds.ToList(),
-                HueStepDegrees = 137.508,
-                Saturation = 0.92,
-                Lightness = 0.58,
-            }),
+                o.PaletteSource = HighlightPaletteSource.CustomSeeds;
+                o.CustomSeedColors = HighlightColorCatalog.NeonCyberSeeds.ToList();
+                o.HueStepDegrees = 137.508;
+                o.Saturation = 0.92;
+                o.Lightness = 0.58;
+            })),
+
+        Profile(
+            HighlightColorProfileIds.NeonArcade,
+            "Neon arcade",
+            "Arcade cabinet primaries (cyan, hot pink, gold) with sequential dynamic expansion.",
+            DynamicOptions(configure: o =>
+            {
+                o.PaletteSource = HighlightPaletteSource.CustomSeeds;
+                o.CustomSeedColors = HighlightColorCatalog.NeonArcadeSeeds.ToList();
+                o.HueStepDegrees = 45;
+                o.Saturation = 0.95;
+                o.Lightness = 0.60;
+            })),
+
+        Profile(
+            HighlightColorProfileIds.NeonSynthwave,
+            "Neon synthwave",
+            "Pink/purple/cyan retro seeds on an even hue wheel — stable identity per name.",
+            DynamicOptions(
+                HighlightAssignmentStrategy.StableHash,
+                HighlightPaletteSource.EvenHueWheel,
+                configure: o =>
+                {
+                    o.CustomSeedColors = HighlightColorCatalog.NeonSynthwaveSeeds.ToList();
+                    o.HueAnchor = HighlightHueAnchor.AccentLink;
+                    o.Saturation = 0.88;
+                    o.Lightness = 0.62;
+                })),
+
+        Profile(
+            HighlightColorProfileIds.NeonToxic,
+            "Neon toxic",
+            "Acid green/lime neon seeds with role buckets for party vs cast.",
+            DynamicOptions(
+                HighlightAssignmentStrategy.RoleBuckets,
+                configure: o =>
+                {
+                    o.PaletteSource = HighlightPaletteSource.CustomSeeds;
+                    o.CustomSeedColors = HighlightColorCatalog.NeonToxicSeeds.ToList();
+                    o.HueAnchor = HighlightHueAnchor.Success;
+                    o.HueStepDegrees = 22;
+                    o.Saturation = 0.90;
+                    o.Lightness = 0.58;
+                })),
 
         Profile(
             HighlightColorProfileIds.EarthTones,
             "Earth tones",
-            "Narrow warm palette around warning with muted aliases.",
-            new HighlightColorAssignmentOptions
+            "Warm narrow dynamic palette with muted alias colors.",
+            DynamicOptions(configure: o =>
             {
-                HueAnchor = HighlightHueAnchor.Warning,
-                HueStepDegrees = 18,
-                Saturation = 0.42,
-                Lightness = 0.56,
-                GeneratedColorCount = 14,
-                AliasColorMode = HighlightAliasColorMode.MutedParent,
-            }),
+                o.HueAnchor = HighlightHueAnchor.Warning;
+                o.HueStepDegrees = 18;
+                o.Saturation = 0.42;
+                o.Lightness = 0.56;
+                o.AliasColorMode = HighlightAliasColorMode.MutedParent;
+            })),
+
+        Profile(
+            HighlightColorProfileIds.MaxDistinct,
+            "Max distinct",
+            "Even hue wheel with strict duplicate avoidance — optimized for the largest readable separation.",
+            DynamicOptions(
+                HighlightAssignmentStrategy.OptimalDistinct,
+                HighlightPaletteSource.EvenHueWheel)),
     ];
 
     private static HighlightColorAssignmentProfile Profile(

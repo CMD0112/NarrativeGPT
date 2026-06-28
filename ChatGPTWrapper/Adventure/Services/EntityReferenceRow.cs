@@ -42,7 +42,15 @@ public sealed class EntityReferenceRow
 
     public Thickness RowMargin { get; init; } = new(8, 7, 8, 7);
 
+    public string AliasesSearchText { get; init; } = "";
+
+    public DateTimeOffset LastEditedUtc { get; init; } = DateTimeOffset.MinValue;
+
+    public EntitySyncStatus SyncStatus { get; set; } = EntitySyncStatus.InSync;
+
     public string SyncBadgeText { get; set; } = "";
+
+    public string SyncBadgeTooltip { get; set; } = "";
 
     public Visibility SyncBadgeVisibility { get; set; } = Visibility.Collapsed;
 

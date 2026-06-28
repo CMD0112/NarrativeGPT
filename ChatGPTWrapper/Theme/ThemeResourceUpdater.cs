@@ -77,6 +77,7 @@ internal static class ThemeResourceUpdater
         SetBrushResource(resources, SystemColors.ControlBrushKey, theme.GetHex("BgSurface"));
         SetBrushResource(resources, SystemColors.MenuBrushKey, theme.GetHex("Popup"));
         SetBrushResource(resources, SystemColors.HighlightBrushKey, theme.GetHex("RowSelected"));
+        SetBrushResource(resources, SystemColors.HighlightTextBrushKey, theme.GetHex("TextPrimary"));
     }
 
     private static void ApplySystemColor(ResourceDictionary resources, ResourceKey key, string hex)

@@ -607,6 +607,9 @@ public sealed class ThemeSettingsTests
                 if (System.Windows.Application.Current is null)
                     _ = new System.Windows.Application();
 
+                var app = System.Windows.Application.Current
+                    ?? throw new InvalidOperationException("WPF Application not initialized.");
+
                 var settings = new ThemeSettings
                 {
                     ActivePresetId = ThemePresetIds.DefaultDark,
@@ -621,7 +624,7 @@ public sealed class ThemeSettingsTests
                 var applied = ThemeApplicationService.ApplyToWpf(resolved);
                 Assert.True(applied);
 
-                var brush = System.Windows.Application.Current.Resources["BgBaseBrush"] as SolidColorBrush;
+                var brush = app.Resources["BgBaseBrush"] as SolidColorBrush;
                 Assert.NotNull(brush);
                 Assert.Equal("#FF112233", brush.Color.ToString());
             }

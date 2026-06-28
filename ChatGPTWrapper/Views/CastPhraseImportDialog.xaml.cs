@@ -2,6 +2,9 @@ using System.Collections;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows;
+using ChatGPTWrapper.Shell;
+using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
@@ -9,11 +12,19 @@ using ChatGPTWrapper.Theme;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class CastPhraseImportDialog : Window
+public partial class CastPhraseImportDialog : ShellDialogWindow
 {
     private readonly AdventureBundle? _bundle;
+    private readonly Dictionary<string, CheckBox> _entitySourceChecks = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlySet<string> _includedSourceKeys = PhraseHighlightEntitySourceCatalog.ResolveDefaultImportSourceKeys();
+    private int _assignmentSalt;
+    private readonly Dictionary<string, int> _phraseSaltOffsets = new(StringComparer.OrdinalIgnoreCase);
 
     public HighlightColorAssignmentOptions? ColorAssignment { get; set; }
+
+    public HighlightColorGroupingProfile? GroupingProfile { get; set; }
+
+    public ContinuousViewFormatSettings? ContinuousViewFormat { get; set; }
 
     public string? HighlightCanvasBackground { get; set; }
 
@@ -26,12 +37,11 @@ public partial class CastPhraseImportDialog : Window
         _bundle = bundle;
         InitializeComponent();
 
-        IncludePlayerCheck.Checked += Options_Changed;
-        IncludePlayerCheck.Unchecked += Options_Changed;
-        IncludePartyCheck.Checked += Options_Changed;
-        IncludePartyCheck.Unchecked += Options_Changed;
-        IncludeAliasesCheck.Checked += Options_Changed;
-        IncludeAliasesCheck.Unchecked += Options_Changed;
+        BuildEntitySourceChecks();
+        ApplyIncludedSourceKeys(_includedSourceKeys);
+
+        IncludeEntityAliasesCheck.Checked += Options_Changed;
+        IncludeEntityAliasesCheck.Unchecked += Options_Changed;
 
         var title = bundle?.Metadata?.Title;
         if (!string.IsNullOrWhiteSpace(title))
@@ -44,7 +54,9 @@ public partial class CastPhraseImportDialog : Window
         out IReadOnlyList<PhraseHighlightRule> rules,
         HighlightColorAssignmentOptions? colorAssignment = null,
         string? highlightCanvasBackground = null,
-        IReadOnlyList<PhraseHighlightRule>? existingRules = null)
+        IReadOnlyList<PhraseHighlightRule>? existingRules = null,
+        HighlightColorGroupingProfile? groupingProfile = null,
+        ContinuousViewFormatSettings? continuousViewFormat = null)
     {
         rules = [];
         var dialog = new CastPhraseImportDialog(bundle)
@@ -53,6 +65,8 @@ public partial class CastPhraseImportDialog : Window
             ColorAssignment = colorAssignment,
             HighlightCanvasBackground = highlightCanvasBackground,
             ExistingRules = existingRules,
+            GroupingProfile = groupingProfile,
+            ContinuousViewFormat = continuousViewFormat,
         };
         dialog.RefreshCandidates();
         if (dialog.ShowDialog() != true)
@@ -63,6 +77,70 @@ public partial class CastPhraseImportDialog : Window
     }
 
     private void Options_Changed(object sender, RoutedEventArgs e) => RefreshCandidates();
+
+    private void ImportPresetCast_Click(object sender, RoutedEventArgs e) =>
+        ApplyImportPreset(PhraseHighlightEntitySourceCatalog.PresetCast);
+
+    private void ImportPresetWorld_Click(object sender, RoutedEventArgs e) =>
+        ApplyImportPreset(PhraseHighlightEntitySourceCatalog.PresetWorld);
+
+    private void ImportPresetPlot_Click(object sender, RoutedEventArgs e) =>
+        ApplyImportPreset(PhraseHighlightEntitySourceCatalog.PresetPlot);
+
+    private void ImportPresetAll_Click(object sender, RoutedEventArgs e) =>
+        ApplyImportPreset(PhraseHighlightEntitySourceCatalog.PresetAll);
+
+    private void ImportPresetNone_Click(object sender, RoutedEventArgs e) =>
+        ApplyImportPreset(PhraseHighlightEntitySourceCatalog.PresetNone);
+
+    private void ApplyImportPreset(string presetId)
+    {
+        ApplyIncludedSourceKeys(PhraseHighlightEntitySourceCatalog.ResolvePresetImportSourceKeys(presetId));
+        RefreshCandidates();
+    }
+
+    private void BuildEntitySourceChecks()
+    {
+        if (EntitySourceChecksPanel is null)
+            return;
+
+        EntitySourceChecksPanel.Children.Clear();
+        _entitySourceChecks.Clear();
+
+        foreach (var source in PhraseHighlightEntitySourceCatalog.DescribeImportSources(_bundle?.Entities))
+        {
+            var check = new CheckBox
+            {
+                Content = source.DisplayLabel,
+                Tag = source.SourceKey,
+                Margin = new Thickness(0, 0, 14, 6),
+                ToolTip = $"{source.TypeLabel} · {source.UiCategory}",
+            };
+            check.Checked += EntitySourceCheck_Changed;
+            check.Unchecked += EntitySourceCheck_Changed;
+            _entitySourceChecks[source.SourceKey] = check;
+            EntitySourceChecksPanel.Children.Add(check);
+        }
+    }
+
+    private void EntitySourceCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        _includedSourceKeys = ReadIncludedSourceKeys();
+        RefreshCandidates();
+    }
+
+    private void ApplyIncludedSourceKeys(IReadOnlySet<string> keys)
+    {
+        _includedSourceKeys = keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (sourceKey, check) in _entitySourceChecks)
+            check.IsChecked = _includedSourceKeys.Contains(sourceKey);
+    }
+
+    private IReadOnlySet<string> ReadIncludedSourceKeys() =>
+        _entitySourceChecks
+            .Where(pair => pair.Value.IsChecked == true)
+            .Select(pair => pair.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private void SelectAll_Click(object sender, RoutedEventArgs e)
     {
@@ -100,7 +178,39 @@ public partial class CastPhraseImportDialog : Window
         HideValidation();
     }
 
-    private void RefreshCandidates()
+    private void RerollColors_Click(object sender, RoutedEventArgs e)
+    {
+        var priorSelection = CaptureSelectionState();
+        _phraseSaltOffsets.Clear();
+        _assignmentSalt++;
+        RefreshCandidates(priorSelection);
+    }
+
+    private void CandidateColorSwatch_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: CastPhraseImportCandidate candidate }
+            || candidate.AlreadyExists)
+        {
+            return;
+        }
+
+        var priorSelection = CaptureSelectionState();
+        _phraseSaltOffsets[candidate.Phrase] = _phraseSaltOffsets.TryGetValue(candidate.Phrase, out var offset)
+            ? offset + 1
+            : 1;
+        RefreshCandidates(priorSelection);
+        e.Handled = true;
+    }
+
+    private Dictionary<string, bool> CaptureSelectionState()
+    {
+        if (CandidateList.ItemsSource is not IEnumerable<CastPhraseImportCandidate> candidates)
+            return [];
+
+        return candidates.ToDictionary(c => c.Phrase, c => c.IsSelected, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void RefreshCandidates(Dictionary<string, bool>? priorSelection = null)
     {
         if (CandidateList is null)
             return;
@@ -109,18 +219,34 @@ public partial class CastPhraseImportDialog : Window
 
         var options = new CastPhraseImportOptions
         {
-            IncludePlayer = IncludePlayerCheck.IsChecked == true,
-            IncludeParty = IncludePartyCheck.IsChecked == true,
-            IncludeAliases = IncludeAliasesCheck.IsChecked == true,
+            IncludedSourceKeys = ReadIncludedSourceKeys(),
+            IncludeEntityAliases = IncludeEntityAliasesCheck.IsChecked == true,
             ExistingRules = ExistingRules,
             Theme = ThemeRuntime.Current,
             HighlightCanvasBackground = HighlightCanvasBackground ?? ResolveHighlightCanvasBackground(),
             ColorAssignment = ColorAssignment,
+            AssignmentSalt = _assignmentSalt,
+            GroupingProfile = GroupingProfile,
+            ContinuousViewFormat = ContinuousViewFormat,
         };
         var result = PhraseHighlightCastImportService.BuildCandidates(_bundle, options);
         var candidates = new ObservableCollection<CastPhraseImportCandidate>(result.Candidates);
+
+        if (_phraseSaltOffsets.Count > 0 && ColorAssignment is not null)
+        {
+            RerollPerPhraseOffsets(candidates);
+        }
+
         foreach (var candidate in candidates)
+        {
+            if (priorSelection is not null
+                && priorSelection.TryGetValue(candidate.Phrase, out var wasSelected))
+            {
+                candidate.IsSelected = wasSelected;
+            }
+
             candidate.PropertyChanged += Candidate_PropertyChanged;
+        }
 
         CandidateList.ItemsSource = candidates;
 
@@ -131,9 +257,59 @@ public partial class CastPhraseImportDialog : Window
         SelectAllButton.IsEnabled = hasCandidates;
         ClearSelectionButton.IsEnabled = hasCandidates;
         SelectNewOnlyButton.IsEnabled = hasCandidates;
+        RerollColorsButton.IsEnabled = hasCandidates;
         ImportButton.IsEnabled = hasCandidates;
         UpdateSummary(candidates);
         UpdateColorAnalysis(result.ColorAnalysis);
+    }
+
+    private void RerollPerPhraseOffsets(IList<CastPhraseImportCandidate> candidates)
+    {
+        if (ColorAssignment is null)
+            return;
+
+        var theme = ThemeRuntime.Current;
+        var canvas = HighlightCanvasBackground ?? ResolveHighlightCanvasBackground();
+        var usedColors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var characterColors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var assignmentState = new HighlightColorAssignmentState();
+        var reserved = HighlightColorReservedColors.Resolve(theme, ContinuousViewFormat);
+        HighlightColorCapacityAnalyzer.SeedFromExistingRules(ExistingRules, usedColors, characterColors);
+        foreach (var used in usedColors)
+            assignmentState.GlobalUsedColors.Add(used);
+        foreach (var color in reserved)
+            assignmentState.GlobalUsedColors.Add(color);
+
+        var discoveryIndex = 0;
+        foreach (var candidate in candidates.Where(c => !c.AlreadyExists))
+        {
+            if (!_phraseSaltOffsets.TryGetValue(candidate.Phrase, out var offset) || offset <= 0)
+            {
+                discoveryIndex++;
+                if (!candidate.Role.StartsWith("Alias · ", StringComparison.OrdinalIgnoreCase))
+                    characterColors[candidate.Phrase] = candidate.Color;
+                continue;
+            }
+
+            candidate.Color = PhraseHighlightColorAssignmentService.ReassignCandidateColor(
+                candidate.Role,
+                candidate.Phrase,
+                ColorAssignment,
+                theme,
+                canvas,
+                characterColors,
+                usedColors,
+                discoveryIndex++,
+                phraseSaltOffset: offset,
+                groupingProfile: GroupingProfile,
+                entityCategory: candidate.EntityCategory,
+                entityId: candidate.EntityId,
+                assignmentState: assignmentState,
+                reservedForegroundColors: reserved);
+
+            if (!candidate.Role.StartsWith("Alias · ", StringComparison.OrdinalIgnoreCase))
+                characterColors[candidate.Phrase] = candidate.Color;
+        }
     }
 
     private void Candidate_PropertyChanged(object? sender, PropertyChangedEventArgs e)

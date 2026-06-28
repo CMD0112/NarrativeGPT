@@ -11,10 +11,13 @@ internal static class SectionSchema
 
     public const string CanonFormatFile = "canon-format.md";
 
+    public const string NarratorScalesFile = "narrator-scales.md";
+
     /// <summary>Auto-generated meta files recommended for Project upload alongside lore.</summary>
     public static readonly string[] ReferenceSourceFiles =
     [
         CanonFormatFile,
+        NarratorScalesFile,
     ];
 
     public static bool IsReferenceSourceFile(string relativePath) =>

@@ -96,11 +96,12 @@ internal static class UtilityConversationReadinessService
                 Level = UtilityConversationReadinessLevel.Registered,
                 ApiVisible = true,
                 PageHref = pageHref,
+                ComposerFound = true,
             };
         }
 
         var domOnlyReason = fetch.Error ?? "conversation_fetch_failed";
-        var isDomCapable = IsDomCapableFetchError(domOnlyReason);
+        var isDomCapable = IsDomCapableFetchError(domOnlyReason) || IsUnregisteredFetchError(domOnlyReason);
 
         if (!isDomCapable)
         {
@@ -174,6 +175,11 @@ internal static class UtilityConversationReadinessService
         string.Equals(fetchError, "http_404", StringComparison.OrdinalIgnoreCase)
         || (fetchError?.Contains("404", StringComparison.OrdinalIgnoreCase) ?? false);
 
+    internal static bool IsUnregisteredFetchError(string? fetchError) =>
+        IsDomOnlyFetchError(fetchError)
+        || string.Equals(fetchError, "http_403", StringComparison.OrdinalIgnoreCase)
+        || (fetchError?.Contains("403", StringComparison.OrdinalIgnoreCase) ?? false);
+
     internal static bool IsRateLimitFetchError(string? fetchError) =>
         string.Equals(fetchError, "http_429", StringComparison.OrdinalIgnoreCase)
         || (fetchError?.Contains("429", StringComparison.OrdinalIgnoreCase) ?? false);
@@ -181,11 +187,17 @@ internal static class UtilityConversationReadinessService
     internal static bool IsDomCapableFetchError(string? fetchError) =>
         IsDomOnlyFetchError(fetchError) || IsRateLimitFetchError(fetchError);
 
-    private static string? ShouldShowUtilityPinHint(AdventureBundle? bundle)
-    {
-        if (bundle is null || UtilityDeliveryModeService.UsesInlineDelivery(bundle))
-            return null;
+    /// <summary>
+    /// Unregistered conversations (404/403 on GET) can be registered via ping push when composer is ready.
+    /// </summary>
+    internal static bool CanRegisterViaPingPush(UtilityConversationReadinessResult readiness) =>
+        readiness.ComposerFound
+        && readiness.Level != UtilityConversationReadinessLevel.Unready
+        && IsUnregisteredFetchError(readiness.DomOnlyReason);
 
-        return PlayTabPinService.HasUtilityPin(bundle) ? null : PinUtilityTabHint;
-    }
+    /// <summary>Alias kept for call sites.</summary>
+    internal static bool CanRegisterViaDomPing(UtilityConversationReadinessResult readiness) =>
+        CanRegisterViaPingPush(readiness);
+
+    private static string? ShouldShowUtilityPinHint(AdventureBundle? bundle) => null;
 }

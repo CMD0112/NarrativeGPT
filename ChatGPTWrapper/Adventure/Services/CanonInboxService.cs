@@ -6,12 +6,14 @@ public static class CanonInboxService
 {
     public static bool HasAny(AdventureBundle bundle) => ListItems(bundle).Count > 0;
 
-    public static IReadOnlyList<CanonInboxItem> ListItems(AdventureBundle bundle)
+    public static IReadOnlyList<CanonInboxItem> ListItems(
+        AdventureBundle bundle,
+        bool suppressEntityProposals = false)
     {
         var items = new List<CanonInboxItem>();
 
         var entityCount = bundle.Entities.ReviewQueue.Count;
-        if (entityCount > 0)
+        if (entityCount > 0 && !suppressEntityProposals)
         {
             items.Add(new CanonInboxItem
             {

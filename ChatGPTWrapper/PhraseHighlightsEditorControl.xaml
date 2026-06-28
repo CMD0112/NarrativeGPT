@@ -1,256 +1,879 @@
-<UserControl x:Class="ChatGPTWrapper.PhraseHighlightsEditorControl"
+<UserControl x:Name="RootControl"
+             x:Class="ChatGPTWrapper.PhraseHighlightsEditorControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="clr-namespace:ChatGPTWrapper.Views"
+             VerticalAlignment="Stretch"
              Background="{StaticResource BgBaseBrush}"
-             Foreground="{StaticResource TextPrimaryBrush}">
+             Foreground="{StaticResource TextPrimaryBrush}"
+             PreviewKeyDown="RootControl_PreviewKeyDown">
     <UserControl.Resources>
         <views:HexColorBrushConverter x:Key="HexColorBrushConverter"/>
+        <Style TargetType="ScrollBar" BasedOn="{StaticResource WrapperInteriorScrollBarStyle}"/>
+        <Style x:Key="HighlightToolbarButtonStyle" TargetType="Button" BasedOn="{StaticResource ShellCommandBarSecondarySlot}">
+            <Setter Property="Padding" Value="8,3"/>
+            <Setter Property="MinHeight" Value="26"/>
+        </Style>
+        <Style x:Key="DisabledRuleRowStyle" TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Enabled}" Value="False">
+                    <Setter Property="Opacity" Value="0.55"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
     <Grid Background="{StaticResource BgBaseBrush}">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0"
-                Style="{StaticResource ShellCardStyle}"
-                Padding="12"
-                Margin="0,0,0,12">
-            <StackPanel>
-                <TextBlock Text="Automatic colors"
-                           FontWeight="SemiBold"
-                           Margin="0,0,0,4"/>
-                <TextBlock Text="Choose how cast import assigns text colors. Manual edits below always override imported colors."
-                           Style="{StaticResource ShellSectionHintStyle}"
-                           TextWrapping="Wrap"
-                           Margin="0,0,0,10"/>
+        <!-- Rules -->
+        <Grid x:Name="RulesViewPanel" Grid.Row="0" MinHeight="240">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-                <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Preset"
-                               VerticalAlignment="Center"
-                               Foreground="{StaticResource TextMutedBrush}"
-                               Margin="0,0,10,0"/>
-                    <ComboBox x:Name="AutoColorProfileCombo"
-                              Grid.Column="1"
-                              MinHeight="30"
-                              DisplayMemberPath="Name"
-                              SelectionChanged="AutoColorProfileCombo_SelectionChanged"/>
-                    <Button Grid.Column="2"
-                            Content="Customize…"
-                            Padding="10,5"
-                            MinHeight="30"
-                            Margin="10,0,0,0"
-                            Style="{StaticResource ShellCommandBarSecondarySlot}"
-                            Click="CustomizeAutoColorButton_Click"/>
-                </Grid>
+            <DockPanel Grid.Row="0" Margin="0,0,0,6" LastChildFill="True">
+                <StackPanel DockPanel.Dock="Left"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <Button x:Name="ImportFromAdventureButton"
+                            Content="Import cast…"
+                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                            Margin="0,0,4,0"
+                            Click="ImportFromAdventureButton_Click"/>
+                    <Button Content="Add"
+                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                            Margin="0,0,4,0"
+                            ToolTip="Add highlight rule"
+                            Click="AddButton_Click"/>
+                    <Button x:Name="RemoveButton"
+                            Content="Remove"
+                            Margin="0,0,4,0"
+                            IsEnabled="False"
+                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                            Click="RemoveButton_Click"/>
+                    <Button x:Name="DuplicateButton"
+                            Content="Duplicate"
+                            Margin="0,0,4,0"
+                            IsEnabled="False"
+                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                            Click="DuplicateButton_Click"/>
+                    <Button x:Name="ReassignColorsButton"
+                            Content="Reroll"
+                            Margin="0,0,4,0"
+                            IsEnabled="False"
+                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                            ToolTip="Reroll color for selected rules"
+                            Click="ReassignColorsButton_Click"/>
+                    <Button x:Name="AssignColorButton"
+                            Content="Pick color…"
+                            Margin="0,0,4,0"
+                            IsEnabled="False"
+                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                            Click="AssignColorButton_Click"/>
+                    <Menu Background="Transparent" VerticalAlignment="Center">
+                        <MenuItem Header="More" Padding="6,2">
+                            <MenuItem x:Name="MoveUpMenuItem"
+                                      Header="Move up"
+                                      IsEnabled="False"
+                                      Click="MoveUpButton_Click"/>
+                            <MenuItem x:Name="MoveDownMenuItem"
+                                      Header="Move down"
+                                      IsEnabled="False"
+                                      Click="MoveDownButton_Click"/>
+                            <Separator/>
+                            <MenuItem Header="Import JSON…" Click="ImportHighlightsJsonButton_Click"/>
+                            <MenuItem Header="Export JSON…" Click="ExportHighlightsJsonButton_Click"/>
+                        </MenuItem>
+                    </Menu>
+                    <Button x:Name="MoveUpButton" Visibility="Collapsed" Click="MoveUpButton_Click"/>
+                    <Button x:Name="MoveDownButton" Visibility="Collapsed" Click="MoveDownButton_Click"/>
+                </StackPanel>
 
-                <TextBlock x:Name="AutoColorProfileDescriptionText"
-                           Foreground="{StaticResource TextMutedBrush}"
-                           TextWrapping="Wrap"
-                           Margin="0,0,0,8"/>
+                <Button x:Name="ColorSettingsButton"
+                        DockPanel.Dock="Right"
+                        Content="Color settings…"
+                        Style="{StaticResource HighlightToolbarButtonStyle}"
+                        Margin="8,0,0,0"
+                        VerticalAlignment="Center"
+                        Click="ColorSettingsButton_Click"/>
+            </DockPanel>
 
-                <TextBlock Text="Preset palette"
-                           Foreground="{StaticResource TextMutedBrush}"
-                           FontSize="{StaticResource FontSizeHint}"
-                           Margin="0,0,0,6"/>
-                <WrapPanel x:Name="AutoColorPalettePreviewPanel"/>
-            </StackPanel>
-        </Border>
+            <Grid Grid.Row="1" MinHeight="180">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.4*" MinWidth="240"/>
+                    <ColumnDefinition Width="6"/>
+                    <ColumnDefinition Width="*" MinWidth="240" MaxWidth="400"/>
+                </Grid.ColumnDefinitions>
 
-        <Border Grid.Row="1"
-                Style="{StaticResource ShellCardStyle}"
-                Padding="12,10"
-                Margin="0,0,0,12">
-            <WrapPanel VerticalAlignment="Center">
-                <Button x:Name="ImportFromAdventureButton"
-                        Content="Import from adventure…"
-                        Padding="10,5"
-                        MinHeight="30"
-                        Margin="0,0,8,4"
-                        Style="{StaticResource ShellCommandBarSecondarySlot}"
-                        Click="ImportFromAdventureButton_Click"/>
-                <Button Content="Add rule"
-                        Padding="10,5"
-                        MinHeight="30"
-                        Margin="0,0,8,4"
-                        Style="{StaticResource ShellCommandBarSecondarySlot}"
-                        Click="AddButton_Click"/>
-                <Button x:Name="RemoveButton"
-                        Content="Remove"
-                        Padding="10,5"
-                        MinHeight="30"
-                        Margin="0,0,8,4"
-                        IsEnabled="False"
-                        Style="{StaticResource ShellCommandBarSecondarySlot}"
-                        Click="RemoveButton_Click"/>
-                <Button x:Name="DuplicateButton"
-                        Content="Duplicate"
-                        Padding="10,5"
-                        MinHeight="30"
-                        Margin="0,0,0,4"
-                        IsEnabled="False"
-                        Style="{StaticResource ShellCommandBarSecondarySlot}"
-                        Click="DuplicateButton_Click"/>
-            </WrapPanel>
-        </Border>
+                <Border Grid.Column="0"
+                        Background="{StaticResource BgSurfaceBrush}"
+                        BorderBrush="{StaticResource BorderSubtleBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource RadiusControl}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
 
-        <Grid Grid.Row="2" MinHeight="220">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.2*" MinWidth="240"/>
-                <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="*" MinWidth="280" MaxWidth="480"/>
-            </Grid.ColumnDefinitions>
+                        <StackPanel x:Name="RulesListCommandBar"
+                                    Grid.Row="0"
+                                    Margin="8,6,8,4">
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Search"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           FontSize="{StaticResource FontSizeHint}"
+                                           Margin="0,0,8,0"/>
+                                <TextBox x:Name="FilterTextBox"
+                                         Grid.Column="1"
+                                         MinHeight="26"
+                                         ToolTip="Search phrase, entity, group, or link (Ctrl+F). Right-click the list for selection, arrange, and bulk edit."
+                                         TextChanged="FilterTextBox_TextChanged"/>
+                                <TextBlock x:Name="FilterStatusText"
+                                           Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           FontSize="{StaticResource FontSizeHint}"
+                                           Margin="10,0,0,0"/>
+                            </Grid>
+                        </StackPanel>
 
-            <Grid Grid.Column="0">
-                <ListView x:Name="RulesListView"
-                          Background="{StaticResource BgSurfaceBrush}"
-                          Foreground="{StaticResource TextPrimaryBrush}"
-                          BorderBrush="{StaticResource BorderSubtleBrush}"
-                          SelectionChanged="RulesListView_SelectionChanged"
-                          KeyDown="RulesListView_KeyDown">
-                    <ListView.View>
-                        <GridView>
-                            <GridViewColumn Header="Phrase" Width="200" DisplayMemberBinding="{Binding Phrase}"/>
-                            <GridViewColumn Header="Color" Width="52">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Border Width="26"
-                                                Height="26"
-                                                CornerRadius="5"
-                                                Margin="0,2"
-                                                BorderBrush="{StaticResource BorderSubtleBrush}"
-                                                BorderThickness="1"
-                                                Background="{Binding Color, Converter={StaticResource HexColorBrushConverter}}"
-                                                ToolTip="{Binding Color}"/>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                            <GridViewColumn Header="Style" Width="88" DisplayMemberBinding="{Binding StyleSummary}"/>
-                        </GridView>
-                    </ListView.View>
-                </ListView>
+                        <ListView x:Name="RulesListView"
+                                  Grid.Row="1"
+                                  SelectionMode="Extended"
+                                  ItemContainerStyle="{StaticResource DisabledRuleRowStyle}"
+                                  Background="Transparent"
+                                  Foreground="{StaticResource TextPrimaryBrush}"
+                                  BorderThickness="0"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  ScrollViewer.CanContentScroll="True"
+                                  ScrollViewer.PanningMode="VerticalOnly"
+                                  SelectionChanged="RulesListView_SelectionChanged"
+                                  PreviewMouseRightButtonDown="RulesListView_PreviewMouseRightButtonDown"
+                                  KeyDown="RulesListView_KeyDown">
+                            <ListView.ContextMenu>
+                                <ContextMenu Opened="RulesListContextMenu_Opened">
+                                    <MenuItem Header="Select">
+                                        <MenuItem Header="All" Click="SelectAllRulesButton_Click"/>
+                                        <MenuItem Header="None" Click="SelectNoneRulesButton_Click"/>
+                                        <MenuItem Header="Filtered" Click="SelectFilteredRulesButton_Click"/>
+                                        <MenuItem Header="Invert" Click="InvertSelectionRulesButton_Click"/>
+                                        <Separator/>
+                                        <MenuItem x:Name="SelectAliasFamilyMenuItem"
+                                                  Header="Alias family"
+                                                  Click="SelectAliasFamilyMenuItem_Click"/>
+                                    </MenuItem>
+                                    <MenuItem Header="Arrange">
+                                        <MenuItem Header="Sort">
+                                            <MenuItem x:Name="SortManualMenuItem"
+                                                      Header="Manual order"
+                                                      IsCheckable="True"
+                                                      Click="SortManualMenuItem_Click"/>
+                                            <MenuItem x:Name="SortPhraseAscendingMenuItem"
+                                                      Header="Phrase (A–Z)"
+                                                      IsCheckable="True"
+                                                      Click="SortPhraseAscendingMenuItem_Click"/>
+                                            <MenuItem x:Name="SortPhraseDescendingMenuItem"
+                                                      Header="Phrase (Z–A)"
+                                                      IsCheckable="True"
+                                                      Click="SortPhraseDescendingMenuItem_Click"/>
+                                            <MenuItem x:Name="SortEntityTypeMenuItem"
+                                                      Header="Entity type"
+                                                      IsCheckable="True"
+                                                      Click="SortEntityTypeMenuItem_Click"/>
+                                            <MenuItem x:Name="SortColorGroupMenuItem"
+                                                      Header="Color group"
+                                                      IsCheckable="True"
+                                                      Click="SortColorGroupMenuItem_Click"/>
+                                            <MenuItem x:Name="SortLinkTypeMenuItem"
+                                                      Header="Link type"
+                                                      IsCheckable="True"
+                                                      Click="SortLinkTypeMenuItem_Click"/>
+                                            <MenuItem x:Name="SortEnabledFirstMenuItem"
+                                                      Header="Enabled first"
+                                                      IsCheckable="True"
+                                                      Click="SortEnabledFirstMenuItem_Click"/>
+                                        </MenuItem>
+                                        <MenuItem Header="Group">
+                                            <MenuItem x:Name="GroupNoneMenuItem"
+                                                      Header="None"
+                                                      IsCheckable="True"
+                                                      Click="GroupNoneMenuItem_Click"/>
+                                            <MenuItem x:Name="GroupPrimaryAliasMenuItem"
+                                                      Header="Primary &amp; aliases"
+                                                      IsCheckable="True"
+                                                      Click="GroupPrimaryAliasMenuItem_Click"/>
+                                            <MenuItem x:Name="GroupEntityTypeMenuItem"
+                                                      Header="Entity type"
+                                                      IsCheckable="True"
+                                                      Click="GroupEntityTypeMenuItem_Click"/>
+                                            <MenuItem x:Name="GroupColorGroupMenuItem"
+                                                      Header="Color group"
+                                                      IsCheckable="True"
+                                                      Click="GroupColorGroupMenuItem_Click"/>
+                                            <MenuItem x:Name="GroupLinkTypeMenuItem"
+                                                      Header="Link type"
+                                                      IsCheckable="True"
+                                                      Click="GroupLinkTypeMenuItem_Click"/>
+                                        </MenuItem>
+                                    </MenuItem>
+                                    <Separator/>
+                                    <MenuItem x:Name="ContextBulkEnableMenuItem"
+                                              Header="Enable"
+                                              Click="BulkEnableButton_Click"/>
+                                    <MenuItem x:Name="ContextBulkDisableMenuItem"
+                                              Header="Disable"
+                                              Click="BulkDisableButton_Click"/>
+                                    <Separator/>
+                                    <MenuItem x:Name="ContextBulkBolderMenuItem"
+                                              Header="Bolder"
+                                              Click="BulkBolderButton_Click"/>
+                                    <MenuItem x:Name="ContextBulkMatchTextMenuItem"
+                                              Header="Match text"
+                                              Click="BulkMatchTextWeightButton_Click"/>
+                                    <MenuItem x:Name="ContextBulkItalicOnMenuItem"
+                                              Header="Italic on"
+                                              Click="BulkItalicOnButton_Click"/>
+                                    <MenuItem x:Name="ContextBulkItalicOffMenuItem"
+                                              Header="Italic off"
+                                              Click="BulkItalicOffButton_Click"/>
+                                    <MenuItem x:Name="ContextBulkClearBackgroundMenuItem"
+                                              Header="Clear background"
+                                              Click="BulkClearBackgroundButton_Click"/>
+                                    <MenuItem x:Name="ContextBulkPickColorMenuItem"
+                                              Header="Pick color…"
+                                              Click="AssignColorButton_Click"/>
+                                    <MenuItem x:Name="ContextBulkRerollMenuItem"
+                                              Header="Reroll colors"
+                                              Click="ReassignColorsButton_Click"/>
+                                    <Separator/>
+                                    <MenuItem x:Name="ContextDuplicateMenuItem"
+                                              Header="Duplicate"
+                                              Click="DuplicateButton_Click"/>
+                                    <MenuItem x:Name="ContextRemoveMenuItem"
+                                              Header="Remove"
+                                              Click="RemoveButton_Click"/>
+                                    <MenuItem x:Name="ContextMoveUpMenuItem"
+                                              Header="Move up"
+                                              Click="MoveUpButton_Click"/>
+                                    <MenuItem x:Name="ContextMoveDownMenuItem"
+                                              Header="Move down"
+                                              Click="MoveDownButton_Click"/>
+                                </ContextMenu>
+                            </ListView.ContextMenu>
+                            <ListView.GroupStyle>
+                                <GroupStyle>
+                                    <GroupStyle.HeaderTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextMutedBrush}"
+                                                       FontSize="{StaticResource FontSizeHint}"
+                                                       Margin="4,8,0,2"/>
+                                        </DataTemplate>
+                                    </GroupStyle.HeaderTemplate>
+                                </GroupStyle>
+                            </ListView.GroupStyle>
+                            <ListView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel IsVirtualizing="False"/>
+                                </ItemsPanelTemplate>
+                            </ListView.ItemsPanel>
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="Phrase" Width="150" DisplayMemberBinding="{Binding Phrase}"/>
+                                    <GridViewColumn Header="Entity" Width="60" DisplayMemberBinding="{Binding EntityTypeSummary}"/>
+                                    <GridViewColumn Header="Group" Width="96" DisplayMemberBinding="{Binding GroupSummary}"/>
+                                    <GridViewColumn Header="Link" Width="56" DisplayMemberBinding="{Binding AliasSummary}"/>
+                                    <GridViewColumn Header="" Width="36">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Border Width="20"
+                                                        Height="20"
+                                                        CornerRadius="4"
+                                                        Margin="0,2"
+                                                        BorderBrush="{StaticResource BorderSubtleBrush}"
+                                                        BorderThickness="1"
+                                                        Background="{Binding Color, Converter={StaticResource HexColorBrushConverter}}"
+                                                        ToolTip="{Binding Color}"/>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Style" Width="68" DisplayMemberBinding="{Binding StyleSummary}"/>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
 
-                <Border x:Name="RulesEmptyStateBorder"
+                        <Border x:Name="RulesEmptyStateBorder"
+                                Grid.Row="0"
+                                Grid.RowSpan="2"
+                                Background="{StaticResource BgSurfaceBrush}"
+                                Padding="16"
+                                Visibility="Collapsed">
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <TextBlock Text="No rules yet"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,0,0,4"/>
+                                <TextBlock Text="Add a rule or import cast names."
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           FontSize="{StaticResource FontSizeHint}"
+                                           TextAlignment="Center"
+                                           Margin="0,0,0,10"/>
+                                <Button Content="Import cast…"
+                                        Padding="8,3"
+                                        MinHeight="26"
+                                        HorizontalAlignment="Center"
+                                        Style="{StaticResource HighlightToolbarButtonStyle}"
+                                        Click="ImportFromAdventureButton_Click"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <GridSplitter Grid.Column="1"
+                              Style="{StaticResource SidePanelGridSplitterStyle}"
+                              ResizeBehavior="PreviousAndNext"
+                              ResizeDirection="Columns"
+                              Width="6"/>
+
+                <Border Grid.Column="2"
                         Background="{StaticResource BgSurfaceBrush}"
                         BorderBrush="{StaticResource BorderSubtleBrush}"
                         BorderThickness="1"
                         CornerRadius="{StaticResource RadiusControl}"
-                        Padding="20"
-                        Visibility="Collapsed">
-                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock Text="No highlight rules yet"
-                                   FontWeight="SemiBold"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,0,0,6"/>
-                        <TextBlock Text="Add a rule or import cast names from your adventure."
-                                   Foreground="{StaticResource TextMutedBrush}"
-                                   TextWrapping="Wrap"
-                                   TextAlignment="Center"
-                                   MaxWidth="280"/>
-                    </StackPanel>
+                        Padding="10,8">
+                    <ScrollViewer Style="{StaticResource WrapperInteriorScrollViewerStyle}"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <StackPanel x:Name="SingleRuleEditorPanel">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <CheckBox x:Name="EnabledCheckBox"
+                                              Content="Enabled"
+                                              IsChecked="True"
+                                              Checked="RuleField_Changed"
+                                              Unchecked="RuleField_Changed"/>
+                                </StackPanel>
+
+                                <TextBox x:Name="PhraseTextBox"
+                                         MinHeight="26"
+                                         Margin="0,0,0,8"
+                                         ToolTip="Phrase to highlight"
+                                         TextChanged="RuleField_Changed"/>
+
+                                <Expander x:Name="SharingExpander"
+                                          Header="Sharing"
+                                          Margin="0,0,0,8"
+                                          IsExpanded="False"
+                                          Visibility="Collapsed">
+                                    <StackPanel Margin="0,6,0,0">
+                                        <TextBlock x:Name="AliasLinkTextBlock"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Margin="0,0,0,6"
+                                                   Visibility="Collapsed"/>
+                                        <CheckBox x:Name="SyncOverrideCheckBox"
+                                                  Content="Override alias sync"
+                                                  Margin="0,0,0,6"
+                                                  Visibility="Collapsed"
+                                                  Checked="SyncOverrideCheckBox_Changed"
+                                                  Unchecked="SyncOverrideCheckBox_Changed"/>
+                                        <TextBlock x:Name="GroupLinkTextBlock"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Margin="0,0,0,6"
+                                                   Visibility="Collapsed"/>
+                                        <CheckBox x:Name="GroupOverrideCheckBox"
+                                                  Content="Override group color"
+                                                  Visibility="Collapsed"
+                                                  Checked="GroupOverrideCheckBox_Changed"
+                                                  Unchecked="GroupOverrideCheckBox_Changed"/>
+                                    </StackPanel>
+                                </Expander>
+
+                                <TextBlock Text="Colors" FontWeight="SemiBold" FontSize="{StaticResource FontSizeHint}" Margin="0,0,0,4"/>
+                                <WrapPanel x:Name="TextColorSwatchesPanel" Margin="0,0,0,4"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBox x:Name="ColorTextBox"
+                                             Width="120"
+                                             MinHeight="26"
+                                             TextChanged="RuleField_Changed"
+                                             LostFocus="RuleField_Changed"/>
+                                    <Button Content="Pick…"
+                                            Margin="6,0,0,0"
+                                            Padding="8,3"
+                                            MinHeight="26"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Click="PickTextColorButton_Click"/>
+                                </StackPanel>
+
+                                <WrapPanel x:Name="BackgroundColorSwatchesPanel" Margin="0,0,0,4"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <TextBox x:Name="BackgroundColorTextBox"
+                                             Width="120"
+                                             MinHeight="26"
+                                             ToolTip="Background color (optional)"
+                                             TextChanged="RuleField_Changed"
+                                             LostFocus="RuleField_Changed"/>
+                                    <Button Content="Clear"
+                                            Margin="6,0,0,0"
+                                            Padding="8,3"
+                                            MinHeight="26"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Click="ClearBackgroundButton_Click"/>
+                                    <Button Content="Pick…"
+                                            Margin="4,0,0,0"
+                                            Padding="8,3"
+                                            MinHeight="26"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Click="PickBackgroundColorButton_Click"/>
+                                </StackPanel>
+
+                                <Expander Header="Typography" Margin="0,0,0,8" IsExpanded="True">
+                                    <StackPanel Margin="0,6,0,0">
+                                        <TextBlock Text="Font weight"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Margin="0,0,0,2"/>
+                                        <ComboBox x:Name="FontWeightChoiceCombo"
+                                                  MinHeight="26"
+                                                  Margin="0,0,0,4"
+                                                  SelectionChanged="FontWeightChoiceCombo_SelectionChanged"/>
+                                        <TextBox x:Name="FontWeightCustomTextBox"
+                                                 MinHeight="26"
+                                                 Margin="0,0,0,4"
+                                                 Visibility="Collapsed"
+                                                 ToolTip="Any weight from 100 to 900"
+                                                 TextChanged="RuleField_Changed"
+                                                 LostFocus="RuleField_Changed"/>
+                                        <TextBlock x:Name="FontWeightHintText"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,8"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                            <CheckBox x:Name="ItalicCheckBox"
+                                                      Content="Italic"
+                                                      Margin="0,0,12,0"
+                                                      Checked="RuleField_Changed"
+                                                      Unchecked="RuleField_Changed"/>
+                                            <CheckBox x:Name="UnderlineCheckBox"
+                                                      Content="Underline"
+                                                      Margin="0,0,12,0"
+                                                      Checked="RuleField_Changed"
+                                                      Unchecked="RuleField_Changed"/>
+                                            <CheckBox x:Name="StrikethroughCheckBox"
+                                                      Content="Strike"
+                                                      Checked="RuleField_Changed"
+                                                      Unchecked="RuleField_Changed"/>
+                                        </StackPanel>
+                                        <Grid Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="Size scale"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           FontSize="{StaticResource FontSizeHint}"
+                                                           Margin="0,0,0,2"/>
+                                                <TextBox x:Name="FontSizeScaleTextBox"
+                                                         MinHeight="26"
+                                                         ToolTip="e.g. 1.15 = 115% of role size"
+                                                         TextChanged="RuleField_Changed"
+                                                         LostFocus="RuleField_Changed"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Letter spacing (em)"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           FontSize="{StaticResource FontSizeHint}"
+                                                           Margin="0,0,0,2"/>
+                                                <TextBox x:Name="LetterSpacingTextBox"
+                                                         MinHeight="26"
+                                                         TextChanged="RuleField_Changed"
+                                                         LostFocus="RuleField_Changed"/>
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBlock Text="Font family"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Margin="0,0,0,2"/>
+                                        <TextBox x:Name="FontFamilyTextBox"
+                                                 MinHeight="26"
+                                                 Margin="0,0,0,6"
+                                                 ToolTip="Optional CSS font-family"
+                                                 TextChanged="RuleField_Changed"
+                                                 LostFocus="RuleField_Changed"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="Transform"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           FontSize="{StaticResource FontSizeHint}"
+                                                           Margin="0,0,0,2"/>
+                                                <ComboBox x:Name="TextTransformCombo"
+                                                          MinHeight="26"
+                                                          SelectionChanged="TextTransformCombo_SelectionChanged">
+                                                    <ComboBoxItem Content="(none)" Tag=""/>
+                                                    <ComboBoxItem Content="Uppercase" Tag="uppercase"/>
+                                                    <ComboBoxItem Content="Lowercase" Tag="lowercase"/>
+                                                    <ComboBoxItem Content="Capitalize" Tag="capitalize"/>
+                                                </ComboBox>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Opacity"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           FontSize="{StaticResource FontSizeHint}"
+                                                           Margin="0,0,0,2"/>
+                                                <TextBox x:Name="OpacityTextBox"
+                                                         MinHeight="26"
+                                                         ToolTip="0–1, empty = fully opaque"
+                                                         TextChanged="RuleField_Changed"
+                                                         LostFocus="RuleField_Changed"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Expander>
+
+                                <Expander Header="Decoration" Margin="0,0,0,10" IsExpanded="False">
+                                    <StackPanel Margin="0,6,0,0">
+                                        <Grid Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="Border width (px)"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           FontSize="{StaticResource FontSizeHint}"
+                                                           Margin="0,0,0,2"/>
+                                                <TextBox x:Name="BorderWidthTextBox"
+                                                         MinHeight="26"
+                                                         TextChanged="RuleField_Changed"
+                                                         LostFocus="RuleField_Changed"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Border radius (px)"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           FontSize="{StaticResource FontSizeHint}"
+                                                           Margin="0,0,0,2"/>
+                                                <TextBox x:Name="BorderRadiusTextBox"
+                                                         MinHeight="26"
+                                                         TextChanged="RuleField_Changed"
+                                                         LostFocus="RuleField_Changed"/>
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBlock Text="Border color"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Margin="0,0,0,2"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                            <TextBox x:Name="BorderColorTextBox"
+                                                     Width="120"
+                                                     MinHeight="26"
+                                                     TextChanged="RuleField_Changed"
+                                                     LostFocus="RuleField_Changed"/>
+                                            <Button Content="Pick…"
+                                                    Margin="6,0,0,0"
+                                                    Padding="8,3"
+                                                    MinHeight="26"
+                                                    Style="{StaticResource HighlightToolbarButtonStyle}"
+                                                    Click="PickBorderColorButton_Click"/>
+                                        </StackPanel>
+                                        <Grid Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="Padding X (em)"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           FontSize="{StaticResource FontSizeHint}"
+                                                           Margin="0,0,0,2"/>
+                                                <TextBox x:Name="PaddingXTextBox"
+                                                         MinHeight="26"
+                                                         TextChanged="RuleField_Changed"
+                                                         LostFocus="RuleField_Changed"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Padding Y (em)"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           FontSize="{StaticResource FontSizeHint}"
+                                                           Margin="0,0,0,2"/>
+                                                <TextBox x:Name="PaddingYTextBox"
+                                                         MinHeight="26"
+                                                         TextChanged="RuleField_Changed"
+                                                         LostFocus="RuleField_Changed"/>
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBlock Text="Text shadow (CSS)"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Margin="0,0,0,2"/>
+                                        <TextBox x:Name="TextShadowTextBox"
+                                                 MinHeight="26"
+                                                 Margin="0,0,0,6"
+                                                 ToolTip="e.g. 0 1px 2px rgba(0,0,0,0.4)"
+                                                 TextChanged="RuleField_Changed"
+                                                 LostFocus="RuleField_Changed"/>
+                                        <TextBlock Text="Box shadow (CSS)"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Margin="0,0,0,2"/>
+                                        <TextBox x:Name="BoxShadowTextBox"
+                                                 MinHeight="26"
+                                                 TextChanged="RuleField_Changed"
+                                                 LostFocus="RuleField_Changed"/>
+                                    </StackPanel>
+                                </Expander>
+
+                                <Border x:Name="PreviewSampleBorder"
+                                        Background="{StaticResource BgBaseBrush}"
+                                        BorderBrush="{StaticResource BorderSubtleBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="{StaticResource RadiusControl}"
+                                        Padding="10,8">
+                                    <TextBlock x:Name="PreviewTextBlock"
+                                               Text="Sample phrase"
+                                               TextWrapping="Wrap"
+                                               FontSize="14"
+                                               LineHeight="20"/>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel x:Name="BulkInspectorPanel" Visibility="Collapsed">
+                                <TextBlock x:Name="BulkSelectionTitleText"
+                                           Text="3 selected"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,6"/>
+                                <WrapPanel>
+                                    <Button Content="Enable"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Margin="0,0,4,4"
+                                            Click="BulkEnableButton_Click"/>
+                                    <Button Content="Disable"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Margin="0,0,4,4"
+                                            Click="BulkDisableButton_Click"/>
+                                    <Button Content="Bolder"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Margin="0,0,4,4"
+                                            Click="BulkBolderButton_Click"/>
+                                    <Button Content="Match text"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Margin="0,0,4,4"
+                                            Click="BulkMatchTextWeightButton_Click"/>
+                                    <Button Content="Italic on"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Margin="0,0,4,4"
+                                            Click="BulkItalicOnButton_Click"/>
+                                    <Button Content="Italic off"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Margin="0,0,4,4"
+                                            Click="BulkItalicOffButton_Click"/>
+                                    <Button Content="Clear bg"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Margin="0,0,4,4"
+                                            Click="BulkClearBackgroundButton_Click"/>
+                                    <Button Content="Reroll"
+                                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                                            Margin="0,0,0,4"
+                                            Click="ReassignColorsButton_Click"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Border>
             </Grid>
-
-            <GridSplitter Grid.Column="1"
-                          Style="{StaticResource SidePanelGridSplitterStyle}"
-                          ResizeBehavior="PreviousAndNext"
-                          ResizeDirection="Columns"
-                          Width="8"/>
-
-            <ScrollViewer Grid.Column="2"
-                          VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Disabled">
-                <StackPanel>
-                    <TextBlock Text="Edit rule"
-                               FontWeight="SemiBold"
-                               Margin="0,0,0,10"/>
-
-                    <TextBlock Text="Phrase" Margin="0,0,0,4"/>
-                    <TextBox x:Name="PhraseTextBox"
-                             MinHeight="28"
-                             Margin="0,0,0,14"
-                             TextChanged="RuleField_Changed"/>
-
-                    <TextBlock Text="Text color" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <WrapPanel x:Name="TextColorSwatchesPanel" Margin="0,0,0,8"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                        <TextBox x:Name="ColorTextBox"
-                                 Width="148"
-                                 MinHeight="28"
-                                 TextChanged="RuleField_Changed"
-                                 LostFocus="RuleField_Changed"/>
-                        <Button Content="Pick…"
-                                Margin="8,0,0,0"
-                                Padding="10,5"
-                                MinHeight="28"
-                                Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                Click="PickTextColorButton_Click"/>
-                    </StackPanel>
-
-                    <TextBlock Text="Background (optional)" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <WrapPanel x:Name="BackgroundColorSwatchesPanel" Margin="0,0,0,8"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                        <TextBox x:Name="BackgroundColorTextBox"
-                                 Width="148"
-                                 MinHeight="28"
-                                 TextChanged="RuleField_Changed"
-                                 LostFocus="RuleField_Changed"/>
-                        <Button Content="Clear"
-                                Margin="8,0,0,0"
-                                Padding="10,5"
-                                MinHeight="28"
-                                Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                Click="ClearBackgroundButton_Click"/>
-                        <Button Content="Pick…"
-                                Margin="8,0,0,0"
-                                Padding="10,5"
-                                MinHeight="28"
-                                Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                Click="PickBackgroundColorButton_Click"/>
-                    </StackPanel>
-
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                        <CheckBox x:Name="BoldCheckBox"
-                                  Content="Bold"
-                                  Margin="0,0,20,0"
-                                  Checked="RuleField_Changed"
-                                  Unchecked="RuleField_Changed"/>
-                        <CheckBox x:Name="ItalicCheckBox"
-                                  Content="Italic"
-                                  Checked="RuleField_Changed"
-                                  Unchecked="RuleField_Changed"/>
-                    </StackPanel>
-
-                    <TextBlock Text="Preview" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <Border Background="{StaticResource BgSurfaceBrush}"
-                            BorderBrush="{StaticResource BorderSubtleBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource RadiusControl}"
-                            Padding="14,12"
-                            Margin="0,0,0,8">
-                        <TextBlock x:Name="PreviewTextBlock"
-                                   Text="Sample phrase in continuous view"
-                                   TextWrapping="Wrap"
-                                   FontSize="14"
-                                   LineHeight="22"/>
-                    </Border>
-                </StackPanel>
-            </ScrollViewer>
         </Grid>
 
+        <!-- Color settings (replaces rules view) -->
+        <ScrollViewer x:Name="AutoColorsViewPanel"
+                      Grid.Row="0"
+                      Visibility="Collapsed"
+                      Style="{StaticResource WrapperInteriorScrollViewerStyle}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <Button x:Name="BackToRulesButton"
+                            Content="← Rules"
+                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                            Margin="0,0,10,0"
+                            Click="BackToRulesButton_Click"/>
+                    <TextBlock Text="Color settings"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <TextBlock Text="Preset"
+                           FontWeight="SemiBold"
+                           FontSize="{StaticResource FontSizeHint}"
+                           Margin="0,0,0,4"/>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ComboBox x:Name="AutoColorProfileCombo"
+                              MinHeight="28"
+                              Margin="0,0,6,0"
+                              DisplayMemberPath="Name"
+                              SelectionChanged="AutoColorProfileCombo_SelectionChanged"/>
+                    <Button Content="Customize…"
+                            Grid.Column="1"
+                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                            Margin="0,0,6,0"
+                            Click="CustomizeAutoColorButton_Click"/>
+                    <Button x:Name="RerollAllRuleColorsButton"
+                            Grid.Column="2"
+                            Content="Reroll all"
+                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                            Click="RerollAllRuleColorsButton_Click"
+                            ToolTip="Reassign every rule using the active preset"/>
+                </Grid>
+                <TextBlock x:Name="AutoColorProfileStatusText"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           TextWrapping="Wrap"
+                           FontSize="{StaticResource FontSizeHint}"
+                           Margin="0,0,0,2"/>
+                <TextBlock x:Name="AutoColorProfileDescriptionText"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           TextWrapping="Wrap"
+                           FontSize="{StaticResource FontSizeHint}"
+                           Margin="0,0,0,10"/>
+
+                <Border x:Name="AutoColorPalettePreviewBorder"
+                        Background="Transparent"
+                        Cursor="Hand"
+                        Margin="0,0,0,10"
+                        ToolTip="Click to reroll palette preview"
+                        MouseLeftButtonUp="AutoColorPalettePreviewBorder_MouseLeftButtonUp">
+                    <WrapPanel x:Name="AutoColorPalettePreviewPanel"/>
+                </Border>
+                <Button x:Name="RerollPalettePreviewButton"
+                        Content="Reroll palette preview"
+                        HorizontalAlignment="Left"
+                        Style="{StaticResource HighlightToolbarButtonStyle}"
+                        Margin="0,0,0,10"
+                        Click="RerollPalettePreviewButton_Click"/>
+
+                <Expander Header="Manage presets" IsExpanded="False" Margin="0,0,0,14">
+                    <WrapPanel Margin="0,6,0,0">
+                        <Button x:Name="NewColorProfileButton"
+                                Content="New…"
+                                Style="{StaticResource HighlightToolbarButtonStyle}"
+                                Margin="0,0,4,4"
+                                Click="NewColorProfileButton_Click"/>
+                        <Button x:Name="DuplicateColorProfileButton"
+                                Content="Duplicate"
+                                Style="{StaticResource HighlightToolbarButtonStyle}"
+                                Margin="0,0,4,4"
+                                Click="DuplicateColorProfileButton_Click"/>
+                        <Button x:Name="RenameColorProfileButton"
+                                Content="Rename"
+                                Style="{StaticResource HighlightToolbarButtonStyle}"
+                                Margin="0,0,4,4"
+                                Click="RenameColorProfileButton_Click"/>
+                        <Button x:Name="DeleteColorProfileButton"
+                                Content="Delete"
+                                Style="{StaticResource HighlightToolbarButtonStyle}"
+                                Margin="0,0,4,4"
+                                Click="DeleteColorProfileButton_Click"/>
+                        <Button x:Name="SaveColorProfileButton"
+                                Content="Save"
+                                Style="{StaticResource HighlightToolbarButtonStyle}"
+                                Margin="0,0,4,4"
+                                Click="SaveColorProfileButton_Click"/>
+                    </WrapPanel>
+                </Expander>
+
+                <Separator Margin="0,0,0,12"/>
+
+                <TextBlock Text="Entity groupings"
+                           FontWeight="SemiBold"
+                           FontSize="{StaticResource FontSizeHint}"
+                           Margin="0,0,0,4"/>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ComboBox x:Name="AutoColorGroupingProfileCombo"
+                              MinHeight="28"
+                              Margin="0,0,6,0"
+                              DisplayMemberPath="Name"
+                              SelectionChanged="AutoColorGroupingProfileCombo_SelectionChanged"/>
+                    <Button Content="Configure…"
+                            Grid.Column="1"
+                            Style="{StaticResource HighlightToolbarButtonStyle}"
+                            Click="CustomizeGroupingButton_Click"/>
+                </Grid>
+                <TextBlock x:Name="AutoColorGroupingStatusText"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           TextWrapping="Wrap"
+                           FontSize="{StaticResource FontSizeHint}"
+                           Margin="0,0,0,10"/>
+
+                <Expander Header="Manage grouping profiles" IsExpanded="False">
+                    <WrapPanel Margin="0,6,0,0">
+                        <Button x:Name="NewGroupingProfileButton"
+                                Content="New…"
+                                Style="{StaticResource HighlightToolbarButtonStyle}"
+                                Margin="0,0,4,4"
+                                Click="NewGroupingProfileButton_Click"/>
+                        <Button x:Name="DuplicateGroupingProfileButton"
+                                Content="Duplicate"
+                                Style="{StaticResource HighlightToolbarButtonStyle}"
+                                Margin="0,0,4,4"
+                                Click="DuplicateGroupingProfileButton_Click"/>
+                        <Button x:Name="RenameGroupingProfileButton"
+                                Content="Rename"
+                                Style="{StaticResource HighlightToolbarButtonStyle}"
+                                Margin="0,0,4,4"
+                                Click="RenameGroupingProfileButton_Click"/>
+                        <Button x:Name="DeleteGroupingProfileButton"
+                                Content="Delete"
+                                Style="{StaticResource HighlightToolbarButtonStyle}"
+                                Margin="0,0,4,4"
+                                Click="DeleteGroupingProfileButton_Click"/>
+                        <Button x:Name="SaveGroupingProfileButton"
+                                Content="Save"
+                                Style="{StaticResource HighlightToolbarButtonStyle}"
+                                Margin="0,0,4,4"
+                                Click="SaveGroupingProfileButton_Click"/>
+                    </WrapPanel>
+                </Expander>
+            </StackPanel>
+        </ScrollViewer>
+
         <TextBlock x:Name="ValidationTextBlock"
-                   Grid.Row="3"
+                   Grid.Row="1"
                    Foreground="{StaticResource ErrorBrush}"
                    TextWrapping="Wrap"
-                   Margin="0,12,0,0"
+                   Margin="0,6,0,0"
                    Visibility="Collapsed"/>
     </Grid>
 </UserControl>

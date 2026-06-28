@@ -175,11 +175,12 @@
     if (
       item.role === "user" &&
       k.segmentHasPacketContextBlock &&
-      k.segmentHasPacketContextBlock(item.blocks) &&
-      k.isPacketContextUiVisible &&
-      !k.isPacketContextUiVisible()
+      k.segmentHasPacketContextBlock(item.blocks)
     ) {
-      embed.classList.add("cgw-weave-embed--has-hidden-packet");
+      embed.classList.add("cgw-has-packet-context");
+      if (k.isPacketContextUiVisible && !k.isPacketContextUiVisible()) {
+        embed.classList.add("cgw-weave-embed--has-hidden-packet");
+      }
     }
     return embed;
   }
@@ -432,10 +433,6 @@
       }
     }
 
-    if (reparented && k.applyScrollSurface) {
-      k.applyScrollSurface(scrollHost, container, 0, false);
-    }
-
     if (needsAtomicSwap) {
       container.style.visibility = "hidden";
       container.setAttribute("aria-hidden", "true");
@@ -447,6 +444,9 @@
     if (k.ensureComposerClearanceWatcher) k.ensureComposerClearanceWatcher();
     if (k.ensureScrollHostResizeObserver) {
       k.ensureScrollHostResizeObserver(scrollHost, container);
+    }
+    if (k.ensureScrollHostWheelBinding) {
+      k.ensureScrollHostWheelBinding(scrollHost, container);
     }
     if (k.bindContainerScrollClamp) k.bindContainerScrollClamp(container);
     if (k.bindContainerScrollIntent) k.bindContainerScrollIntent(container);

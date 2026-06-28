@@ -81,4 +81,51 @@ public sealed class EntityReferenceRowBuilderTests
         Assert.Equal("Cast", EntityReferenceRowBuilder.FilterDisplayLabel("Characters", compact: true));
         Assert.Equal("Characters", EntityReferenceRowBuilder.FilterDisplayLabel("Characters", compact: false));
     }
+
+    [Fact]
+    public void FilterAndSortRows_filters_by_name_role_and_aliases()
+    {
+        var rows = new[]
+        {
+            new EntityReferenceRow { Name = "Mara", RoleOrStatus = "Guide", AliasesSearchText = "" },
+            new EntityReferenceRow { Name = "Tom", RoleOrStatus = "Merchant", AliasesSearchText = "the trader" },
+        };
+
+        var filtered = EntityReferenceRowBuilder.FilterAndSortRows(rows, "trader", EntityListSortMode.NameAscending, pinSortEnabled: false);
+
+        var row = Assert.Single(filtered);
+        Assert.Equal("Tom", row.Name);
+    }
+
+    [Fact]
+    public void FilterAndSortRows_pinned_first_when_enabled()
+    {
+        var rows = new[]
+        {
+            new EntityReferenceRow { Name = "Beta", Pinned = false },
+            new EntityReferenceRow { Name = "Alpha", Pinned = true },
+        };
+
+        var sorted = EntityReferenceRowBuilder.FilterAndSortRows(rows, null, EntityListSortMode.PinnedFirst, pinSortEnabled: true);
+
+        Assert.Equal("Alpha", sorted[0].Name);
+        Assert.Equal("Beta", sorted[1].Name);
+    }
+
+    [Fact]
+    public void FilterAndSortRows_recently_edited_orders_by_last_edited()
+    {
+        var older = DateTimeOffset.UtcNow.AddHours(-2);
+        var newer = DateTimeOffset.UtcNow;
+        var rows = new[]
+        {
+            new EntityReferenceRow { Name = "Older", LastEditedUtc = older },
+            new EntityReferenceRow { Name = "Newer", LastEditedUtc = newer },
+        };
+
+        var sorted = EntityReferenceRowBuilder.FilterAndSortRows(rows, null, EntityListSortMode.RecentlyEdited, pinSortEnabled: false);
+
+        Assert.Equal("Newer", sorted[0].Name);
+        Assert.Equal("Older", sorted[1].Name);
+    }
 }

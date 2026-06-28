@@ -80,12 +80,27 @@ The right panel shows a **live sample transcript** (user + assistant) plus an op
 | **Phrase highlights** | Continuous or Weave **on** | Color-code matching phrases in the overlay |
 | **Show images** | Continuous or Weave **on** | Inline images vs filename placeholders |
 | **Composer clearance** | Continuous or Weave **on** | Min/max padding above the composer |
-| **Enhanced prose** | Native thread + CV/Weave | `prose-enhancements.css` on stock bubbles; enhanced CV sliders when on |
 | **Hide assistant edit artifacts** | Continuous or Weave **on** | Hides edit/regenerate clutter in the overlay |
 | **Hide packet context in thread** | Play tab thread | Shows player line only in ChatGPT (default: on) |
 | **Expand hidden context** | Play tab thread | Collapsed adventure context when tags are hidden |
 
 Presets can be exported/imported as JSON from **Presets → Advanced**. On import, choose **Import as new profile** (creates a named profile from the file) or replace the working copy only.
+
+### Color picker
+
+**Pick…** in **Format → Colors**, **Format → Highlights**, **Appearance & theme → Colors**, and entity highlight fields opens the shared native color dialog. The dialog is resizable; the body scrolls when content is tall, and OK/Cancel stay pinned at the bottom. Expanding **More tuning** scrolls inside the dialog instead of pushing it off-screen.
+
+| Area | What you can do |
+|------|-----------------|
+| **Spectrum** | Drag on the saturation/value plane and hue strip |
+| **Preview** | Swatch, **Aa** on context background, hex field with **Copy**, nearest CSS color name when close |
+| **RGB / Hex** | Fine-tune channels or type `#RRGGBB`, `RRGGBB`, or a CSS color name (e.g. `cornflowerblue`) |
+| **Recent** | Click a recent swatch (up to 12); list persists in `ui-chrome.json` |
+| **Contrast** | Ratio label; **Fix contrast** nudges the color toward WCAG-readable; low-contrast state is highlighted |
+| **Quick helpers** | Context-aware one-click fixes (e.g. match theme, fix contrast) when available |
+| **More tuning** (collapsed) | HSL sliders; copyable `rgb()` / `hsl()` strings; harmony swatches (analogous, complement, triad); shading grid (lightness × saturation at current hue) |
+
+Context background for contrast preview is chosen automatically (e.g. user text color is checked against the user segment background).
 
 ### In-page behavior
 
@@ -105,10 +120,30 @@ Highlight specific words or phrases in the continuous transcript (e.g. character
 ### Configure
 
 1. Open **Format…** → **Highlights** tab
-2. Add rules in `PhraseHighlightsEditorControl`:
-   - **Phrase** — text to match (case-sensitive option available)
+2. Add rules in the phrase highlights editor:
+   - **Phrase** — text to match (word-boundary matching is applied automatically)
    - **Color** — highlight color (preset swatches or **Pick…** for full color picker)
-   - **Match whole word** — optional boundary matching
+   - **Enabled** — turn a rule off without deleting it
+3. Use **Import from adventure…** when an adventure is open in **Play** or **Design** mode to add cast names (duplicates are skipped). Use **Reroll colors** in the import dialog or click a candidate swatch to try another auto-color.
+4. **Export highlights JSON…** / **Import highlights JSON…** share rule sets between profiles or machines.
+
+### Automatic colors and profiles
+
+The **Automatic colors** card at the top of the Highlights tab controls how cast import and **Reassign colors** pick text colors:
+
+- **Profile** — built-in presets (Theme harmony, Stable identity, Max distinct, Neon cyber/arcade/synthwave/toxic, etc.) or saved custom profiles; palettes **scale automatically** with cast size (default floor 48 colors, up to 96 for very large adventures)
+- **New… / Duplicate / Rename / Delete / Save to profile** — manage named color profiles (stored globally in `ui-chrome.json`)
+- **Reroll palette preview** — shuffle the preview swatches without saving
+- **Reassign all rule colors…** — apply the active profile to every rule (with confirmation)
+- **Customize…** — full assignment options (saturation, lightness, custom seeds, **generated color count** — `0` = auto-scale with cast, assignment salt, import/export profile JSON)
+
+### Mass rule actions
+
+The rule list supports extended selection with **Select all**, **Select filtered**, **Invert selection**, and bulk actions:
+
+- Enable / Disable, Bold on/off, Italic on/off, Clear background
+- **Assign color…** (manual picker) or **Reassign colors** (active profile + reroll salt)
+- Multi-select shows a bulk inspector panel with the same quick toggles
 
 Rules are saved in `ui-chrome.json` under `phraseHighlightRules`.
 
@@ -125,7 +160,6 @@ Rules are saved in `ui-chrome.json` under `phraseHighlightRules`.
 At build time, files from `ChatGPT_files/` copy to `wrapper-assets/` beside the executable:
 
 - `wrapper-overrides.css` — general ChatGPT UI tweaks
-- `prose-enhancements.css` — typography when prose enhancements are enabled
 - `continuous-transcript-view.css`, `cgw-context-tags.css`, `cgw-play-compose.css` — feature-specific styles
 
 `ChatGptStyleInjection` injects bundled + theme CSS variables + user CSS on trusted `chatgpt.com` pages.
@@ -189,7 +223,6 @@ All browse-mode display settings live in:
 |-------|---------|-------------|
 | `continuousViewEnabled` | `false` | Continuous transcript mode (legacy field; View menu is primary) |
 | `transcriptViewMode` | `Native` | `Native`, `Continuous`, or `Weave` |
-| `proseEnhancementsEnabled` | `false` | Prose typography enhancements |
 | `hideAssistantEditArtifacts` | `false` | Strip edit UI from transcript |
 | `hideContextTagsInThread` | `true` | Hide `[[cgw:…]]` markers |
 | `expandHiddenContextInThread` | `true` | Expandable context when tags hidden |
@@ -205,13 +238,27 @@ All browse-mode display settings live in:
 
 The main window uses custom theme resources (`Themes/WrapperChrome.xaml`, `WrapperTokens.xaml`, `WrapperControls.xaml`) for a consistent dark wrapper chrome around the embedded browser.
 
-**Preferences hub** (app bar **⋯ → Preferences…**) links to:
+**View → Keyboard shortcuts…** (`Ctrl+Shift+?`) lists default shell chords. **Ctrl+Alt** play chords work even when the chat WebView is focused; **Ctrl+Shift** chords defer to the browser when the WebView owns the same chord (for example **Ctrl+Shift+F** for Format does not fire while the chat page is focused).
 
-| Entry | Opens |
-|-------|--------|
-| Continuous view & format… | `ContinuousViewFormatDialog` |
-| Wrapper settings… | Adventures folder path (`WrapperSettingsDialog`) |
-| Play session settings… | `PlayPromptInjectionDialog` (Session tab; requires active adventure) |
+| Action | Chord | When |
+|--------|-------|------|
+| Preferences | `Ctrl+Shift+P` | All modes |
+| Format options | `Ctrl+Shift+F` | All modes (shell focus) |
+| Play settings | `Ctrl+Shift+,` | Play or Design with active adventure |
+| Focus chat / show panels | `Ctrl+Alt+0` | Play |
+| Toggle left companion | `Ctrl+Alt+L` | Play |
+| Toggle notes / right panel | `Ctrl+Alt+N` | Play |
+| Reference / Warnings / State / Notes tab | `Ctrl+Alt+1` … `Ctrl+Alt+4` | Play |
+
+**Preferences hub** (app bar **⋯ → Preferences…**, or `Ctrl+Shift+P`) groups settings by scope:
+
+| Section | Scope | Opens |
+|---------|-------|--------|
+| Reading mode | Info | Current Native / Continuous / Weave (switch via View menu) |
+| Appearance & theme… | Global | `ThemeCustomizationDialog` |
+| Reading & format… | Per mode | `ContinuousViewFormatDialog` (also **View → Format…**) |
+| Storage & paths… | Wrapper | `WrapperSettingsDialog` |
+| Play settings shortcuts | Adventure | `PlayPromptInjectionDialog` — Behavior, Layout, Sources, Session (when an adventure is active) |
 
 Adventure-specific controls (Do/Say, composer, review) are documented in [adventure-panel.md §4](adventure-panel.md#4-play-view).
 

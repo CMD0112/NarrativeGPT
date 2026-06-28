@@ -22,7 +22,8 @@ public static class AdventureSessionModePolicy
         if (bundle.Metadata.Status == AdventureStatus.Designing)
             return AdventureSessionDesignAvailability.Ready;
 
-        if (AdventureDesignContextService.CanOpenLocalSourcesEdit(bundle))
+        if (bundle.Metadata.Status != AdventureStatus.Designing
+            && AdventureDesignContextService.CanOpenLocalSourcesEdit(bundle))
             return AdventureSessionDesignAvailability.ReadyLocalSources;
 
         var acceptedTurns = bundle.Log.Turns.Count(t => t.Status == TurnStatus.Accepted);

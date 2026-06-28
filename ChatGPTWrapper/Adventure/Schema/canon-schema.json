@@ -1,8 +1,57 @@
 {
   "schemaVersion": 1,
+  "categories": [
+    {
+      "categoryId": "cast",
+      "displayLabel": "Cast",
+      "showTags": true,
+      "showAliases": true,
+      "showImage": true,
+      "listShellFields": [
+        { "label": "Id", "jsonKey": "id", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "Aliases", "jsonKey": "aliases", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "Tags", "jsonKey": "tags", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "ImagePath", "jsonKey": "imagePath", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] }
+      ],
+      "singletonShellFields": [
+        { "label": "Tags", "jsonKey": "tags", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "Aliases", "jsonKey": "aliases", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "ImagePath", "jsonKey": "imagePath", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] }
+      ]
+    },
+    {
+      "categoryId": "place",
+      "displayLabel": "Place",
+      "showTags": false,
+      "showAliases": true,
+      "showImage": true,
+      "listShellFields": [
+        { "label": "Id", "jsonKey": "id", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "Aliases", "jsonKey": "aliases", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "ImagePath", "jsonKey": "imagePath", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "Pinned", "jsonKey": "pinned", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] }
+      ],
+      "singletonShellFields": []
+    },
+    {
+      "categoryId": "lore",
+      "displayLabel": "Lore",
+      "showTags": true,
+      "showAliases": false,
+      "showImage": true,
+      "listShellFields": [
+        { "label": "Id", "jsonKey": "id", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "Tags", "jsonKey": "tags", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "ImagePath", "jsonKey": "imagePath", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] },
+        { "label": "Pinned", "jsonKey": "pinned", "format": "PlainLine", "role": "Shell", "multiline": false, "controlType": "Text", "alternateLabels": [] }
+      ],
+      "singletonShellFields": []
+    }
+  ],
   "kinds": [
     {
       "kindId": "player",
+      "parentCategory": "cast",
       "collectionKey": "player",
       "sectionId": "player",
       "sourceFile": "cast.md",
@@ -81,6 +130,7 @@
     },
     {
       "kindId": "party",
+      "parentCategory": "cast",
       "collectionKey": "party",
       "sectionId": "party",
       "sourceFile": "cast.md",
@@ -145,6 +195,7 @@
     },
     {
       "kindId": "npc",
+      "parentCategory": "cast",
       "collectionKey": "characters",
       "sectionId": "npcs",
       "sourceFile": "cast.md",
@@ -156,24 +207,6 @@
       "secondaryProperty": "role",
       "snippetProperty": "description",
       "fields": [
-        {
-          "label": "Id",
-          "jsonKey": "id",
-          "format": "PlainLine",
-          "role": "Shell",
-          "multiline": false,
-          "controlType": "Text",
-          "alternateLabels": []
-        },
-        {
-          "label": "Aliases",
-          "jsonKey": "aliases",
-          "format": "PlainLine",
-          "role": "Shell",
-          "multiline": false,
-          "controlType": "Text",
-          "alternateLabels": []
-        },
         {
           "label": "description",
           "jsonKey": "description",
@@ -259,6 +292,7 @@
     },
     {
       "kindId": "location",
+      "parentCategory": "place",
       "collectionKey": "locations",
       "sectionId": "locations",
       "sourceFile": "world.md",
@@ -270,24 +304,6 @@
       "secondaryProperty": "status",
       "snippetProperty": "description",
       "fields": [
-        {
-          "label": "Id",
-          "jsonKey": "id",
-          "format": "PlainLine",
-          "role": "Shell",
-          "multiline": false,
-          "controlType": "Text",
-          "alternateLabels": []
-        },
-        {
-          "label": "Aliases",
-          "jsonKey": "aliases",
-          "format": "PlainLine",
-          "role": "Shell",
-          "multiline": false,
-          "controlType": "Text",
-          "alternateLabels": []
-        },
         {
           "label": "description",
           "jsonKey": "description",
@@ -340,15 +356,6 @@
           "jsonKey": "status",
           "format": "PlainLine",
           "role": "Secondary",
-          "multiline": false,
-          "controlType": "Text",
-          "alternateLabels": []
-        },
-        {
-          "label": "Pinned",
-          "jsonKey": "pinned",
-          "format": "PlainLine",
-          "role": "Shell",
           "multiline": false,
           "controlType": "Text",
           "alternateLabels": []
@@ -426,6 +433,7 @@
     },
     {
       "kindId": "concept",
+      "parentCategory": "lore",
       "collectionKey": "concepts",
       "sectionId": "concepts",
       "sourceFile": "world.md",
@@ -437,15 +445,6 @@
       "secondaryProperty": "category",
       "snippetProperty": "description",
       "fields": [
-        {
-          "label": "Id",
-          "jsonKey": "id",
-          "format": "PlainLine",
-          "role": "Shell",
-          "multiline": false,
-          "controlType": "Text",
-          "alternateLabels": []
-        },
         {
           "label": "description",
           "jsonKey": "description",
@@ -460,15 +459,6 @@
           "jsonKey": "category",
           "format": "PlainLine",
           "role": "Secondary",
-          "multiline": false,
-          "controlType": "Text",
-          "alternateLabels": []
-        },
-        {
-          "label": "Pinned",
-          "jsonKey": "pinned",
-          "format": "PlainLine",
-          "role": "Shell",
           "multiline": false,
           "controlType": "Text",
           "alternateLabels": []
@@ -531,7 +521,7 @@
       "collectionKey": "mysteries",
       "sectionId": "mysteries",
       "sourceFile": "plot.md",
-      "uiCategory": "Concepts",
+      "uiCategory": "Mysteries",
       "typeLabel": "Mystery",
       "showInPlayGrid": false,
       "isSingleton": false,
@@ -573,7 +563,7 @@
       "collectionKey": "conflicts",
       "sectionId": "conflicts",
       "sourceFile": "plot.md",
-      "uiCategory": "Concepts",
+      "uiCategory": "Conflicts",
       "typeLabel": "Conflict",
       "showInPlayGrid": false,
       "isSingleton": false,
@@ -615,7 +605,7 @@
       "collectionKey": "consequences",
       "sectionId": "consequences",
       "sourceFile": "plot.md",
-      "uiCategory": "Concepts",
+      "uiCategory": "Consequences",
       "typeLabel": "Consequence",
       "showInPlayGrid": false,
       "isSingleton": false,

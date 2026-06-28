@@ -127,16 +127,11 @@ Source Manager: upload to Project, mark **Published**. Play packet notify remind
 
 ## UX surfaces
 
-### Entity workspace (Phase 1)
+### Entity edit dialog (CMD-311)
 
-Replace modal-only editing with a **workspace** hosted in `EntityReferencePanel` side panel (wide layout):
+All entity create/edit flows use **`EntityEditDialog`** — a resizable modal with header card, **Profile · Sources · Mentions · History** tabs, and sticky footer. The companion `EntityReferencePanel` is list-only (filter, search, skim rows). Profile fields render in grouped sections (`identity`, `story`, `capabilities`, `relations`, `custom`) with an extended-fields editor in **Custom**.
 
-| Tab | Content |
-|-----|---------|
-| **Profile** | Current `EntityEditFormHost` |
-| **Sources** | Rendered markdown section(s) for this `sourceEntityId`; stale/unpublished badges |
-| **Mentions** | Mention index hits across lore files + context index triggers |
-| **History** | `SourceFileHistoryService` snapshots for entity's home file |
+Runtime world state (location, condition) lives on the **State** tab; the player profile dialog shows a read-only skim with **Edit in State →** when editing the player singleton.
 
 Row badges: **in sync** / **sources stale** / **needs publish**.
 

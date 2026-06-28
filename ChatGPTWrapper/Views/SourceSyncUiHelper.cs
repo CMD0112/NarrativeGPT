@@ -68,8 +68,9 @@ internal static class SourceSyncUiHelper
 
     public static string FormatLinkHealth(AdventureBundle bundle, SourceSyncPlan? plan = null)
     {
+        AdventureProjectBindingService.PrepareBundleForProjectLink(bundle);
         var readiness = ProjectSourceInjectionService.Evaluate(bundle);
-        var project = bundle.Metadata.LinkedProjectId ?? "not linked";
+        var project = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata) ?? "not linked";
         var lastSync = bundle.SourceManifest.LastRemoteSyncAt?.ToLocalTime().ToString("g") ?? "never";
         var duplicates = CountOrphanDuplicates(plan);
         var duplicateText = duplicates > 0 ? $" | {duplicates} duplicate remote(s)" : "";

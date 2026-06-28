@@ -23,7 +23,7 @@ public sealed class CastImportDiagnosticTests
         Assert.Null(player);
         Assert.NotNull(party);
         Assert.NotNull(npcs);
-        Assert.Equal(1, party!.Entries.Count);
+        Assert.Single(party!.Entries);
         Assert.Equal(12, npcs!.Entries.Count);
 
         var bundle = AdventureStore.CreateNew("Cast import diagnostic");
@@ -31,7 +31,7 @@ public sealed class CastImportDiagnosticTests
         {
             var result = SectionedImportService.ImportCast(bundle, markdown);
             Assert.Equal(13, bundle.Entities.Party.Count + bundle.Entities.Characters.Count);
-            Assert.Equal(1, bundle.Entities.Party.Count);
+            Assert.Single(bundle.Entities.Party);
             Assert.Equal(12, bundle.Entities.Characters.Count);
             Assert.True(string.IsNullOrWhiteSpace(bundle.Entities.Player.Name));
             Assert.True(result.EntitiesAdded >= 13);

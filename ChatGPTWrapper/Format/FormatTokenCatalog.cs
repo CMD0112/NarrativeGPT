@@ -39,6 +39,10 @@ public static class FormatTokenCatalog
         "--cgw-cv-segment-spacing",
         "--cgw-cv-segment-border-width",
         "--cgw-cv-segment-divider-opacity",
+        "--cgw-cv-segment-divider-style",
+        "--cgw-cv-ruled-line-opacity",
+        "--cgw-cv-ruled-band-opacity",
+        "--cgw-cv-ruled-line-thickness",
         "--cgw-cv-segment-border-radius",
         "--cgw-cv-block-margin",
         "--cgw-cv-prose-p-margin",
@@ -58,8 +62,6 @@ public static class FormatTokenCatalog
         "--cgw-cv-assistant-accent-center-adjust",
         "--cgw-cv-assistant-indent",
         "--cgw-cv-assistant-bg-opacity",
-        "--cgw-cv-enhanced-prose-line-height",
-        "--cgw-cv-enhanced-prose-letter-spacing",
         "--cgw-cv-code-font-size",
         "--cgw-cv-code-line-height",
         "--cgw-cv-code-block-padding",
@@ -71,11 +73,13 @@ public static class FormatTokenCatalog
         "--cgw-cv-heading-h4",
         "--cgw-cv-heading-h5",
         "--cgw-cv-heading-h6",
+        "--cgw-hl-bold-weight-delta",
     ];
 
     private static List<FormatColorTokenDefinition> BuildColorCatalog() =>
     [
         Color("SegmentDivider", "--cgw-cv-segment-divider-color", "SegmentDividerColor", FormatTokenGroup.Layout),
+        Color("RuledLine", "--cgw-cv-ruled-line-color", "RuledLineColor", FormatTokenGroup.Layout),
         Color("OverlayBackground", "--cgw-cv-overlay-background", "OverlayBackgroundColor", FormatTokenGroup.Layout),
         Color("UserText", "--cgw-cv-user-text", "UserTextColor", FormatTokenGroup.UserRole),
         Color("UserBg", "--cgw-cv-user-bg", "UserBackgroundColor", FormatTokenGroup.UserRole),

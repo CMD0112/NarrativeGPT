@@ -68,6 +68,8 @@ dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "FullyQualifiedName~Pla
 | `PlayUxContextTagTests` | Context tags, packet builder, session cache |
 | `ProcessTurnResponseTests` | Legacy process_turn parsing |
 | `ProjectSourceInjectionTests` | Fat/thin packets, publish mode |
+| `InjectionPolicyGoldenTests` | CMD-294 — thin/fat/handoff/override golden scenarios, start-packet dedup |
+| `InjectionSectionManifestTests` | CMD-295 — section manifest + delegation mode on PrepareSend |
 | `ProjectSourceProbeServiceTests` | Remote probe hash matching |
 | `ProjectSourceSyncRobustnessTests` | Three-way sync, duplicates, 404 |
 | `SourceFileHistoryServiceTests` | Source version archive/restore |
@@ -93,6 +95,25 @@ dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "FullyQualifiedName~Pla
 
 **Hosts:** `PlayComposeTestHost`, `PlayComposeUiEnvironment`  
 **Fixture:** `Fixtures/composer-fixture.html`
+
+---
+
+## Play send / context injection repro
+
+When merged preview looks correct but ChatGPT receives plain text, trace the delivery layer:
+
+1. **Play Send trace log** — `%LocalAppData%\ChatGPTWrapper\play-send-trace.jsonl` (see `PlaySendTraceTests`)
+2. Send one line from the **native** ChatGPT composer in the pinned play tab
+3. Confirm timeline events (in order):
+   - `compose_native_submit_click` with `interceptAllowed: true`
+   - `compose_send_start` (native intercepted)
+   - `packet_prepared` with `mergedLength` and `hash`
+   - `bridge_fill_readback` with `readbackLen` ≈ `expectedLen`
+   - `bridge_submit_verified`
+4. If `bridge_fill_incomplete` or `injection_delivery_mismatch` appears, the packet was built but DOM fill/submit lost context
+5. Compare the last ChatGPT user bubble text length to `mergedLength` in the trace
+
+**Common bypasses (no injection):** `__cgwNativeComposePassthrough`, Project-page draft tab, or native send while host `busy` (intercept not taken — ChatGPT sends plain composer text).
 
 ---
 

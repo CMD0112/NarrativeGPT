@@ -16,6 +16,7 @@ public static class FormatDialogChangeService
 
         FormatProfileService.Normalize(settings);
         HighlightColorAssignmentService.Normalize(settings);
+        HighlightColorGroupingProfileService.Normalize(settings);
     }
 
     public static bool HasUnsavedChanges(
@@ -40,6 +41,10 @@ public static class FormatDialogChangeService
             Mode = mode.Clone(),
             ActiveHighlightColorProfileId = settings.ActiveHighlightColorProfileId,
             HighlightColorCustomOptions = (settings.HighlightColorCustomOptions ?? new HighlightColorAssignmentOptions()).Clone(),
+            HighlightColorProfiles = (settings.HighlightColorProfiles ?? []).Select(p => p.Clone()).ToList(),
+            ActiveHighlightColorGroupingProfileId = settings.ActiveHighlightColorGroupingProfileId,
+            HighlightColorGroupingCustomProfile = (settings.HighlightColorGroupingCustomProfile ?? new HighlightColorGroupingProfile()).Clone(),
+            HighlightColorGroupingProfiles = (settings.HighlightColorGroupingProfiles ?? []).Select(p => p.Clone()).ToList(),
         };
 
         snapshot.Mode.ActiveFormatProfileId = FormatProfileService.ResolveActiveProfileId(
@@ -59,5 +64,13 @@ public static class FormatDialogChangeService
         public string ActiveHighlightColorProfileId { get; set; } = "";
 
         public HighlightColorAssignmentOptions HighlightColorCustomOptions { get; set; } = new();
+
+        public List<HighlightColorAssignmentProfile> HighlightColorProfiles { get; set; } = [];
+
+        public string ActiveHighlightColorGroupingProfileId { get; set; } = HighlightColorGroupingProfileIds.None;
+
+        public HighlightColorGroupingProfile HighlightColorGroupingCustomProfile { get; set; } = new();
+
+        public List<HighlightColorGroupingProfile> HighlightColorGroupingProfiles { get; set; } = [];
     }
 }

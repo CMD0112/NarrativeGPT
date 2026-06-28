@@ -1,10 +1,11 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using System.Windows.Media;
 
 namespace ChatGPTWrapper.Format;
 
-public partial class FormatSystemFontPickerWindow : Window
+public partial class FormatSystemFontPickerWindow : ShellDialogWindow
 {
     private readonly List<FontFamily> _allFonts;
 

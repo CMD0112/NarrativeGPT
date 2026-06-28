@@ -145,14 +145,31 @@ html[data-theme="light"] #cgw-play-composer-root.cgw-compose-fixed {
 }
 
 #cgw-play-composer-root {
-  --cgw-compose-bg: var(--cgw-bg-elevated, #28282e);
-  --cgw-compose-border: color-mix(in srgb, var(--cgw-border-subtle, #32323a) 80%, transparent);
-  --cgw-compose-text: var(--cgw-text-primary, #ededf0);
-  --cgw-compose-placeholder: color-mix(in srgb, var(--cgw-text-muted, #9898a4) 85%, transparent);
-  --cgw-compose-send-bg: var(--cgw-text-primary, #ededf0);
-  --cgw-compose-send-fg: var(--cgw-bg-base, #161618);
-  --cgw-compose-muted: var(--cgw-text-muted, #9898a4);
-  --cgw-compose-dock-bg: color-mix(in srgb, var(--cgw-bg-base, #161618) 96%, transparent);
+  --cgw-compose-bg: var(--main-surface-secondary, var(--cgw-bg-elevated, #28282e));
+  --cgw-compose-border: color-mix(
+    in srgb,
+    var(--border-light, var(--cgw-border-subtle, #32323a)) 80%,
+    transparent
+  );
+  --cgw-compose-text: var(--text-primary, var(--cgw-text-primary, #ededf0));
+  --cgw-compose-placeholder: color-mix(
+    in srgb,
+    var(--text-secondary, var(--cgw-text-muted, #9898a4)) 85%,
+    transparent
+  );
+  --cgw-compose-send-bg: var(--text-primary, var(--cgw-text-primary, #ededf0));
+  --cgw-compose-send-fg: var(--main-surface-primary, var(--cgw-bg-base, #161618));
+  --cgw-compose-send-size: 32px;
+  --cgw-compose-send-radius: 50%;
+  --cgw-compose-muted: var(--text-secondary, var(--cgw-text-muted, #9898a4));
+  --cgw-compose-radius: 28px;
+  --cgw-compose-dock-bg: color-mix(
+    in srgb,
+    var(--main-surface-primary, var(--cgw-bg-base, #161618)) 96%,
+    transparent
+  );
+  --cgw-compose-font-size: 16px;
+  --cgw-compose-line-height: 1.5;
   width: 100%;
   box-sizing: border-box;
   padding: 0 0 12px;
@@ -162,6 +179,7 @@ html[data-theme="light"] #cgw-play-composer-root.cgw-compose-fixed {
   z-index: 5;
   flex: 0 0 auto;
   order: 0;
+  font-family: inherit;
 }
 
 html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-composer-root) {
@@ -181,23 +199,32 @@ html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-compo
   display: flex;
   flex-direction: column;
   gap: 0;
-  border-radius: 28px;
+  border-radius: var(--cgw-compose-radius, 28px);
   border: 1px solid var(--cgw-compose-border, rgba(255, 255, 255, 0.12));
-  background: var(--cgw-compose-bg, var(--cgw-bg-elevated, #28282e));
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  background: var(--cgw-compose-bg, var(--main-surface-secondary, #28282e));
+  box-shadow: var(--cgw-compose-shadow, none);
+  overflow: clip;
 }
 
-#cgw-play-composer-root .cgw-compose-main {  display: flex;
-  align-items: flex-end;
+#cgw-play-composer-root .cgw-compose-main {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 10px 10px 10px 10px;
+  padding: 12px 12px 12px 10px;
   min-height: 52px;
+  box-sizing: border-box;
+}
+
+#cgw-play-composer-root .cgw-compose-main.cgw-compose-multiline {
+  align-items: flex-end;
+  padding-top: 14px;
 }
 
 #cgw-play-composer-root .cgw-compose-attach {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
   border: none;
   border-radius: 50%;
   padding: 0;
@@ -206,7 +233,7 @@ html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-compo
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: var(--cgw-compose-muted, rgba(236, 236, 236, 0.55));
+  color: var(--cgw-compose-muted, var(--text-secondary, rgba(236, 236, 236, 0.55)));
   transition: background 0.15s ease, color 0.15s ease;
 }
 
@@ -224,6 +251,7 @@ html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-compo
   width: 20px;
   height: 20px;
   display: block;
+  stroke-width: 1.5;
 }
 
 #cgw-play-composer-root .cgw-compose-file-input {
@@ -350,7 +378,9 @@ html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-compo
 
 #cgw-play-composer-root .cgw-compose-input {
   flex: 1 1 auto;
+  display: block;
   width: 100%;
+  min-width: 0;
   min-height: 24px;
   max-height: 200px;
   resize: none;
@@ -358,16 +388,22 @@ html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-compo
   outline: none !important;
   box-shadow: none !important;
   background: transparent !important;
-  color: var(--cgw-compose-text, var(--cgw-text-primary, #ededf0));
+  color: var(--cgw-compose-text, var(--text-primary, #ededf0));
   font: inherit;
-  font-size: 16px;
-  line-height: 1.5;
-  padding: 4px 0;
+  font-family: var(--cgw-compose-font-family, inherit);
+  font-size: var(--cgw-compose-font-size, 16px);
+  line-height: var(--cgw-compose-line-height, 1.5);
+  padding: 0;
   margin: 0;
   overflow-y: auto;
   field-sizing: content;
   -webkit-appearance: none;
   appearance: none;
+  align-self: center;
+}
+
+#cgw-play-composer-root .cgw-compose-main.cgw-compose-multiline .cgw-compose-input {
+  align-self: flex-end;
 }
 
 #cgw-play-composer-root .cgw-compose-input:focus,
@@ -389,18 +425,19 @@ html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-compo
 
 #cgw-play-composer-root .cgw-compose-send {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  flex-shrink: 0;
+  width: var(--cgw-compose-send-size, 32px);
+  height: var(--cgw-compose-send-size, 32px);
   border: none;
-  border-radius: 50%;
+  border-radius: var(--cgw-compose-send-radius, 50%);
   padding: 0;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--cgw-compose-send-bg, var(--cgw-text-primary, #ededf0));
-  color: var(--cgw-compose-send-fg, var(--cgw-bg-base, #161618));
-  transition: opacity 0.15s ease, transform 0.1s ease;
+  background: var(--cgw-compose-send-bg, var(--text-primary, #ededf0));
+  color: var(--cgw-compose-send-fg, var(--main-surface-primary, #161618));
+  transition: opacity 0.15s ease, transform 0.1s ease, background 0.15s ease;
 }
 
 #cgw-play-composer-root .cgw-compose-send:hover:not(:disabled) {
@@ -417,8 +454,8 @@ html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-compo
 }
 
 #cgw-play-composer-root .cgw-compose-send svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: block;
 }
 
@@ -441,25 +478,23 @@ html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-compo
 
 html:not(.dark) #cgw-play-composer-root,
 html[data-theme="light"] #cgw-play-composer-root {
-  --cgw-compose-bg: #f4f4f4;
-  --cgw-compose-border: rgba(0, 0, 0, 0.08);
-  --cgw-compose-border-focus: rgba(0, 0, 0, 0.16);
-  --cgw-compose-text: #0d0d0d;
-  --cgw-compose-placeholder: rgba(13, 13, 13, 0.45);
-  --cgw-compose-send-bg: #0d0d0d;
-  --cgw-compose-send-fg: #ffffff;
-  --cgw-compose-muted: rgba(13, 13, 13, 0.55);
+  --cgw-compose-bg: var(--main-surface-secondary, #f4f4f4);
+  --cgw-compose-border: color-mix(in srgb, var(--border-light, rgba(0, 0, 0, 0.08)) 100%, transparent);
+  --cgw-compose-text: var(--text-primary, #0d0d0d);
+  --cgw-compose-placeholder: color-mix(in srgb, var(--text-secondary, rgba(13, 13, 13, 0.45)) 100%, transparent);
+  --cgw-compose-send-bg: var(--text-primary, #0d0d0d);
+  --cgw-compose-send-fg: var(--main-surface-primary, #ffffff);
+  --cgw-compose-muted: var(--text-secondary, rgba(13, 13, 13, 0.55));
 }
 
 @media (prefers-color-scheme: light) {
   html:not(.dark):not([data-theme="dark"]) #cgw-play-composer-root {
-    --cgw-compose-bg: #f4f4f4;
-    --cgw-compose-border: rgba(0, 0, 0, 0.08);
-    --cgw-compose-border-focus: rgba(0, 0, 0, 0.16);
-    --cgw-compose-text: #0d0d0d;
-    --cgw-compose-placeholder: rgba(13, 13, 13, 0.45);
-    --cgw-compose-send-bg: #0d0d0d;
-    --cgw-compose-send-fg: #ffffff;
-    --cgw-compose-muted: rgba(13, 13, 13, 0.55);
+    --cgw-compose-bg: var(--main-surface-secondary, #f4f4f4);
+    --cgw-compose-border: color-mix(in srgb, var(--border-light, rgba(0, 0, 0, 0.08)) 100%, transparent);
+    --cgw-compose-text: var(--text-primary, #0d0d0d);
+    --cgw-compose-placeholder: color-mix(in srgb, var(--text-secondary, rgba(13, 13, 13, 0.45)) 100%, transparent);
+    --cgw-compose-send-bg: var(--text-primary, #0d0d0d);
+    --cgw-compose-send-fg: var(--main-surface-primary, #ffffff);
+    --cgw-compose-muted: var(--text-secondary, rgba(13, 13, 13, 0.55));
   }
 }

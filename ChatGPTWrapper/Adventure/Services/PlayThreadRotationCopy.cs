@@ -10,6 +10,8 @@ internal static class PlayThreadRotationCopy
     public const string HandoffToNewChatButton = "Hand off to new chat…";
     public const string PreviewNarrativePacketButton = "Preview narrative start packet";
     public const string PreviewHandoffPacketButton = "Preview handoff packet";
+    public const string CopyNarrativePacketButton = PlayPacketPanelCopy.CopyNarrativeStartButton;
+    public const string CopyHandoffPacketButton = PlayPacketPanelCopy.CopyHandoffButton;
 
     public const string SessionHelpText =
         "Start narrative from sources… opens a new ChatGPT thread using your source files and adventure JSON only — "

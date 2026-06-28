@@ -17,6 +17,8 @@ internal static class PlayThreadRotationService
         AdventureThreadRegistryService.EnsureMigrated(bundle);
         AdventureThreadRegistryService.BeginNewActiveThread(bundle, AdventureThreadKind.Play);
 
+        AdventureMetadataMigration.StripLegacyThreadBindingFields(bundle.Metadata);
+
         AdventureSessionService.EndSession(bundle);
         AdventureSessionService.EnsureSession(bundle);
         PlayContextSessionCache.Invalidate(bundle.Metadata.Id);
@@ -41,6 +43,8 @@ internal static class PlayThreadRotationService
             PlayTurnScopeService.OnPlayThreadChanged(bundle, previous, conversationId);
 
         entry.ConversationId = conversationId;
+        entry.BindingTrust = PlayThreadBindingTrust.Verified;
+        entry.RejectedConversationId = null;
         AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
 
         if (bundle.Metadata.ProjectLink is not null)
@@ -59,8 +63,10 @@ internal static class PlayThreadRotationService
         AdventureStore.Save(bundle, allowLinkMetadataOverwrite: true);
     }
 
-    public static bool ShouldRejectApiConversation(CreateProjectConversationResult result) =>
-        string.IsNullOrWhiteSpace(result.ConversationId) || result.ClientBootstrapped;
+    public static bool ShouldRejectApiConversation(CreateProjectConversationResult? result) =>
+        result is null
+        || string.IsNullOrWhiteSpace(result.ConversationId)
+        || result.ClientBootstrapped;
 
     public static bool IsUsablePlayConversationId(string? conversationId, string gizmoId, string? source)
     {

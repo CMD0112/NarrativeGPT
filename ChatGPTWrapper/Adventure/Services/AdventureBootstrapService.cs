@@ -38,6 +38,14 @@ internal static class AdventureBootstrapService
             """;
 
         var readiness = ProjectSourceInjectionService.Evaluate(bundle);
+        if (readiness.CanDelegateStaticContent
+            && bundle.Metadata.Settings.UseSectionInjection
+            && readiness.SyncedFiles.Count > 0)
+        {
+            // Section-injection v2: ALWAYS RETRIEVE pointers in the context block carry retrieval intent.
+            return intro;
+        }
+
         if (readiness.CanDelegateStaticContent && readiness.SyncedFiles.Count > 0)
         {
             var lines = readiness.SyncedFiles.Select(f => $"- {f.RelativePath}");

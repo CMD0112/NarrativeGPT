@@ -11,7 +11,96 @@ namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 public sealed class PhraseHighlightCastImportTests
 {
     [Fact]
-    public void BuildCandidates_includes_player_party_and_aliases()
+    public void BuildCandidates_omits_first_name_when_not_on_entity_card()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("First name not on card");
+        bundle.Entities.Characters.Add(new CharacterEntry
+        {
+            Name = "Mara Holt",
+            Role = "Guide",
+        });
+
+        var result = PhraseHighlightCastImportService.BuildCandidates(
+            bundle,
+            new CastPhraseImportOptions { IncludePlayer = false, IncludeParty = true, IncludeEntityAliases = true });
+
+        Assert.Contains(result.Candidates, c => c.Phrase == "Mara Holt");
+        Assert.DoesNotContain(result.Candidates, c => c.Phrase == "Mara");
+    }
+
+    [Fact]
+    public void BuildCandidates_includes_first_name_only_when_on_entity_card_aliases()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Card alias import");
+        bundle.Entities.Characters.Add(new CharacterEntry
+        {
+            Name = "Mara Holt",
+            Role = "Guide",
+            Aliases = ["Mara"],
+        });
+
+        var result = PhraseHighlightCastImportService.BuildCandidates(
+            bundle,
+            new CastPhraseImportOptions { IncludePlayer = false, IncludeParty = true, IncludeEntityAliases = true });
+
+        Assert.Contains(result.Candidates, c => c.Phrase == "Mara Holt");
+        var maraAlias = Assert.Single(result.Candidates, c => c.Phrase == "Mara");
+        Assert.Equal("Mara Holt", maraAlias.SyncWithPhrase);
+    }
+
+    [Fact]
+    public void BuildCandidates_includes_entity_aliases_when_enabled()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Entity alias import");
+        bundle.Entities.Characters.Add(new CharacterEntry
+        {
+            Name = "Mara",
+            Role = "Guide",
+            Aliases = ["Mar"],
+        });
+
+        var result = PhraseHighlightCastImportService.BuildCandidates(
+            bundle,
+            new CastPhraseImportOptions
+            {
+                IncludePlayer = false,
+                IncludeParty = true,
+                IncludeEntityAliases = true,
+            });
+
+        Assert.Contains(result.Candidates, c => c.Phrase == "Mara");
+        Assert.Contains(result.Candidates, c => c.Phrase == "Mar");
+        var marAlias = Assert.Single(result.Candidates, c => c.Phrase == "Mar");
+        Assert.Equal("Mara", marAlias.SyncWithPhrase);
+        Assert.StartsWith("Alias · ", marAlias.Role, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildCandidates_omits_entity_aliases_when_disabled()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("No entity alias import");
+        bundle.Entities.Characters.Add(new CharacterEntry
+        {
+            Name = "Mara",
+            Role = "Guide",
+            Aliases = ["Mar"],
+        });
+
+        var result = PhraseHighlightCastImportService.BuildCandidates(
+            bundle,
+            new CastPhraseImportOptions
+            {
+                IncludePlayer = false,
+                IncludeParty = true,
+                IncludeEntityAliases = false,
+            });
+
+        Assert.Contains(result.Candidates, c => c.Phrase == "Mara");
+        Assert.DoesNotContain(result.Candidates, c => c.Phrase == "Mar");
+    }
+
+    [Fact]
+    public void BuildCandidates_includes_player_party_and_characters()
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Cast import test");
         bundle.Entities.Player.Name = "Ari";
@@ -25,7 +114,7 @@ public sealed class PhraseHighlightCastImportTests
 
         var result = PhraseHighlightCastImportService.BuildCandidates(
             bundle,
-            new CastPhraseImportOptions { IncludePlayer = true, IncludeParty = true, IncludeAliases = true });
+            new CastPhraseImportOptions { IncludePlayer = true, IncludeParty = true, IncludeEntityAliases = true });
 
         Assert.Contains(result.Candidates, c => c.Phrase == "Ari");
         Assert.Contains(result.Candidates, c => c.Phrase == "Mara");
@@ -46,7 +135,7 @@ public sealed class PhraseHighlightCastImportTests
 
         var result = PhraseHighlightCastImportService.BuildCandidates(
             bundle,
-            new CastPhraseImportOptions { IncludePlayer = true, IncludeParty = true, IncludeAliases = true });
+            new CastPhraseImportOptions { IncludePlayer = true, IncludeParty = true });
 
         Assert.Empty(result.Candidates);
     }
@@ -60,7 +149,7 @@ public sealed class PhraseHighlightCastImportTests
 
         var result = PhraseHighlightCastImportService.BuildCandidates(
             bundle,
-            new CastPhraseImportOptions { IncludePlayer = true, IncludeParty = true, IncludeAliases = true });
+            new CastPhraseImportOptions { IncludePlayer = true, IncludeParty = true });
 
         Assert.DoesNotContain(result.Candidates, c => c.Phrase is null or "");
     }
@@ -83,6 +172,38 @@ public sealed class PhraseHighlightCastImportTests
     }
 
     [Fact]
+    public void ToRules_sets_sync_with_phrase_for_alias_candidates()
+    {
+        var entityId = Guid.NewGuid();
+        var result = new CastPhraseImportResult
+        {
+            Candidates =
+            [
+                new CastPhraseImportCandidate
+                {
+                    Phrase = "Mara Holt",
+                    EntityId = entityId,
+                    EntityCategory = "Characters",
+                    IsSelected = true,
+                },
+                new CastPhraseImportCandidate
+                {
+                    Phrase = "Mara",
+                    EntityId = entityId,
+                    EntityCategory = "Characters",
+                    SyncWithPhrase = "Mara Holt",
+                    IsSelected = true,
+                },
+            ],
+        };
+
+        var rules = result.ToRules();
+
+        Assert.Null(rules.First(r => r.Phrase == "Mara Holt").SyncWithPhrase);
+        Assert.Equal("Mara Holt", rules.First(r => r.Phrase == "Mara").SyncWithPhrase);
+    }
+
+    [Fact]
     public void BuildCandidates_player_uses_theme_accent()
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Accent test");
@@ -95,7 +216,6 @@ public sealed class PhraseHighlightCastImportTests
             {
                 IncludePlayer = true,
                 IncludeParty = false,
-                IncludeAliases = false,
                 Theme = theme,
                 HighlightCanvasBackground = theme.GetHex("BgBase"),
             });
@@ -106,36 +226,6 @@ public sealed class PhraseHighlightCastImportTests
             ThemeContrast.EnsureReadable(theme.GetHex("AccentPrimary"), theme.GetHex("BgBase")),
             player.Color,
             ignoreCase: true);
-    }
-
-    [Fact]
-    public void BuildCandidates_alias_inherits_parent_character_color()
-    {
-        var bundle = AdventureDesignService.CreateDesigningAdventure("Alias color test");
-        bundle.Entities.Characters.Add(new CharacterEntry
-        {
-            Name = "Mara",
-            Role = "Guide",
-            Aliases = ["Mar"],
-        });
-
-        var theme = ThemeApplicationService.ResolveEffectiveTheme(ThemeApplicationService.CreateDefaultSettings());
-        var canvas = theme.GetHex("BgBase");
-
-        var result = PhraseHighlightCastImportService.BuildCandidates(
-            bundle,
-            new CastPhraseImportOptions
-            {
-                IncludePlayer = false,
-                IncludeParty = true,
-                IncludeAliases = true,
-                Theme = theme,
-                HighlightCanvasBackground = canvas,
-            });
-
-        var mara = result.Candidates.Single(c => c.Phrase == "Mara");
-        var mar = result.Candidates.Single(c => c.Phrase == "Mar");
-        Assert.Equal(mara.Color, mar.Color, ignoreCase: true);
     }
 
     [Fact]
@@ -173,7 +263,6 @@ public sealed class PhraseHighlightCastImportTests
             {
                 IncludePlayer = true,
                 IncludeParty = true,
-                IncludeAliases = false,
                 ExistingRules = existing,
             });
 
@@ -221,7 +310,6 @@ public sealed class PhraseHighlightCastImportTests
             {
                 IncludePlayer = false,
                 IncludeParty = true,
-                IncludeAliases = false,
                 ExistingRules = existing,
                 Theme = theme,
                 HighlightCanvasBackground = canvas,
@@ -257,6 +345,46 @@ public sealed class PhraseHighlightCastImportTests
         Assert.Contains("2 already added", summary, StringComparison.Ordinal);
         Assert.Contains("3 new", summary, StringComparison.Ordinal);
         Assert.Contains("palette 8", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildCandidates_assignment_salt_changes_new_candidate_colors()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Reroll salt test");
+        bundle.Entities.Characters.Add(new CharacterEntry { Name = "Mara", Role = "Guide" });
+        bundle.Entities.Characters.Add(new CharacterEntry { Name = "Kael", Role = "Rival" });
+
+        var theme = ThemeApplicationService.ResolveEffectiveTheme(ThemeApplicationService.CreateDefaultSettings());
+        var canvas = theme.GetHex("BgBase");
+        var options = HighlightColorProfileLibrary.OptionsForBuiltIn(HighlightColorProfileIds.ThemeHarmony);
+
+        var first = PhraseHighlightCastImportService.BuildCandidates(
+            bundle,
+            new CastPhraseImportOptions
+            {
+                IncludePlayer = false,
+                IncludeParty = true,
+                Theme = theme,
+                HighlightCanvasBackground = canvas,
+                ColorAssignment = options,
+                AssignmentSalt = 0,
+            });
+
+        var second = PhraseHighlightCastImportService.BuildCandidates(
+            bundle,
+            new CastPhraseImportOptions
+            {
+                IncludePlayer = false,
+                IncludeParty = true,
+                Theme = theme,
+                HighlightCanvasBackground = canvas,
+                ColorAssignment = options,
+                AssignmentSalt = 2,
+            });
+
+        var maraFirst = first.Candidates.Single(c => c.Phrase == "Mara").Color;
+        var maraSecond = second.Candidates.Single(c => c.Phrase == "Mara").Color;
+        Assert.False(string.Equals(maraFirst, maraSecond, StringComparison.OrdinalIgnoreCase));
     }
 }
 
@@ -309,5 +437,75 @@ public sealed class SourceEditDiffPreviewTests
         Assert.Contains("Find the missing rider.", preview, StringComparison.Ordinal);
         Assert.DoesNotContain("long essentials block", preview, StringComparison.Ordinal);
         Assert.Contains("Plot essentials", preview, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildCandidates_sets_entity_id_for_character_primary_name()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Entity linkage import");
+        var id = Guid.NewGuid();
+        bundle.Entities.Characters.Add(new CharacterEntry { Id = id, Name = "Mara", Role = "Guide" });
+
+        var result = PhraseHighlightCastImportService.BuildCandidates(
+            bundle,
+            new CastPhraseImportOptions { IncludePlayer = false, IncludeParty = true });
+
+        var mara = Assert.Single(result.Candidates, c => c.Phrase == "Mara");
+        Assert.Equal(id, mara.EntityId);
+        Assert.Equal("Characters", mara.EntityCategory);
+    }
+
+    [Fact]
+    public void BuildCandidates_dedupes_by_entity_id_when_phrase_differs()
+    {
+        var id = Guid.NewGuid();
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Entity dedupe import");
+        bundle.Entities.Characters.Add(new CharacterEntry { Id = id, Name = "Mara", Role = "Guide" });
+
+        var existing = new List<PhraseHighlightRule>
+        {
+            new()
+            {
+                Phrase = "OldAlias",
+                Color = "#FFD166",
+                EntityId = id,
+                EntityCategory = "Characters",
+            },
+        };
+
+        var result = PhraseHighlightCastImportService.BuildCandidates(
+            bundle,
+            new CastPhraseImportOptions
+            {
+                IncludePlayer = false,
+                IncludeParty = true,
+                ExistingRules = existing,
+            });
+
+        var mara = Assert.Single(result.Candidates, c => c.Phrase == "Mara");
+        Assert.True(mara.AlreadyExists);
+    }
+
+    [Fact]
+    public void ToRules_copies_entity_linkage_fields()
+    {
+        var id = Guid.NewGuid();
+        var result = new CastPhraseImportResult
+        {
+            Candidates =
+            [
+                new CastPhraseImportCandidate
+                {
+                    Phrase = "Mara",
+                    EntityId = id,
+                    EntityCategory = "Characters",
+                    IsSelected = true,
+                },
+            ],
+        };
+
+        var rule = Assert.Single(result.ToRules());
+        Assert.Equal(id, rule.EntityId);
+        Assert.Equal("Characters", rule.EntityCategory);
     }
 }

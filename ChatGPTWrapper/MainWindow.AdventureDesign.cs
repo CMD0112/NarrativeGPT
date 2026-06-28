@@ -134,7 +134,7 @@ public partial class MainWindow
             if (!string.IsNullOrWhiteSpace(targetUrl))
             {
                 core.Navigate(targetUrl);
-                await WaitForChatGptNavigationAsync(core);
+                await WaitForChatGptNavigationAsync(core, expectedDestination: targetUrl);
             }
 
             if (!AdventureDesignDomChatService.TryGetDesignConversationId(bundle, core, out conversationId, out _))
@@ -364,7 +364,7 @@ public partial class MainWindow
             if (!string.IsNullOrWhiteSpace(targetUrl))
             {
                 core.Navigate(targetUrl);
-                await WaitForChatGptNavigationAsync(core);
+                await WaitForChatGptNavigationAsync(core, expectedDestination: targetUrl);
             }
 
             if (!AdventureDesignDomChatService.TryGetDesignConversationId(bundle, core, out _, out pinError))

@@ -20,6 +20,12 @@ public sealed class PacketDisplayAssetTests
 
         Assert.Contains("transformUserBlocks", text);
 
+        Assert.Contains("stripContextTags", text);
+
+        Assert.Contains("__cgwStripContextTags", text);
+
+        Assert.Contains("findNativePlayerTextLeaf", text);
+
         Assert.Contains("__cgwStampUserTurnDisplay", text);
 
         Assert.Contains("MutationObserver", text);
@@ -348,7 +354,7 @@ public sealed class PacketDisplayAssetTests
 
         Assert.Contains("segmentOrderKey", text);
 
-        Assert.Contains("teardownAllPacketShells", text);
+        Assert.DoesNotContain("teardownAllPacketShells", text);
 
         Assert.Contains(".cgw-native-packet-display", text);
 
@@ -468,6 +474,52 @@ public sealed class PacketDisplayAssetTests
 
     [Fact]
 
+    public void Packet_display_prefers_live_tagged_text_over_send_stamp()
+
+    {
+
+        var text = WrapperAssetTestHelpers.ReadAsset("cgw-packet-display.js");
+
+        Assert.Contains("livePacket", text);
+
+        Assert.Contains("if (livePacket || !userLine)", text);
+
+        Assert.Contains("isStructuredPreviewPacket", text);
+
+        Assert.Contains("parseStructuredPreview", text);
+
+        Assert.Contains("collectNativeUserMessageText", text);
+
+        Assert.Contains("forceReprocessAllPacketTurns", text);
+
+        Assert.Contains("__cgwForceReprocessAllPacketTurns", text);
+
+        Assert.Contains("!looksLikePacketText(liveText)", text);
+
+    }
+
+
+
+    [Fact]
+
+    public void Continuous_view_delegates_user_host_lookup_to_packet_display()
+
+    {
+
+        var text = WrapperAssetTestHelpers.ReadAsset("continuous-transcript-view.js");
+
+        Assert.Contains("findNativePlayerTextLeaf", text);
+
+        Assert.Contains("__cgwStripContextTags", text);
+
+        Assert.Contains("collectNativeUserMessageText", text);
+
+    }
+
+
+
+    [Fact]
+
     public void Adventure_bridge_stamps_user_display_on_submit()
 
     {
@@ -477,6 +529,82 @@ public sealed class PacketDisplayAssetTests
         Assert.Contains("__cgwStampUserTurnDisplay", text);
 
         Assert.Contains("displayUserLine", text);
+
+    }
+
+
+
+    [Fact]
+
+    public void Packet_context_header_keeps_stable_layout_when_collapsed()
+
+    {
+
+        var css = WrapperAssetTestHelpers.ReadAsset("continuous-transcript-view.css");
+
+
+
+        Assert.Contains("min-height: 1.375rem", css);
+
+        Assert.Contains("visibility: hidden", css);
+
+        Assert.DoesNotContain("width: 0;\n  height: 0;", css);
+
+        Assert.Contains("@media (hover: none)", css);
+
+        Assert.Contains("data-cgw-continuous-scrolling", css);
+
+    }
+
+
+
+    [Fact]
+
+    public void Continuous_view_forwards_wheel_from_native_composer()
+
+    {
+
+        var js = WrapperAssetTestHelpers.ReadAsset("continuous-transcript-view.js");
+
+
+
+        Assert.Contains(
+
+            "globalThis.__cgwContinuousViewEnabled && isComposerElement(target)",
+
+            js);
+
+        Assert.DoesNotContain("diagScrollSkip(\"native_composer\"", js);
+
+        Assert.Contains("markContinuousScrolling", js);
+
+    }
+
+
+
+    [Fact]
+
+    public void Continuous_view_native_edit_waits_for_peek_layout()
+
+    {
+
+        var js = WrapperAssetTestHelpers.ReadAsset("continuous-transcript-view.js");
+
+        var css = WrapperAssetTestHelpers.ReadAsset("continuous-transcript-view.css");
+
+
+
+        Assert.Contains("function dispatchTurnHover", js);
+
+        Assert.Contains("function revealNativeTurnForPeek", js);
+
+        Assert.Contains("skipRebuild", js);
+
+        Assert.Contains("NATIVE_EDIT_TIMEOUT_MS = 5000", js);
+
+        Assert.Contains("isEditSurfaceVisible", js);
+
+        Assert.Contains("[aria-label*=\"message actions\"]", css);
 
     }
 

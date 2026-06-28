@@ -19,6 +19,10 @@ internal static class ExportService
             foreach (var file in Directory.EnumerateFiles(src))
                 File.Copy(file, Path.Combine(temp, Path.GetFileName(file)), overwrite: true);
 
+            var mediaDir = Path.Combine(src, EntityMediaService.MediaFolderName);
+            if (Directory.Exists(mediaDir))
+                CopyDirectory(mediaDir, Path.Combine(temp, EntityMediaService.MediaFolderName));
+
             if (File.Exists(outputPath))
                 File.Delete(outputPath);
 
@@ -31,6 +35,19 @@ internal static class ExportService
                 try { Directory.Delete(temp, recursive: true); }
                 catch { /* ignore */ }
             }
+        }
+    }
+
+    private static void CopyDirectory(string sourceDir, string destDir)
+    {
+        Directory.CreateDirectory(destDir);
+        foreach (var file in Directory.EnumerateFiles(sourceDir))
+            File.Copy(file, Path.Combine(destDir, Path.GetFileName(file)), overwrite: true);
+
+        foreach (var subDir in Directory.EnumerateDirectories(sourceDir))
+        {
+            var name = Path.GetFileName(subDir);
+            CopyDirectory(subDir, Path.Combine(destDir, name));
         }
     }
 

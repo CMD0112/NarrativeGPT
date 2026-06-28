@@ -1,11 +1,18 @@
 using System.IO;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using Microsoft.Win32;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class WrapperSettingsDialog : Window
+public partial class WrapperSettingsDialog : ShellDialogWindow
 {
+    protected override bool PersistLayout => false;
+
+    protected override bool ApplyDesignSizeOnOpen => false;
+
+    protected override bool RestorePersistedSizeOnOpen => false;
+
     public WrapperSettingsDialog()
     {
         InitializeComponent();

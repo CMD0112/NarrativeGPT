@@ -49,7 +49,13 @@ internal static class CanonSchemaLoader
 
     internal static CanonSchemaCatalog BuildCatalog(CanonSchemaDocument document)
     {
-        var kinds = document.Kinds.Select(ToKindSpec).ToList();
+        var categories = document.Categories.Count > 0
+            ? document.Categories.Select(ToCategorySpec).ToList()
+            : CanonEntityCategoryBootstrap.All.ToList();
+        CanonEntityCategoryRegistry.Initialize(categories);
+
+        var categoryById = categories.ToDictionary(c => c.CategoryId, StringComparer.OrdinalIgnoreCase);
+        var kinds = document.Kinds.Select(k => ToKindSpec(k, categoryById)).ToList();
         return new CanonSchemaCatalog
         {
             SchemaVersion = document.SchemaVersion,
@@ -75,10 +81,36 @@ internal static class CanonSchemaLoader
         kinds.FirstOrDefault(k => string.Equals(k.KindId, kindId, StringComparison.OrdinalIgnoreCase))
         ?? throw new InvalidOperationException($"canon-schema.json missing kind '{kindId}'.");
 
-    private static CanonEntityKindSpec ToKindSpec(CanonKindDocument kind) =>
+    private static CanonEntityCategorySpec ToCategorySpec(CanonCategoryDocument category) =>
         new()
         {
+            CategoryId = category.CategoryId,
+            DisplayLabel = category.DisplayLabel,
+            ShowTags = category.ShowTags,
+            ShowAliases = category.ShowAliases,
+            ShowImage = category.ShowImage,
+            ListShellFields = category.ListShellFields.Select(ToFieldSpec).ToList(),
+            SingletonShellFields = category.SingletonShellFields.Select(ToFieldSpec).ToList(),
+        };
+
+    private static CanonEntityKindSpec ToKindSpec(
+        CanonKindDocument kind,
+        IReadOnlyDictionary<string, CanonEntityCategorySpec> categories)
+    {
+        CanonEntityCategorySpec? category = null;
+        var fields = kind.Fields.Select(ToFieldSpec).ToList();
+        if (!string.IsNullOrWhiteSpace(kind.ParentCategory)
+            && categories.TryGetValue(kind.ParentCategory, out category))
+        {
+            var shared = kind.IsSingleton ? category.SingletonShellFields : category.ListShellFields;
+            fields = MergeFields(shared, fields);
+        }
+
+        return new()
+        {
             KindId = kind.KindId,
+            ParentCategory = string.IsNullOrWhiteSpace(kind.ParentCategory) ? null : kind.ParentCategory,
+            CategorySpec = category,
             CollectionKey = kind.CollectionKey,
             SectionId = kind.SectionId,
             SourceFile = kind.SourceFile,
@@ -89,8 +121,30 @@ internal static class CanonSchemaLoader
             TitleProperty = kind.TitleProperty,
             SecondaryProperty = kind.SecondaryProperty,
             SnippetProperty = kind.SnippetProperty,
-            Fields = kind.Fields.Select(ToFieldSpec).ToList(),
+            Fields = fields,
         };
+    }
+
+    private static List<CanonFieldSpec> MergeFields(
+        IReadOnlyList<CanonFieldSpec> shared,
+        IReadOnlyList<CanonFieldSpec> kindFields) =>
+        MergeFieldsForBootstrap(shared, kindFields);
+
+    internal static List<CanonFieldSpec> MergeFieldsForBootstrap(
+        IReadOnlyList<CanonFieldSpec> shared,
+        IReadOnlyList<CanonFieldSpec> kindFields)
+    {
+        var kindKeys = new HashSet<string>(kindFields.Select(f => f.JsonKey), StringComparer.OrdinalIgnoreCase);
+        var merged = new List<CanonFieldSpec>();
+        foreach (var field in shared)
+        {
+            if (!kindKeys.Contains(field.JsonKey))
+                merged.Add(field);
+        }
+
+        merged.AddRange(kindFields);
+        return merged;
+    }
 
     private static CanonFieldSpec ToFieldSpec(CanonFieldDocument field) =>
         new()

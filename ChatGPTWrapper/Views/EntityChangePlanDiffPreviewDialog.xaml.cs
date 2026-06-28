@@ -1,11 +1,12 @@
 using System.IO;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class EntityChangePlanDiffPreviewDialog : Window
+public partial class EntityChangePlanDiffPreviewDialog : ShellDialogWindow
 {
     public EntityChangePlanDiffPreviewDialog(AdventureBundle bundle, IReadOnlyList<EntityChangePlan> plans)
     {

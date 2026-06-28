@@ -95,9 +95,11 @@ internal static class DesignTabPinService
     public static GenerationUtilitySession? TryResolveDesignSessionFromPin(AdventureBundle bundle)
     {
         var conversationId = GetDesignConversationId(bundle);
+        var pinnedUrl = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)?.PinnedTabUrl
+                        ?? bundle.Metadata.PinnedDesignTabUrl;
         if (string.IsNullOrWhiteSpace(conversationId)
-            && !string.IsNullOrWhiteSpace(bundle.Metadata.PinnedDesignTabUrl)
-            && Uri.TryCreate(bundle.Metadata.PinnedDesignTabUrl, UriKind.Absolute, out var uri)
+            && !string.IsNullOrWhiteSpace(pinnedUrl)
+            && Uri.TryCreate(pinnedUrl, UriKind.Absolute, out var uri)
             && ChatGptUrls.TryParseConversationId(uri, out var fromUrl))
         {
             conversationId = fromUrl;
@@ -369,4 +371,26 @@ internal static class DesignTabPinService
         string.IsNullOrWhiteSpace(ProjectChatDraftService.FormatStatusLine(bundle))
             ? null
             : ProjectChatDraftService.FormatStatusLine(bundle);
+
+    /// <summary>
+    /// Re-binds the design thread pin after navigation (e.g. app restart) without surfacing errors.
+    /// </summary>
+    public static bool TryRestorePinFromWebView(AdventureBundle bundle, WebView2 webView, TabControl tabs)
+    {
+        var source = webView.CoreWebView2?.Source;
+        if (!TryResolveDesignConversationFromSource(bundle, source, out var conversationId, out _))
+            return false;
+
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)
+                      ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
+
+        if (!string.IsNullOrWhiteSpace(conversationId))
+            entry.ConversationId = conversationId;
+
+        AdventureThreadRegistryService.UpdatePinFromWebView(bundle, entry.Id, webView, tabs, source);
+        AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
+        AdventureStore.Save(bundle);
+        return true;
+    }
 }

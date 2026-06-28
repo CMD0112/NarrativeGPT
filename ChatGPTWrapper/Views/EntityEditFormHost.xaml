@@ -91,6 +91,89 @@
                       Content="Pinned — include in play packets when matched"
                       Margin="0,4,0,0"/>
 
+            <Border x:Name="HighlightPanel"
+                    Margin="0,12,0,0"
+                    Style="{StaticResource ShellCardStyle}"
+                    Padding="12"
+                    Visibility="Collapsed">
+                <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Phrase highlight"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock x:Name="HighlightSyncHintText"
+                                   Grid.Column="1"
+                                   Text="Synced with Format"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="10"
+                                   VerticalAlignment="Center"/>
+                    </Grid>
+                    <TextBlock Text="Uses the same rules as Format → Highlights. Saves to format settings only — not adventure source files."
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,10"/>
+                    <CheckBox x:Name="HighlightEnabledCheck"
+                              Content="Highlight this name in continuous view"
+                              Margin="0,0,0,10"
+                              Checked="HighlightField_Changed"
+                              Unchecked="HighlightField_Changed"/>
+
+                    <StackPanel x:Name="HighlightColorPanel" Margin="0,0,0,10">
+                        <TextBlock Text="Preview"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="10"
+                                   Margin="0,0,0,4"/>
+                        <Border x:Name="HighlightPreviewBorder"
+                                Padding="8,6"
+                                CornerRadius="4"
+                                Background="{DynamicResource BgInsetBrush}"
+                                Margin="0,0,0,8">
+                            <TextBlock x:Name="HighlightPreviewText"
+                                       TextWrapping="Wrap"
+                                       FontSize="{StaticResource FontSizeBody}"/>
+                        </Border>
+
+                        <TextBlock Text="Text color"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="10"
+                                   Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Border x:Name="HighlightColorSwatch"
+                                    Width="24"
+                                    Height="24"
+                                    CornerRadius="4"
+                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                    BorderThickness="1"
+                                    Margin="0,0,8,0"/>
+                            <TextBox x:Name="HighlightColorBox"
+                                     Width="88"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,8,0"
+                                     TextChanged="HighlightColorBox_TextChanged"/>
+                            <Button x:Name="HighlightPickColorButton"
+                                    Content="Pick…"
+                                    Padding="8,4"
+                                    Click="HighlightPickColor_Click"/>
+                        </StackPanel>
+                        <WrapPanel x:Name="HighlightPresetSwatchesPanel" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="HighlightContrastHintText"
+                                   Foreground="{DynamicResource WarningBrush}"
+                                   FontSize="10"
+                                   TextWrapping="Wrap"
+                                   Visibility="Collapsed"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="HighlightPhraseHintText"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="10"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
             <StackPanel x:Name="InlineActionsPanel"
                         Orientation="Horizontal"
                         Margin="0,12,0,0"

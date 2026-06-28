@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
@@ -12,7 +13,7 @@ using Microsoft.Web.WebView2.Wpf;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class SourceSyncDialog : Window
+public partial class SourceSyncDialog : ShellDialogWindow
 {
     private readonly Guid _adventureId;
     private readonly IChatGptProjectHost? _host;

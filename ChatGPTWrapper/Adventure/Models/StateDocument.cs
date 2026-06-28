@@ -21,6 +21,9 @@ public sealed class StateDocument
     public TimeState Time { get; set; } = new();
 
     public string MapNotes { get; set; } = "";
+
+    /// <summary>Continuation lines merged into the next play packet (Play settings → Play packet).</summary>
+    public List<string> ContinuationQueue { get; set; } = [];
 }
 
 public sealed class SceneState

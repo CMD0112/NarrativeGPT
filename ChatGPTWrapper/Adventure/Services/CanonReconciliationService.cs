@@ -60,18 +60,28 @@ internal static class CanonReconciliationService
                 continue;
 
             var normalized = projected.Content.Trim() + Environment.NewLine;
-            var projectedHash = ProjectSourceExportService.ComputeSha256Bytes(Encoding.UTF8.GetBytes(normalized));
+            var projectedHash = ProjectSourceExportService.ComputeNormalizedSha256FromText(normalized);
             var entry = FindManifestEntry(bundle, fileName);
             var manifestHash = entry?.EffectiveLocalSha256;
             var diskContent = AdventureSourceFileService.TryRead(bundle, fileName);
             var diskHash = diskContent is not null
-                ? ProjectSourceExportService.ComputeSha256Bytes(Encoding.UTF8.GetBytes(diskContent.Trim() + Environment.NewLine))
+                ? ProjectSourceExportService.ComputeNormalizedSha256FromText(diskContent)
                 : null;
 
-            var hasDrift = string.IsNullOrEmpty(manifestHash)
-                           || !string.Equals(manifestHash, projectedHash, StringComparison.OrdinalIgnoreCase)
-                           || (diskHash is not null
-                               && !string.Equals(diskHash, projectedHash, StringComparison.OrdinalIgnoreCase));
+            // Disk is authoritative: stale manifest fingerprints alone are not drift.
+            var hasDrift = diskHash is not null
+                ? !string.Equals(diskHash, projectedHash, StringComparison.OrdinalIgnoreCase)
+                : string.IsNullOrEmpty(manifestHash)
+                  || !string.Equals(manifestHash, projectedHash, StringComparison.OrdinalIgnoreCase);
+
+            if (diskHash is not null
+                && string.Equals(diskHash, projectedHash, StringComparison.OrdinalIgnoreCase)
+                && entry is not null
+                && !string.Equals(manifestHash, projectedHash, StringComparison.OrdinalIgnoreCase))
+            {
+                entry.LocalSha256 = projectedHash;
+                entry.Sha256 = projectedHash;
+            }
 
             reports.Add(new CanonDriftFileReport
             {
@@ -258,22 +268,59 @@ internal static class CanonReconciliationService
         if (!AdventureSourceFileService.HasLocalLoreSourceFiles(bundle))
             return false;
 
+        var healedManifest = TryHealStaleManifestHashes(bundle);
         var report = DetectDrift(bundle);
         if (!report.HasDrift)
         {
             ClearUnresolvedDrift(bundle);
-            return false;
+            return healedManifest;
         }
 
         if (!CanAutoPushSourcesFromJson(bundle, report))
         {
             MarkUnresolvedDrift(bundle);
-            return false;
+            return healedManifest;
         }
 
         ProjectSourceExportService.ExportForce(bundle);
         ClearUnresolvedDrift(bundle);
         return true;
+    }
+
+    /// <summary>
+    /// Refreshes manifest local hashes when on-disk lore already matches JSON projection.
+    /// </summary>
+    internal static bool TryHealStaleManifestHashes(AdventureBundle bundle, CanonEditContext? context = null)
+    {
+        var healed = false;
+        foreach (var fileName in ResolveAffectedFiles(context))
+        {
+            var projected = BuildProjectedFile(bundle, fileName);
+            if (projected is null)
+                continue;
+
+            var projectedHash = ProjectSourceExportService.ComputeNormalizedSha256FromText(projected.Content);
+            var diskContent = AdventureSourceFileService.TryRead(bundle, fileName);
+            if (diskContent is null)
+                continue;
+
+            var diskHash = ProjectSourceExportService.ComputeNormalizedSha256FromText(diskContent);
+            if (!string.Equals(diskHash, projectedHash, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var entry = FindManifestEntry(bundle, fileName);
+            if (entry is null
+                || string.Equals(entry.EffectiveLocalSha256, projectedHash, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            entry.LocalSha256 = projectedHash;
+            entry.Sha256 = projectedHash;
+            healed = true;
+        }
+
+        return healed;
     }
 
     private static bool CanAutoPushSourcesFromJson(AdventureBundle bundle, CanonDriftReport report)

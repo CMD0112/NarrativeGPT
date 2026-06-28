@@ -15,16 +15,9 @@ public sealed class DesignThreadPersistenceTests
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Design URL test");
         bundle.Metadata.LinkedProjectId = "g-p-design";
-        bundle.Metadata.UtilitySessions = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase)
-        {
-            [GenerationJobId.DesignAdventure] = new GenerationUtilitySession
-            {
-                ConversationId = "design-thread-1",
-                Sequence = 1,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastUsedAt = DateTimeOffset.UtcNow,
-            },
-        };
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        entry.ConversationId = "design-thread-1";
 
         var url = DesignTabPinService.GetDesignTargetUrl(bundle);
 
@@ -34,19 +27,12 @@ public sealed class DesignThreadPersistenceTests
     }
 
     [Fact]
-    public void HasPersistedDesignSession_true_when_design_utility_session_exists()
+    public void HasPersistedDesignSession_true_when_design_registry_entry_exists()
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Persisted session");
-        bundle.Metadata.UtilitySessions = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase)
-        {
-            [GenerationJobId.DesignAdventure] = new GenerationUtilitySession
-            {
-                ConversationId = "conv-design",
-                Sequence = 1,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastUsedAt = DateTimeOffset.UtcNow,
-            },
-        };
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        entry.ConversationId = "conv-design";
 
         Assert.True(DesignTabPinService.HasPersistedDesignSession(bundle));
         Assert.Equal("conv-design", AdventureDesignContextService.GetDesignConversationId(bundle));
@@ -57,16 +43,9 @@ public sealed class DesignThreadPersistenceTests
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Status test");
         bundle.Metadata.LinkedProjectId = "g-p-abc";
-        bundle.Metadata.UtilitySessions = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase)
-        {
-            [GenerationJobId.DesignAdventure] = new GenerationUtilitySession
-            {
-                ConversationId = "thread-xyz",
-                Sequence = 1,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastUsedAt = DateTimeOffset.UtcNow,
-            },
-        };
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        entry.ConversationId = "thread-xyz";
 
         var status = DesignTabPinService.FormatDesignThreadStatus(bundle);
 
@@ -114,7 +93,6 @@ public sealed class DesignThreadPersistenceTests
         var playEntry = AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play);
         AdventureThreadRegistryService.UpdateConversationId(bundle, playEntry.Id, "play-from-registry");
         AdventureThreadRegistryService.SetActivePin(bundle, playEntry.Id, notifyPlayThreadChanged: false);
-        AdventureThreadRegistryService.SyncLegacyFields(bundle.Metadata);
 
         var playUrl = ChatGptUrls.BuildProjectConversationUrl("play-from-registry", "g-p-design");
         Assert.False(
@@ -131,7 +109,7 @@ public sealed class DesignThreadPersistenceTests
         var status = DesignTabPinService.FormatDesignThreadStatus(bundle);
 
         Assert.Contains("design thread", status, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("pin", status, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Threads", status, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -164,8 +142,9 @@ public sealed class DesignThreadPersistenceTests
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Pin resolve");
         bundle.Metadata.LinkedProjectId = "g-p-test";
-        bundle.Metadata.PinnedDesignTabUrl =
-            ChatGptUrls.BuildProjectConversationUrl("pinned-conv", "g-p-test");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        entry.PinnedTabUrl = ChatGptUrls.BuildProjectConversationUrl("pinned-conv", "g-p-test");
 
         var session = DesignTabPinService.TryResolveDesignSessionFromPin(bundle);
 
@@ -178,13 +157,15 @@ public sealed class DesignThreadPersistenceTests
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Design pin save");
         bundle.Metadata.LinkedProjectId = "g-p-test";
-        bundle.Metadata.PinnedDesignTabUrl =
-            ChatGptUrls.BuildProjectConversationUrl("design-1", "g-p-test");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        entry.PinnedTabUrl = ChatGptUrls.BuildProjectConversationUrl("design-1", "g-p-test");
         AdventureStore.Save(bundle);
 
         var stale = AdventureStore.Load(bundle.Metadata.Id)!;
         stale.Metadata.LinkedProjectId = null;
-        stale.Metadata.PinnedDesignTabUrl = null;
+        stale.Metadata.ThreadRegistry = [];
+        stale.Metadata.ActiveThreadIds = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         stale.Metadata.Title = "Updated title";
 
         AdventureStore.Save(stale);
@@ -193,7 +174,7 @@ public sealed class DesignThreadPersistenceTests
         Assert.Equal("g-p-test", reloaded.Metadata.LinkedProjectId);
         Assert.Equal(
             ChatGptUrls.BuildProjectConversationUrl("design-1", "g-p-test"),
-            reloaded.Metadata.PinnedDesignTabUrl);
+            AdventureThreadRegistryService.GetActiveEntry(reloaded, AdventureThreadKind.Design)!.PinnedTabUrl);
         Assert.Equal("Updated title", reloaded.Metadata.Title);
     }
 
@@ -213,31 +194,30 @@ public sealed class DesignThreadPersistenceTests
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Rotate design");
         bundle.Metadata.LinkedProjectId = "g-p-design";
-        bundle.Metadata.PinnedDesignTabKey = "design-tab-key";
-        bundle.Metadata.PinnedDesignTabUrl =
-            ChatGptUrls.BuildProjectConversationUrl("design-old", "g-p-design");
-        bundle.Metadata.UtilitySessions = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase)
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        entry.PinnedTabKey = "design-tab-key";
+        entry.PinnedTabUrl = ChatGptUrls.BuildProjectConversationUrl("design-old", "g-p-design");
+        entry.ConversationId = "design-old";
+        entry.DesignJobState = new DesignThreadJobState
         {
-            [GenerationJobId.DesignAdventure] = new GenerationUtilitySession
-            {
-                ConversationId = "design-old",
-                Sequence = 1,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastUsedAt = DateTimeOffset.UtcNow,
-            },
+            Sequence = 1,
+            CreatedAt = DateTimeOffset.UtcNow,
+            LastUsedAt = DateTimeOffset.UtcNow,
         };
         AdventureStore.Save(bundle);
 
         DesignThreadRotationService.ReleaseDesignThread(bundle);
         DesignThreadRotationService.PersistRelease(bundle);
 
-        Assert.Null(bundle.Metadata.PinnedDesignTabKey);
-        Assert.Null(bundle.Metadata.PinnedDesignTabUrl);
+        Assert.Null(AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)?.PinnedTabKey);
         Assert.Null(AdventureDesignContextService.GetDesignConversationId(bundle));
         Assert.Equal("g-p-design", bundle.Metadata.LinkedProjectId);
         Assert.Contains(
-            bundle.Metadata.UtilitySessionArchive,
-            a => a.Reason == "manual_rotate" && a.ConversationId == "design-old");
+            bundle.Metadata.ThreadRegistry,
+            e => e.Kind == AdventureThreadKind.Design
+                 && e.Status == AdventureThreadStatus.Archived
+                 && e.ConversationId == "design-old");
 
         var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
         Assert.Null(AdventureDesignContextService.GetDesignConversationId(reloaded));
@@ -252,16 +232,9 @@ public sealed class DesignThreadPersistenceTests
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Rebind design");
         bundle.Metadata.LinkedProjectId = "g-p-design";
-        bundle.Metadata.UtilitySessions = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase)
-        {
-            [GenerationJobId.DesignAdventure] = new GenerationUtilitySession
-            {
-                ConversationId = "design-old",
-                Sequence = 1,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastUsedAt = DateTimeOffset.UtcNow,
-            },
-        };
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        entry.ConversationId = "design-old";
 
         DesignThreadRotationService.ReleaseDesignThread(bundle);
         Assert.Null(AdventureDesignContextService.GetDesignConversationId(bundle));
@@ -327,16 +300,9 @@ public sealed class DesignThreadPersistenceTests
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Stale session open");
         bundle.Metadata.LinkedProjectId = "g-p-stale";
-        bundle.Metadata.UtilitySessions = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase)
-        {
-            [GenerationJobId.DesignAdventure] = new GenerationUtilitySession
-            {
-                ConversationId = "deleted-thread",
-                Sequence = 1,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastUsedAt = DateTimeOffset.UtcNow,
-            },
-        };
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        entry.ConversationId = "deleted-thread";
 
         var status = AdventureDesignContextService.FormatDesignModeOpenStatus(bundle);
 

@@ -1,5 +1,7 @@
 namespace ChatGPTWrapper.Adventure.Services;
 
+using ChatGPTWrapper.Adventure.Services.Canon;
+
 public sealed class EntityEditField
 {
     public required string Key { get; init; }
@@ -11,4 +13,8 @@ public sealed class EntityEditField
     public bool Multiline { get; init; }
 
     public int Order { get; init; }
+
+    public string GroupId { get; init; } = CanonFieldGroup.Story;
+
+    public int DisplayOrder { get; init; }
 }

@@ -13,7 +13,7 @@ public sealed class PlayThreadPacketServiceTests
     {
         var bundle = AdventureStore.CreateNew("Fresh packet");
         bundle.Metadata.LinkedProjectId = "g-p-fresh";
-        bundle.Metadata.Settings.ForceFatPackets = true;
+        bundle.Metadata.Settings.ForceInlineLore = true;
         bundle.Scenario.OpeningSituation = "Original opening on disk.";
         AdventureStore.Save(bundle);
 
@@ -65,7 +65,7 @@ public sealed class PlayThreadPacketServiceTests
     {
         var bundle = AdventureStore.CreateNew("Narrative restart");
         bundle.Metadata.LinkedProjectId = "g-p-restart";
-        bundle.Metadata.Settings.ForceFatPackets = true;
+        bundle.Metadata.Settings.ForceInlineLore = true;
         bundle.Summary.RollingSummary = "STALE_SUMMARY_SHOULD_NOT_APPEAR";
         AdventureSessionService.EnsureSession(bundle);
         bundle.Log.Turns.Add(new TurnRecord

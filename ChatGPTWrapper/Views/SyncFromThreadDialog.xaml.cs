@@ -1,10 +1,15 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using ChatGPTWrapper.Adventure.Services;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class SyncFromThreadDialog : Window
+public partial class SyncFromThreadDialog : ShellDialogWindow
 {
+    protected override bool ApplyDesignSizeOnOpen => false;
+
+    protected override bool RestorePersistedSizeOnOpen => false;
+
     public bool SyncConfirmed { get; private set; }
 
     public SyncFromThreadDialog(ThreadLogDriftAnalysis analysis)

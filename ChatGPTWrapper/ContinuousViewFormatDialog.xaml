@@ -1,444 +1,894 @@
-<Window x:Class="ChatGPTWrapper.ContinuousViewFormatDialog"
+<shell:ShellDialogWindow xmlns:shell="clr-namespace:ChatGPTWrapper.Shell" x:Class="ChatGPTWrapper.ContinuousViewFormatDialog"
+
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+
         xmlns:local="clr-namespace:ChatGPTWrapper"
-        Title="Format — Continuous view &amp; thread"
-        Height="760"
-        Width="1024"
-        MinHeight="600"
-        MinWidth="900"
+
+        Title="Format"
+
+        Height="1000"
+
+        Width="1060"
+
+        MinHeight="680"
+
+        MinWidth="960"
+
         WindowStartupLocation="CenterOwner"
+
         Background="{StaticResource BgBaseBrush}"
+
         Foreground="{StaticResource TextPrimaryBrush}"
+
         ResizeMode="CanResizeWithGrip">
+
     <Window.Resources>
+
         <ResourceDictionary>
+
             <ResourceDictionary.MergedDictionaries>
+
                 <ResourceDictionary Source="Themes/WrapperChrome.xaml"/>
+
             </ResourceDictionary.MergedDictionaries>
+
+            <Style TargetType="ScrollBar" BasedOn="{StaticResource WrapperInteriorScrollBarStyle}"/>
+
+            <Style x:Key="FormatToolbarButtonStyle" TargetType="Button" BasedOn="{StaticResource ShellCommandBarSecondarySlot}">
+
+                <Setter Property="Padding" Value="8,3"/>
+
+                <Setter Property="MinHeight" Value="26"/>
+
+            </Style>
+
+            <Style x:Key="FormatSectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource ShellSectionHeaderStyle}">
+
+                <Setter Property="FontSize" Value="{StaticResource FontSizeBody}"/>
+
+                <Setter Property="Margin" Value="0,14,0,8"/>
+
+            </Style>
+
+            <Style x:Key="FormatSectionHeaderFirstStyle" TargetType="TextBlock" BasedOn="{StaticResource FormatSectionHeaderStyle}">
+
+                <Setter Property="Margin" Value="0,0,0,8"/>
+
+            </Style>
+
         </ResourceDictionary>
+
     </Window.Resources>
-    <Grid Margin="16">
+
+    <Grid Margin="12">
+
         <Grid.RowDefinitions>
+
             <RowDefinition Height="Auto"/>
+
             <RowDefinition Height="*"/>
+
             <RowDefinition Height="Auto"/>
+
         </Grid.RowDefinitions>
 
-        <!-- Profile header (global across tabs) -->
+
+
+        <!-- Compact profile + search bar -->
+
         <Border Grid.Row="0"
-                Style="{StaticResource ShellCardStyle}"
-                Margin="0,0,0,12">
+
+                BorderBrush="{StaticResource BorderSubtleBrush}"
+
+                BorderThickness="0,0,0,1"
+
+                Padding="0,0,0,8"
+
+                Margin="0,0,0,8">
+
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0"
-                           Text="Format profile"
-                           Style="{StaticResource ShellSectionHeaderStyle}"
-                           Margin="0,0,0,8"/>
+
+                <Grid.ColumnDefinitions>
+
+                    <ColumnDefinition Width="Auto"/>
+
+                    <ColumnDefinition Width="200"/>
+
+                    <ColumnDefinition Width="*"/>
+
+                    <ColumnDefinition Width="168"/>
+
+                    <ColumnDefinition Width="Auto"/>
+
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Text="Profile"
+
+                           VerticalAlignment="Center"
+
+                           Foreground="{StaticResource TextMutedBrush}"
+
+                           FontSize="{StaticResource FontSizeHint}"
+
+                           Margin="0,0,8,0"/>
+
                 <ComboBox x:Name="FormatProfileCombo"
-                          Grid.Row="1"
-                          MinHeight="32"
+
+                          Grid.Column="1"
+
+                          MinHeight="28"
+
+                          VerticalAlignment="Center"
+
                           DisplayMemberPath="Name"
+
                           SelectionChanged="FormatProfileCombo_SelectionChanged"/>
+
                 <TextBlock x:Name="FormatProfileStatusText"
-                           Grid.Row="2"
-                           Style="{StaticResource ShellSectionHintStyle}"
-                           TextWrapping="Wrap"
-                           Margin="0,6,0,10"/>
-                <WrapPanel Grid.Row="3"
-                           HorizontalAlignment="Left">
-                    <Button Content="New profile…"
-                            Style="{StaticResource ShellCommandBarSecondarySlot}"
-                            Padding="10,5"
-                            Margin="0,0,8,8"
-                            Click="NewFormatProfileButton_Click"/>
-                    <Button x:Name="DuplicateFormatProfileButton"
-                            Content="Duplicate"
-                            Style="{StaticResource ShellCommandBarSecondarySlot}"
-                            Padding="10,5"
-                            Margin="0,0,8,8"
-                            Click="DuplicateFormatProfileButton_Click"/>
-                    <Button x:Name="RenameFormatProfileButton"
-                            Content="Rename…"
-                            Style="{StaticResource ShellCommandBarSecondarySlot}"
-                            Padding="10,5"
-                            Margin="0,0,8,8"
-                            Click="RenameFormatProfileButton_Click"/>
-                    <Button x:Name="DeleteFormatProfileButton"
-                            Content="Delete"
-                            Style="{StaticResource ShellCommandBarSecondarySlot}"
-                            Padding="10,5"
-                            Margin="0,0,8,8"
-                            Click="DeleteFormatProfileButton_Click"/>
-                    <Button x:Name="SaveFormatProfileButton"
-                            Content="Save to profile"
-                            Style="{StaticResource ShellCommandBarPrimarySlot}"
-                            Padding="10,5"
-                            Margin="0,0,0,8"
-                            Click="SaveFormatProfileButton_Click"/>
-                </WrapPanel>
+
+                           Grid.Column="2"
+
+                           VerticalAlignment="Center"
+
+                           Foreground="{StaticResource TextMutedBrush}"
+
+                           FontSize="{StaticResource FontSizeHint}"
+
+                           TextTrimming="CharacterEllipsis"
+
+                           Margin="10,0,10,0"/>
+
+                <TextBox x:Name="FormatSettingsSearchBox"
+
+                         Grid.Column="3"
+
+                         MinHeight="28"
+
+                         VerticalAlignment="Center"
+
+                         ToolTip="Search settings (Ctrl+F)"
+
+                         TextChanged="FormatSettingsSearchBox_TextChanged"/>
+
+                <Menu Grid.Column="4"
+
+                      Background="Transparent"
+
+                      VerticalAlignment="Center"
+
+                      Margin="6,0,0,0">
+
+                    <MenuItem Header="Profile" Padding="8,3">
+
+                        <MenuItem Header="New…" Click="NewFormatProfileButton_Click"/>
+
+                        <MenuItem x:Name="DuplicateFormatProfileMenuItem"
+
+                                  Header="Duplicate"
+
+                                  Click="DuplicateFormatProfileButton_Click"/>
+
+                        <MenuItem x:Name="RenameFormatProfileMenuItem"
+
+                                  Header="Rename…"
+
+                                  Click="RenameFormatProfileButton_Click"/>
+
+                        <MenuItem x:Name="DeleteFormatProfileMenuItem"
+
+                                  Header="Delete"
+
+                                  Click="DeleteFormatProfileButton_Click"/>
+
+                        <Separator/>
+
+                        <MenuItem x:Name="SaveFormatProfileMenuItem"
+
+                                  Header="Save changes"
+
+                                  Click="SaveFormatProfileButton_Click"/>
+
+                    </MenuItem>
+
+                </Menu>
+
             </Grid>
+
         </Border>
 
+
+
         <!-- Settings + preview -->
-        <Grid Grid.Row="1">
+
+        <Grid Grid.Row="1" MinHeight="360">
+
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="380"/>
-                <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="340" MinWidth="260" MaxWidth="420"/>
+
+                <ColumnDefinition Width="*" MinWidth="360"/>
+
+                <ColumnDefinition Width="6"/>
+
+                <ColumnDefinition Width="300" MinWidth="240" MaxWidth="400"/>
+
             </Grid.ColumnDefinitions>
 
+
+
             <TabControl x:Name="SettingsTabs"
+
                         Grid.Column="0"
-                        Margin="0,0,8,0"
+
                         SelectedIndex="0">
-                <TabItem Header="Reset &amp; import">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,8,8,8">
+
+                <TabItem Header="Essentials">
+
+                    <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}"
+
+                                  Padding="10,8,10,10">
+
                         <StackPanel>
-                            <TextBlock Text="Restore parts of the current profile or exchange settings as JSON."
-                                       Style="{StaticResource ShellSectionHintStyle}"
-                                       TextWrapping="Wrap"
-                                       Margin="0,0,0,16"/>
 
-                            <Border Style="{StaticResource ShellCardStyle}" Margin="0,0,0,12">
-                                <StackPanel>
-                                    <TextBlock Text="Partial reset"
-                                               Style="{StaticResource ShellSectionHeaderStyle}"
-                                               FontSize="{DynamicResource FontSizeBody}"
-                                               Margin="0,0,0,10"/>
-                                    <WrapPanel>
-                                        <Button Content="Reset layout"
-                                                Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                                Padding="10,5"
-                                                Margin="0,0,8,8"
-                                                Click="ResetLayoutButton_Click"/>
-                                        <Button Content="Reset colors"
-                                                Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                                Padding="10,5"
-                                                Margin="0,0,8,8"
-                                                Click="ResetColorsButton_Click"/>
-                                        <Button Content="Reset role distinction"
-                                                Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                                Padding="10,5"
-                                                Margin="0,0,0,8"
-                                                Click="ResetRoleDistinctionButton_Click"/>
-                                    </WrapPanel>
-                                </StackPanel>
-                            </Border>
+                            <TextBlock Text="Layout"
 
-                            <Border Style="{StaticResource ShellCardStyle}" Margin="0,0,0,12">
-                                <StackPanel>
-                                    <TextBlock Text="Full reset"
-                                               Style="{StaticResource ShellSectionHeaderStyle}"
-                                               FontSize="{DynamicResource FontSizeBody}"
-                                               Margin="0,0,0,10"/>
-                                    <Button Content="Reset all to defaults"
-                                            Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                            Padding="10,5"
-                                            HorizontalAlignment="Left"
-                                            Click="ResetDefaultsButton_Click"/>
-                                </StackPanel>
-                            </Border>
+                                       Style="{StaticResource FormatSectionHeaderFirstStyle}"/>
 
-                            <Border Style="{StaticResource ShellCardStyle}">
-                                <StackPanel>
-                                    <TextBlock Text="Import / export"
-                                               Style="{StaticResource ShellSectionHeaderStyle}"
-                                               FontSize="{DynamicResource FontSizeBody}"
-                                               Margin="0,0,0,10"/>
-                                    <WrapPanel>
-                                        <Button Content="Export format JSON…"
-                                                Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                                Padding="10,5"
-                                                Margin="0,0,8,0"
-                                                Click="ExportFormatButton_Click"/>
-                                        <Button Content="Import format JSON…"
-                                                Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                                Padding="10,5"
-                                                Click="ImportFormatButton_Click"/>
-                                    </WrapPanel>
-                                </StackPanel>
-                            </Border>
+                            <StackPanel x:Name="EssentialsLayoutPanel" Margin="0,0,0,4"/>
+
+
+
+                            <TextBlock Text="Your messages"
+
+                                       Style="{StaticResource FormatSectionHeaderStyle}"/>
+
+                            <StackPanel x:Name="EssentialsUserPanel" Margin="0,0,0,4"/>
+
+
+
+                            <TextBlock Text="Assistant messages"
+
+                                       Style="{StaticResource FormatSectionHeaderStyle}"/>
+
+                            <StackPanel x:Name="EssentialsAssistantPanel" Margin="0,0,0,4"/>
+
+
+
+                            <TextBlock Text="Colors"
+
+                                       Style="{StaticResource FormatSectionHeaderStyle}"/>
+
+                            <StackPanel x:Name="EssentialsColorPanel" Margin="0,0,0,4"/>
+
+
+
+                            <CheckBox x:Name="ShowRoleLabelsCheckBox"
+
+                                      Content="Show role labels (You / Assistant)"
+
+                                      Margin="0,8,0,0"
+
+                                      Checked="ShowRoleLabelsCheckBox_Changed"
+
+                                      Unchecked="ShowRoleLabelsCheckBox_Changed"/>
+
                         </StackPanel>
+
                     </ScrollViewer>
+
                 </TabItem>
-                <TabItem Header="Reading layout">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,8,8,8">
+
+                <TabItem Header="Layout">
+
+                    <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}"
+
+                                  Padding="10,8,10,10">
+
                         <StackPanel>
-                            <Border Style="{StaticResource ShellCardStyle}" Margin="0,0,0,12">
+
+                            <Border x:Name="CvRequiredBannerPanel"
+                                    Background="{StaticResource AccentSubtleBrush}"
+                                    BorderBrush="{StaticResource AccentPrimaryBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource RadiusControl}"
+                                    Padding="10,8"
+                                    Margin="0,0,0,12">
                                 <StackPanel>
                                     <TextBlock x:Name="CvRequiredBanner"
-                                               Text="Layout and typography apply only while an overlay transcript mode (Continuous or Weave) is enabled."
-                                               Style="{StaticResource ShellSectionHintStyle}"
+                                               Text="Layout applies when Continuous or Weave overlay is enabled."
+                                               Foreground="{StaticResource TextPrimaryBrush}"
+                                               FontSize="{StaticResource FontSizeHint}"
                                                TextWrapping="Wrap"
-                                               Margin="0,0,0,8"/>
+                                               Margin="0,0,0,6"/>
                                     <Button x:Name="EnableContinuousViewButton"
-                                            Content="Enable overlay view for preview"
-                                            Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                            Padding="10,5"
+                                            Content="Enable overlay for preview"
+                                            Style="{StaticResource FormatToolbarButtonStyle}"
                                             HorizontalAlignment="Left"
                                             Click="EnableContinuousViewButton_Click"/>
                                 </StackPanel>
                             </Border>
 
-                            <Border Style="{StaticResource ShellCardStyle}" Margin="0,0,0,16">
-                                <StackPanel>
-                                    <CheckBox x:Name="AllowOutsideRecommendedRangeCheckBox"
-                                              Content="Allow values outside recommended range"
-                                              Margin="0,0,0,6"
-                                              Checked="AllowOutsideRecommendedRangeCheckBox_Changed"
-                                              Unchecked="AllowOutsideRecommendedRangeCheckBox_Changed"/>
-                                    <TextBlock Text="Shows a numeric field per slider for advanced tuning. Off by default."
-                                               Style="{StaticResource ShellSectionHintStyle}"
-                                               TextWrapping="Wrap"/>
-                                    <TextBlock x:Name="FormatBoundsWarningText"
-                                               Foreground="{StaticResource TextMutedBrush}"
-                                               TextWrapping="Wrap"
-                                               Margin="0,8,0,0"
-                                               Visibility="Collapsed"/>
-                                </StackPanel>
-                            </Border>
 
-                            <TextBlock Text="Layout"
-                                       Style="{StaticResource ShellSectionHeaderStyle}"
-                                       FontSize="{DynamicResource FontSizeBody}"
-                                       Margin="0,0,0,8"/>
-                            <StackPanel x:Name="LayoutPanel" Margin="0,0,0,4"/>
 
-                            <TextBlock Text="Your messages"
-                                       Style="{StaticResource ShellSectionHeaderStyle}"
-                                       FontSize="{DynamicResource FontSizeBody}"
-                                       Margin="0,20,0,8"/>
-                            <StackPanel x:Name="UserMessagesPanel" Margin="0,0,0,4"/>
+                            <CheckBox x:Name="AllowOutsideRecommendedRangeCheckBox"
 
-                            <TextBlock Text="Assistant messages"
-                                       Style="{StaticResource ShellSectionHeaderStyle}"
-                                       FontSize="{DynamicResource FontSizeBody}"
-                                       Margin="0,20,0,8"/>
-                            <StackPanel x:Name="AssistantMessagesPanel" Margin="0,0,0,4"/>
+                                      Content="Allow values outside recommended range"
 
-                            <CheckBox x:Name="ShowRoleLabelsCheckBox"
-                                      Content="Show role labels (You / Assistant)"
-                                      Margin="0,16,0,0"
-                                      Checked="ShowRoleLabelsCheckBox_Changed"
-                                      Unchecked="ShowRoleLabelsCheckBox_Changed"/>
+                                      Margin="0,0,0,4"
+
+                                      Checked="AllowOutsideRecommendedRangeCheckBox_Changed"
+
+                                      Unchecked="AllowOutsideRecommendedRangeCheckBox_Changed"/>
+
+                            <TextBlock x:Name="FormatBoundsWarningText"
+
+                                       Foreground="{StaticResource TextMutedBrush}"
+
+                                       FontSize="{StaticResource FontSizeHint}"
+
+                                       TextWrapping="Wrap"
+
+                                       Margin="0,0,0,8"
+
+                                       Visibility="Collapsed"/>
+
+
+
+                            <TextBlock Text="Page structure"
+
+                                       Style="{StaticResource FormatSectionHeaderFirstStyle}"/>
+
+                            <StackPanel x:Name="StructurePanel" Margin="0,0,0,4"/>
+
+
+
+                            <TextBlock Text="Message dividers"
+
+                                       Style="{StaticResource FormatSectionHeaderStyle}"/>
+
+                            <StackPanel x:Name="SegmentDividersPanel" Margin="0,0,0,4"/>
+
+
+
+                            <TextBlock Text="Prose reading guides"
+
+                                       Style="{StaticResource FormatSectionHeaderStyle}"/>
+
+                            <StackPanel x:Name="ProseGuidesPanel" Margin="0,0,0,4"/>
+
+
 
                             <Expander x:Name="WeaveSettingsExpander"
+
                                       Header="Weave embeds"
-                                      Margin="0,16,0,0"
-                                      IsExpanded="True">
-                                <StackPanel Margin="0,8,0,0">
-                                    <TextBlock Text="Player line presentation in Weave mode."
-                                               Style="{StaticResource ShellSectionHintStyle}"
-                                               TextWrapping="Wrap"
-                                               Margin="0,0,0,8"/>
-                                    <TextBlock Text="Embed style preset"
-                                               Style="{StaticResource ShellSectionHintStyle}"
-                                               Margin="0,0,0,4"/>
-                                    <ComboBox x:Name="WeaveEmbedKindCombo"
-                                              Margin="0,0,0,12"
-                                              SelectionChanged="WeaveEmbedKindCombo_SelectionChanged">
-                                        <ComboBoxItem Content="Blockquote" Tag="Blockquote"/>
-                                        <ComboBoxItem Content="Aside" Tag="Aside"/>
-                                        <ComboBoxItem Content="Auto (heuristic)" Tag="Auto"/>
-                                    </ComboBox>
-                                    <StackPanel x:Name="WeaveLayoutPanel" Margin="0,0,0,4"/>
-                                </StackPanel>
-                            </Expander>
 
-                            <Expander Header="Enhanced prose typography"
-                                      Margin="0,20,0,0"
-                                      IsExpanded="False">
-                                <StackPanel x:Name="EnhancedTypographyPanel" Margin="0,8,0,0"/>
-                            </Expander>
-                            <Expander Header="Code &amp; headings"
                                       Margin="0,8,0,0"
+
                                       IsExpanded="False">
-                                <StackPanel x:Name="CodeHeadingsPanel" Margin="0,8,0,0"/>
+
+                                <StackPanel Margin="0,6,0,0">
+
+                                    <TextBlock Text="Embed style"
+
+                                               Foreground="{StaticResource TextMutedBrush}"
+
+                                               FontSize="{StaticResource FontSizeHint}"
+
+                                               Margin="0,0,0,4"/>
+
+                                    <ComboBox x:Name="WeaveEmbedKindCombo"
+
+                                              Margin="0,0,0,10"
+
+                                              SelectionChanged="WeaveEmbedKindCombo_SelectionChanged">
+
+                                        <ComboBoxItem Content="Blockquote" Tag="Blockquote"/>
+
+                                        <ComboBoxItem Content="Aside" Tag="Aside"/>
+
+                                        <ComboBoxItem Content="Auto (heuristic)" Tag="Auto"/>
+
+                                    </ComboBox>
+
+                                    <StackPanel x:Name="WeaveLayoutPanel" Margin="0,0,0,4"/>
+
+                                </StackPanel>
+
                             </Expander>
+
+                            <StackPanel x:Name="LayoutPanel" Visibility="Collapsed"/>
+
                         </StackPanel>
+
                     </ScrollViewer>
+
                 </TabItem>
-                <TabItem Header="Colors">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,8,8,8">
-                        <StackPanel x:Name="ColorEditorsPanel"/>
-                    </ScrollViewer>
-                </TabItem>
-                <TabItem Header="Highlights">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,8,8,8">
-                        <StackPanel MinWidth="720">
-                            <CheckBox x:Name="PhraseHighlightsCheckBox"
-                                      Content="Enable phrase highlights"
-                                      Margin="0,0,0,8"/>
-                            <TextBlock Text="Highlights apply in Continuous view only."
-                                       Style="{StaticResource ShellSectionHintStyle}"
-                                       TextWrapping="Wrap"
-                                       Margin="0,0,0,12"/>
-                            <local:PhraseHighlightsEditorControl x:Name="PhraseEditorControl" MinHeight="360"/>
-                        </StackPanel>
-                    </ScrollViewer>
-                </TabItem>
-                <TabItem Header="Thread display">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,8,8,8">
+
+                <TabItem Header="Messages">
+
+                    <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}"
+
+                                  Padding="10,8,10,10">
+
                         <StackPanel>
-                            <Border Style="{StaticResource ShellCardStyle}" Margin="0,0,0,12">
-                                <StackPanel>
-                                    <CheckBox x:Name="ProseEnhancementsCheckBox"
-                                              Content="Enhanced prose (native message bubbles)"
-                                              Margin="0,0,0,6"/>
-                                    <TextBlock Text="Improves stock ChatGPT message typography. Continuous view uses the enhanced prose sliders when this is on."
-                                               Style="{StaticResource ShellSectionHintStyle}"
-                                               TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
 
-                            <Border Style="{StaticResource ShellCardStyle}" Margin="0,0,0,12">
-                                <StackPanel>
-                                    <CheckBox x:Name="HideEditPromptsCheckBox"
-                                              Content="Hide edit prompts"
-                                              Margin="0,0,0,6"/>
-                                    <TextBlock Text="After you edit an assistant response in continuous view, hides the original assistant turn and the revision user message."
-                                               Style="{StaticResource ShellSectionHintStyle}"
-                                               TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
+                            <TextBlock Text="Your messages"
 
-                            <Border Style="{StaticResource ShellCardStyle}" Margin="0,0,0,12">
-                                <StackPanel>
-                                    <CheckBox x:Name="HideContextTagsCheckBox"
-                                              Content="Hide packet context in thread"
-                                              Margin="0,0,0,6"/>
-                                    <TextBlock Text="On the pinned play tab, show only your player line in the ChatGPT thread."
-                                               Style="{StaticResource ShellSectionHintStyle}"
-                                               TextWrapping="Wrap"
-                                               Margin="0,0,0,8"/>
-                                    <CheckBox x:Name="ExpandHiddenContextCheckBox"
-                                              Content="Expandable context summary"
-                                              Margin="0,0,0,6"/>
-                                    <TextBlock Text="When packet context is hidden, include collapsed adventure context in the thread."
-                                               Style="{StaticResource ShellSectionHintStyle}"
-                                               TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
+                                       Style="{StaticResource FormatSectionHeaderFirstStyle}"/>
 
-                            <Border Style="{StaticResource ShellCardStyle}" Margin="0,0,0,12">
-                                <StackPanel>
-                                    <CheckBox x:Name="ShowImagesCheckBox"
-                                              Content="Show images in continuous view"
-                                              Margin="0,0,0,6"/>
-                                    <TextBlock Text="When off, image attachments show a filename placeholder instead of inline images."
-                                               Style="{StaticResource ShellSectionHintStyle}"
-                                               TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
+                            <StackPanel x:Name="UserMessagesPanel" Margin="0,0,0,4"/>
+
+
+
+                            <TextBlock Text="Assistant messages"
+
+                                       Style="{StaticResource FormatSectionHeaderStyle}"/>
+
+                            <StackPanel x:Name="AssistantMessagesPanel" Margin="0,0,0,4"/>
+
+                        </StackPanel>
+
+                    </ScrollViewer>
+
+                </TabItem>
+
+                <TabItem Header="Code &amp; headings">
+
+                    <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}"
+
+                                  Padding="10,8,10,10">
+
+                        <StackPanel x:Name="CodeHeadingsPanel" Margin="0,0,0,4"/>
+
+                    </ScrollViewer>
+
+                </TabItem>
+
+                <TabItem Header="Colors">
+
+                    <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}"
+
+                                  Padding="10,8,10,10">
+
+                        <StackPanel x:Name="ColorEditorsPanel"/>
+
+                    </ScrollViewer>
+
+                </TabItem>
+
+                <TabItem Header="Highlights">
+
+                    <Grid Margin="10,8,10,10">
+
+                        <Grid.RowDefinitions>
+
+                            <RowDefinition Height="Auto"/>
+
+                            <RowDefinition Height="*"/>
+
+                        </Grid.RowDefinitions>
+
+                        <CheckBox x:Name="PhraseHighlightsCheckBox"
+
+                                  Grid.Row="0"
+
+                                  Content="Enable phrase highlights"
+
+                                  ToolTip="Highlight matching phrases in Continuous view."
+
+                                  Margin="0,0,0,6"/>
+
+                        <local:PhraseHighlightsEditorControl x:Name="PhraseEditorControl"
+
+                                                             Grid.Row="1"
+
+                                                             VerticalAlignment="Stretch"
+
+                                                             MinHeight="380"/>
+
+                    </Grid>
+
+                </TabItem>
+
+                <TabItem Header="Thread">
+
+                    <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}"
+
+                                  Padding="10,8,10,10">
+
+                        <StackPanel>
+
+                            <TextBlock Text="Transcript"
+
+                                       Style="{StaticResource FormatSectionHeaderFirstStyle}"/>
+
+                            <CheckBox x:Name="ShowImagesCheckBox"
+
+                                      Content="Show images in continuous view"
+
+                                      ToolTip="When off, images show as filename placeholders."
+
+                                      Margin="0,0,0,12"/>
+
+
+
+                            <TextBlock Text="Play thread"
+
+                                       Style="{StaticResource FormatSectionHeaderStyle}"/>
+
+                            <CheckBox x:Name="HideEditPromptsCheckBox"
+
+                                      Content="Hide revision artifacts"
+
+                                      ToolTip="Hides the original assistant turn and revision prompt after narrator revision."
+
+                                      Margin="0,0,0,6"/>
+
+                            <CheckBox x:Name="HideContextTagsCheckBox"
+
+                                      Content="Hide packet context in thread"
+
+                                      ToolTip="On the pinned play tab, show only your player line."
+
+                                      Margin="0,0,0,6"/>
+
+                            <CheckBox x:Name="ExpandHiddenContextCheckBox"
+
+                                      Content="Expandable context summary"
+
+                                      ToolTip="When packet context is hidden, include collapsed adventure context."
+
+                                      Margin="0,0,0,12"/>
+
+
+
+                            <StackPanel x:Name="ComposerClearanceSection">
 
                             <TextBlock Text="Composer clearance"
-                                       Style="{StaticResource ShellSectionHeaderStyle}"
-                                       FontSize="{DynamicResource FontSizeBody}"
-                                       Margin="0,0,0,8"/>
+
+                                       Style="{StaticResource FormatSectionHeaderStyle}"/>
+
                             <StackPanel x:Name="ComposerClearancePanel"/>
+
+                            </StackPanel>
+
                         </StackPanel>
+
                     </ScrollViewer>
+
                 </TabItem>
+
+                <TabItem Header="Refine">
+
+                    <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}"
+
+                                  Padding="10,8,10,10">
+
+                        <StackPanel>
+
+                            <TextBlock Text="Quick tweaks for one aspect at a time. Suggested actions react to your current settings."
+
+                                       Style="{StaticResource ShellSectionHintStyle}"
+
+                                       TextWrapping="Wrap"
+
+                                       Margin="0,0,0,10"/>
+
+                            <ListBox x:Name="RefinementCategoryList"
+
+                                     Margin="0,0,0,10"
+
+                                     BorderThickness="0"
+
+                                     Background="Transparent"
+
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+
+                                     ScrollViewer.VerticalScrollBarVisibility="Disabled"
+
+                                     SelectionChanged="RefinementCategoryList_SelectionChanged">
+
+                                <ListBox.ItemsPanel>
+
+                                    <ItemsPanelTemplate>
+
+                                        <WrapPanel/>
+
+                                    </ItemsPanelTemplate>
+
+                                </ListBox.ItemsPanel>
+
+                            </ListBox>
+
+                            <TextBlock x:Name="RefinementSuggestedHeader"
+
+                                       FontWeight="SemiBold"
+
+                                       FontSize="{StaticResource FontSizeBody}"
+
+                                       Margin="0,0,0,6"
+
+                                       Visibility="Collapsed"/>
+
+                            <WrapPanel x:Name="RefinementSuggestedPanel"
+
+                                       Margin="0,0,0,10"/>
+
+                            <TextBlock Text="Common"
+
+                                       FontWeight="SemiBold"
+
+                                       FontSize="{StaticResource FontSizeHint}"
+
+                                       Foreground="{StaticResource TextMutedBrush}"
+
+                                       Margin="0,0,0,6"/>
+
+                            <WrapPanel x:Name="RefinementCommonPanel"/>
+
+                        </StackPanel>
+
+                    </ScrollViewer>
+
+                </TabItem>
+
+                <TabItem Header="Reset">
+
+                    <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}"
+
+                                  Padding="10,8,10,10">
+
+                        <StackPanel>
+
+                            <TextBlock Text="Partial reset"
+
+                                       Style="{StaticResource FormatSectionHeaderFirstStyle}"/>
+
+                            <WrapPanel Margin="0,0,0,4">
+
+                                <Button Content="Layout"
+
+                                        Style="{StaticResource FormatToolbarButtonStyle}"
+
+                                        Margin="0,0,6,6"
+
+                                        Click="ResetLayoutButton_Click"/>
+
+                                <Button Content="Colors"
+
+                                        Style="{StaticResource FormatToolbarButtonStyle}"
+
+                                        Margin="0,0,6,6"
+
+                                        Click="ResetColorsButton_Click"/>
+
+                                <Button Content="Role distinction"
+
+                                        Style="{StaticResource FormatToolbarButtonStyle}"
+
+                                        Margin="0,0,0,6"
+
+                                        Click="ResetRoleDistinctionButton_Click"/>
+
+                            </WrapPanel>
+
+
+
+                            <TextBlock Text="Full reset"
+
+                                       Style="{StaticResource FormatSectionHeaderStyle}"/>
+
+                            <Button Content="Reset all to defaults"
+
+                                    Style="{StaticResource FormatToolbarButtonStyle}"
+
+                                    HorizontalAlignment="Left"
+
+                                    Margin="0,0,0,4"
+
+                                    Click="ResetDefaultsButton_Click"/>
+
+
+
+                            <TextBlock Text="Import / export"
+
+                                       Style="{StaticResource FormatSectionHeaderStyle}"/>
+
+                            <StackPanel Orientation="Horizontal">
+
+                                <Button Content="Export JSON…"
+
+                                        Style="{StaticResource FormatToolbarButtonStyle}"
+
+                                        Margin="0,0,6,0"
+
+                                        Click="ExportFormatButton_Click"/>
+
+                                <Button Content="Import JSON…"
+
+                                        Style="{StaticResource FormatToolbarButtonStyle}"
+
+                                        Click="ImportFormatButton_Click"/>
+
+                            </StackPanel>
+
+                        </StackPanel>
+
+                    </ScrollViewer>
+
+                </TabItem>
+
             </TabControl>
 
+
+
             <GridSplitter Grid.Column="1"
+
                           Style="{StaticResource SidePanelGridSplitterStyle}"
+
                           ResizeBehavior="PreviousAndNext"
+
                           ResizeDirection="Columns"
-                          Width="8"/>
+
+                          Width="6"/>
+
+
 
             <Border Grid.Column="2"
-                    Style="{StaticResource ShellCardStyle}">
+
+                    Background="{StaticResource BgSurfaceBrush}"
+
+                    BorderBrush="{StaticResource BorderSubtleBrush}"
+
+                    BorderThickness="1"
+
+                    CornerRadius="{StaticResource RadiusControl}"
+
+                    Padding="10,8">
+
                 <Grid>
+
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
+
                         <RowDefinition Height="*"/>
+
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
+
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0"
-                               Text="Live preview"
-                               Style="{StaticResource ShellSectionHeaderStyle}"
-                               Margin="0,0,0,10"/>
 
-                    <ScrollViewer Grid.Row="1"
+
+                    <ScrollViewer Grid.Row="0"
+
+                                  Style="{StaticResource WrapperInteriorScrollViewerStyle}"
+
                                   VerticalScrollBarVisibility="Auto"
+
                                   HorizontalScrollBarVisibility="Disabled">
+
                         <StackPanel>
+
                             <local:FormatPreviewControl x:Name="FormatPreview"/>
+
                             <local:WeaveFormatPreviewControl x:Name="WeaveFormatPreview"
+
                                                              Visibility="Collapsed"/>
+
                         </StackPanel>
+
                     </ScrollViewer>
 
-                    <Expander Grid.Row="2"
-                              Header="Developer: injected CSS"
-                              Margin="0,12,0,0"
-                              IsExpanded="False">
-                        <TextBox x:Name="CssPreviewTextBox"
-                                 IsReadOnly="True"
-                                 TextWrapping="Wrap"
-                                 AcceptsReturn="True"
-                                 VerticalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas"
-                                 FontSize="11"
-                                 MinHeight="100"
-                                 MaxHeight="160"
-                                 Background="{StaticResource BgElevatedBrush}"
-                                 BorderBrush="{StaticResource BorderSubtleBrush}"
-                                 Padding="8"
-                                 Margin="0,8,0,0"/>
-                    </Expander>
 
-                    <TextBlock Grid.Row="3"
-                               Text="Sample transcript reflects layout, role typography, and colors."
-                               Style="{StaticResource ShellSectionHintStyle}"
-                               TextWrapping="Wrap"
-                               Margin="0,10,0,0"/>
 
-                    <CheckBox x:Name="PreviewInChatCheckBox"
-                              Grid.Row="4"
-                              Content="Preview in chat"
-                              Margin="0,8,0,0"/>
+                    <StackPanel Grid.Row="1" Margin="0,8,0,0">
+
+                        <CheckBox x:Name="PreviewInChatCheckBox"
+
+                                  Content="Preview in chat"
+
+                                  FontSize="{StaticResource FontSizeHint}"/>
+
+                        <Expander Header="CSS (developer)"
+
+                                  Margin="0,6,0,0"
+
+                                  IsExpanded="False">
+
+                            <TextBox x:Name="CssPreviewTextBox"
+
+                                     IsReadOnly="True"
+
+                                     TextWrapping="Wrap"
+
+                                     AcceptsReturn="True"
+
+                                     VerticalScrollBarVisibility="Auto"
+
+                                     FontFamily="Consolas"
+
+                                     FontSize="11"
+
+                                     MinHeight="80"
+
+                                     MaxHeight="140"
+
+                                     Background="{StaticResource BgElevatedBrush}"
+
+                                     BorderBrush="{StaticResource BorderSubtleBrush}"
+
+                                     Padding="6"
+
+                                     Margin="0,6,0,0"/>
+
+                        </Expander>
+
+                    </StackPanel>
+
                 </Grid>
+
             </Border>
+
         </Grid>
 
+
+
         <Border Grid.Row="2"
+
                 BorderBrush="{StaticResource BorderSubtleBrush}"
+
                 BorderThickness="0,1,0,0"
-                Padding="0,12,0,0"
-                Margin="0,12,0,0">
+
+                Padding="0,10,0,0"
+
+                Margin="0,10,0,0">
+
             <StackPanel Orientation="Horizontal"
+
                         HorizontalAlignment="Right">
+
                 <Button Content="OK"
+
                         Style="{StaticResource PrimaryButtonStyle}"
-                        MinWidth="88"
-                        Padding="16,6"
-                        Margin="0,0,8,0"
+
+                        MinWidth="84"
+
+                        Padding="14,5"
+
+                        Margin="0,0,6,0"
+
                         IsDefault="True"
+
                         Click="OkButton_Click"/>
+
                 <Button Content="Apply"
-                        Style="{StaticResource ShellCommandBarSecondarySlot}"
-                        MinWidth="88"
-                        Padding="16,6"
-                        Margin="0,0,8,0"
+
+                        Style="{StaticResource FormatToolbarButtonStyle}"
+
+                        MinWidth="84"
+
+                        Padding="14,5"
+
+                        Margin="0,0,6,0"
+
                         Click="ApplyButton_Click"/>
+
                 <Button Content="Cancel"
-                        Style="{StaticResource ShellCommandBarSecondarySlot}"
-                        MinWidth="88"
-                        Padding="16,6"
+
+                        Style="{StaticResource FormatToolbarButtonStyle}"
+
+                        MinWidth="84"
+
+                        Padding="14,5"
+
                         IsCancel="True"
+
                         Click="CancelButton_Click"/>
+
             </StackPanel>
+
         </Border>
+
     </Grid>
-</Window>
+
+</shell:ShellDialogWindow>
+

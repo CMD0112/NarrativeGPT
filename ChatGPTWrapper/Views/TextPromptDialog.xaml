@@ -1,4 +1,4 @@
-<Window x:Class="ChatGPTWrapper.Views.TextPromptDialog"
+<shell:ShellDialogWindow xmlns:shell="clr-namespace:ChatGPTWrapper.Shell" x:Class="ChatGPTWrapper.Views.TextPromptDialog"
         x:ClassModifier="internal"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -53,4 +53,4 @@
                     Click="ConfirmButton_Click"/>
         </StackPanel>
     </Grid>
-</Window>
+</shell:ShellDialogWindow>

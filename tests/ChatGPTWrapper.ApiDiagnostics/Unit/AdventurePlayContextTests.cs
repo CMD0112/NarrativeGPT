@@ -123,6 +123,20 @@ public sealed class AdventurePlayContextTests
     }
 
     [Fact]
+    public void IsOnPlayConversationPage_rejects_wrong_project_with_same_conversation_id()
+    {
+        const string convId = "abc-123";
+        const string expectedProject = "g-p-test";
+        const string otherProject = "g-p-other";
+        var wrongProjectUrl = ChatGptUrls.BuildProjectConversationUrl(convId, otherProject);
+
+        Assert.False(AdventurePlayContextService.IsOnPlayConversationPage(
+            wrongProjectUrl,
+            convId,
+            expectedProject));
+    }
+
+    [Fact]
     public void TryParseGizmoId_reads_g_p_segment_from_project_path_url()
     {
         const string projectId = "g-p-6a220fab2eb48191a75b9d88d85a3d91";

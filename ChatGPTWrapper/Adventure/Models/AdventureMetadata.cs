@@ -105,6 +105,15 @@ public sealed class AdventureMetadata
 
     /// <summary>When set, legacy singleton pins were migrated into <see cref="ThreadRegistry"/>.</summary>
     public DateTimeOffset? ThreadRegistryMigratedAt { get; set; }
+
+    /// <summary>Auto utility jobs waiting for the next play packet (CMD-328).</summary>
+    public List<PendingUtilityInjection> PlayUtilityInjectionQueue { get; set; } = [];
+
+    /// <summary>Utility jobs included in the last sent play packet (CMD-332 retrieval).</summary>
+    public List<PendingUtilityInjection> LastDispatchedUtilityJobs { get; set; } = [];
+
+    /// <summary>Utility worker lane capability probe results.</summary>
+    public UtilityWorkerCapabilities? UtilityWorkerCapabilities { get; set; }
 }
 
 public sealed class UtilityJobGuideOverride
@@ -133,6 +142,12 @@ public sealed class PlayTurnOverrideSettings
 
     public string? Difficulty { get; set; }
 
+    public string? ViolenceLevel { get; set; }
+
+    public string? NarrativePacing { get; set; }
+
+    public string? ConsequenceWeight { get; set; }
+
     /// <summary>Freeform one-shot directive for the next play send only.</summary>
     public string? TurnDirective { get; set; }
 
@@ -151,6 +166,12 @@ public sealed class PlaySessionNarratorOverrides
     public string? Tone { get; set; }
 
     public string? Difficulty { get; set; }
+
+    public string? ViolenceLevel { get; set; }
+
+    public string? NarrativePacing { get; set; }
+
+    public string? ConsequenceWeight { get; set; }
 
     public string? TemporaryAddendum { get; set; }
 
@@ -172,6 +193,9 @@ public enum NarratorParameter
     DetailLevel,
     Tone,
     Difficulty,
+    ViolenceLevel,
+    NarrativePacing,
+    ConsequenceWeight,
 }
 
 public sealed class UtilityJobOverrideSettings
@@ -214,14 +238,15 @@ public sealed class AdventureSettings
 
     public bool OfferStartOnPlay { get; set; } = true;
 
-    /// <summary>When false and project is linked + sources synced, use thin play packets.</summary>
-    public bool ForceFatPackets { get; set; }
+    /// <summary>When true, always inline full lore in play packets (debug escape hatch).</summary>
+    [JsonPropertyName("forceFatPackets")]
+    public bool ForceInlineLore { get; set; }
 
     /// <summary>Wrap packet sections in [[cgw:…]] tags for stripping/display.</summary>
     public bool UseContextTags { get; set; } = true;
 
     /// <summary>When true, play/utility sends use DOM composer submit instead of conversation API.</summary>
-    public bool PreferDomPlaySend { get; set; } = true;
+    public bool PreferDomPlaySend { get; set; }
 
     /// <summary>When true, replace ChatGPT's composer with the legacy in-page wrapper UI.</summary>
     public bool UseWrapperComposer { get; set; }
@@ -238,6 +263,13 @@ public sealed class AdventureSettings
 
     public string Difficulty { get; set; } = "balanced";
 
+    public string NarrativePacing { get; set; } = "balanced";
+
+    public string ConsequenceWeight { get; set; } = "balanced";
+
+    /// <summary>Last narrator override scope selected in play UI (Turn, Session, or Adventure).</summary>
+    public string? LastNarratorOverrideScope { get; set; }
+
     public List<string> ContentBoundaries { get; set; } = [];
 
     /// <summary>Per-subject portrayal rules (characters, factions, concepts) for the narrator contract.</summary>
@@ -253,6 +285,9 @@ public sealed class AdventureSettings
 
     /// <summary>Expanded play side panel width in device-independent pixels.</summary>
     public double PlaySidePanelWidth { get; set; } = 300;
+
+    /// <summary>Session cockpit height in the play side panel (0 = use default on first layout).</summary>
+    public double PlaySessionCockpitHeight { get; set; }
 
     /// <summary>When true, adventure play notes panel is collapsed to maximize chat width.</summary>
     public bool PlayNotesPanelCollapsed { get; set; }
@@ -328,6 +363,28 @@ public sealed class AdventureSettings
 
     /// <summary>Drift fingerprint the author dismissed; suppresses repeat sync prompts until drift changes.</summary>
     public string? ThreadLogDriftDismissedHash { get; set; }
+
+    /// <summary>Play packet section includes, transcript depth, and injection preset.</summary>
+    public PlayInjectionPolicy InjectionPolicy { get; set; } = new();
+
+    /// <summary>Injection-first utility transport (CMD-326). Default legacy inline send.</summary>
+    public PlayUtilityInjectionMode PlayUtilityInjectionMode { get; set; } = PlayUtilityInjectionMode.LegacyInlineSend;
+
+    /// <summary>Max embedded utility sections per play send when <see cref="PlayUtilityInjectionMode"/> is InjectionFirst.</summary>
+    public int MaxUtilitySectionsPerSend { get; set; } = 2;
+
+    /// <summary>Lane selection between play injection and utility worker.</summary>
+    public UtilityExecutionPolicy UtilityExecutionPolicy { get; set; } =
+        UtilityExecutionPolicy.PlayInjectionPreferred;
+
+    /// <summary>When true, auto jobs that exceed <see cref="MaxUtilitySectionsPerSend"/> spill to worker outbox.</summary>
+    public bool AutoSpillToWorker { get; set; } = true;
+
+    /// <summary>Developer-only: allow DomOnly utility sends when worker diagnostics enabled.</summary>
+    public bool AllowDomOnlyUtilityDiagnostics { get; set; }
+
+    /// <summary>CMD-392: lane-aware utility job context assembly (worker lane first).</summary>
+    public bool UseUtilityJobContextAssembler { get; set; } = true;
 }
 
 public sealed class CharacterPortrayalRule

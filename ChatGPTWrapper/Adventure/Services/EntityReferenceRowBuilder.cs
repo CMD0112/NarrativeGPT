@@ -38,6 +38,37 @@ public static class EntityReferenceRowBuilder
         return rows;
     }
 
+    public static IReadOnlyList<EntityReferenceRow> FilterAndSortRows(
+        IEnumerable<EntityReferenceRow> rows,
+        string? searchText,
+        EntityListSortMode sortMode,
+        bool pinSortEnabled)
+    {
+        var query = rows.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            var needle = searchText.Trim();
+            query = query.Where(row =>
+                row.Name.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                || row.RoleOrStatus.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                || row.AliasesSearchText.Contains(needle, StringComparison.OrdinalIgnoreCase));
+        }
+
+        query = sortMode switch
+        {
+            EntityListSortMode.RecentlyEdited => query
+                .OrderByDescending(r => r.LastEditedUtc)
+                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
+            EntityListSortMode.PinnedFirst when pinSortEnabled => query
+                .OrderByDescending(r => r.Pinned)
+                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
+            _ => query.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase),
+        };
+
+        return query.ToList();
+    }
+
     private static IReadOnlyList<EntityReferenceRow> BuildRowsCore(
         AdventureBundle bundle,
         string filter,
@@ -47,6 +78,7 @@ public static class EntityReferenceRowBuilder
         {
             return bundle.Entities.Characters
                 .Select(e => CreateRowFromSpec(
+                    bundle,
                     bundle.Metadata.Id,
                     e,
                     CanonSchemaRegistry.Npc,
@@ -58,6 +90,7 @@ public static class EntityReferenceRowBuilder
 
         return CanonEntityResolver.EnumerateCategory(bundle.Entities, filter)
             .Select(entity => CreateRowFromSpec(
+                bundle,
                 bundle.Metadata.Id,
                 entity,
                 spec,
@@ -71,6 +104,7 @@ public static class EntityReferenceRowBuilder
         BuildRows(bundle, filter, layout).FirstOrDefault(r => r.Id == entityId);
 
     private static EntityReferenceRow CreateRowFromSpec(
+        AdventureBundle bundle,
         Guid adventureId,
         object entity,
         CanonEntityKindSpec spec,
@@ -84,18 +118,34 @@ public static class EntityReferenceRowBuilder
         if (kind == AdventurePlayEntityKind.PartyCompanion && entity is CompanionEntry companion)
             snippet = companion.Relationship;
 
+        var aliases = GetEntityAliases(entity);
+        var entityId = CanonEntityResolver.GetEntityId(entity, spec);
+
+        var title = CanonFieldMapper.GetField(entity, spec, spec.TitleProperty) ?? "";
+        if (kind == AdventurePlayEntityKind.Player && string.IsNullOrWhiteSpace(title))
+            title = "Player character";
+
         return CreateRow(
             adventureId,
-            CanonEntityResolver.GetEntityId(entity, spec),
+            entityId,
             kind,
-            CanonFieldMapper.GetField(entity, spec, spec.TitleProperty) ?? "",
+            title,
             secondary,
             CanonFieldMapper.GetPinned(entity),
             Truncate(snippet, DescribeLimit(layout)),
             GetEntityImagePath(entity),
             FormatTagsLine(GetEntityTags(entity)),
+            string.Join(" ", aliases),
+            ResolveLastEditedUtc(bundle, entityId),
             layout);
     }
+
+    private static DateTimeOffset ResolveLastEditedUtc(AdventureBundle bundle, Guid entityId) =>
+        bundle.SourceManifest.PendingEntityChangePlans
+            .Where(p => p.EntityId == entityId || p.TargetEntityId == entityId)
+            .Select(p => p.CreatedAt)
+            .DefaultIfEmpty(DateTimeOffset.MinValue)
+            .Max();
 
     private static EntityReferenceRow CreateRow(
         Guid adventureId,
@@ -107,6 +157,8 @@ public static class EntityReferenceRowBuilder
         string descriptionSnippet,
         string? imagePath,
         string? tagsLine,
+        string aliasesSearchText,
+        DateTimeOffset lastEditedUtc,
         PlayLayoutCapabilities layout)
     {
         var portrait = EntityMediaService.TryLoadImage(adventureId, imagePath, 88);
@@ -156,27 +208,30 @@ public static class EntityReferenceRowBuilder
                 : layout.UseEntityWideTemplate
                     ? new Thickness(10, 8, 10, 8)
                     : new Thickness(8, 7, 8, 7),
+            AliasesSearchText = aliasesSearchText,
+            LastEditedUtc = lastEditedUtc,
         };
     }
 
-    private static string? GetEntityImagePath(object entity) =>
-        entity switch
-        {
-            CharacterEntry c => c.ImagePath,
-            LocationEntry l => l.ImagePath,
-            ConceptEntry c => c.ImagePath,
-            QuestEntry q => q.ImagePath,
-            FactionEntry f => f.ImagePath,
-            _ => null,
-        };
+    private static IEnumerable<string> GetEntityAliases(object entity) => GetStringList(entity, "aliases");
 
-    private static IEnumerable<string> GetEntityTags(object entity) =>
-        entity switch
+    private static IEnumerable<string> GetEntityTags(object entity) => GetStringList(entity, "tags");
+
+    private static IEnumerable<string> GetStringList(object entity, string jsonKey)
+    {
+        if (!CanonEntityPropertyGraph.TryGetValue(entity, jsonKey, out var value)
+            || value is not IEnumerable<string> list)
         {
-            CharacterEntry c => c.Tags,
-            ConceptEntry c => c.Tags,
-            _ => [],
-        };
+            return [];
+        }
+
+        return list;
+    }
+
+    private static string? GetEntityImagePath(object entity) =>
+        CanonEntityPropertyGraph.TryGetValue(entity, "imagePath", out var value) && value is string path && !string.IsNullOrWhiteSpace(path)
+            ? path
+            : null;
 
     private static int DescribeLimit(PlayLayoutCapabilities layout) =>
         layout.UseEntityWideTemplate ? 120 : 80;
@@ -202,13 +257,9 @@ public static class EntityReferenceRowBuilder
         if (status == EntitySyncStatus.InSync)
             return;
 
+        row.SyncStatus = status;
         row.SyncBadgeText = EntitySyncStatusService.BadgeText(status);
+        row.SyncBadgeTooltip = EntitySyncStatusService.BadgeTooltip(status);
         row.SyncBadgeVisibility = Visibility.Visible;
-        row.SyncBadgeBrush = status switch
-        {
-            EntitySyncStatus.UnresolvedDrift => System.Windows.Media.Brushes.OrangeRed,
-            EntitySyncStatus.NeedsPublish => System.Windows.Media.Brushes.DodgerBlue,
-            _ => System.Windows.Media.Brushes.Gray,
-        };
     }
 }

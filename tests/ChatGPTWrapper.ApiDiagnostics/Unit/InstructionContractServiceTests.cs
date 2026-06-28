@@ -232,7 +232,9 @@ public sealed class InstructionContractDesignerTests : IDisposable
             [new CharacterPortrayalRule { Subject = "Mara", Rule = "Not passive." }],
             "Keep ambiguity.",
             "hard",
-            "moderate");
+            "moderate",
+            "balanced",
+            "lasting");
 
         Assert.Equal("second person", bundle.Metadata.Settings.Perspective);
         Assert.Equal("hard", bundle.Metadata.Settings.Difficulty);

@@ -1,11 +1,12 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class SearchDialog : Window
+public partial class SearchDialog : ShellDialogWindow
 {
     private readonly AdventureBundle _bundle;
 

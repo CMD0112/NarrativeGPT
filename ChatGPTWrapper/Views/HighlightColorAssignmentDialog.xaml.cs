@@ -1,12 +1,19 @@
+using System.IO;
+using System.Text.Json;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using System.Windows.Media;
+using ChatGPTWrapper.Format;
 using ChatGPTWrapper.Theme;
+using Microsoft.Win32;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class HighlightColorAssignmentDialog : Window
+public partial class HighlightColorAssignmentDialog : ShellDialogWindow
 {
+    private static readonly JsonSerializerOptions ProfileJsonOptions = new() { WriteIndented = true };
+
     private readonly UiChromeSettings _working;
     private readonly ResolvedTheme _theme;
     private bool _suppressEvents;
@@ -22,10 +29,10 @@ public partial class HighlightColorAssignmentDialog : Window
         InitializeComponent();
 
         _working = chrome;
-        HighlightColorAssignmentService.Normalize(_working);
+        HighlightColorProfileService.Normalize(_working);
         _theme = ThemeRuntime.Current;
-        _selectedProfileId = HighlightColorAssignmentService.ResolveInitialProfileId(_working);
-        _options = HighlightColorAssignmentService.ResolveEffectiveOptions(_working);
+        _selectedProfileId = HighlightColorProfileService.ResolveInitialProfileId(_working);
+        _options = HighlightColorProfileService.ResolveEffectiveOptions(_working);
         SelectedProfileId = _selectedProfileId;
         ResultOptions = _options.Clone();
 
@@ -50,21 +57,7 @@ public partial class HighlightColorAssignmentDialog : Window
 
     private void PopulateCombos()
     {
-        ProfileCombo.ItemsSource = _working.HighlightColorProfiles
-            .Where(p => p.IsBuiltIn)
-            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-            .Concat(
-            [
-                new HighlightColorAssignmentProfile
-                {
-                    Id = HighlightColorProfileIds.Custom,
-                    Name = "Custom",
-                    Description = "Your customized options.",
-                    IsBuiltIn = false,
-                    Options = _working.HighlightColorCustomOptions.Clone(),
-                },
-            ])
-            .ToList();
+        ProfileCombo.ItemsSource = HighlightColorProfileService.ListSelectableProfiles(_working);
 
         BindEnumCombo(PaletteSourceCombo, typeof(HighlightPaletteSource));
         BindEnumCombo(HueAnchorCombo, typeof(HighlightHueAnchor));
@@ -74,10 +67,8 @@ public partial class HighlightColorAssignmentDialog : Window
         BindEnumCombo(AliasColorCombo, typeof(HighlightAliasColorMode));
     }
 
-    private static void BindEnumCombo(ComboBox combo, Type enumType)
-    {
+    private static void BindEnumCombo(ComboBox combo, Type enumType) =>
         combo.ItemsSource = Enum.GetNames(enumType);
-    }
 
     private void LoadFields()
     {
@@ -95,8 +86,24 @@ public partial class HighlightColorAssignmentDialog : Window
             StrategyCombo.SelectedItem = _options.AssignmentStrategy.ToString();
             PlayerColorCombo.SelectedItem = _options.PlayerColorMode.ToString();
             AliasColorCombo.SelectedItem = _options.AliasColorMode.ToString();
-            MinContrastBox.Text = _options.MinContrastRatio.ToString("0.##");
+            MinContrastSlider.Value = _options.MinContrastRatio;
+            AssignmentSaltBox.Text = _options.AssignmentSalt.ToString();
             AvoidDuplicatesCheck.IsChecked = _options.AvoidDuplicateColors;
+
+            SaturationAutoCheck.IsChecked = _options.Saturation is null;
+            SaturationSlider.IsEnabled = _options.Saturation is not null;
+            if (_options.Saturation is not null)
+                SaturationSlider.Value = _options.Saturation.Value;
+
+            LightnessAutoCheck.IsChecked = _options.Lightness is null;
+            LightnessSlider.IsEnabled = _options.Lightness is not null;
+            if (_options.Lightness is not null)
+                LightnessSlider.Value = _options.Lightness.Value;
+
+            PlayerCustomColorBox.Text = _options.PlayerCustomColor ?? "#FFD166";
+            UpdateDynamicPanels();
+            RefreshCustomSeedSwatches();
+            UpdateStrategyHint();
         }
         finally
         {
@@ -116,7 +123,7 @@ public partial class HighlightColorAssignmentDialog : Window
     private string DescribeProfile(string profileId)
     {
         if (profileId.Equals(HighlightColorProfileIds.Custom, StringComparison.OrdinalIgnoreCase))
-            return "Custom options — saved separately from built-in presets.";
+            return "Custom options — save from the Highlights tab or export JSON below.";
 
         return HighlightColorProfileLibrary.Find(_working.HighlightColorProfiles, profileId)?.Description
                ?? string.Empty;
@@ -139,6 +146,12 @@ public partial class HighlightColorAssignmentDialog : Window
         RefreshPreview();
     }
 
+    private void PlayerColorCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateDynamicPanels();
+        Option_Changed(sender, e);
+    }
+
     private void Option_Changed(object sender, RoutedEventArgs e)
     {
         if (_suppressEvents)
@@ -152,11 +165,50 @@ public partial class HighlightColorAssignmentDialog : Window
 
         HideValidation();
         _options = options;
-        _selectedProfileId = HighlightColorAssignmentService.ResolveActiveProfileId(_working, _options, _selectedProfileId);
+        _selectedProfileId = HighlightColorProfileService.ResolveActiveProfileId(_working, _options, _selectedProfileId);
         if (_selectedProfileId.Equals(HighlightColorProfileIds.Custom, StringComparison.OrdinalIgnoreCase))
             SelectProfileCombo(HighlightColorProfileIds.Custom);
 
+        UpdateDynamicPanels();
+        UpdateStrategyHint();
         RefreshPreview();
+    }
+
+    private void UpdateDynamicPanels()
+    {
+        var paletteSource = PaletteSourceCombo.SelectedItem as string;
+        CustomSeedsPanel.Visibility = string.Equals(paletteSource, nameof(HighlightPaletteSource.CustomSeeds), StringComparison.Ordinal)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        var playerMode = PlayerColorCombo.SelectedItem as string;
+        PlayerCustomColorPanel.Visibility = string.Equals(playerMode, nameof(HighlightPlayerColorMode.Custom), StringComparison.Ordinal)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        SaturationSlider.IsEnabled = SaturationAutoCheck.IsChecked != true;
+        LightnessSlider.IsEnabled = LightnessAutoCheck.IsChecked != true;
+    }
+
+    private void UpdateStrategyHint()
+    {
+        if (StrategyHintText is null)
+            return;
+
+        StrategyHintText.Text = (StrategyCombo.SelectedItem as string) switch
+        {
+            nameof(HighlightAssignmentStrategy.OptimalDistinct) =>
+                "Optimal distinct picks the palette color farthest from colors already assigned — best for readability and separation.",
+            nameof(HighlightAssignmentStrategy.Sequential) =>
+                "Sequential walks the palette in discovery order — colors change when you reroll.",
+            nameof(HighlightAssignmentStrategy.StableHash) =>
+                "Stable identity keeps the same phrase on the same palette slot; reroll shifts all assignments via salt.",
+            nameof(HighlightAssignmentStrategy.RoleBuckets) =>
+                "Role buckets separate player, party, and cast across palette regions.",
+            nameof(HighlightAssignmentStrategy.RoleBased) =>
+                "Role-based uses optimal distinct selection without bucket offsets (legacy alias for optimal distinct).",
+            _ => string.Empty,
+        };
     }
 
     private bool TryReadFields(out HighlightColorAssignmentOptions options, out string error)
@@ -182,9 +234,11 @@ public partial class HighlightColorAssignmentDialog : Window
             return false;
         }
 
-        if (!int.TryParse(GeneratedCountBox.Text.Trim(), out var generated) || generated < 4 || generated > 48)
+        if (!int.TryParse(GeneratedCountBox.Text.Trim(), out var generated)
+            || generated < 0
+            || (generated > 0 && (generated < 4 || generated > HighlightColorCatalog.MaxGeneratedColors)))
         {
-            error = "Generated colors must be between 4 and 48.";
+            error = $"Generated colors must be 0 (auto) or between 4 and {HighlightColorCatalog.MaxGeneratedColors}.";
             return false;
         }
 
@@ -212,9 +266,9 @@ public partial class HighlightColorAssignmentDialog : Window
             return false;
         }
 
-        if (!double.TryParse(MinContrastBox.Text.Trim(), out var minContrast) || minContrast < 3 || minContrast > 12)
+        if (!int.TryParse(AssignmentSaltBox.Text.Trim(), out var salt) || salt < 0 || salt > 9999)
         {
-            error = "Min contrast must be between 3 and 12.";
+            error = "Assignment salt must be between 0 and 9999.";
             return false;
         }
 
@@ -226,9 +280,138 @@ public partial class HighlightColorAssignmentDialog : Window
         options.AssignmentStrategy = strategy;
         options.PlayerColorMode = playerMode;
         options.AliasColorMode = aliasMode;
-        options.MinContrastRatio = minContrast;
+        options.MinContrastRatio = MinContrastSlider.Value;
         options.AvoidDuplicateColors = AvoidDuplicatesCheck.IsChecked == true;
+        options.AssignmentSalt = salt;
+        options.Saturation = SaturationAutoCheck.IsChecked == true ? null : SaturationSlider.Value;
+        options.Lightness = LightnessAutoCheck.IsChecked == true ? null : LightnessSlider.Value;
+        options.PlayerCustomColor = playerMode == HighlightPlayerColorMode.Custom
+            ? PlayerCustomColorBox.Text.Trim()
+            : null;
+        options.CustomSeedColors = _options.CustomSeedColors.Select(c => c).ToList();
         return true;
+    }
+
+    private void ShuffleAssignment_Click(object sender, RoutedEventArgs e)
+    {
+        if (!int.TryParse(AssignmentSaltBox.Text.Trim(), out var salt))
+            salt = 0;
+        AssignmentSaltBox.Text = (salt + 1).ToString();
+        Option_Changed(sender, e);
+    }
+
+    private void AddSeedColor_Click(object sender, RoutedEventArgs e)
+    {
+        var canvas = ThemeRuntime.Current.GetHex("BgBase");
+        var context = ColorPickerContextFactory.ForGeneric(canvas);
+        if (!ColorPickerWorkflow.TryPickHex(this, "#FFD166", canvas, context, out var picked))
+            return;
+
+        _options.CustomSeedColors.Add(picked);
+        RefreshCustomSeedSwatches();
+        Option_Changed(sender, e);
+    }
+
+    private void ClearSeeds_Click(object sender, RoutedEventArgs e)
+    {
+        _options.CustomSeedColors.Clear();
+        RefreshCustomSeedSwatches();
+        Option_Changed(sender, e);
+    }
+
+    private void RefreshCustomSeedSwatches()
+    {
+        CustomSeedsSwatchesPanel.Children.Clear();
+        foreach (var color in _options.CustomSeedColors)
+        {
+            var swatch = new Border
+            {
+                Width = 22,
+                Height = 22,
+                Margin = new Thickness(0, 0, 6, 6),
+                CornerRadius = new CornerRadius(4),
+                BorderBrush = (Brush)FindResource("BorderSubtleBrush"),
+                BorderThickness = new Thickness(1),
+                Background = CreateBrush(color),
+                ToolTip = color,
+                Tag = color,
+                Cursor = System.Windows.Input.Cursors.Hand,
+            };
+            swatch.MouseLeftButtonUp += (_, _) =>
+            {
+                _options.CustomSeedColors.Remove(color);
+                RefreshCustomSeedSwatches();
+                Option_Changed(swatch, new RoutedEventArgs());
+            };
+            CustomSeedsSwatchesPanel.Children.Add(swatch);
+        }
+    }
+
+    private void PickPlayerCustomColor_Click(object sender, RoutedEventArgs e)
+    {
+        var canvas = ThemeRuntime.Current.GetHex("BgBase");
+        var context = ColorPickerContextFactory.ForGeneric(canvas);
+        if (!ColorPickerWorkflow.TryPickHex(this, PlayerCustomColorBox.Text, canvas, context, out var picked))
+            return;
+
+        PlayerCustomColorBox.Text = picked;
+        Option_Changed(sender, e);
+    }
+
+    private void ExportProfileJson_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryReadFields(out var options, out var error))
+        {
+            ShowValidation(error);
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Filter = "JSON files (*.json)|*.json",
+            FileName = "highlight-color-profile.json",
+            Title = "Export color profile",
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        var payload = new HighlightColorProfileExportPayload
+        {
+            Name = ProfileCombo.SelectedItem is HighlightColorAssignmentProfile p ? p.Name : "Custom",
+            Options = options,
+        };
+        File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(payload, ProfileJsonOptions));
+    }
+
+    private void ImportProfileJson_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Filter = "JSON files (*.json)|*.json",
+            Title = "Import color profile",
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<HighlightColorProfileExportPayload>(File.ReadAllText(dialog.FileName));
+            if (payload?.Options is null)
+            {
+                ShowValidation("No profile options found in file.");
+                return;
+            }
+
+            _options = payload.Options.Clone();
+            _selectedProfileId = HighlightColorProfileIds.Custom;
+            LoadFields();
+            RefreshPreview();
+            HideValidation();
+        }
+        catch (Exception ex)
+        {
+            ShowValidation($"Could not import profile: {ex.Message}");
+        }
     }
 
     private void RefreshPreview()
@@ -277,7 +460,7 @@ public partial class HighlightColorAssignmentDialog : Window
             return;
         }
 
-        SelectedProfileId = HighlightColorAssignmentService.ResolveActiveProfileId(_working, options, _selectedProfileId);
+        SelectedProfileId = HighlightColorProfileService.ResolveActiveProfileId(_working, options, _selectedProfileId);
         ResultOptions = options.Clone();
         DialogResult = true;
     }
@@ -300,5 +483,12 @@ public partial class HighlightColorAssignmentDialog : Window
     {
         ValidationText.Visibility = Visibility.Collapsed;
         ValidationText.Text = "";
+    }
+
+    private sealed class HighlightColorProfileExportPayload
+    {
+        public string Name { get; set; } = "";
+
+        public HighlightColorAssignmentOptions Options { get; set; } = new();
     }
 }

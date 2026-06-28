@@ -1,6 +1,7 @@
 using ChatGPTWrapper;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Adventure.Services.NarratorScales;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
@@ -96,6 +97,42 @@ public sealed class ContextPointerResolverTests
 
         var result = ContextPointerResolver.Resolve(bundle, signals, fatFallback: false);
         Assert.Contains(result.ThisTurn, p => p.Mode == RenderMode.ClusterSummary);
+    }
+
+    [Fact]
+    public void Resolve_does_not_score_match_narrator_scales_definition_sections()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(entryCount: 4);
+        bundle.Metadata.Settings.UseSectionInjection = true;
+        var markdown = NarratorScalesGenerator.Generate();
+        var sections = NarratorScalesManifestService.ParseSections(markdown);
+
+        bundle.SourceManifest.Entries.Add(new SourceManifestEntry
+        {
+            RelativePath = SectionSchema.NarratorScalesFile,
+            SyncState = SourceSyncState.InSync,
+            Sections = sections,
+        });
+
+        var dir = ProjectSourceExportService.SourcesDirectory(bundle);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, SectionSchema.NarratorScalesFile), markdown);
+
+        var signals = new ContextSignalBag
+        {
+            PlayerText = "before narrating, read narrator-scales.md and apply narration scales for tone and detail",
+            AcceptedTurnCount = 3,
+            SummaryText = "balanced pacing with normal narration scales",
+        };
+
+        var result = ContextPointerResolver.Resolve(bundle, signals, fatFallback: true);
+
+        Assert.DoesNotContain(
+            result.All,
+            p => string.Equals(p.SectionId, "narration-scales", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(
+            result.All,
+            p => string.Equals(p.SectionId, "combat-scales", StringComparison.OrdinalIgnoreCase));
     }
 
     private static AdventureBundle CreateBundleWithSections()

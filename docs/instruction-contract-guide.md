@@ -17,8 +17,9 @@ The instruction contract tells ChatGPT **how to narrate** your adventure. It is 
 The contract is pushed to:
 
 1. **ChatGPT Project custom instructions** (primary — always-on during play)
-2. **`instructions-snippet.md`** (RAG mirror on export — retrieval backup, not a second source of truth)
-3. **Fat play packets** (when source delegation is unavailable)
+2. **`instructions-snippet.md`** (RAG mirror on export — retrieval backup; lists active scale **selectors**)
+3. **`narrator-scales.md`** (RAG reference on export — preset **definitions**; upload with lore)
+4. **Fat play packets** (when source delegation is unavailable)
 
 ```mermaid
 flowchart LR
@@ -34,12 +35,14 @@ flowchart LR
     subgraph publish [Published to ChatGPT]
         ProjInstr[Project custom instructions]
         Snippet[instructions-snippet.md]
+        Scales[narrator-scales.md]
     end
 
     Design --> Settings
     Play --> Settings
     Settings --> ProjInstr
     Settings --> Snippet
+    Settings --> Scales
 ```
 
 **Rule of thumb:** voice, safety, and portrayal limits → **instruction contract**. Places, people, and plot facts → **source files**.
@@ -104,7 +107,7 @@ The designer shows structured fields on the left and a **live preview** of the a
 | Field | Maps to |
 |-------|---------|
 | Perspective / tense / detail / tone | `settings` voice fields |
-| Difficulty / violence level | `settings.difficulty`, `settings.violenceLevel` |
+| Difficulty / violence level / narrative pacing / consequence weight | `settings.difficulty`, `settings.violenceLevel`, `settings.narrativePacing`, `settings.consequenceWeight` |
 | Author's note (style only) | `scenario.authorsNote` |
 | Global content boundaries (one per line) | `settings.contentBoundaries` |
 | Character portrayal rules (`Subject: rule`) | `settings.characterPortrayalRules` |
@@ -348,7 +351,7 @@ Fat play packets include the same contract sections when source delegation is of
 
 These fields trigger instruction drift detection and optional auto-sync:
 
-- `perspective`, `tense`, `detailLevel`, `tone`, `difficulty`, `violenceLevel`
+- `perspective`, `tense`, `detailLevel`, `tone`, `difficulty`, `violenceLevel`, `narrativePacing`, `consequenceWeight`
 - `contentBoundaries`
 - `characterPortrayalRules`
 - `instructionAddendum`

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services.Canon;
+using ChatGPTWrapper.Adventure.Services.NarratorScales;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -56,6 +57,12 @@ internal static class ProjectSourceExportService
         WriteIfNotEmpty(adventureId, dir, SectionSchema.CanonFormatFile,
             CanonFormatGenerator.Generate(),
             manifest, existingByPath, newEntries, mode, sections: null);
+
+        var narratorScalesContent = NarratorScalesGenerator.Generate();
+        WriteIfNotEmpty(adventureId, dir, SectionSchema.NarratorScalesFile,
+            narratorScalesContent,
+            manifest, existingByPath, newEntries, mode,
+            sections: NarratorScalesManifestService.ParseSections(narratorScalesContent));
 
         WriteIfNotEmpty(adventureId, dir, SectionSchema.LexiconFile,
             LexiconExportService.Build(bundle),
@@ -128,9 +135,21 @@ internal static class ProjectSourceExportService
         else if (File.Exists(path))
             contentHash = ComputeSha256(path);
 
+        var preservePublish = entry.IsManuallyPublished;
+        var publishedSha = entry.ManuallyPublishedSha256;
+        var publishedAt = entry.ManuallyPublishedAt;
+        var publishedSections = entry.PublishedSectionHashes;
+
         entry.LocalSha256 = contentHash;
         entry.Sha256 = contentHash;
         entry.Sections = sections ?? [];
+        if (preservePublish)
+        {
+            entry.ManuallyPublishedAt = publishedAt;
+            entry.ManuallyPublishedSha256 = publishedSha;
+            entry.PublishedSectionHashes = publishedSections;
+        }
+
         newEntries.Add(entry);
     }
 
@@ -140,9 +159,53 @@ internal static class ProjectSourceExportService
         return ComputeSha256Bytes(bytes);
     }
 
+    /// <summary>
+    /// Hash of trimmed markdown plus a single trailing newline — matches export and drift detection.
+    /// </summary>
+    public static string ComputeNormalizedSha256FromText(string content) =>
+        ComputeSha256Bytes(Encoding.UTF8.GetBytes(content.Trim() + Environment.NewLine));
+
+    public static string ComputeNormalizedSha256FromFile(string filePath) =>
+        ComputeNormalizedSha256FromText(File.ReadAllText(filePath));
+
+    /// <summary>
+    /// Canonical on-disk content hash for manifest entries — matches publish, reconcile, and send gates.
+    /// </summary>
+    public static string ComputeManifestLocalSha256(string relativePath, string absolutePath) =>
+        ProjectSourceImportService.IsSectionedLoreFile(relativePath)
+            ? ComputeNormalizedSha256FromFile(absolutePath)
+            : ComputeSha256(absolutePath);
+
     public static string ComputeSha256Bytes(ReadOnlySpan<byte> bytes)
     {
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    public static bool TryGetExportContent(
+        string relativePath,
+        AdventureBundle bundle,
+        out string content,
+        out List<SectionManifestEntry> sections)
+    {
+        SectionedExportResult? result = relativePath.ToLowerInvariant() switch
+        {
+            SectionSchema.ScenarioFile => SectionedExportService.BuildScenario(bundle),
+            SectionSchema.WorldFile => SectionedExportService.BuildWorld(bundle),
+            SectionSchema.PlotFile => SectionedExportService.BuildPlot(bundle),
+            SectionSchema.CastFile => SectionedExportService.BuildCast(bundle),
+            _ => null,
+        };
+
+        if (result is null || string.IsNullOrWhiteSpace(result.Content))
+        {
+            content = "";
+            sections = [];
+            return false;
+        }
+
+        content = result.Content;
+        sections = result.Sections;
+        return true;
     }
 }

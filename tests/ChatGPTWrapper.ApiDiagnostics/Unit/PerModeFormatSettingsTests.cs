@@ -12,18 +12,37 @@ public sealed class PerModeFormatSettingsTests
             TranscriptViewMode = TranscriptViewMode.Continuous,
         };
 
-        settings.ContinuousSettings.HideContextTagsInThread = false;
-        settings.NativeSettings.HideContextTagsInThread = true;
-        settings.WeaveSettings.HideContextTagsInThread = true;
+        settings.ContinuousSettings.HideAssistantEditArtifacts = false;
+        settings.NativeSettings.HideAssistantEditArtifacts = true;
+        settings.WeaveSettings.HideAssistantEditArtifacts = true;
 
         settings.TranscriptViewMode = TranscriptViewMode.Native;
-        Assert.True(settings.HideContextTagsInThread);
+        Assert.True(settings.HideAssistantEditArtifacts);
 
         settings.TranscriptViewMode = TranscriptViewMode.Continuous;
-        Assert.False(settings.HideContextTagsInThread);
+        Assert.False(settings.HideAssistantEditArtifacts);
 
         settings.TranscriptViewMode = TranscriptViewMode.Weave;
-        Assert.True(settings.HideContextTagsInThread);
+        Assert.True(settings.HideAssistantEditArtifacts);
+    }
+
+    [Fact]
+    public void Thread_packet_display_policy_syncs_across_view_modes()
+    {
+        var settings = new UiChromeSettings
+        {
+            TranscriptViewMode = TranscriptViewMode.Weave,
+        };
+
+        settings.HideContextTagsInThread = false;
+        settings.ExpandHiddenContextInThread = false;
+
+        Assert.False(settings.NativeSettings.HideContextTagsInThread);
+        Assert.False(settings.ContinuousSettings.HideContextTagsInThread);
+        Assert.False(settings.WeaveSettings.HideContextTagsInThread);
+        Assert.False(settings.NativeSettings.ExpandHiddenContextInThread);
+        Assert.False(settings.ContinuousSettings.ExpandHiddenContextInThread);
+        Assert.False(settings.WeaveSettings.ExpandHiddenContextInThread);
     }
 
     [Fact]

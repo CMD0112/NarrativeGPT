@@ -4,14 +4,18 @@ Architecture decision record for multi-thread pin management.
 
 ## Decision
 
-Replace singleton play/design/utility pin fields with a **persisted thread registry** on `AdventureMetadata`, while keeping **one active pin per `AdventureThreadKind`** and syncing legacy singleton fields from active entries during rollout.
+Replace singleton play/design/utility pin fields with a **persisted thread registry** on `AdventureMetadata`. **Schema version 6 (CMD-253)** retires legacy singleton fields from steady-state JSON; binding reads and writes go through the registry only.
 
 - **Free-form labels** on design entries (e.g. "Cast", "Framework") — not fixed role slots.
-- **Registry is source of truth** after migration; `LinkedConversationId`, `PinnedPlayTab*`, `PinnedDesignTab*`, etc. are derived from active entries until all consumers read the registry directly.
-- **Design conversation** — active design entry's `ConversationId`; `UtilitySessions[design_adventure]` is a job-counter shim only (CMD-248).
-- **Play conversation** — active play entry syncs to `LinkedConversationId` and `ProjectLink.PlayConversationId`.
-- **Utility tab (retired CMD-248)** — play utility jobs run inline on the play thread; design jobs use the design thread. Legacy `PinnedUtilityTab*` and `AdventureThreadKind.Utility` entries are cleared on migration and no longer created.
-- **`PlayThreadArchive`** — migrated into archived play registry entries; field retained read-only.
+- **Registry is source of truth** — `threadRegistry`, `activeThreadIds`, and per-entry `designJobState`.
+- **Design conversation** — active design entry's `ConversationId` and `DesignJobState` (job counters formerly in `UtilitySessions[design_adventure]`).
+- **Play conversation** — active play entry's `ConversationId` and pin triple.
+- **Utility tab (retired CMD-248/CMD-253)** — play utility jobs run inline on the play thread; design jobs use the design thread. `AdventureThreadKind.Utility` entries are purged on schema-6 migration.
+- **`PlayThreadArchive`** — migrated into archived play registry entries; legacy array cleared on save at schema 6.
+
+## Author UX
+
+**Threads hub** (`AdventureThreadManagerDialog`) is the primary surface for project link, play/design pins, handoff, and inline delivery toggles. Play and design cockpits show a compact **Connection** line (`FormatConnectionSummary`) that opens the hub.
 
 ## Model
 
@@ -34,20 +38,32 @@ Code: `ChatGPTWrapper/Adventure/Models/AdventureMetadata.cs`, `Adventure/Service
 | `UtilitySessions[design_adventure]` + `PinnedDesignTab*` | Active Design entry (label `"Design"`) |
 | `PinnedUtilityTab*` | Cleared on load (CMD-248); not recreated |
 
+**Schema 6 (CMD-253):** After one-way migration, legacy singleton pin fields (`linkedConversationId`, `pinnedPlayTab*`, `pinnedDesignTab*`, `playThreadArchive`, `utilitySessions[design_adventure]`, `projectLink.playConversationId`) are stripped from saved JSON. Old builds can still read adventures until the first save on a schema-6 build.
+
+## Service layer
+
+| Service | Role |
+|---------|------|
+| `AdventureThreadRegistryService` | CRUD, active selection, archive, `FormatConnectionSummary` |
+| `ThreadWebViewResolver` | Runtime WebView selection (`ActivePin`, `RestoreAfterRestart`) |
+| `ThreadTabBindingService` | Tab key/title mapping |
+| `ThreadTabRestoreService` | Cold-start tab restore |
+
 ## Service API
 
 | Method | Role |
 |--------|------|
-| `EnsureMigrated` | Idempotent migration + legacy sync |
+| `EnsureMigrated` | Idempotent legacy → registry migration |
 | `GetActiveEntry` / `GetActiveConversationId` | Resolve active thread |
-| `ListEntries` | Thread manager lists |
+| `BindActiveConversation` | Atomic conversation bind on active entry |
+| `ListEntries` | Thread hub lists |
 | `RegisterEntry` | New thread slot |
-| `SetActivePin` | Switch active; sync legacy + play scope |
+| `SetActivePin` | Switch active; play scope notification |
 | `UpdatePinFromWebView` | Bind tab to entry |
 | `ArchiveEntry` | Archive; guard active |
 | `ReleaseActiveThread` | Rotation prelude |
-| `SyncLegacyFields` | Push active → singleton fields |
-| `FormatThreadStatus` | UI status lines |
+| `FormatConnectionSummary` | Cockpit / shell connection line |
+| `FormatThreadStatus` | Per-kind status lines |
 
 ## Consumers
 
@@ -55,7 +71,7 @@ Code: `ChatGPTWrapper/Adventure/Models/AdventureMetadata.cs`, `Adventure/Service
 - `PlayThreadRotationService`, `DesignThreadRotationService` — archive via registry
 - `AdventureNavigationService`, `AdventureDesignContextService`, `GenerationJobService`
 - `PlayTurnScopeService`, `PlayHandoffService`, `ProjectChatDraftService`
-- `AdventureThreadManagerDialog` — author-facing manager
+- `AdventureThreadManagerDialog` — **Threads hub** (primary author surface)
 
 ## Related
 

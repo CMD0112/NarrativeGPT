@@ -6,6 +6,21 @@ namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 public sealed class NarratorPresetLibraryTests
 {
     [Fact]
+    public void ResetScope_clears_scene_profile_turn_overrides()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: "proj");
+
+        NarratorPresetLibrary.ApplySceneProfile(bundle, "action", NarratorOverrideScope.Turn);
+        Assert.Equal("brief", bundle.Metadata.Settings.PlayTurnOverrides.ResponseLength);
+
+        NarratorOverrideResolver.ResetScope(bundle, NarratorOverrideScope.Turn);
+
+        Assert.Null(bundle.Metadata.Settings.PlayTurnOverrides.ResponseLength);
+        Assert.Null(bundle.Metadata.Settings.PlayTurnOverrides.DetailLevel);
+        Assert.Null(bundle.Metadata.Settings.PlayTurnOverrides.Tone);
+    }
+
+    [Fact]
     public void ApplySceneProfile_sets_turn_overrides()
     {
         var bundle = AdventureTestData.CreateLinkedBundle(projectId: "proj");
@@ -34,5 +49,15 @@ public sealed class NarratorPresetLibraryTests
         Assert.NotNull(profile);
         Assert.Equal("Lore", profile.DisplayName);
         Assert.Equal("expansive", profile.Values[NarratorParameter.ResponseLength]);
+    }
+
+    [Fact]
+    public void PresetsFor_includes_descriptions_from_catalog()
+    {
+        var preset = NarratorPresetLibrary.PresetsFor(NarratorParameter.Difficulty)
+            .First(p => p.Id == "balanced");
+
+        Assert.False(string.IsNullOrWhiteSpace(preset.Description));
+        Assert.Contains("Fair", preset.Description!, StringComparison.OrdinalIgnoreCase);
     }
 }

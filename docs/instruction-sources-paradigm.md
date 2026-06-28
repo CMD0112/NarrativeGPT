@@ -4,9 +4,9 @@ This document is the canonical reference for **what belongs in ChatGPT Project c
 
 **Documentation hub:** [INDEX.md](INDEX.md)
 
-> **Read order:** 1. This paradigm (theory) → 2. [Instruction Contract Guide](instruction-contract-guide.md) (authoring) → 3. [Prompt Construction Guide](prompt-construction-guide.md) (implementation) → 4. [Narrator Settings](narrator-settings.md) (runtime overrides)
+> **Read order:** 1. This paradigm (theory) → 2. [Instruction Channels Glossary](instruction-channels.md) (terminology) → 3. [Instruction Contract Guide](instruction-contract-guide.md) (authoring) → 4. [Injection Policy ADR](injection-policy-adr.md) (normative assembly/dedup rules) → 5. [Prompt Construction Guide](prompt-construction-guide.md) (implementation) → 6. [Narrator Settings](narrator-settings.md) (runtime overrides)
 
-Related docs: [adventure-panel.md](adventure-panel.md) · [adventure-developer-reference.md](adventure-developer-reference.md) · [instruction-contract-guide.md](instruction-contract-guide.md) · [user-projects-and-sync.md](user-projects-and-sync.md) · [data-model-reference.md](data-model-reference.md) · [services-reference.md](services-reference.md) · [architecture.md](architecture.md) · [INDEX.md — Adventures roadmap](INDEX.md#adventures-roadmap-phase-status)
+Related docs: [adventure-panel.md](adventure-panel.md) · [adventure-developer-reference.md](adventure-developer-reference.md) · [instruction-channels.md](instruction-channels.md) · [instruction-contract-guide.md](instruction-contract-guide.md) · [injection-policy-adr.md](injection-policy-adr.md) · [user-projects-and-sync.md](user-projects-and-sync.md) · [data-model-reference.md](data-model-reference.md) · [services-reference.md](services-reference.md) · [architecture.md](architecture.md) · [INDEX.md — Adventures roadmap](INDEX.md#adventures-roadmap-phase-status)
 
 ---
 
@@ -69,26 +69,26 @@ flowchart TB
 
 ## Play narrator delegation matrix (target)
 
-| Content | Project instructions | Source file | Play packet (thin) | Play packet (fat fallback) |
-|---------|---------------------|-------------|-------------------|---------------------------|
-| Narrator role contract | Yes | `instructions-snippet.md` (mirror) | Pointer only | Inline |
-| Perspective / tense / detail | Yes | Mirror in snippet | Omit (trust instructions) | Inline |
-| Tone | Yes | Mirror | Omit | Inline |
-| Content boundaries (global) | Yes | Mirror | Omit | Inline |
-| Character portrayal rules | Yes | Mirror | Omit | Inline |
-| Instruction addendum | Yes | Mirror | Omit | Inline |
-| Author's note (style, no new facts) | Yes | Mirror | Omit | Inline |
-| World rules | **No** | `world.md` | Omit (RAG) | Inline |
-| Plot essentials | No | `plot.md` | Omit | Inline |
-| Scenario / opening | No | `scenario.md` | Omit | Inline |
-| Cast (player, party, NPCs) | No | `cast.md` | Omit (RAG via pointers) | Inline excerpts when scored |
-| World/plot entries | No | `world.md` / `plot.md` | Omit | Inline excerpts when scored |
-| Rolling summary | No | Optional `summary.md` (future) | Local cache | Local cache |
-| State / objectives | No | No | State delta | Current state |
-| Pinned memory | No | No | Yes | Yes |
-| Transcript tail | No | No | Yes (last 6 turns) | Yes (last 6 turns) |
+| Content | Project instructions | Source file | Play packet (delegated) | Play packet (inline fallback) | Play packet (minimal local) |
+|---------|---------------------|-------------|------------------------|------------------------------|----------------------------|
+| Narrator role contract | Yes | `instructions-snippet.md` (mirror) | Pointer only | Inline | Omit (short stub) |
+| Perspective / tense / detail | Yes | Mirror in snippet | Omit (trust instructions) | Inline | Omit |
+| Tone | Yes | Mirror | Omit | Inline | Omit |
+| Content boundaries (global) | Yes | Mirror | Omit | Inline | Omit |
+| Character portrayal rules | Yes | Mirror | Omit | Inline | Omit |
+| Instruction addendum | Yes | Mirror | Omit | Inline | Omit |
+| Author's note (style, no new facts) | Yes | Mirror | Omit | Inline | Omit |
+| World rules | **No** | `world.md` | Omit (RAG) | Inline | Omit |
+| Plot essentials | No | `plot.md` | Omit | Inline | Omit |
+| Scenario / opening | No | `scenario.md` | Omit | Opening inline only | Opening inline only |
+| Cast (player, party, NPCs) | No | `cast.md` | Omit (RAG via pointers) | Inline excerpts when scored | Omit |
+| World/plot entries | No | `world.md` / `plot.md` | Omit | Inline excerpts when scored | Omit |
+| Rolling summary | No | Optional `summary.md` (future) | Local cache | Local cache | Local cache |
+| State / objectives | No | No | State delta | Current state | State delta |
+| Pinned memory | No | No | Yes | Yes | Yes |
+| Transcript tail | No | No | Yes (last 6 turns) | Yes (last 12 turns) | Yes (last 6 turns) |
 
-Thin packet behavior is documented in [adventure-developer-reference.md §5](adventure-developer-reference.md#5-prompt-packets-source-delegated-vs-fat-fallback). Fat fallback inlines static lore when the Project is missing or sources are out of sync.
+Packet profiles are documented in [adventure-developer-reference.md §5](adventure-developer-reference.md#5-prompt-packets-three-profiles). Inline fallback inlines static lore when `ForceInlineLore` is on or the user proceeds after the publish warning.
 
 ---
 
@@ -99,7 +99,7 @@ Utility jobs use **inline instructions** on the play or design thread — no sep
 1. **Design thread seed** — full instruction body when the design thread is first used or rotated (`GenerationJobHandlers.BuildSeedPrompt` via `GenerationJobGuideService.ResolveInstructionBody`).
 2. **Job packet** — adventure-specific payload per run plus the same instruction body inlined (`=== JOB GUIDE (inline) ===`), sent on the play thread (inline) or design thread (design jobs).
 
-Built-in defaults live in `GenerationJobGuideService`. Users may customize per job in **Play settings → AI Actions**; **Reset to default** clears overrides. Publish mode (Manual vs ApiSync) does not affect utility jobs.
+Built-in defaults live in `GenerationJobGuideService`. Users may customize per job in **Play settings → AI Actions**; **Reset to default** clears overrides. Utility jobs are independent of source publish readiness.
 
 **Delivery orchestration:** Utility jobs use a readiness gate and tiered send (API vs atomic DOM). See [utility-job-orchestration.md](utility-job-orchestration.md).
 
@@ -139,20 +139,21 @@ Local JSON remains the **canonical play record** and **reviewed cache**. Project
 
 ---
 
-## Publish modes
+## Publish workflow (manual only)
 
-`AdventureSettings.SourcePublishMode` (default **Manual**):
+`AdventureSettings.SourcePublishMode` is **Manual** for all adventures (`ApiSync` is migrated to Manual on load).
 
-| Mode | Wrapper role | ChatGPT Project role |
+| Step | Wrapper role | ChatGPT Project role |
 |------|--------------|---------------------|
-| **Manual** | Authoritative — export to `sources/`, user copies instructions and drags files | Published copy; user marks **Published** checklist after upload |
-| **ApiSync** (advanced) | Programmatic upload via API | May not open reliably in browser — use only if manual fails |
+| **Manual publish** | Authoritative — export to `sources/`, user copies instructions and drags files | Published copy; user marks **Published** in Source Manager after upload |
 
-Manual publish readiness: all **four core lore** files (`scenario.md`, `world.md`, `plot.md`, `cast.md`) have `ManuallyPublishedSha256` matching current local hash. Source Manager shows per-section change hints after export. Utility job instructions are always inlined in packets and are independent of publish mode.
+Manual publish readiness: all **four core lore** files (`scenario.md`, `world.md`, `plot.md`, `cast.md`) have `ManuallyPublishedSha256` matching current local hash.
+
+**Remote sync diagnostics** (Source Manager → **Remote sync diagnostics…**) is a repair/diagnostic tool only — not the primary publish workflow.
 
 ## Manual publish walkthrough
 
-The wrapper is the **source of truth**. ChatGPT Project files are a **published copy** you maintain in the browser. API **Sync sources** is deprecated for normal use (hidden unless you switch to **API sync** mode).
+The wrapper is the **source of truth**. ChatGPT Project files are a **published copy** you maintain in the browser. Programmatic API sync is no longer a primary workflow — use **Remote sync diagnostics…** only when troubleshooting.
 
 **Primary UI:** **Source Manager** (in-app walkthrough, history, probe, compare). Open it from:
 
@@ -180,6 +181,7 @@ Typical files after export:
 
 - `scenario.md`, `world.md`, `plot.md`, `cast.md` — play RAG lore (sectioned canon)
 - `canon-format.md` — model-facing section/field reference (local + design prompts; optional Project upload). See [canon-schema.md](canon-schema.md).
+- `narrator-scales.md` — narrator preset definitions (response length, detail, tone, difficulty, violence; auto-generated; optional Project upload). See [narrator-settings.md](narrator-settings.md#scale-definitions-narrator-scalesmd).
 - `instructions-snippet.md` — mirror of narrator contract (optional upload; copy instructions to the settings box is the primary path)
 
 ### Pull sources into your ChatGPT Project
@@ -189,7 +191,7 @@ Use **Source Manager** (expand **How to publish** at the top for the same steps 
 1. **Link a Project** (dashboard → Link Project) if you have not already.
 2. **Refresh export** — writes/updates all `sources/*.md` from local JSON (older canonical copies are archived under `.history/` automatically).
 3. **Instructions** — **Design instructions…** → define contract → **Generate instructions file** → **Copy instructions** → paste into ChatGPT Project → **Custom instructions** → **Mark instructions pasted** in Source Manager. See [instruction-contract-guide.md § Tutorial](instruction-contract-guide.md#tutorial-drafting-narrator-instructions).
-4. **Files** — upload **`canon-format.md`** first (format reference), then lore files — drag or copy each source to ChatGPT Project → **Files** → **Mark uploaded** (or check **Published**).
+4. **Files** — upload **`canon-format.md`** and **`narrator-scales.md`** (reference files), then lore files — drag or copy each source to ChatGPT Project → **Files** → **Mark uploaded** (or check **Published**).
 5. **Optional verify** — **Probe project** downloads remote copies to `.project-mirror/`; **Compare with project** shows a line diff if **Project match** is Differ.
 6. Readiness banner turns green when all lore files are published; play uses **source-delegated** (thin) packets. A probe differ warning is informational only — it does not block delegation.
 

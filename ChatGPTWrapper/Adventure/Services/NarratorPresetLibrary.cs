@@ -1,4 +1,5 @@
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.NarratorScales;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -25,106 +26,36 @@ public sealed record NarratorPresetComboItem(string? Id, string DisplayName, boo
 
 public static class NarratorPresetLibrary
 {
-    public static IReadOnlyList<NarratorDimensionPreset> ResponseLengthPresets { get; } =
-    [
-        new("brief", "Brief", "brief"),
-        new("short", "Short", "short"),
-        new("normal", "Normal", "normal"),
-        new("long", "Long", "long"),
-        new("expansive", "Expansive", "expansive"),
-    ];
+    private static NarratorScalesCatalog Catalog => NarratorScalesLoader.Catalog;
 
-    public static IReadOnlyList<NarratorDimensionPreset> DetailLevelPresets { get; } =
-    [
-        new("low", "Low", "low"),
-        new("medium", "Medium", "medium"),
-        new("high", "High", "high"),
-        new("cinematic", "Cinematic", "cinematic"),
-    ];
+    public static IReadOnlyList<NarratorDimensionPreset> ResponseLengthPresets =>
+        PresetsFor(NarratorParameter.ResponseLength);
 
-    public static IReadOnlyList<NarratorDimensionPreset> TonePresets { get; } =
-    [
-        new("neutral", "Neutral", "neutral"),
-        new("dramatic", "Dramatic", "dramatic"),
-        new("whimsical", "Whimsical", "whimsical"),
-        new("grim", "Grim", "grim"),
-        new("hopeful", "Hopeful", "hopeful"),
-        new("tense", "Tense", "tense"),
-        new("lyrical", "Lyrical", "lyrical"),
-    ];
+    public static IReadOnlyList<NarratorDimensionPreset> DetailLevelPresets =>
+        PresetsFor(NarratorParameter.DetailLevel);
 
-    public static IReadOnlyList<NarratorDimensionPreset> DifficultyPresets { get; } =
-    [
-        new("easy", "Easy", "easy"),
-        new("balanced", "Balanced", "balanced"),
-        new("moderate", "Moderate", "moderate"),
-        new("hard", "Hard", "hard"),
-        new("brutal", "Brutal", "brutal"),
-    ];
+    public static IReadOnlyList<NarratorDimensionPreset> TonePresets =>
+        PresetsFor(NarratorParameter.Tone);
 
-    public static IReadOnlyList<NarratorSceneProfile> SceneProfiles { get; } =
-    [
-        new(
-            "action",
-            "Action",
-            "Short, punchy narration for combat and chase scenes.",
-            new Dictionary<NarratorParameter, string>
-            {
-                [NarratorParameter.ResponseLength] = "brief",
-                [NarratorParameter.DetailLevel] = "low",
-                [NarratorParameter.Tone] = "tense",
-            }),
-        new(
-            "exploration",
-            "Exploration",
-            "Rich sensory description for discovery and travel.",
-            new Dictionary<NarratorParameter, string>
-            {
-                [NarratorParameter.ResponseLength] = "long",
-                [NarratorParameter.DetailLevel] = "high",
-                [NarratorParameter.Tone] = "lyrical",
-            }),
-        new(
-            "introspection",
-            "Introspection",
-            "Slower, reflective narration for inner monologue beats.",
-            new Dictionary<NarratorParameter, string>
-            {
-                [NarratorParameter.ResponseLength] = "normal",
-                [NarratorParameter.DetailLevel] = "medium",
-                [NarratorParameter.Tone] = "hopeful",
-            }),
-        new(
-            "social",
-            "Social",
-            "Dialogue-forward scenes with moderate pacing.",
-            new Dictionary<NarratorParameter, string>
-            {
-                [NarratorParameter.ResponseLength] = "normal",
-                [NarratorParameter.DetailLevel] = "medium",
-                [NarratorParameter.Tone] = "dramatic",
-            }),
-        new(
-            "lore",
-            "Lore",
-            "Expansive exposition for history, myth, and world detail.",
-            new Dictionary<NarratorParameter, string>
-            {
-                [NarratorParameter.ResponseLength] = "expansive",
-                [NarratorParameter.DetailLevel] = "cinematic",
-                [NarratorParameter.Tone] = "lyrical",
-            }),
-    ];
+    public static IReadOnlyList<NarratorDimensionPreset> DifficultyPresets =>
+        PresetsFor(NarratorParameter.Difficulty);
 
-    public static IReadOnlyList<NarratorDimensionPreset> PresetsFor(NarratorParameter parameter) =>
-        parameter switch
-        {
-            NarratorParameter.ResponseLength => ResponseLengthPresets,
-            NarratorParameter.DetailLevel => DetailLevelPresets,
-            NarratorParameter.Tone => TonePresets,
-            NarratorParameter.Difficulty => DifficultyPresets,
-            _ => [],
-        };
+    public static IReadOnlyList<NarratorDimensionPreset> ViolencePresets =>
+        Catalog.TryGetDimension("violence-level")?.Presets.Select(ToDimensionPreset).ToList() ?? [];
+
+    public static IReadOnlyList<string> PresetPacketValues(string dimensionId) =>
+        Catalog.TryGetDimension(dimensionId)?.Presets.Select(p => p.PacketValue).ToList() ?? [];
+
+    public static IReadOnlyList<NarratorSceneProfile> SceneProfiles =>
+        Catalog.SceneProfiles.Select(ToSceneProfile).ToList();
+
+    public static IReadOnlyList<NarratorDimensionPreset> PresetsFor(NarratorParameter parameter)
+    {
+        var dimension = Catalog.Dimensions.FirstOrDefault(d => d.NarratorParameter == parameter);
+        return dimension is null
+            ? []
+            : dimension.Presets.Select(ToDimensionPreset).ToList();
+    }
 
     public static IReadOnlyList<NarratorPresetComboItem> BuildComboItems(
         NarratorParameter parameter,
@@ -160,5 +91,26 @@ public static class NarratorPresetLibrary
 
         foreach (var (parameter, value) in profile.Values)
             NarratorOverrideResolver.SetScopedOverride(bundle, parameter, scope, value);
+    }
+
+    public static string? GetPresetDescription(NarratorParameter parameter, string? value) =>
+        NarratorScalesResolver.TryGetPresetSummary(parameter, value);
+
+    private static NarratorDimensionPreset ToDimensionPreset(NarratorScalePresetSpec preset) =>
+        new(preset.Id, preset.DisplayName, preset.PacketValue, preset.Summary);
+
+    private static NarratorSceneProfile ToSceneProfile(NarratorSceneProfileSpec profile)
+    {
+        var values = new Dictionary<NarratorParameter, string>();
+        foreach (var (dimensionId, presetId) in profile.Values)
+        {
+            var dimension = Catalog.TryGetDimension(dimensionId);
+            if (dimension?.NarratorParameter is not { } parameter)
+                continue;
+
+            values[parameter] = presetId;
+        }
+
+        return new NarratorSceneProfile(profile.Id, profile.DisplayName, profile.Description, values);
     }
 }

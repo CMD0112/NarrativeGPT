@@ -41,12 +41,7 @@ internal static class AdventureDesignContextService
     public static string? GetDesignConversationId(AdventureBundle bundle)
     {
         AdventureThreadRegistryService.EnsureMigrated(bundle);
-        var fromRegistry = AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Design);
-        if (!string.IsNullOrWhiteSpace(fromRegistry))
-            return fromRegistry;
-
-        return GenerationUtilitySessionService.GetSession(bundle.Metadata, GenerationJobId.DesignAdventure)
-            ?.ConversationId;
+        return AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Design);
     }
 
     public static string FormatDesignModeOpenStatus(AdventureBundle bundle)
@@ -139,7 +134,6 @@ internal static class AdventureDesignContextService
         var designEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)
                             ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
         designEntry.PinnedTabUrl = targetUrl;
-        AdventureThreadRegistryService.SyncLegacyFields(bundle.Metadata);
         AdventureStore.Save(bundle, AdventureSaveScope.Metadata);
 
         if (!AdventurePlayContextService.IsOnProjectConversationPage(core.Source, conversationId, gizmoId))
@@ -194,7 +188,7 @@ internal static class AdventureDesignContextService
             && AdventureNavigationService.ShouldNavigateToDesignTarget(core.Source, bundle, targetUrl))
         {
             core.Navigate(targetUrl);
-            await WaitForChatGptNavigationAsync(core, cancellationToken);
+            await WaitForChatGptNavigationAsync(core, cancellationToken, targetUrl);
         }
 
         return new DesignContextResult
@@ -206,15 +200,16 @@ internal static class AdventureDesignContextService
 
     private static async Task WaitForChatGptNavigationAsync(
         CoreWebView2 core,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? expectedDestination = null)
     {
-        if (!string.IsNullOrWhiteSpace(core.Source))
+        if (IsAtNavigationDestination(core, expectedDestination))
             return;
 
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         void Handler(object? sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            if (e.IsSuccess && !string.IsNullOrWhiteSpace(core.Source))
+            if (e.IsSuccess && IsAtNavigationDestination(core, expectedDestination))
                 tcs.TrySetResult(true);
         }
 
@@ -231,6 +226,35 @@ internal static class AdventureDesignContextService
         {
             core.NavigationCompleted -= Handler;
         }
+    }
+
+    private static bool IsAtNavigationDestination(CoreWebView2 core, string? expectedDestination)
+    {
+        if (string.IsNullOrWhiteSpace(expectedDestination))
+            return !string.IsNullOrWhiteSpace(core.Source);
+
+        if (!Uri.TryCreate(core.Source, UriKind.Absolute, out var current)
+            || !Uri.TryCreate(expectedDestination, UriKind.Absolute, out var expected))
+        {
+            return string.Equals(core.Source, expectedDestination, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (!ChatGptUrls.IsTrustedChatGptTopLevelUri(current))
+            return false;
+
+        var currentPath = current.AbsolutePath.TrimEnd('/');
+        var expectedPath = expected.AbsolutePath.TrimEnd('/');
+        if (string.Equals(currentPath, expectedPath, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (ChatGptUrls.TryParseConversationId(expected, out var expectedConversationId)
+            && ChatGptUrls.TryParseConversationId(current, out var currentConversationId)
+            && string.Equals(expectedConversationId, currentConversationId, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static async Task<bool> WaitForDesignNavigationAsync(

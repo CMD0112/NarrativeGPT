@@ -65,10 +65,12 @@ flowchart TB
 |-----------|------|
 | Hidden utility WebView | `MainWindow.UtilityWebView.cs`, `HiddenUtilityWebView` in XAML |
 | Readiness probe | `UtilityConversationReadinessService.cs` |
-| Utility tab pin | `PlayTabPinService` utility methods, Session tab UI |
+| Utility tab pin | **Removed** — `PlayTabPinService` utility methods deleted (CMD-253) |
 | Per-job session orchestration | `GenerationUtilitySessionService` (play jobs) |
 | Delivery mode enum | `UtilityDeliveryMode`, `UtilityDeliveryModeService`, `InlineUtilityPipeline` |
-| Utility thread kind | `AdventureThreadKind.Utility` in thread registry |
+| Utility thread kind | **Obsolete** — purged from registry on schema 6; enum value retained for JSON deserialize only |
+
+Schema **6** (`MigrateThreadBindingRetirement`): registry-only steady state; legacy singleton fields stripped on load and save. Delivery toggles moved to **Threads hub**.
 
 ### Keep unchanged
 
@@ -81,8 +83,9 @@ flowchart TB
 On adventure load (`AdventureMetadataMigration`):
 
 - `UtilityDeliveryMode.SeparateThread` → `InlinePlayThread`
-- Orphan `UtilitySessions` keys (non-`design_adventure`) ignored; stripped on save after Phase 5
+- Orphan `UtilitySessions` keys stripped on save at schema 6
 - `PinnedUtilityTab*` cleared
+- `LegacyThreadBindingShim` removed — no dual-write to singleton fields
 
 ## Seed policy
 

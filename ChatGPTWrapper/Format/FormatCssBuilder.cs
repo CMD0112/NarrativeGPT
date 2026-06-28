@@ -77,7 +77,8 @@ internal static class FormatCssBuilder
 
     private static string BuildBlock(string selector, ContinuousViewFormatSettings s)
     {
-        var borderWidth = s.ShowSegmentDividers ? "1px" : "0";
+        var borderWidth = s.ShowSegmentDividers ? s.SegmentDividerWidthPx + "px" : "0";
+        var dividerStyle = FormatReadingGuides.ToCssDividerStyle(s.SegmentDividerStyle);
         var lines = new List<string>
         {
             "  --cgw-cv-overlay-px: " + s.OverlayPaddingXRem + "rem",
@@ -85,7 +86,15 @@ internal static class FormatCssBuilder
             "  --cgw-cv-content-max-width: " + s.ContentMaxWidthRem + "rem",
             "  --cgw-cv-segment-spacing: " + s.SegmentSpacingRem + "rem",
             "  --cgw-cv-segment-border-width: " + borderWidth,
+            "  --cgw-cv-segment-divider-style: " + dividerStyle,
             "  --cgw-cv-segment-divider-opacity: " + s.SegmentDividerOpacity,
+            "  --cgw-cv-ruled-line-opacity: " + s.RuledLineOpacity,
+            "  --cgw-cv-ruled-band-opacity: " + s.RuledBandOpacity,
+            "  --cgw-cv-ruled-line-thickness: " + s.RuledLineThicknessPx + "px",
+            "  --cgw-cv-margin-rail-tick: " + s.RuledMarginTickRatio + "lh",
+            "  --cgw-cv-ruled-underline-dash: " + s.RuledUnderlineDashEm + "em",
+            "  --cgw-cv-ruled-underline-gap: " + s.RuledUnderlineGapEm + "em",
+            "  --cgw-cv-zebra-contrast: " + s.RuledZebraContrastRatio,
             "  --cgw-cv-segment-border-radius: " + s.SegmentBorderRadiusPx + "px",
             "  --cgw-cv-block-margin: " + s.BlockMarginRem + "rem",
             "  --cgw-cv-prose-p-margin: " + s.ProseParagraphMarginRem + "rem",
@@ -105,8 +114,6 @@ internal static class FormatCssBuilder
             "  --cgw-cv-assistant-accent-center-adjust: " + FormatAccentLayout.CenterAdjustPx(s.AssistantAccentBorderWidthPx) + "px",
             "  --cgw-cv-assistant-indent: " + s.AssistantIndentRem + "rem",
             "  --cgw-cv-assistant-bg-opacity: " + s.AssistantBackgroundOpacity,
-            "  --cgw-cv-enhanced-prose-line-height: " + s.EnhancedProseLineHeight,
-            "  --cgw-cv-enhanced-prose-letter-spacing: " + s.EnhancedProseLetterSpacingEm + "em",
             "  --cgw-cv-code-font-size: " + s.CodeFontSizeRem + "rem",
             "  --cgw-cv-code-line-height: " + s.CodeLineHeight,
             "  --cgw-cv-code-block-padding: " + s.CodeBlockPaddingRem + "rem",
@@ -118,6 +125,7 @@ internal static class FormatCssBuilder
             "  --cgw-cv-heading-h4: " + s.HeadingH4ScaleRem + "rem",
             "  --cgw-cv-heading-h5: " + s.HeadingH5ScaleRem + "rem",
             "  --cgw-cv-heading-h6: " + s.HeadingH6ScaleRem + "rem",
+            "  --cgw-hl-bold-weight-delta: " + FormatHighlightComposition.BoldWeightDelta,
         };
 
         foreach (var token in FormatTokenCatalog.ColorTokens)

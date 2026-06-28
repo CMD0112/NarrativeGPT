@@ -44,6 +44,14 @@ public static class EntitySyncStatusService
         _ => "",
     };
 
+    public static string BadgeTooltip(EntitySyncStatus status) => status switch
+    {
+        EntitySyncStatus.UnresolvedDrift => "Sources out of sync — click to reconcile",
+        EntitySyncStatus.SourcesStale => "Sources stale — click to reconcile",
+        EntitySyncStatus.NeedsPublish => "Needs publish — click to open Source Manager",
+        _ => "",
+    };
+
     private static bool IsEntityAffected(AdventureBundle bundle, Guid entityId)
     {
         var id = entityId.ToString();

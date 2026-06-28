@@ -2,6 +2,10 @@
 
 This document describes the **current** utility job pipeline after the [utility delivery pivot ADR](utility-delivery-pivot-adr.md) (CMD-248).
 
+**Dual-lane evolution:** [Utility Worker Lane ADR](utility-worker-lane-adr.md) · [implementation plan](utility-worker-lane-plan.md) · [CMD-358](https://linear.app/cmd0112/issue/CMD-358) — registered utility worker for manual/heavy jobs; play injection ([CMD-326](https://linear.app/cmd0112/issue/CMD-326)) for auto/light jobs.
+
+**Next evolution:** [Play-Thread Utility Orchestration Plan](play-thread-utility-orchestration-plan.md) — [CMD-326](https://linear.app/cmd0112/issue/CMD-326) (injection-first execution, schema, hiding, retrieval). Normative ADR: `play-thread-utility-orchestration-adr.md` ([CMD-327](https://linear.app/cmd0112/issue/CMD-327)).
+
 **Related:** [instruction-sources-paradigm.md](instruction-sources-paradigm.md) · [services-reference.md](services-reference.md) · [adventure-thread-registry.md](adventure-thread-registry.md) · [adventure-panel.md § Generation jobs](adventure-panel.md#generation-jobs-phase-2)
 
 ---

@@ -56,7 +56,7 @@ public partial class MainWindow
             EnsurePlayCompanionHosts();
             ReloadPlayAdventure(adventureId);
             SetAppMode(AppMode.Play);
-            AdventureHost.Content = _playView;
+            EnsureAdventureHostPlayContent();
             SyncPlayComposerFromAdventurePanel();
 
             await BrowserTabsReadyTask;
@@ -182,6 +182,7 @@ public partial class MainWindow
         _playView.ResolvePreviewComposerText = () => GetPlayPlayerLineText();
         _playView.ResolvePreviewAttachmentContext = () =>
             GetActivePlayComposeInjection()?.GetLastAttachmentContext();
+        _playView.ResolveThreadUserTurnCountAsync = GetPlayThreadUserMessageCountAsync;
         _playView.BackRequested -= OnPlayBack;
         _playView.BackRequested += OnPlayBack;
         _playView.LinkProjectRequested -= OnPlayLinkProjectRequested;
@@ -204,6 +205,8 @@ public partial class MainWindow
         _playView.RollIntoPlayerLineRequested += OnRollIntoPlayerLineRequested;
         _playView.ReplacePlayerLineRequested -= OnReplacePlayerLineRequested;
         _playView.ReplacePlayerLineRequested += OnReplacePlayerLineRequested;
+        _playView.InsertIntoComposerRequested -= OnInsertIntoComposerRequested;
+        _playView.InsertIntoComposerRequested += OnInsertIntoComposerRequested;
         _playView.BranchCreated -= OnPlayBranchCreated;
         _playView.BranchCreated += OnPlayBranchCreated;
         _playView.ExpandPlaySidePanelRequested -= OnExpandPlaySidePanelRequested;
@@ -212,8 +215,13 @@ public partial class MainWindow
         _playView.ExpandPlayNotesPanelRequested += OnExpandPlayNotesPanelRequested;
         _playView.OpenSourceManagerAsync = () => OpenSourceManagerDialogAsync(adventureId);
         _playView.ProbeSourcesAsync = () => ProbeProjectSourcesAsync(adventureId);
+        _playView.ProbeSourceFileAsync = path => ProbeProjectSourceFileAsync(adventureId, path);
+        _playView.OpenApiSyncDiagnosticsAsync = () => OpenSourceSyncDialogAsync(adventureId);
+        _playView.SynthesizeSourceAsync = (targetPath, parsed) =>
+            SynthesizeSourceContentAsync(adventureId, targetPath, parsed);
         _playView.RefreshSourcesStatusAsync = () => RefreshPlaySourcesStatusAsync(adventureId);
         _playView.GetPhraseHighlightRules = () => _chrome.PhraseHighlightRules;
+        _playView.CommitPhraseHighlightRules = CommitPhraseHighlightRules;
         _playView.ReconcileDuplicatesAsync = () => ReconcilePlaySourcesAsync(adventureId);
         _playView.SuggestEntitiesAsync = () => RunEntityExtractionForActiveAdventureAsync();
         _playView.SuggestMemoriesAsync = () => RunProposeMemoriesAsync();

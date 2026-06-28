@@ -41,11 +41,6 @@
           : 0,
       transcriptViewMode: transcriptViewMode,
       continuousViewEnabled: transcriptViewMode !== "native",
-      proseEnhancementsEnabled: !!readField(
-        src,
-        "proseEnhancementsEnabled",
-        "ProseEnhancementsEnabled"
-      ),
       hideAssistantEditArtifacts: !!readField(
         src,
         "hideAssistantEditArtifacts",
@@ -77,7 +72,6 @@
       revision: payload.revision,
       transcriptViewMode: payload.transcriptViewMode,
       continuousViewEnabled: payload.continuousViewEnabled,
-      proseEnhancementsEnabled: payload.proseEnhancementsEnabled,
       hideAssistantEditArtifacts: payload.hideAssistantEditArtifacts,
       hideContextTagsInThread: payload.hideContextTagsInThread,
       expandHiddenContextInThread: payload.expandHiddenContextInThread,
@@ -120,11 +114,6 @@
       }
     }
 
-    if (prev.proseEnhancementsEnabled !== next.proseEnhancementsEnabled) {
-      impact.cssOnly = true;
-      impact.decorate = true;
-    }
-
     if (
       prev.hideAssistantEditArtifacts !== next.hideAssistantEditArtifacts ||
       prev.hideContextTagsInThread !== next.hideContextTagsInThread ||
@@ -155,25 +144,15 @@
     return impact;
   }
 
-  function setProseAttribute(enabled) {
-    if (enabled) {
-      document.documentElement.setAttribute("data-cgw-prose-enhanced", "1");
-    } else {
-      document.documentElement.removeAttribute("data-cgw-prose-enhanced");
-    }
-  }
-
   function applyGlobals(payload) {
     globalThis.__cgwTranscriptViewMode = payload.transcriptViewMode;
     globalThis.__cgwContinuousViewEnabled = payload.continuousViewEnabled;
-    globalThis.__cgwProseEnhancementsEnabled = payload.proseEnhancementsEnabled;
     globalThis.__cgwHideAssistantEditArtifacts = payload.hideAssistantEditArtifacts;
     globalThis.__cgwHideContextTags = payload.hideContextTagsInThread;
     globalThis.__cgwExpandHiddenContext = payload.expandHiddenContextInThread;
     globalThis.__cgwPhraseHighlightsEnabled = payload.phraseHighlightsEnabled;
     globalThis.__cgwPhraseHighlightRules = payload.phraseHighlightRules;
     globalThis.__cgwFormatSettingsRevision = payload.revision;
-    setProseAttribute(payload.proseEnhancementsEnabled);
   }
 
   function syncComposerClearance() {
@@ -220,21 +199,46 @@
       globalThis.__cgwSetPhraseHighlights(
         payload.phraseHighlightsEnabled,
         payload.phraseHighlightRules,
-        { schedule: false }
+        { schedule: false, force: true }
       );
     }
 
-    if (typeof globalThis.__cgwApplyContextTagDisplay === "function") {
-      globalThis.__cgwApplyContextTagDisplay();
+    var hasTranscriptModeApplier =
+      typeof globalThis.__cgwSetTranscriptViewMode === "function";
+    if (hasTranscriptModeApplier) {
+      globalThis.__cgwSetTranscriptViewMode(payload.transcriptViewMode);
+    } else if (typeof globalThis.__cgwSetContinuousView === "function") {
+      globalThis.__cgwSetContinuousView(payload.continuousViewEnabled);
     }
 
-    if (impact.rebuild) {
-      if (typeof globalThis.__cgwScheduleContinuousViewRebuild === "function") {
-        globalThis.__cgwScheduleContinuousViewRebuild();
-      } else if (typeof globalThis.__cgwContinuousViewSchedule === "function") {
-        globalThis.__cgwContinuousViewSchedule({ immediate: true });
+    var overlayActiveNow = payload.transcriptViewMode !== "native";
+
+    if (!hasTranscriptModeApplier || !overlayActiveNow) {
+      if (impact.rebuild) {
+        if (typeof globalThis.__cgwScheduleContinuousViewRebuild === "function") {
+          globalThis.__cgwScheduleContinuousViewRebuild();
+        } else if (typeof globalThis.__cgwContinuousViewSchedule === "function") {
+          globalThis.__cgwContinuousViewSchedule({ immediate: true });
+        }
+      } else if (impact.decorate) {
+        if (
+          typeof globalThis.__cgwScheduleContinuousViewDecorationOnly ===
+          "function"
+        ) {
+          globalThis.__cgwScheduleContinuousViewDecorationOnly();
+        } else if (typeof globalThis.__cgwContinuousViewSchedule === "function") {
+          globalThis.__cgwContinuousViewSchedule();
+        }
+      } else if (impact.cssOnly) {
+        if (
+          typeof globalThis.__cgwScheduleContinuousViewDecorationOnly ===
+          "function"
+        ) {
+          globalThis.__cgwScheduleContinuousViewDecorationOnly();
+        }
+        syncComposerClearance();
       }
-    } else if (impact.decorate) {
+    } else if (impact.decorate || impact.cssOnly) {
       if (
         typeof globalThis.__cgwScheduleContinuousViewDecorationOnly === "function"
       ) {
@@ -242,28 +246,18 @@
       } else if (typeof globalThis.__cgwContinuousViewSchedule === "function") {
         globalThis.__cgwContinuousViewSchedule();
       }
-    } else if (impact.cssOnly) {
-      if (
-        typeof globalThis.__cgwScheduleContinuousViewDecorationOnly === "function"
-      ) {
-        globalThis.__cgwScheduleContinuousViewDecorationOnly();
-      }
-      syncComposerClearance();
-    }
-
-    if (typeof globalThis.__cgwSetTranscriptViewMode === "function") {
-      globalThis.__cgwSetTranscriptViewMode(payload.transcriptViewMode);
-    } else if (typeof globalThis.__cgwSetContinuousView === "function") {
-      globalThis.__cgwSetContinuousView(payload.continuousViewEnabled);
-    } else if (impact.rebuild || impact.decorate || impact.cssOnly) {
-      if (typeof globalThis.__cgwContinuousViewSchedule === "function") {
-        globalThis.__cgwContinuousViewSchedule(
-          opts.immediate ? { immediate: true } : undefined
-        );
-      }
+      if (impact.cssOnly) syncComposerClearance();
     }
 
     if (
+      !overlayActiveNow &&
+      typeof globalThis.__cgwApplyContextTagDisplay === "function"
+    ) {
+      globalThis.__cgwApplyContextTagDisplay();
+    }
+
+    if (
+      !hasTranscriptModeApplier &&
       opts.navigate !== false &&
       typeof globalThis.__cgwContinuousViewNavigate === "function"
     ) {

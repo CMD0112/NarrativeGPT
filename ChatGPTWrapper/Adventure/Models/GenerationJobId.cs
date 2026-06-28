@@ -24,6 +24,9 @@ internal static class GenerationJobId
 
     public const string SynthesizeSource = "synthesize_source";
 
+    /// <summary>Capability probe for utility worker lane registration.</summary>
+    public const string UtilityWorkerPing = "utility_worker_ping";
+
     /// <summary>Obsolete — recap UI uses local digest formatting only.</summary>
     public const string GenerateRecap = "generate_recap";
 

@@ -4,7 +4,7 @@
   var kernel = globalThis.__cgwPageKernel;
   if (!kernel) return;
 
-  var COMPOSER_DOM_VERSION = 3;
+  var COMPOSER_DOM_VERSION = 4;
   var OFFSCREEN_ID = "cgw-native-composer-offscreen";
   var WRAPPER_ROOT_ID = "cgw-play-composer-root";
 
@@ -369,6 +369,93 @@
     return items;
   }
 
+  function findNativeComposerSurface(probeRoot) {
+    if (!probeRoot) return null;
+    var surface = probeRoot.querySelector('[data-composer-surface="true"]');
+    if (surface) return surface;
+    var unified = probeRoot.querySelector('form[data-type="unified-composer"]');
+    if (unified) return unified;
+    var child = probeRoot.firstElementChild;
+    return child && child.id !== WRAPPER_ROOT_ID ? child : null;
+  }
+
+  function findNativeStyleProbeRoot() {
+    var bucket = getOffscreenBucket();
+    if (bucket && bucket.childElementCount > 0) return bucket;
+    return findActiveComposer();
+  }
+
+  function readStyleValue(el, prop) {
+    if (!el) return "";
+    try {
+      return window.getComputedStyle(el).getPropertyValue(prop) || "";
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function syncComposeThemeFromNative(wrapperRoot) {
+    if (!wrapperRoot) return false;
+
+    var probe = findNativeStyleProbeRoot();
+    var surface = findNativeComposerSurface(probe);
+    var input = findComposerInput({ preferOffscreen: true, skipWrapper: true });
+    var sendBtn = findComposerSubmitButton(true, probe);
+    var attachBtn = probe
+      ? probe.querySelector(
+          'button[data-testid*="attach"], button[aria-label*="Attach"], [data-testid="composer-action-attach"]'
+        )
+      : null;
+
+    var synced = false;
+    if (surface) {
+      var shell = wrapperRoot.querySelector(".cgw-compose-shell");
+      var ss = window.getComputedStyle(surface);
+      wrapperRoot.style.setProperty("--cgw-compose-bg", ss.backgroundColor);
+      wrapperRoot.style.setProperty("--cgw-compose-border", ss.borderTopColor || ss.borderColor);
+      wrapperRoot.style.setProperty("--cgw-compose-radius", ss.borderRadius);
+      if (ss.boxShadow && ss.boxShadow !== "none") {
+        wrapperRoot.style.setProperty("--cgw-compose-shadow", ss.boxShadow);
+      } else {
+        wrapperRoot.style.removeProperty("--cgw-compose-shadow");
+      }
+      if (shell) {
+        shell.style.borderRadius = ss.borderRadius;
+        if (ss.boxShadow && ss.boxShadow !== "none") {
+          shell.style.boxShadow = ss.boxShadow;
+        } else {
+          shell.style.removeProperty("box-shadow");
+        }
+      }
+      synced = true;
+    }
+
+    if (input) {
+      var is = window.getComputedStyle(input);
+      wrapperRoot.style.setProperty("--cgw-compose-text", is.color);
+      wrapperRoot.style.setProperty("--cgw-compose-font-size", is.fontSize);
+      wrapperRoot.style.setProperty("--cgw-compose-line-height", is.lineHeight);
+      wrapperRoot.style.setProperty("--cgw-compose-font-family", is.fontFamily);
+      synced = true;
+    }
+
+    if (sendBtn) {
+      var bs = window.getComputedStyle(sendBtn);
+      wrapperRoot.style.setProperty("--cgw-compose-send-bg", bs.backgroundColor);
+      wrapperRoot.style.setProperty("--cgw-compose-send-fg", bs.color);
+      wrapperRoot.style.setProperty("--cgw-compose-send-size", bs.width);
+      wrapperRoot.style.setProperty("--cgw-compose-send-radius", bs.borderRadius);
+      synced = true;
+    }
+
+    if (attachBtn) {
+      wrapperRoot.style.setProperty("--cgw-compose-muted", readStyleValue(attachBtn, "color"));
+      synced = true;
+    }
+
+    return synced;
+  }
+
   function listComposerFileUi() {
     var fileInputs = [];
     var nodes = document.querySelectorAll('input[type="file"]');
@@ -429,6 +516,7 @@
     temporarilyRestoreNativeToAnchor: temporarilyRestoreNativeToAnchor,
     restoreNativeFromOffscreen: restoreNativeFromOffscreen,
     relocateNativeComposerChrome: relocateNativeComposerChrome,
+    syncComposeThemeFromNative: syncComposeThemeFromNative,
     probeComposer: probeComposer,
     listComposerFileUi: listComposerFileUi,
     listNativeComposerAttachments: listNativeComposerAttachments,

@@ -57,7 +57,7 @@ internal static class AdventureTestData
                 Id = Guid.NewGuid(),
                 Title = "Perf Test Adventure",
                 LinkedProjectId = projectId,
-                Settings = new AdventureSettings { ForceFatPackets = forceFat },
+                Settings = new AdventureSettings { ForceInlineLore = forceFat },
             },
             Scenario = CreatePopulatedScenario(),
             SourceManifest = new SourceManifest { Entries = entries },

@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Adventure\Schema\canon-schema.json" />
+    <EmbeddedResource Include="Adventure\Schema\narrator-scales.json" />
   </ItemGroup>
 
   <ItemGroup>

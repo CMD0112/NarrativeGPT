@@ -344,19 +344,12 @@ public static class PlayHandoffService
         }
         else
         {
-            if (!string.IsNullOrWhiteSpace(checkpoint.PriorConversationId))
-                bundle.Metadata.LinkedConversationId = checkpoint.PriorConversationId;
-
-            bundle.Metadata.PinnedPlayTabKey = checkpoint.PriorPinnedPlayTabKey;
-            bundle.Metadata.PinnedPlayTabTitle = checkpoint.PriorPinnedPlayTabTitle;
-            bundle.Metadata.PinnedPlayTabUrl = checkpoint.PriorPinnedPlayTabUrl;
-            AdventureThreadRegistryService.SyncLegacyFields(bundle.Metadata);
-        }
-
-        if (bundle.Metadata.ProjectLink is not null
-            && !string.IsNullOrWhiteSpace(checkpoint.PriorConversationId))
-        {
-            bundle.Metadata.ProjectLink.PlayConversationId = checkpoint.PriorConversationId;
+            var playEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play);
+            playEntry.ConversationId = checkpoint.PriorConversationId ?? playEntry.ConversationId;
+            playEntry.PinnedTabKey = checkpoint.PriorPinnedPlayTabKey;
+            playEntry.PinnedTabTitle = checkpoint.PriorPinnedPlayTabTitle;
+            playEntry.PinnedTabUrl = checkpoint.PriorPinnedPlayTabUrl;
+            AdventureThreadRegistryService.SetActivePin(bundle, playEntry.Id, notifyPlayThreadChanged: false);
         }
 
         if (checkpoint.PriorSessionId is { } priorSession)

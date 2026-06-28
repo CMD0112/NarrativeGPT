@@ -25,6 +25,9 @@ internal static class CanonFieldMapper
     {
         SetTitle(entity, spec, entry.Title);
 
+        if (spec.CategorySpec is not null)
+            ApplyCategoryShellLines(entity, entry.Body, includeAliases: false);
+
         foreach (var field in spec.BodyFields)
         {
             string? value = field.Format switch
@@ -38,8 +41,10 @@ internal static class CanonFieldMapper
                 SetField(entity, spec, field.JsonKey, value);
         }
 
-        if (entry.Aliases.Count > 0 && HasProperty(entity, "Aliases"))
+        if (entry.Aliases.Count > 0 && CanonEntityPropertyGraph.HasProperty(entity, "aliases"))
             SetAliases(entity, entry.Aliases, entry.Title);
+
+        ApplyExtendedFieldLines(entity, spec, entry.Body);
     }
 
     public static string BuildFreeformBody(object entity, CanonEntityKindSpec spec)
@@ -60,9 +65,34 @@ internal static class CanonFieldMapper
         return string.Join("\n", parts);
     }
 
+    public static string BuildPlayerCastBody(PlayerCharacterSheet player)
+    {
+        var spec = CanonSchemaRegistry.Player;
+        var parts = new List<string>();
+        parts.AddRange(BuildCategoryShellLines(player, includeAliases: true));
+
+        var body = BuildFreeformBody(player, spec);
+        if (!string.IsNullOrWhiteSpace(body))
+            parts.Add(body);
+
+        AppendExtendedFieldLines(parts, player, spec);
+        return string.Join("\n", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
+
+    public static void ApplyPlayerCastBody(PlayerCharacterSheet player, string body)
+    {
+        var spec = CanonSchemaRegistry.Player;
+        ApplyCategoryShellLines(player, body, includeAliases: true);
+        ApplyFreeformBody(player, spec, body);
+        ApplyExtendedFieldLines(player, spec, body);
+    }
+
     public static string BuildEntryBody(object entity, CanonEntityKindSpec spec)
     {
         var parts = new List<string>();
+
+        if (spec.CategorySpec is not null)
+            parts.AddRange(BuildCategoryShellLines(entity, includeAliases: false));
 
         foreach (var field in spec.BodyFields)
         {
@@ -85,8 +115,55 @@ internal static class CanonFieldMapper
             parts.Add(FormatField(field, value));
         }
 
+        AppendExtendedFieldLines(parts, entity, spec);
         return string.Join("\n\n", parts.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()));
     }
+
+    private static void AppendExtendedFieldLines(List<string> parts, object entity, CanonEntityKindSpec spec)
+    {
+        var dict = GetExtendedDictionary(entity);
+        if (dict is null)
+            return;
+
+        foreach (var (key, value) in dict.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
+            if (spec.Fields.Any(f => string.Equals(f.JsonKey, key, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            parts.Add($"{key}: {value.Trim()}");
+        }
+    }
+
+    private static void ApplyExtendedFieldLines(object entity, CanonEntityKindSpec spec, string body)
+    {
+        var dict = GetExtendedDictionary(entity);
+        if (dict is null)
+            return;
+
+        foreach (var line in body.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var colon = line.IndexOf(':');
+            if (colon <= 0)
+                continue;
+
+            var key = line[..colon].Trim();
+            if (spec.Fields.Any(f => string.Equals(f.JsonKey, key, StringComparison.OrdinalIgnoreCase)
+                                     || string.Equals(f.Label, key, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var value = line[(colon + 1)..].Trim();
+            if (!string.IsNullOrWhiteSpace(value))
+                dict[key] = value;
+        }
+    }
+
+    private static List<string> ParseList(string text) =>
+        text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     public static string? GetField(object entity, CanonEntityKindSpec spec, string jsonKey)
     {
@@ -166,33 +243,64 @@ internal static class CanonFieldMapper
 
     private static void SetAliases(object entity, List<string> aliases, string title)
     {
+        if (!CanonEntityPropertyGraph.HasProperty(entity, "aliases"))
+            return;
+
         var filtered = aliases
             .Where(a => !string.Equals(a, title, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        switch (entity)
-        {
-            case CharacterEntry c:
-                c.Aliases = filtered;
-                break;
-            case LocationEntry l:
-                l.Aliases = filtered;
-                break;
-            case CustomEntry c:
-                c.Aliases = filtered;
-                break;
-        }
+        CanonEntityPropertyGraph.TrySetValue(entity, "aliases", string.Join(", ", filtered));
     }
 
-    private static bool HasProperty(object entity, string name) =>
-        entity switch
+    private static IEnumerable<string> BuildCategoryShellLines(object entity, bool includeAliases)
+    {
+        var parts = new List<string>();
+        if (CanonEntityPropertyGraph.TryGetValue(entity, "imagePath", out var image)
+            && image is string imagePath
+            && !string.IsNullOrWhiteSpace(imagePath))
         {
-            CharacterEntry => name == "Aliases",
-            LocationEntry => name == "Aliases",
-            CustomEntry => name == "Aliases",
-            _ => false,
-        };
+            parts.Add($"ImagePath: {imagePath.Trim()}");
+        }
+
+        if (CanonEntityPropertyGraph.TryGetValue(entity, "tags", out var tags)
+            && tags is IEnumerable<string> tagList)
+        {
+            var tagText = string.Join(", ", tagList.Where(t => !string.IsNullOrWhiteSpace(t)));
+            if (!string.IsNullOrWhiteSpace(tagText))
+                parts.Add($"Tags: {tagText}");
+        }
+
+        if (includeAliases
+            && CanonEntityPropertyGraph.TryGetValue(entity, "aliases", out var aliases)
+            && aliases is IEnumerable<string> aliasList)
+        {
+            var aliasText = string.Join(", ", aliasList.Where(a => !string.IsNullOrWhiteSpace(a)));
+            if (!string.IsNullOrWhiteSpace(aliasText))
+                parts.Add($"Aliases: {aliasText}");
+        }
+
+        return parts;
+    }
+
+    private static void ApplyCategoryShellLines(object entity, string body, bool includeAliases)
+    {
+        var imagePath = SectionMarkdownParser.ExtractField(body, "ImagePath");
+        if (imagePath is not null && CanonEntityPropertyGraph.HasProperty(entity, "imagePath"))
+            CanonEntityPropertyGraph.TrySetValue(entity, "imagePath", imagePath.Trim());
+
+        var tags = SectionMarkdownParser.ExtractField(body, "Tags");
+        if (tags is not null && CanonEntityPropertyGraph.HasProperty(entity, "tags"))
+            CanonEntityPropertyGraph.TrySetValue(entity, "tags", tags);
+
+        if (includeAliases)
+        {
+            var aliases = SectionMarkdownParser.ExtractField(body, "Aliases");
+            if (aliases is not null && CanonEntityPropertyGraph.HasProperty(entity, "aliases"))
+                CanonEntityPropertyGraph.TrySetValue(entity, "aliases", aliases);
+        }
+    }
 
     private static bool TryGetTypedValue(object entity, string jsonKey, out object? value)
     {

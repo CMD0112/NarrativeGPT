@@ -53,8 +53,18 @@ internal static class AdventurePlayContextService
         if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
             return true;
 
-        if (string.Equals(candidateId, bundle.Metadata.LinkedConversationId, StringComparison.OrdinalIgnoreCase))
+        var activeId = PlayThreadBindingService.GetActiveConversationId(bundle);
+        if (!string.IsNullOrWhiteSpace(activeId)
+            && string.Equals(activeId, candidateId, StringComparison.OrdinalIgnoreCase))
+        {
             return true;
+        }
+
+        if (PlayThreadBindingService.IsVerified(bundle)
+            && string.Equals(activeId, candidateId, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
 
         return projectConversations is not null
                && ConversationBelongsToProject(candidateId, projectConversations);
@@ -75,86 +85,56 @@ internal static class AdventurePlayContextService
         }
 
         gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
-        var conversationId = bundle.Metadata.LinkedConversationId;
-        var composerAlreadyReady = false;
-        var trustedUrlContext = false;
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
 
-        if (string.IsNullOrWhiteSpace(conversationId)
-            && AdventureNavigationService.IsOnLinkedProjectPage(core.Source, bundle))
+        if (ProjectChatDraftService.ShouldStayOnProjectPage(bundle, core.Source))
         {
-            ProjectLinkDiagnostics.Log(
-                $"Play context stable on linked project page for {gizmoId}; skipping play thread navigation");
             return new PlayContextResult
             {
                 Status = PlayContextStatus.Ready,
-                ConversationId = conversationId,
+                ConversationId = PlayThreadBindingService.GetActiveConversationId(bundle),
             };
         }
 
-        if (!string.IsNullOrWhiteSpace(conversationId)
-            && AdventureNavigationService.IsOnLinkedProjectPage(core.Source, bundle))
+        if (TryGetLinkedProjectConversationFromUrl(core.Source, gizmoId, out var urlConversationId)
+            && turnService is not null)
         {
-            ProjectLinkDiagnostics.Log(
-                $"Play context stable on linked project page for {gizmoId}; skipping play thread navigation");
+            var health = await turnService.GetHealthAsync(core);
+            if (health.BridgeReachable && health.ComposerFound)
+                PlayThreadBindingService.MarkVerified(bundle, urlConversationId);
+            else
+                PlayThreadBindingService.MarkPendingPin(bundle, urlConversationId);
+
+            AdventureStore.Save(bundle);
+        }
+
+        var nav = await PlaySessionNavigationService.EnsureOnBrowsableTargetAsync(
+            core,
+            bundle,
+            api,
+            turnService,
+            cancellationToken: cancellationToken);
+
+        if (!nav.Success && !string.IsNullOrWhiteSpace(nav.Error))
+        {
+            return new PlayContextResult
+            {
+                Status = PlayContextStatus.NavigationFailed,
+                ConversationId = nav.ConversationId,
+                Error = nav.Error,
+            };
+        }
+
+        if (!PlayThreadBindingService.IsNavigable(bundle))
+        {
             return new PlayContextResult
             {
                 Status = PlayContextStatus.Ready,
-                ConversationId = conversationId,
+                ConversationId = PlayThreadBindingService.GetActiveConversationId(bundle),
             };
         }
 
-        if (AdventureNavigationService.IsGenericHomepage(core.Source))
-        {
-            ProjectLinkDiagnostics.Log($"Play context recovering from homepage for project {gizmoId}");
-            var preservedConversationId = bundle.Metadata.LinkedConversationId;
-            if (!string.IsNullOrWhiteSpace(preservedConversationId))
-            {
-                var targetUrl = ChatGptUrls.ResolveProjectConversationUrl(
-                    preservedConversationId,
-                    gizmoId,
-                    core.Source,
-                    bundle.Metadata.PinnedPlayTabUrl);
-                ProjectLinkDiagnostics.Log($"Homepage recovery: trying play thread {targetUrl}");
-                core.Navigate(targetUrl);
-                if (await WaitForPlayConversationNavigationAsync(
-                        core,
-                        preservedConversationId,
-                        gizmoId,
-                        cancellationToken))
-                {
-                    return new PlayContextResult
-                    {
-                        Status = PlayContextStatus.Ready,
-                        ConversationId = preservedConversationId,
-                    };
-                }
-
-                ProjectLinkDiagnostics.Log(
-                    $"Homepage recovery: play thread navigation failed conv={preservedConversationId} href={core.Source}");
-                return new PlayContextResult
-                {
-                    Status = PlayContextStatus.NavigationFailed,
-                    ConversationId = preservedConversationId,
-                    Error = "Could not return to the linked play thread after ChatGPT redirected to the homepage.",
-                };
-            }
-
-            await api.EnsureProjectPageAsync(core, gizmoId, cancellationToken);
-            return new PlayContextResult { Status = PlayContextStatus.Ready };
-        }
-
-        if (TryGetLinkedProjectConversationFromUrl(core.Source, gizmoId, out var urlConversationId))
-        {
-            conversationId = urlConversationId;
-            PersistConversation(bundle, gizmoId, conversationId);
-            trustedUrlContext = IsOnPlayConversationPage(core, conversationId, gizmoId);
-            if (trustedUrlContext && turnService is not null)
-            {
-                var health = await turnService.GetHealthAsync(core);
-                composerAlreadyReady = health.BridgeReachable && health.ComposerFound;
-            }
-        }
-
+        var conversationId = PlayThreadBindingService.GetActiveConversationId(bundle);
         if (string.IsNullOrWhiteSpace(conversationId))
         {
             var resolved = await ResolvePlayThreadAsync(
@@ -164,63 +144,31 @@ internal static class AdventurePlayContextService
                 turnService,
                 cancellationToken);
             conversationId = resolved.ConversationId;
-            composerAlreadyReady = resolved.ComposerReady;
             if (string.IsNullOrWhiteSpace(conversationId) && !resolved.ComposerReady)
             {
                 return new PlayContextResult
                 {
                     Status = PlayContextStatus.NoConversation,
-                    Error = "Could not create or find a play thread in the linked Project.",
+                    Error =
+                        "No play thread is bound. Open your Project → New chat, pin the tab, then send.",
                 };
             }
 
             if (!string.IsNullOrWhiteSpace(conversationId))
-                PersistConversation(bundle, gizmoId, conversationId);
+            {
+                PlayThreadBindingService.MarkPendingPin(bundle, conversationId);
+                AdventureStore.Save(bundle);
+            }
             else
             {
                 ProjectLinkDiagnostics.Log(
                     $"Project chat composer ready for {gizmoId}; conversation id will bind on first Send");
-            }
-        }
-        if (!string.IsNullOrWhiteSpace(conversationId))
-        {
-            var targetUrl = ChatGptUrls.ResolveProjectConversationUrl(
-                conversationId,
-                gizmoId,
-                core.Source,
-                bundle.Metadata.PinnedPlayTabUrl);
-            if (!IsOnPlayConversationPage(core, conversationId, gizmoId))
-            {
-                ProjectLinkDiagnostics.Log($"Navigating Adventure tab to project play thread {targetUrl}");
-                core.Navigate(targetUrl);
-                if (!await WaitForPlayConversationNavigationAsync(core, conversationId, gizmoId, cancellationToken))
-                {
-                    ProjectLinkDiagnostics.Log(
-                        $"Play thread navigation timed out conv={conversationId} href={core.Source}");
-                    return new PlayContextResult
-                    {
-                        Status = PlayContextStatus.NavigationFailed,
-                        ConversationId = conversationId,
-                        Error = "Timed out waiting for the Project play thread to load.",
-                    };
-                }
-
-                if (AdventureNavigationService.IsGenericHomepage(core.Source))
-                {
-                    ProjectLinkDiagnostics.Log(
-                        $"Play thread navigation rejected conv={conversationId}; href={core.Source}");
-                    return new PlayContextResult
-                    {
-                        Status = PlayContextStatus.NavigationFailed,
-                        ConversationId = conversationId,
-                        Error = "ChatGPT rejected navigation to the linked play thread.",
-                    };
-                }
+                return new PlayContextResult { Status = PlayContextStatus.Ready };
             }
         }
 
         await WaitForDocumentReadyAsync(core, cancellationToken);
-        if (turnService is not null && !composerAlreadyReady)
+        if (turnService is not null)
         {
             if (!await WaitForComposerAsync(turnService, core, cancellationToken))
             {
@@ -272,11 +220,12 @@ internal static class AdventurePlayContextService
         AdventureBundle bundle,
         CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
+        var conversationId = PlayThreadBindingService.GetActiveConversationId(bundle);
+        if (!string.IsNullOrWhiteSpace(conversationId))
         {
-            if (!IsOnConversationPage(core.Source, bundle.Metadata.LinkedConversationId))
+            if (!IsOnConversationPage(core.Source, conversationId))
             {
-                core.Navigate(ChatGptUrls.BuildConversationUrl(bundle.Metadata.LinkedConversationId));
+                core.Navigate(ChatGptUrls.BuildConversationUrl(conversationId));
                 await WaitForTrustedNavigationAsync(core, cancellationToken);
             }
 
@@ -289,34 +238,6 @@ internal static class AdventurePlayContextService
             core.Navigate(AdventureNavigationService.ResolveTrustedFallbackUrl(bundle));
             await WaitForTrustedNavigationAsync(core, cancellationToken);
         }
-    }
-
-    private static void PersistConversation(AdventureBundle bundle, string gizmoId, string conversationId)
-    {
-        var previous = bundle.Metadata.LinkedConversationId;
-        PlayTurnScopeService.OnPlayThreadChanged(bundle, previous, conversationId);
-
-        AdventureThreadRegistryService.EnsureMigrated(bundle);
-        var playEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)
-                          ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play);
-        AdventureThreadRegistryService.UpdateConversationId(bundle, playEntry.Id, conversationId);
-
-        bundle.Metadata.LinkedConversationId = conversationId;
-        if (bundle.Metadata.ProjectLink is not null)
-            bundle.Metadata.ProjectLink.PlayConversationId = conversationId;
-        else
-        {
-            bundle.Metadata.ProjectLink = new ProjectLink
-            {
-                GizmoId = gizmoId,
-                CanonicalUrl = ChatGptUrls.BuildProjectUrl(gizmoId),
-                PlayConversationId = conversationId,
-                LinkedAt = DateTimeOffset.UtcNow,
-            };
-        }
-
-        AdventureThreadRegistryService.SyncLegacyFields(bundle.Metadata);
-        AdventureStore.Save(bundle);
     }
 
     private sealed class PlayThreadResolution
@@ -337,28 +258,7 @@ internal static class AdventurePlayContextService
         {
             await api.EnsureProjectPageAsync(core, gizmoId, cancellationToken);
 
-            string? conversationId;
-            try
-            {
-                conversationId = await api.CreateProjectConversationAsync(
-                    core,
-                    gizmoId,
-                    cancellationToken: cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                ProjectLinkDiagnostics.Log($"CreateProjectConversation threw for {gizmoId}: {ex.Message}");
-                conversationId = null;
-            }
-
-            if (!string.IsNullOrWhiteSpace(conversationId))
-            {
-                ProjectLinkDiagnostics.Log($"Created project play thread {conversationId} for {gizmoId} via API");
-                return new PlayThreadResolution { ConversationId = conversationId };
-            }
-
-            ProjectLinkDiagnostics.Log(
-                $"CreateProjectConversation returned no id for {gizmoId}; listing project conversations");
+            ProjectLinkDiagnostics.Log($"ResolvePlayThread: listing project conversations for {gizmoId}");
 
             IReadOnlyList<GizmoConversationRef> convs = Array.Empty<GizmoConversationRef>();
             try
@@ -370,9 +270,13 @@ internal static class AdventurePlayContextService
                 ProjectLinkDiagnostics.Log($"ListProjectConversations failed for {gizmoId}: {ex.Message}");
             }
 
-            conversationId = convs.OrderByDescending(c => c.UpdatedAt).FirstOrDefault()?.Id;
+            string? conversationId = convs.OrderByDescending(c => c.UpdatedAt).FirstOrDefault()?.Id;
             if (!string.IsNullOrWhiteSpace(conversationId))
+            {
+                ProjectLinkDiagnostics.Log(
+                    $"ResolvePlayThread: found listed conversation {conversationId} for {gizmoId} (pending pin)");
                 return new PlayThreadResolution { ConversationId = conversationId };
+            }
 
             ProjectLinkDiagnostics.Log(
                 $"No play thread in project {gizmoId} (list count={convs.Count}); trying UI New chat");
@@ -475,39 +379,23 @@ internal static class AdventurePlayContextService
     internal static bool IsOnPlayConversationPage(CoreWebView2 core, string conversationId, string gizmoId) =>
         IsOnPlayConversationPage(core.Source, conversationId, gizmoId);
 
-    internal static bool IsOnPlayConversationPage(string? source, string conversationId, string gizmoId) =>
-        IsOnProjectConversationPage(source, conversationId, gizmoId)
-        || IsOnConversationPage(source, conversationId);
-
-    private static async Task<bool> WaitForPlayConversationNavigationAsync(
-        CoreWebView2 core,
-        string conversationId,
-        string gizmoId,
-        CancellationToken cancellationToken)
+    internal static bool IsOnPlayConversationPage(string? source, string conversationId, string gizmoId)
     {
-        if (IsOnPlayConversationPage(core, conversationId, gizmoId))
+        if (IsOnProjectConversationPage(source, conversationId, gizmoId))
             return true;
 
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        void Handler(object? sender, CoreWebView2NavigationCompletedEventArgs e)
-        {
-            if (e.IsSuccess && IsOnPlayConversationPage(core, conversationId, gizmoId))
-                tcs.TrySetResult(true);
-        }
+        if (!IsOnConversationPage(source, conversationId))
+            return false;
 
-        core.NavigationCompleted += Handler;
-        try
-        {
-            return await tcs.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
-        }
-        catch (TimeoutException)
-        {
-            return IsOnPlayConversationPage(core, conversationId, gizmoId);
-        }
-        finally
-        {
-            core.NavigationCompleted -= Handler;
-        }
+        if (string.IsNullOrWhiteSpace(gizmoId))
+            return true;
+
+        // Plain /c/{id} without a project segment is still valid; reject a different project in the path.
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri))
+            return false;
+
+        return !ChatGptUrls.TryParseGizmoId(uri, out var parsedGizmo)
+               || ChatGptUrls.GizmoIdsEqual(parsedGizmo, gizmoId);
     }
 
     private static async Task<bool> WaitForComposerAsync(

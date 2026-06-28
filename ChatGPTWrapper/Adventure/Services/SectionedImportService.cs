@@ -270,7 +270,7 @@ internal static class SectionedImportService
     {
         var body = section.FreeformBody;
         var p = bundle.Entities.Player;
-        CanonFieldMapper.ApplyFreeformBody(p, CanonSchemaRegistry.Player, body);
+        CanonFieldMapper.ApplyPlayerCastBody(p, body);
 
         result.EntitiesUpdated++;
         result.ManifestSections.Add(new SectionManifestEntry

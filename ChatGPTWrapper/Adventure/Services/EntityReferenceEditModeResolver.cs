@@ -6,12 +6,11 @@ public static class EntityReferenceEditModeResolver
 {
     public static EntityReferenceEditMode Resolve(
         EntityReferenceEditMode configured,
-        PlayLayoutCapabilities _)
+        PlayLayoutCapabilities layout)
     {
-        if (configured != EntityReferenceEditMode.Auto)
-            return configured;
+        if (configured == EntityReferenceEditMode.Auto)
+            return EntityReferenceEditMode.Modal;
 
-        // Adventure side panels (Play Reference, Design Cast) stay list-only; edit in a modal dialog.
-        return EntityReferenceEditMode.Modal;
+        return configured;
     }
 }

@@ -1,10 +1,12 @@
 # Attachment-aware context injection
 
-**Status:** Phase A implemented (attachment manifest in play packets). **This doc covers Phase B+** (policy modes, DOM scrape enrichment, attachment-aware trimming).
+**Status:** Phase B implemented (policy modes, DOM metadata, attachment-aware trimming). Phase A shipped attachment manifest in play packets. **Phase 4 (API path parity)** remains open.
+
+**Epic:** [CMD-292](https://linear.app/cmd0112/issue/CMD-292) · **Issue:** [CMD-297](https://linear.app/cmd0112/issue/CMD-297) · **Policy:** [injection-policy-adr.md](../injection-policy-adr.md)
 
 **Related:** [Play view](../adventure-panel.md#4-play-view) · [Chat file I/O feasibility](../chat-file-io-feasibility.md) · [Instruction vs sources](../instruction-sources-paradigm.md)
 
-Phase A adds an `=== ATTACHMENTS (staged with this turn) ===` block to play packets when native attachments are detected. Remaining work: richer metadata from DOM scrape, `AttachmentContextMode` branching, and attachment-only turn polish.
+Phase A adds an `=== ATTACHMENTS (staged with this turn) ===` block to play packets when native attachments are detected. Phase B adds richer metadata from DOM scrape, `AttachmentContextMode` branching, filename token enrichment for story cards, and attachment-only turn display lines.
 
 This document describes why attachment-aware context matters, what still degrades without Phase B+, and a phased design for branching injected context based on what the user attached.
 

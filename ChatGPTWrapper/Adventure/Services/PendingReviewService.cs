@@ -26,17 +26,17 @@ internal sealed class PendingReviewCounts
 
     public int JsonImports { get; init; }
 
-    public int Total => Entities + Memories + Summary + Cards + SourceEdits + JsonImports;
+    public int ContinuityWarnings { get; init; }
+
+    public int Total =>
+        Entities + Memories + Summary + Cards + SourceEdits + JsonImports + ContinuityWarnings;
 }
 
 internal static class PendingReviewService
 {
     public static PendingReviewCounts GetCounts(AdventureBundle bundle)
     {
-        var summary = bundle.Summary.PendingReview
-                        && !string.IsNullOrWhiteSpace(bundle.Summary.ProposedSummary)
-            ? 1
-            : 0;
+        var summary = SummaryReviewService.IsPending(bundle.Summary) ? 1 : 0;
 
         return new PendingReviewCounts
         {
@@ -46,10 +46,11 @@ internal static class PendingReviewService
             Cards = bundle.Cards.ReviewQueue.Count,
             SourceEdits = bundle.Scenario.SourceEditReviewQueue.Count,
             JsonImports = bundle.Scenario.JsonImportReviewQueue.Count,
+            ContinuityWarnings = ContinuityWarningDismissalService.FilterActive(bundle.Continuity).Count,
         };
     }
 
-    public static bool HasAnyPending(AdventureBundle bundle) => GetCounts(bundle).Total > 0;
+    public static bool HasAnyPending(AdventureBundle bundle) => ProposalReviewService.HasAny(bundle);
 
     public static string FormatSummaryLine(PendingReviewCounts counts)
     {
@@ -69,6 +70,8 @@ internal static class PendingReviewService
             parts.Add($"{counts.SourceEdits} source edit{(counts.SourceEdits == 1 ? "" : "s")}");
         if (counts.JsonImports > 0)
             parts.Add($"{counts.JsonImports} JSON import{(counts.JsonImports == 1 ? "" : "s")}");
+        if (counts.ContinuityWarnings > 0)
+            parts.Add($"{counts.ContinuityWarnings} continuity warning{(counts.ContinuityWarnings == 1 ? "" : "s")}");
 
         return counts.Total == 1
             ? "1 proposal awaiting review"
@@ -94,17 +97,18 @@ internal static class PendingReviewService
             return "";
 
         var noun = proposalCount == 1 ? "proposal" : "proposals";
-        var where = GetDestinationForJob(jobId) switch
-        {
-            PendingReviewDestination.ReferencePanel => "Reference tab",
-            PendingReviewDestination.WorldSettings => "Play settings → World",
-            PendingReviewDestination.MemoryCardsSettings => "Play settings → Memory & cards",
-            PendingReviewDestination.SourcesSettings => "Play settings → Sources",
-            PendingReviewDestination.WarningsTab => "Warnings tab",
-            PendingReviewDestination.NextSend => "Play settings → Next send",
-            _ => "Play settings",
-        };
+        if (string.Equals(jobId, GenerationJobId.ProcessTurn, StringComparison.OrdinalIgnoreCase))
+            return $"{jobId}: {proposalCount} {noun} queued — open Review all to accept or dismiss by category.";
 
-        return $"{jobId}: {proposalCount} {noun} queued — Review in {where}";
+        return $"{jobId}: {proposalCount} {noun} queued — Review all opened.";
+    }
+
+    public static string FormatReviewHintForCategories(IReadOnlyList<ProposalReviewCategorySummary> categories)
+    {
+        if (categories.Count == 0)
+            return "";
+
+        var labels = categories.Select(c => $"{c.Count} {c.Label.ToLowerInvariant()}").ToList();
+        return $"Review proposals — {string.Join(", ", labels)}";
     }
 }

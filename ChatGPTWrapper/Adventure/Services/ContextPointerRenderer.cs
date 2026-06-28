@@ -28,21 +28,39 @@ internal static class ContextPointerRenderer
     public static string BuildSourcesV2Block(
         AdventureBundle bundle,
         ContextResolveResult resolved,
-        PacketMode mode,
+        PacketProfile profile,
         ProjectSourceReadiness? readiness = null,
         bool useContextTags = true)
     {
-        var inner = BuildSourcesInnerLines(bundle, resolved, mode, readiness);
+        var inner = BuildSourcesInnerLines(bundle, resolved, profile, readiness);
         if (!useContextTags)
             return "=== PROJECT SOURCES ===\n" + string.Join('\n', inner);
 
+        var modeAttr = PacketProfileResolver.ProfileMetaMode(profile);
         var lines = new List<string>
         {
-            $"[[cgw:sources v=\"2\" mode=\"{(mode == PacketMode.Thin ? "thin" : "fat")}\"]]",
+            $"[[cgw:sources v=\"2\" mode=\"{modeAttr}\"]]",
         };
         lines.AddRange(inner);
         lines.Add("[[/cgw:sources]]");
         return string.Join('\n', lines);
+    }
+
+    public static string BuildMinimalLocalSourcesBlock(bool useContextTags = true)
+    {
+        const string body = """
+            ALWAYS RETRIEVE:
+            - No ChatGPT Project linked — link a Project and publish sources for retrieval.
+            - Until then, use the scenario opening and session state in this packet.
+
+            THIS TURN:
+            - (none)
+            """;
+
+        if (!useContextTags)
+            return "=== PROJECT SOURCES ===\n" + body;
+
+        return $"[[cgw:sources v=\"2\" mode=\"minimal\"]]\n{body}\n[[/cgw:sources]]";
     }
 
     public static string BuildFatSourcesBlock(
@@ -50,12 +68,12 @@ internal static class ContextPointerRenderer
         ContextResolveResult resolved,
         bool useContextTags = true,
         ProjectSourceReadiness? readiness = null) =>
-        BuildSourcesV2Block(bundle, resolved, PacketMode.Fat, readiness, useContextTags);
+        BuildSourcesV2Block(bundle, resolved, PacketProfile.InlineFallback, readiness, useContextTags);
 
     private static List<string> BuildSourcesInnerLines(
         AdventureBundle bundle,
         ContextResolveResult resolved,
-        PacketMode mode,
+        PacketProfile profile,
         ProjectSourceReadiness? readiness)
     {
         var lines = new List<string>();
@@ -68,7 +86,7 @@ internal static class ContextPointerRenderer
 
         lines.Add("ALWAYS RETRIEVE:");
         if (resolved.Baseline.Count == 0)
-            AppendBaselineFallback(lines, bundle, readiness);
+            AppendBaselineFallback(lines, bundle, readiness, profile);
         else
             foreach (var p in resolved.Baseline)
                 lines.Add("- " + FormatProsePointer(bundle, p));
@@ -102,8 +120,15 @@ internal static class ContextPointerRenderer
     private static void AppendBaselineFallback(
         List<string> lines,
         AdventureBundle bundle,
-        ProjectSourceReadiness? readiness)
+        ProjectSourceReadiness? readiness,
+        PacketProfile profile)
     {
+        if (profile == PacketProfile.MinimalLocal)
+        {
+            lines.Add("- No ChatGPT Project linked — link a Project and publish sources for retrieval.");
+            return;
+        }
+
         if (readiness?.CanDelegateStaticContent == true && readiness.SyncedFiles.Count > 0)
         {
             lines.Add("- (section index empty — retrieve these Project source files each turn)");

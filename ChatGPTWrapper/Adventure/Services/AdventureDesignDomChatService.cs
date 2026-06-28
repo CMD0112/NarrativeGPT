@@ -55,7 +55,6 @@ internal static class AdventureDesignDomChatService
         var designEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)
                             ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
         AdventureThreadRegistryService.UpdateConversationId(bundle, designEntry.Id, conversationId);
-        AdventureThreadRegistryService.SyncLegacyFields(bundle.Metadata);
 
         var jobId = GenerationJobId.DesignAdventure;
         bundle.Metadata.UtilitySessions ??= new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase);

@@ -1,3 +1,5 @@
+using ChatGPTWrapper.Format;
+
 namespace ChatGPTWrapper;
 
 public enum WeaveEmbedKind
@@ -14,6 +16,13 @@ public enum FormatPreset
     Relaxed,
 }
 
+public enum ReadabilityPreset
+{
+    LongFormReading,
+    LowGlare,
+    DyslexiaFriendly,
+}
+
 public sealed class ContinuousViewFormatSettings
 {
     public double ContentMaxWidthRem { get; set; } = 42;
@@ -26,7 +35,44 @@ public sealed class ContinuousViewFormatSettings
 
     public bool ShowSegmentDividers { get; set; } = true;
 
+    public bool ShowRuledLines { get; set; }
+
+    /// <summary>
+    /// When true, line-based prose guides (ruled lines, row bands, underlines, margin ticks)
+    /// stop at the end of each line of text instead of spanning the full column width.
+    /// </summary>
+    public bool ProseGuideClipToText { get; set; }
+
+    public RuledLineStyle RuledLineStyle { get; set; } = RuledLineStyle.Line;
+
+    public double RuledLineOpacity { get; set; } = 12;
+
+    public double RuledBandOpacity { get; set; } = 6;
+
+    public double RuledLineThicknessPx { get; set; } = 1;
+
+    /// <summary>Height of margin-rail ticks as a fraction of line height (0.2–0.8).</summary>
+    public double RuledMarginTickRatio { get; set; } = 0.42;
+
+    /// <summary>When true, row bands start on the clear row instead of the shaded row.</summary>
+    public bool RuledBandInvertPhase { get; set; }
+
+    /// <summary>Length of each dash in dashed-underline guides (em).</summary>
+    public double RuledUnderlineDashEm { get; set; } = 0.55;
+
+    /// <summary>Gap between dashes in dashed-underline guides (em).</summary>
+    public double RuledUnderlineGapEm { get; set; } = 0.3;
+
+    /// <summary>Even-row strength for paragraph zebra as a fraction of band opacity (0.1–1).</summary>
+    public double RuledZebraContrastRatio { get; set; } = 0.45;
+
+    public string? RuledLineColor { get; set; }
+
     public double SegmentDividerOpacity { get; set; } = 22;
+
+    public double SegmentDividerWidthPx { get; set; } = 1;
+
+    public SegmentDividerStyle SegmentDividerStyle { get; set; } = SegmentDividerStyle.Solid;
 
     public double SegmentBorderRadiusPx { get; set; } = 6;
 
@@ -114,10 +160,6 @@ public sealed class ContinuousViewFormatSettings
 
     public double ProseParagraphMarginRem { get; set; } = 0.6;
 
-    public double EnhancedProseLineHeight { get; set; } = 1.68;
-
-    public double EnhancedProseLetterSpacingEm { get; set; } = 0.012;
-
     public double CodeFontSizeRem { get; set; } = 0.9375;
 
     public double CodeLineHeight { get; set; } = 1.55;
@@ -160,7 +202,21 @@ public sealed class ContinuousViewFormatSettings
             OverlayPaddingYRem = OverlayPaddingYRem,
             SegmentSpacingRem = SegmentSpacingRem,
             ShowSegmentDividers = ShowSegmentDividers,
+            ShowRuledLines = ShowRuledLines,
+            ProseGuideClipToText = ProseGuideClipToText,
+            RuledLineStyle = RuledLineStyle,
+            RuledLineOpacity = RuledLineOpacity,
+            RuledBandOpacity = RuledBandOpacity,
+            RuledLineThicknessPx = RuledLineThicknessPx,
+            RuledMarginTickRatio = RuledMarginTickRatio,
+            RuledBandInvertPhase = RuledBandInvertPhase,
+            RuledUnderlineDashEm = RuledUnderlineDashEm,
+            RuledUnderlineGapEm = RuledUnderlineGapEm,
+            RuledZebraContrastRatio = RuledZebraContrastRatio,
+            RuledLineColor = RuledLineColor,
             SegmentDividerOpacity = SegmentDividerOpacity,
+            SegmentDividerWidthPx = SegmentDividerWidthPx,
+            SegmentDividerStyle = SegmentDividerStyle,
             SegmentBorderRadiusPx = SegmentBorderRadiusPx,
             UserFontSizeRem = UserFontSizeRem,
             UserLineHeight = UserLineHeight,
@@ -202,8 +258,6 @@ public sealed class ContinuousViewFormatSettings
             TableHeaderBackgroundColor = TableHeaderBackgroundColor,
             BlockMarginRem = BlockMarginRem,
             ProseParagraphMarginRem = ProseParagraphMarginRem,
-            EnhancedProseLineHeight = EnhancedProseLineHeight,
-            EnhancedProseLetterSpacingEm = EnhancedProseLetterSpacingEm,
             CodeFontSizeRem = CodeFontSizeRem,
             CodeLineHeight = CodeLineHeight,
             CodeBlockPaddingRem = CodeBlockPaddingRem,
@@ -222,64 +276,34 @@ public sealed class ContinuousViewFormatSettings
             WeaveEmbedMarginBlockRem = WeaveEmbedMarginBlockRem,
         };
 
+    public void ApplyBuiltInPreset(string presetId) =>
+        FormatBuiltInPresetCatalog.Apply(presetId, this);
+
+    public bool TryApplyBuiltInPreset(string presetId) =>
+        FormatBuiltInPresetCatalog.TryApply(presetId, this);
+
     public void ApplyPreset(FormatPreset preset)
     {
-        switch (preset)
+        var id = preset switch
         {
-            case FormatPreset.Compact:
-                ContentMaxWidthRem = 40;
-                OverlayPaddingXRem = 1.25;
-                OverlayPaddingYRem = 1;
-                SegmentSpacingRem = 0.85;
-                ShowSegmentDividers = true;
-                UserFontSizeRem = 0.94;
-                UserLineHeight = 1.48;
-                AssistantFontSizeRem = 1;
-                AssistantLineHeight = 1.55;
-                BlockMarginRem = 0.55;
-                ProseParagraphMarginRem = 0.45;
-                BlockLetterSpacingEm = 0.008;
-                UserLetterSpacingEm = 0.008;
-                AssistantLetterSpacingEm = 0.008;
-                EnhancedProseLineHeight = 1.58;
-                EnhancedProseLetterSpacingEm = 0.01;
-                CodeFontSizeRem = 0.875;
-                CodeLineHeight = 1.48;
-                CodeBlockPaddingRem = 0.65;
-                HeadingMarginRem = 0.55;
-                UserBackgroundOpacity = 4;
-                AssistantBackgroundOpacity = 0;
-                UserAccentColor = "#5B9FD4";
-                break;
-            case FormatPreset.Relaxed:
-                ContentMaxWidthRem = 44;
-                OverlayPaddingXRem = 2;
-                OverlayPaddingYRem = 1.85;
-                SegmentSpacingRem = 1.6;
-                ShowSegmentDividers = true;
-                UserFontSizeRem = 1.02;
-                UserLineHeight = 1.62;
-                AssistantFontSizeRem = 1.125;
-                AssistantLineHeight = 1.75;
-                BlockMarginRem = 0.95;
-                ProseParagraphMarginRem = 0.75;
-                BlockLetterSpacingEm = 0.012;
-                UserLetterSpacingEm = 0.012;
-                AssistantLetterSpacingEm = 0.012;
-                EnhancedProseLineHeight = 1.78;
-                EnhancedProseLetterSpacingEm = 0.014;
-                CodeFontSizeRem = 0.975;
-                CodeLineHeight = 1.62;
-                CodeBlockPaddingRem = 1;
-                HeadingMarginRem = 0.95;
-                UserBackgroundOpacity = 6;
-                AssistantBackgroundOpacity = 2;
-                UserAccentColor = "#5B9FD4";
-                break;
-            default:
-                CopyFrom(CreateDefaults());
-                break;
-        }
+            FormatPreset.Compact => FormatProfileIds.Compact,
+            FormatPreset.Relaxed => FormatProfileIds.Relaxed,
+            _ => FormatProfileIds.Default,
+        };
+
+        ApplyBuiltInPreset(id);
+    }
+
+    public void ApplyReadabilityPreset(ReadabilityPreset preset)
+    {
+        var id = preset switch
+        {
+            ReadabilityPreset.LowGlare => FormatProfileIds.LowGlare,
+            ReadabilityPreset.DyslexiaFriendly => FormatProfileIds.DyslexiaFriendly,
+            _ => FormatProfileIds.LongFormReading,
+        };
+
+        ApplyBuiltInPreset(id);
     }
 
     public void CopyFrom(ContinuousViewFormatSettings other)
@@ -289,7 +313,21 @@ public sealed class ContinuousViewFormatSettings
         OverlayPaddingYRem = other.OverlayPaddingYRem;
         SegmentSpacingRem = other.SegmentSpacingRem;
         ShowSegmentDividers = other.ShowSegmentDividers;
+        ShowRuledLines = other.ShowRuledLines;
+        ProseGuideClipToText = other.ProseGuideClipToText;
+        RuledLineStyle = other.RuledLineStyle;
+        RuledLineOpacity = other.RuledLineOpacity;
+        RuledBandOpacity = other.RuledBandOpacity;
+        RuledLineThicknessPx = other.RuledLineThicknessPx;
+        RuledMarginTickRatio = other.RuledMarginTickRatio;
+        RuledBandInvertPhase = other.RuledBandInvertPhase;
+        RuledUnderlineDashEm = other.RuledUnderlineDashEm;
+        RuledUnderlineGapEm = other.RuledUnderlineGapEm;
+        RuledZebraContrastRatio = other.RuledZebraContrastRatio;
+        RuledLineColor = other.RuledLineColor;
         SegmentDividerOpacity = other.SegmentDividerOpacity;
+        SegmentDividerWidthPx = other.SegmentDividerWidthPx;
+        SegmentDividerStyle = other.SegmentDividerStyle;
         SegmentBorderRadiusPx = other.SegmentBorderRadiusPx;
         UserFontSizeRem = other.UserFontSizeRem;
         UserLineHeight = other.UserLineHeight;
@@ -331,8 +369,6 @@ public sealed class ContinuousViewFormatSettings
         TableHeaderBackgroundColor = other.TableHeaderBackgroundColor;
         BlockMarginRem = other.BlockMarginRem;
         ProseParagraphMarginRem = other.ProseParagraphMarginRem;
-        EnhancedProseLineHeight = other.EnhancedProseLineHeight;
-        EnhancedProseLetterSpacingEm = other.EnhancedProseLetterSpacingEm;
         CodeFontSizeRem = other.CodeFontSizeRem;
         CodeLineHeight = other.CodeLineHeight;
         CodeBlockPaddingRem = other.CodeBlockPaddingRem;
@@ -359,7 +395,20 @@ public sealed class ContinuousViewFormatSettings
         OverlayPaddingYRem = d.OverlayPaddingYRem;
         SegmentSpacingRem = d.SegmentSpacingRem;
         ShowSegmentDividers = d.ShowSegmentDividers;
+        ShowRuledLines = d.ShowRuledLines;
+        ProseGuideClipToText = d.ProseGuideClipToText;
+        RuledLineStyle = d.RuledLineStyle;
+        RuledLineOpacity = d.RuledLineOpacity;
+        RuledBandOpacity = d.RuledBandOpacity;
+        RuledLineThicknessPx = d.RuledLineThicknessPx;
+        RuledMarginTickRatio = d.RuledMarginTickRatio;
+        RuledBandInvertPhase = d.RuledBandInvertPhase;
+        RuledUnderlineDashEm = d.RuledUnderlineDashEm;
+        RuledUnderlineGapEm = d.RuledUnderlineGapEm;
+        RuledZebraContrastRatio = d.RuledZebraContrastRatio;
         SegmentDividerOpacity = d.SegmentDividerOpacity;
+        SegmentDividerWidthPx = d.SegmentDividerWidthPx;
+        SegmentDividerStyle = d.SegmentDividerStyle;
         SegmentBorderRadiusPx = d.SegmentBorderRadiusPx;
         BlockMarginRem = d.BlockMarginRem;
         ProseParagraphMarginRem = d.ProseParagraphMarginRem;
@@ -368,6 +417,7 @@ public sealed class ContinuousViewFormatSettings
     public void ResetColors()
     {
         SegmentDividerColor = null;
+        RuledLineColor = null;
         OverlayBackgroundColor = null;
         UserTextColor = null;
         UserBackgroundColor = null;

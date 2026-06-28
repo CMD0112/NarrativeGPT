@@ -17,6 +17,13 @@ public partial class MainWindow
             StartNewDesignThreadAsync = () => StartNewDesignThreadAsync(adventureId),
             ActivateEntryAsync = (kind, entryId) => ActivateRegistryThreadEntryAsync(adventureId, kind, entryId),
             OpenEntryAsync = (kind, entryId) => OpenRegistryThreadEntryAsync(adventureId, kind, entryId),
+            OpenProjectWorkspaceAsync = () => OpenProjectWorkspaceAsync(adventureId),
+            PinCurrentTabAsync = kind => PinCurrentTabForKindAsync(adventureId, kind),
+            ProbeUtilityWorkerAsync = () => ProbeUtilityWorkerCapabilitiesAsync(adventureId),
+            SetupUtilityWorkerAsync = () => SetupUtilityWorkerAsync(adventureId),
+            SetupUtilityWorkerReplaceAsync = replace => SetupUtilityWorkerAsync(adventureId, replace),
+            PinCurrentTabAsUtilityWorkerAsync = () => PinCurrentTabAsUtilityWorkerAsync(adventureId),
+            OpenUtilityWorkerAsync = () => OpenUtilityWorkerChatAsync(adventureId),
         };
 
         var dlg = new AdventureThreadManagerDialog(adventureId, actions, initialKind) { Owner = this };
@@ -41,6 +48,7 @@ public partial class MainWindow
         if (_appMode == AppMode.Play)
         {
             ReloadPlayAdventure(adventureId);
+            _playView?.UpdateJobButtonStates();
             UpdatePlayLinkStatus();
         }
         else if (_appMode == AppMode.Design)
@@ -139,12 +147,12 @@ public partial class MainWindow
                 && AdventureNavigationService.ShouldNavigateToPlayTarget(core.Source, bundle, url))
             {
                 core.Navigate(url);
-                await WaitForChatGptNavigationAsync(core);
+                await WaitForChatGptNavigationAsync(core, expectedDestination: url);
             }
             else if (!activate && !PlayTabPinService.IsOnPlayTarget(core.Source, bundle))
             {
                 core.Navigate(url);
-                await WaitForChatGptNavigationAsync(core);
+                await WaitForChatGptNavigationAsync(core, expectedDestination: url);
             }
 
             return;
@@ -174,8 +182,102 @@ public partial class MainWindow
             if (AdventureNavigationService.ShouldNavigateToDesignTarget(core.Source, bundle, url))
             {
                 core.Navigate(url);
-                await WaitForChatGptNavigationAsync(core);
+                await WaitForChatGptNavigationAsync(core, expectedDestination: url);
             }
+
+            return;
         }
+
+        if (kind == AdventureThreadKind.UtilityWorker)
+        {
+            var wv = _utilityWorkerWebView
+                     ?? UtilityWorkerPinService.TryFindWebViewForWorkerSession(ChatTabs, bundle)
+                     ?? ThreadWebViewResolver.TryFindExisting(ChatTabs, bundle, AdventureThreadKind.UtilityWorker)
+                     ?? GetActiveWebView();
+            if (wv is null)
+            {
+                MessageBox.Show(this, "No browser tab is available.", "Manage threads", MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            if (wv.CoreWebView2 is null && _chatWebViewEnvironment is not null)
+                await wv.EnsureCoreWebView2Async(_chatWebViewEnvironment);
+
+            if (wv.CoreWebView2 is not { } workerCore)
+                return;
+
+            GetOrRegisterAdventureBridge(wv);
+            WireProjectServices(wv);
+            SelectTabForWebView(wv);
+            _utilityWorkerWebView = wv;
+
+            workerCore.Navigate(url);
+            await WaitForChatGptNavigationAsync(workerCore, expectedDestination: url);
+        }
+    }
+
+    private async Task OpenUtilityWorkerChatAsync(Guid adventureId)
+    {
+        var bundle = AdventureStore.Load(adventureId);
+        if (bundle is null)
+            return;
+
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.UtilityWorker);
+        if (entry is null)
+        {
+            MessageBox.Show(
+                this,
+                "Set up the utility worker first.",
+                UtilityWorkerSetupCopy.DialogTitle,
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        await NavigateRegistryThreadEntryAsync(adventureId, AdventureThreadKind.UtilityWorker, entry);
+    }
+
+    private async Task PinCurrentTabForKindAsync(Guid adventureId, AdventureThreadKind kind)
+    {
+        var bundle = AdventureStore.Load(adventureId);
+        if (bundle is null || GetActiveWebView() is not { } active)
+        {
+            MessageBox.Show(
+                this,
+                "Select a ChatGPT browser tab first, then pin it here.",
+                "Threads",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            if (kind == AdventureThreadKind.Play)
+            {
+                PlayTabPinService.PinTab(bundle, active, ChatTabs);
+                _playWebView = active;
+            }
+            else if (kind == AdventureThreadKind.Design)
+            {
+                DesignTabPinService.PinDesignTab(bundle, active, ChatTabs);
+                _designWebView = active;
+            }
+            else if (kind == AdventureThreadKind.UtilityWorker)
+            {
+                await PinCurrentTabAsUtilityWorkerAsync(adventureId);
+            }
+
+            SelectTabForWebView(active);
+            RefreshThreadManagerHostUi(adventureId);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Pin tab", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        await Task.CompletedTask;
     }
 }

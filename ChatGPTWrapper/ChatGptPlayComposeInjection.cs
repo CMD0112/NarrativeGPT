@@ -1,5 +1,6 @@
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Diagnostics;
 using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -147,7 +148,10 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
         switch (type)
         {
             case "cgwPlaySendLog":
-                PlaySendTrace.LogFromPage(root);
+                DiagnosticsLog.LogFromPage(root, mirrorPlaySendLegacy: true);
+                break;
+            case "cgwDiagnosticsLog":
+                DiagnosticsLog.LogFromPage(root);
                 break;
             case "cgwComposeInput":
                 if (root.TryGetProperty("text", out var textEl) && textEl.ValueKind == JsonValueKind.String)
@@ -597,4 +601,10 @@ public sealed class PlayComposeUiState
     public bool? Focus { get; init; }
 
     public bool? ClearAttachments { get; init; }
+
+    public bool? SendEnabled { get; init; }
+
+    public bool? InjectionArmed { get; init; }
+
+    public string? InjectionArmReason { get; init; }
 }

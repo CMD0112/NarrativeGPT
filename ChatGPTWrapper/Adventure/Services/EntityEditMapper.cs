@@ -47,6 +47,8 @@ public sealed class EntityEditModel
 
     public List<EntityEditField> Fields { get; } = [];
 
+    public Dictionary<string, string> ExtendedFields { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlyList<string> HeaderLabels { get; private set; } = [];
 
     public void RefreshHeaderLabels()
@@ -81,8 +83,8 @@ public static class EntityEditMapper
             CanPin = category is "Characters" or "Locations" or "Concepts",
             IsNew = category != "Player",
             ShowQuestStatus = category == "Quests",
-            ShowTags = category is "Characters" or "Concepts",
-            ShowAliases = category is "Characters" or "Locations",
+            ShowTags = spec?.ShowTags ?? false,
+            ShowAliases = spec?.ShowAliases ?? false,
         };
         AddFieldsForCategory(model, category);
         model.RefreshHeaderLabels();
@@ -172,6 +174,11 @@ public static class EntityEditMapper
             Name = player.Name,
             SecondaryLabel = "Background",
             SecondaryValue = player.Background,
+            ImagePath = player.ImagePath,
+            TagsText = JoinList(player.Tags),
+            AliasesText = JoinList(player.Aliases),
+            ShowTags = spec.ShowTags,
+            ShowAliases = spec.ShowAliases,
             CanPin = false,
         };
         PopulateRegistryFields(model, player, spec);
@@ -194,6 +201,11 @@ public static class EntityEditMapper
             SecondaryLabel = "Condition",
             SecondaryValue = companion.Condition,
             Description = companion.Relationship,
+            ImagePath = companion.ImagePath,
+            TagsText = JoinList(companion.Tags),
+            AliasesText = JoinList(companion.Aliases),
+            ShowTags = spec.ShowTags,
+            ShowAliases = spec.ShowAliases,
             CanPin = false,
         };
         PopulateRegistryFields(model, companion, spec);
@@ -227,8 +239,8 @@ public static class EntityEditMapper
             CanPin = entity is CharacterEntry or LocationEntry or ConceptEntry,
             ShowQuestStatus = entity is QuestEntry,
             QuestStatus = entity is QuestEntry q ? q.Status : QuestStatus.Active,
-            ShowTags = entity is CharacterEntry or ConceptEntry,
-            ShowAliases = entity is CharacterEntry or LocationEntry,
+            ShowTags = spec.ShowTags,
+            ShowAliases = spec.ShowAliases,
         };
         PopulateRegistryFields(model, entity, spec);
         return model;
@@ -239,6 +251,10 @@ public static class EntityEditMapper
         var player = entities.Player;
         player.Name = model.Name.Trim();
         player.Background = model.SecondaryValue.Trim();
+        player.Tags = ParseList(model.TagsText);
+        player.Aliases = ParseList(model.AliasesText);
+        FinalizeImage(model);
+        player.ImagePath = model.ImagePath.Trim();
         ApplyRegistryFields(player, model, CanonSchemaRegistry.Player);
         return true;
     }
@@ -255,6 +271,7 @@ public static class EntityEditMapper
         companion.Name = model.Name.Trim();
         companion.Condition = model.SecondaryValue.Trim();
         companion.Relationship = model.Description.Trim();
+        ApplyEntityShell(companion, model);
         ApplyRegistryFields(companion, model, CanonSchemaRegistry.Party);
 
         if (model.IsNew)
@@ -303,6 +320,11 @@ public static class EntityEditMapper
                 c.Tags = ParseList(model.TagsText);
                 c.Aliases = ParseList(model.AliasesText);
                 break;
+            case CompanionEntry c:
+                c.ImagePath = model.ImagePath.Trim();
+                c.Tags = ParseList(model.TagsText);
+                c.Aliases = ParseList(model.AliasesText);
+                break;
             case LocationEntry l:
                 l.Pinned = model.Pinned;
                 l.ImagePath = model.ImagePath.Trim();
@@ -329,6 +351,8 @@ public static class EntityEditMapper
     private static void PopulateRegistryFields(EntityEditModel model, object entity, CanonEntityKindSpec spec)
     {
         model.Fields.Clear();
+        model.ExtendedFields.Clear();
+        CopyExtendedFields(model, entity);
         AddFieldsForCategory(model, model.Category);
 
         foreach (var field in spec.EditorFields)
@@ -357,6 +381,57 @@ public static class EntityEditMapper
             var value = GetField(model, field.JsonKey);
             CanonFieldMapper.SetField(entity, spec, field.JsonKey, value);
         }
+
+        ApplyExtendedFields(entity, model);
+    }
+
+    private static void CopyExtendedFields(EntityEditModel model, object entity)
+    {
+        var source = entity switch
+        {
+            PlayerCharacterSheet p => p.ExtendedFields,
+            CompanionEntry c => c.ExtendedFields,
+            CharacterEntry c => c.ExtendedFields,
+            LocationEntry l => l.ExtendedFields,
+            FactionEntry f => f.ExtendedFields,
+            ConceptEntry c => c.ExtendedFields,
+            QuestEntry q => q.ExtendedFields,
+            MysteryEntry m => m.ExtendedFields,
+            ConflictEntry c => c.ExtendedFields,
+            ConsequenceEntry c => c.ExtendedFields,
+            _ => null,
+        };
+
+        if (source is null)
+            return;
+
+        foreach (var (key, value) in source)
+            model.ExtendedFields[key] = value;
+    }
+
+    private static void ApplyExtendedFields(object entity, EntityEditModel model)
+    {
+        var target = entity switch
+        {
+            PlayerCharacterSheet p => p.ExtendedFields,
+            CompanionEntry c => c.ExtendedFields,
+            CharacterEntry c => c.ExtendedFields,
+            LocationEntry l => l.ExtendedFields,
+            FactionEntry f => f.ExtendedFields,
+            ConceptEntry c => c.ExtendedFields,
+            QuestEntry q => q.ExtendedFields,
+            MysteryEntry m => m.ExtendedFields,
+            ConflictEntry c => c.ExtendedFields,
+            ConsequenceEntry c => c.ExtendedFields,
+            _ => null,
+        };
+
+        if (target is null)
+            return;
+
+        target.Clear();
+        foreach (var (key, value) in model.ExtendedFields)
+            target[key] = value.Trim();
     }
 
     private static void AddFieldsForCategory(EntityEditModel model, string category)
@@ -376,7 +451,7 @@ public static class EntityEditMapper
                 && category == "Party")
                 continue;
 
-            AddField(model, field.JsonKey, field.Label, order++, field.Multiline);
+            AddField(model, field.JsonKey, field.Label, order++, field.Multiline, field.FieldGroup);
         }
     }
 
@@ -400,32 +475,24 @@ public static class EntityEditMapper
         };
 
     private static string GetImagePath(object entity) =>
-        entity switch
-        {
-            CharacterEntry c => c.ImagePath,
-            LocationEntry l => l.ImagePath,
-            ConceptEntry c => c.ImagePath,
-            QuestEntry q => q.ImagePath,
-            FactionEntry f => f.ImagePath,
-            InventoryEntry i => i.ImagePath,
-            _ => "",
-        };
+        CanonEntityPropertyGraph.TryGetValue(entity, "imagePath", out var value) && value is string path
+            ? path
+            : "";
 
-    private static IEnumerable<string> GetTags(object entity) =>
-        entity switch
-        {
-            CharacterEntry c => c.Tags,
-            ConceptEntry c => c.Tags,
-            _ => [],
-        };
+    private static IEnumerable<string> GetTags(object entity) => GetStringList(entity, "tags");
 
-    private static IEnumerable<string> GetAliases(object entity) =>
-        entity switch
+    private static IEnumerable<string> GetAliases(object entity) => GetStringList(entity, "aliases");
+
+    private static IEnumerable<string> GetStringList(object entity, string jsonKey)
+    {
+        if (!CanonEntityPropertyGraph.TryGetValue(entity, jsonKey, out var value)
+            || value is not IEnumerable<string> list)
         {
-            CharacterEntry c => c.Aliases,
-            LocationEntry l => l.Aliases,
-            _ => [],
-        };
+            return [];
+        }
+
+        return list;
+    }
 
     private static void FinalizeImage(EntityEditModel model)
     {
@@ -449,13 +516,16 @@ public static class EntityEditMapper
         string key,
         string label,
         int order,
-        bool multiline = false) =>
+        bool multiline = false,
+        string groupId = CanonFieldGroup.Story) =>
         model.Fields.Add(new EntityEditField
         {
             Key = key,
             Label = label,
             Order = order,
+            DisplayOrder = order,
             Multiline = multiline,
+            GroupId = groupId,
         });
 
     private static void SetField(EntityEditModel model, string key, string value)

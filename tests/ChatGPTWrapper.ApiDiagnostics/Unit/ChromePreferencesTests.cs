@@ -12,6 +12,7 @@ public sealed class ChromePreferencesTests
         Assert.Contains("classifyImpact", js);
         Assert.Contains("__cgwSetTranscriptViewMode", js);
         Assert.Contains("transcriptViewMode", js);
+        Assert.Contains("force: true", js);
     }
 
     [Fact]

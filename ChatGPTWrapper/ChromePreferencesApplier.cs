@@ -20,8 +20,6 @@ internal static class ChromePreferencesApplier
 
         public bool ContinuousViewEnabled { get; set; }
 
-        public bool ProseEnhancementsEnabled { get; set; }
-
         public bool HideAssistantEditArtifacts { get; set; }
 
         public bool HideContextTagsInThread { get; set; }
@@ -46,7 +44,6 @@ internal static class ChromePreferencesApplier
             Revision = revisionOverride ?? settings.ChromePreferencesRevision,
             TranscriptViewMode = settings.TranscriptViewMode.ToPayloadValue(),
             ContinuousViewEnabled = settings.IsTranscriptOverlayActive,
-            ProseEnhancementsEnabled = mode.ProseEnhancementsEnabled,
             HideAssistantEditArtifacts = mode.HideAssistantEditArtifacts,
             HideContextTagsInThread = mode.HideContextTagsInThread,
             ExpandHiddenContextInThread = mode.ExpandHiddenContextInThread,

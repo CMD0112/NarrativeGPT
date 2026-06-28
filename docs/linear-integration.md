@@ -95,7 +95,8 @@ Icebox → Backlog → Todo → In Progress → In Review → Ready to Merge →
 | Review requested / PR activity | **In Review** | Team automation *(required for Ready to Merge below)* |
 | CI checks passing | **Ready to Merge** | Team automation |
 | PR merged (`Ref CMD-XX`) | **In Review** | Team automation — post-merge verify |
-| QA passed / shipped | **Done** + **Verified** | Manual |
+| QA passed / shipped (no expected revisit) | **Done** + **Verified** | Manual |
+| Accepted for now, may revisit | **Done — Review Later** | Manual |
 | PR merged (`Fixes CMD-XX`) | **Done** | Magic word auto-close |
 
 #### Linear settings (CMD0112 → Issue statuses & automations)
@@ -125,8 +126,9 @@ Icebox → Backlog → Todo → In Progress → In Review → Ready to Merge →
 | **Committed** | Backlog |
 | **Someday** | Icebox |
 | **Shipped** | Done + Verified |
+| **Shipped (provisional)** | Done — Review Later |
 
-**Do not** set PR merged → **Done** directly — use **In Review** after merge for play-session QA, then mark **Done** manually and add **Verified**.
+**Do not** set PR merged → **Done** directly — use **In Review** after merge for play-session QA, then mark **Done** manually and add **Verified**. Use **Done — Review Later** manually when work is accepted for now but may need revisit (git automations never set this status).
 
 #### PR magic words
 

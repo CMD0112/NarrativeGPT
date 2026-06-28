@@ -1,10 +1,11 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class LibrariesDialog : Window
+public partial class LibrariesDialog : ShellDialogWindow
 {
     public LibrariesDialog()
     {

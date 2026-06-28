@@ -31,6 +31,7 @@ internal static class ThreadMetadataService
             IsInjectedContext = ConversationStreamParser.IsInjectedContextUserMessage(playerText),
             IsUtility = ConversationStreamParser.IsUtilityUserMessage(playerText),
             LinkedTurnId = turn.Id,
+            MessageKind = ThreadMessageKind.PlayUser,
         });
 
         if (!string.IsNullOrWhiteSpace(narratorText))
@@ -42,8 +43,99 @@ internal static class ThreadMetadataService
                 BodyText = narratorText.Trim(),
                 IsUtility = ConversationStreamParser.IsUtilityAssistantMessage(narratorText),
                 LinkedTurnId = turn.Id,
+                MessageKind = ThreadMessageKind.PlayAssistant,
             });
         }
+    }
+
+    public static void RecordNarratorComposerRevision(
+        AdventureBundle bundle,
+        TurnRecord turn,
+        string playerText,
+        string replacementText,
+        string? revisionGroupId = null,
+        string? revisionPromptText = null,
+        string? assistantDomTurnId = null)
+    {
+        ArgumentNullException.ThrowIfNull(bundle);
+        ArgumentNullException.ThrowIfNull(turn);
+
+        revisionGroupId ??= Guid.NewGuid().ToString("N");
+        var supersededAssistantId = $"turn:{turn.Id}:assistant";
+
+        AppendMessage(bundle, new ThreadMessageRecord
+        {
+            MessageId = $"turn:{turn.Id}:user",
+            Role = "user",
+            PlayerLine = string.IsNullOrWhiteSpace(playerText) ? null : playerText.Trim(),
+            PacketHash = turn.PromptPacketHash,
+            LinkedTurnId = turn.Id,
+            MessageKind = ThreadMessageKind.PlayUser,
+        });
+
+        if (!string.IsNullOrWhiteSpace(revisionPromptText))
+        {
+            AppendMessage(bundle, new ThreadMessageRecord
+            {
+                MessageId = $"revision:{revisionGroupId}:prompt",
+                Role = "user",
+                PlayerLine = revisionPromptText.Trim(),
+                HiddenInDisplay = true,
+                MessageKind = ThreadMessageKind.NarratorRevisionPrompt,
+                RevisionGroupId = revisionGroupId,
+                SupersedesMessageId = supersededAssistantId,
+                LinkedTurnId = turn.Id,
+            });
+        }
+
+        AppendMessage(bundle, new ThreadMessageRecord
+        {
+            MessageId = $"revision:{revisionGroupId}:replacement",
+            Role = "assistant",
+            BodyText = replacementText.Trim(),
+            MessageKind = ThreadMessageKind.NarratorReplacement,
+            RevisionGroupId = revisionGroupId,
+            SupersedesMessageId = supersededAssistantId,
+            LinkedTurnId = turn.Id,
+        });
+
+        if (!string.IsNullOrWhiteSpace(assistantDomTurnId))
+        {
+            bundle.ThreadMetadata.RevisionAssistantDomTurnIds ??= new Dictionary<string, string>(StringComparer.Ordinal);
+            bundle.ThreadMetadata.RevisionAssistantDomTurnIds[revisionGroupId] = assistantDomTurnId;
+        }
+    }
+
+    public static IReadOnlyList<RevisionHideEntry> BuildRevisionHideEntries(AdventureBundle bundle)
+    {
+        var entries = new List<RevisionHideEntry>();
+        var domIds = bundle.ThreadMetadata.RevisionAssistantDomTurnIds;
+
+        foreach (var msg in bundle.ThreadMetadata.Messages)
+        {
+            if (!msg.HiddenInDisplay && !ThreadMessageKind.IsRevisionArtifact(msg.MessageKind))
+                continue;
+
+            string? domTurnId = null;
+            if (!string.IsNullOrWhiteSpace(msg.RevisionGroupId)
+                && domIds is not null
+                && domIds.TryGetValue(msg.RevisionGroupId, out var stored))
+            {
+                domTurnId = stored;
+            }
+
+            entries.Add(new RevisionHideEntry
+            {
+                MessageId = msg.MessageId,
+                MessageKind = msg.MessageKind,
+                PromptPrefix = msg.MessageKind == ThreadMessageKind.NarratorRevisionPrompt
+                    ? NarratorRevisionPrompt.Prefix
+                    : null,
+                AssistantDomTurnId = domTurnId,
+            });
+        }
+
+        return entries;
     }
 
     public static IReadOnlyList<TranscriptTurnPair> ToTranscriptPairs(AdventureBundle bundle)
@@ -55,6 +147,9 @@ internal static class ThreadMetadataService
         foreach (var msg in ActiveMessages(bundle))
         {
             if (msg.IsUtility)
+                continue;
+
+            if (msg.HiddenInDisplay || ThreadMessageKind.IsRevisionArtifact(msg.MessageKind))
                 continue;
 
             if (msg.Role == "user")
@@ -89,13 +184,15 @@ internal static class ThreadMetadataService
         string jobId,
         string userPrompt,
         string? assistantResponse,
-        string? conversationId = null)
+        string? conversationId = null,
+        UtilityExecutionChannel? channel = null)
     {
         ArgumentNullException.ThrowIfNull(bundle);
 
         if (!string.IsNullOrWhiteSpace(conversationId))
             bundle.ThreadMetadata.ConversationId = conversationId;
 
+        var channelAttr = channel is null ? null : channel == UtilityExecutionChannel.AutoBackground ? "auto" : "manual";
         var stamp = Guid.NewGuid();
         AppendMessage(bundle, new ThreadMessageRecord
         {
@@ -103,6 +200,7 @@ internal static class ThreadMetadataService
             Role = "user",
             IsUtility = true,
             HiddenInDisplay = true,
+            UtilityChannel = channelAttr,
             PlayerLine = TranscriptTextSanitizer.Sanitize(userPrompt),
         });
 
@@ -115,6 +213,7 @@ internal static class ThreadMetadataService
                 BodyText = assistantResponse.Trim(),
                 IsUtility = true,
                 HiddenInDisplay = true,
+                UtilityChannel = channelAttr,
             });
         }
     }
@@ -133,6 +232,30 @@ internal static class ThreadMetadataService
             .Where(m => !m.SupersededByEdit)
             .OrderBy(m => m.Ordinal)
             .ToList();
+
+    public static IReadOnlyDictionary<int, LogTurnLink> BuildLogTurnLinkMap(AdventureBundle bundle)
+    {
+        var turns = PlayTurnScopeService.GetPacketContextTurns(bundle);
+        var map = new Dictionary<int, LogTurnLink>();
+
+        for (var i = 0; i < turns.Count; i++)
+        {
+            var turn = turns[i];
+            var snippet = turn.PlayerText.Trim();
+            if (snippet.Length > 80)
+                snippet = snippet[..77] + "...";
+
+            map[i] = new LogTurnLink
+            {
+                TurnId = turn.Id,
+                TurnIndex = turn.Index,
+                PlayerSnippet = snippet,
+                DisplayTurnNumber = i + 1,
+            };
+        }
+
+        return map;
+    }
 
     public static IReadOnlyDictionary<string, int> BuildOrdinalMap(AdventureBundle bundle)
     {

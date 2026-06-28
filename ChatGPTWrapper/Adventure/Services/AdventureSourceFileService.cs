@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.NarratorScales;
 using ChatGPTWrapper.Adventure.Services.Canon;
 using ChatGPTWrapper.ChatGptApi;
 
@@ -52,7 +53,15 @@ internal static class AdventureSourceFileService
         Directory.CreateDirectory(SourcesDirectory(bundle));
 
         EnsureCanonFormatFile(bundle);
+        EnsureNarratorScalesReference(bundle);
     }
+
+    /// <summary>
+    /// Ensures the static <see cref="SectionSchema.NarratorScalesFile"/> catalog exists on disk.
+    /// Adventure-specific active values are injected per send, not written into this file.
+    /// </summary>
+    public static void EnsureNarratorScalesReference(AdventureBundle bundle) =>
+        EnsureNarratorScalesFile(bundle);
 
     private static void EnsureCanonFormatFile(AdventureBundle bundle)
     {
@@ -69,6 +78,33 @@ internal static class AdventureSourceFileService
         var generatedHash = ProjectSourceExportService.ComputeSha256Bytes(Encoding.UTF8.GetBytes(generated));
         if (!string.Equals(existingHash, generatedHash, StringComparison.OrdinalIgnoreCase))
             File.WriteAllText(canonFormatPath, generated, Encoding.UTF8);
+    }
+
+    private static void EnsureNarratorScalesFile(AdventureBundle bundle)
+    {
+        var path = ResolveAbsolutePath(bundle, SectionSchema.NarratorScalesFile);
+        var generated = NarratorScalesGenerator.Generate();
+        if (!File.Exists(path))
+        {
+            WriteNarratorScales(bundle, path, generated);
+            return;
+        }
+
+        var existing = File.ReadAllText(path);
+        var existingHash = ProjectSourceExportService.ComputeSha256Bytes(Encoding.UTF8.GetBytes(existing));
+        var generatedHash = ProjectSourceExportService.ComputeSha256Bytes(Encoding.UTF8.GetBytes(generated));
+        if (!string.Equals(existingHash, generatedHash, StringComparison.OrdinalIgnoreCase))
+            WriteNarratorScales(bundle, path, generated);
+    }
+
+    private static void WriteNarratorScales(AdventureBundle bundle, string absolutePath, string content)
+    {
+        File.WriteAllText(absolutePath, content, Encoding.UTF8);
+        NarratorScalesManifestService.RefreshManifestSections(bundle, content);
+        var entry = FindOrCreateManifestEntry(bundle, SectionSchema.NarratorScalesFile);
+        var hash = ProjectSourceExportService.ComputeSha256Bytes(Encoding.UTF8.GetBytes(content));
+        UpdateManifestEntryAfterWrite(entry, hash);
+        bundle.SourceManifest.RefreshSyncedFlag();
     }
 
     public static string ResolveAbsolutePath(AdventureBundle bundle, string relativePath)
@@ -198,7 +234,7 @@ internal static class AdventureSourceFileService
             if (!File.Exists(absolutePath))
                 continue;
 
-            var hash = ProjectSourceExportService.ComputeSha256(absolutePath);
+            var hash = ProjectSourceExportService.ComputeManifestLocalSha256(entry.RelativePath, absolutePath);
             var hashChanged = !string.Equals(entry.EffectiveLocalSha256, hash, StringComparison.OrdinalIgnoreCase);
             if (hashChanged)
             {
@@ -208,6 +244,20 @@ internal static class AdventureSourceFileService
                 if (entry.SyncState == SourceSyncState.InSync)
                     entry.SyncState = SourceSyncState.LocalNewer;
                 changed = true;
+            }
+
+            if (NarratorScalesManifestService.IsNarratorScalesFile(entry.RelativePath))
+            {
+                if (!hashChanged && entry.Sections.Count > 0)
+                    continue;
+
+                var scalesMarkdown = File.ReadAllText(absolutePath);
+                if (string.IsNullOrWhiteSpace(scalesMarkdown))
+                    continue;
+
+                NarratorScalesManifestService.RefreshManifestSections(bundle, scalesMarkdown);
+                changed = true;
+                continue;
             }
 
             if (!ProjectSourceImportService.IsSectionedLoreFile(entry.RelativePath))
@@ -552,6 +602,16 @@ internal static class AdventureSourceFileService
         bool needsWrite,
         SourceManifestEntry entry)
     {
+        if (NarratorScalesManifestService.IsNarratorScalesFile(relativePath))
+        {
+            if (!needsWrite && entry.Sections.Count > 0)
+                return;
+
+            var scalesMarkdown = needsWrite ? normalizedContent : File.ReadAllText(absolutePath);
+            NarratorScalesManifestService.RefreshManifestSections(bundle, scalesMarkdown);
+            return;
+        }
+
         if (!ProjectSourceImportService.IsSectionedLoreFile(relativePath))
             return;
 

@@ -4,7 +4,6 @@ using System.Windows.Media;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
-using ChatGPTWrapper.Views;
 
 namespace ChatGPTWrapper;
 
@@ -51,20 +50,8 @@ public partial class MainWindow
         }
 
         AdventureNavigationService.SyncLinkedFields(bundle);
-        var project = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
-        var linked = bundle.Metadata.LinkedConversationId;
-        if (!string.IsNullOrWhiteSpace(project))
-        {
-            ShellLinkStateText.Text = string.IsNullOrWhiteSpace(linked)
-                ? $"Project linked · thread pending"
-                : $"Project linked · c/{linked}";
-        }
-        else
-        {
-            ShellLinkStateText.Text = string.IsNullOrWhiteSpace(linked)
-                ? "No thread linked"
-                : $"Thread c/{linked}";
-        }
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        ShellLinkStateText.Text = AdventureThreadRegistryService.FormatConnectionSummary(bundle);
 
         try
         {
@@ -79,8 +66,8 @@ public partial class MainWindow
                 ShellBridgeDot.ToolTip = $"Bridge: {err}";
             else
                 ShellBridgeDot.ToolTip = health?.BridgeReachable == true
-                    ? "Bridge healthy — click for play settings"
-                    : "Bridge unavailable — click for play settings";
+                    ? "Bridge healthy — click to open Threads hub"
+                    : "Bridge unavailable — click to open Threads hub";
         }
         catch
         {
@@ -97,7 +84,8 @@ public partial class MainWindow
     private void ShellBridgeDot_Click(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
-        OpenShellPlaySettings();
+        if (_activeAdventureId is { } id)
+            OpenThreadManagerDialog(id);
     }
 
     private void ShellLinkStateText_Click(object sender, MouseButtonEventArgs e)
@@ -107,19 +95,4 @@ public partial class MainWindow
             _ = OpenSourceManagerDialogAsync(id);
     }
 
-    private void OpenShellPlaySettings()
-    {
-        if (_activeAdventureId is not { } id)
-            return;
-
-        var bundle = AdventureStore.Load(id);
-        if (bundle is null)
-            return;
-
-        var dialog = new PlayPromptInjectionDialog(bundle, previewPlayerLine: null, PlaySettingsTab.Session)
-        {
-            Owner = this,
-        };
-        dialog.ShowDialog();
-    }
 }

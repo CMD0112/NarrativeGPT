@@ -1,4 +1,5 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Services.PlayLayout;
@@ -6,7 +7,7 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class EntityMergeDialog : Window
+public partial class EntityMergeDialog : ShellDialogWindow
 {
     private readonly AdventureBundle _bundle;
     private readonly EntityReferenceRow _sourceRow;

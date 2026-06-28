@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
@@ -10,7 +11,7 @@ using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class ProjectWorkspaceDialog : Window
+public partial class ProjectWorkspaceDialog : ShellDialogWindow
 {
     private readonly Guid _adventureId;
     private readonly IChatGptProjectHost _host;
@@ -729,8 +730,20 @@ public partial class ProjectWorkspaceDialog : Window
     private async void ManageSources_Click(object sender, RoutedEventArgs e)
     {
         await _host.EnsureReadyAsync(_adventureId, showBrowserPane: true);
-        var dlg = SourceManagerDialog.ShowNonModal(_adventureId, _host, this);
-        dlg.ManagerClosed += async (_, _) => await RefreshSourcesTabAsync();
+        var owner = Window.GetWindow(this);
+        var bundle = AdventureStore.Load(_adventureId);
+        if (bundle is null)
+            return;
+
+        var dlg = new PlayPromptInjectionDialog(bundle, previewPlayerLine: null, PlaySettingsTab.Sources)
+        {
+            Owner = owner,
+        };
+        if (owner is MainWindow main)
+            main.WireStandalonePlaySettingsDialog(dlg, _adventureId);
+
+        dlg.ShowDialog();
+        await RefreshSourcesTabAsync();
     }
 
     private void CopyInstructions_Click(object sender, RoutedEventArgs e)

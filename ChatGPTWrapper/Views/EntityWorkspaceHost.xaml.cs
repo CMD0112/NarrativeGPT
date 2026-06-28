@@ -7,6 +7,14 @@ using ChatGPTWrapper.Adventure.Services;
 
 namespace ChatGPTWrapper.Views;
 
+public enum EntityWorkspaceTab
+{
+    Profile,
+    Sources,
+    Mentions,
+    History,
+}
+
 public partial class EntityWorkspaceHost : UserControl
 {
     private AdventureBundle? _bundle;
@@ -38,12 +46,16 @@ public partial class EntityWorkspaceHost : UserControl
         remove => ProfileForm.DeleteRequested -= value;
     }
 
-    public void LoadModel(AdventureBundle bundle, EntityEditModel model, string category)
+    public void LoadModel(
+        AdventureBundle bundle,
+        EntityEditModel model,
+        string category,
+        EntityReferenceEditCallbacks? callbacks = null)
     {
         _bundle = bundle;
         _model = model;
         _category = category;
-        ProfileForm.LoadModel(model);
+        ProfileForm.LoadModel(model, callbacks);
         BindSourcesTab();
         BindMentionsTab();
         BindHistoryTab();
@@ -61,6 +73,28 @@ public partial class EntityWorkspaceHost : UserControl
         BindMentionsTab();
         BindHistoryTab();
     }
+
+    public UIElement DetachTabContent(EntityWorkspaceTab tab)
+    {
+        var tabItem = ResolveTabItem(tab);
+        if (tabItem.Content is not UIElement content)
+            return new Grid();
+
+        tabItem.Content = new Grid();
+        return content;
+    }
+
+    public void SelectTab(EntityWorkspaceTab tab) =>
+        WorkspaceTabs.SelectedItem = ResolveTabItem(tab);
+
+    private TabItem ResolveTabItem(EntityWorkspaceTab tab) => tab switch
+    {
+        EntityWorkspaceTab.Profile => ProfileTabItem,
+        EntityWorkspaceTab.Sources => SourcesTabItem,
+        EntityWorkspaceTab.Mentions => MentionsTabItem,
+        EntityWorkspaceTab.History => HistoryTabItem,
+        _ => ProfileTabItem,
+    };
 
     private void BindSourcesTab()
     {
@@ -80,10 +114,13 @@ public partial class EntityWorkspaceHost : UserControl
 
         if (sections.Count == 0)
         {
-            SourcesPreviewBox.Text = "(No published source sections yet — save to export.)";
+            SourcesPreviewBox.Text = "No published source sections yet.";
+            SourcesPreviewBox.FontStyle = FontStyles.Italic;
             SourcesStatusBadge.Visibility = Visibility.Collapsed;
             return;
         }
+
+        SourcesPreviewBox.FontStyle = FontStyles.Normal;
 
         var status = EntitySyncStatusService.GetStatus(_bundle, _model.Id, _category);
         if (status != EntitySyncStatus.InSync)
@@ -136,14 +173,14 @@ public partial class EntityWorkspaceHost : UserControl
         var terms = CanonMentionIndexService.CollectSearchTerms(_bundle, _model.Id, _category);
         if (terms.Count == 0)
         {
-            MentionsHintBlock.Text = "No searchable name or aliases.";
+            MentionsHintBlock.Text = "Add a name or aliases on the Profile tab to scan lore for mentions.";
             MentionsList.ItemsSource = null;
             return;
         }
 
         var hits = CanonMentionIndexService.FindMentions(_bundle, terms);
         MentionsHintBlock.Text = hits.Count == 0
-            ? $"No mentions of {string.Join(", ", terms)} in core lore."
+            ? $"No mentions of {string.Join(", ", terms)} in core lore yet."
             : $"{hits.Count} mention(s) across lore files and JSON.";
         MentionsList.ItemsSource = hits;
     }
@@ -158,8 +195,11 @@ public partial class EntityWorkspaceHost : UserControl
         }
 
         var homeFile = CanonReconciliationService.FileForCategory(_category) ?? "cast.md";
-        HistoryFileLabel.Text = $"Snapshots for {homeFile}";
-        HistoryList.ItemsSource = SourceFileHistoryService.ListHistory(_bundle.Metadata.Id, homeFile);
+        HistoryFileLabel.Text = $"Change history for {homeFile}";
+        var history = SourceFileHistoryService.ListHistory(_bundle.Metadata.Id, homeFile);
+        HistoryList.ItemsSource = history;
+        if (history.Count == 0)
+            HistoryFileLabel.Text += " — no snapshots yet";
     }
 
     private static string ExtractSectionBody(string fileContent, string sectionId)

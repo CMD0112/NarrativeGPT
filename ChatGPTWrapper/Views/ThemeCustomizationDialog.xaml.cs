@@ -3,16 +3,18 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
+using ChatGPTWrapper.Format;
 using ChatGPTWrapper.Theme;
 using Microsoft.Win32;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class ThemeCustomizationDialog : Window
+public partial class ThemeCustomizationDialog : ShellDialogWindow
 {
     private static readonly JsonSerializerOptions ThemeJsonOptions = new()
     {
@@ -773,12 +775,12 @@ public partial class ThemeCustomizationDialog : Window
         if (string.IsNullOrWhiteSpace(current))
             current = ThemeApplicationService.ResolveEffectiveTheme(_working).GetHex(tokenKey);
 
-        var dialog = new ThemeColorPickerDialog(this, current);
-
-        if (dialog.ShowDialog() != true)
+        var background = ColorPickerContextResolver.ResolveThemeTokenBackground(tokenKey, _working);
+        var context = ColorPickerContextFactory.ForThemeToken(tokenKey, background);
+        if (!ColorPickerWorkflow.TryPickHex(this, current, background, context, out var selected))
             return;
 
-        box.Text = dialog.SelectedHex;
+        box.Text = selected;
     }
 
     private void PresetList_SelectionChanged(object sender, SelectionChangedEventArgs e)

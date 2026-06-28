@@ -1,16 +1,17 @@
-<Window x:Class="ChatGPTWrapper.Views.PlayPromptInjectionDialog"
+<shell:ShellDialogWindow xmlns:shell="clr-namespace:ChatGPTWrapper.Shell" x:Class="ChatGPTWrapper.Views.PlayPromptInjectionDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Play settings"
-        Height="680"
-        Width="860"
+        Height="760"
+        Width="920"
         MinHeight="520"
-        MinWidth="720"
+        MinWidth="640"
         ResizeMode="CanResizeWithGrip"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgBaseBrush}"
         Foreground="{StaticResource TextPrimaryBrush}"
-        xmlns:local="clr-namespace:ChatGPTWrapper.Views">
+        xmlns:local="clr-namespace:ChatGPTWrapper.Views"
+        xmlns:services="clr-namespace:ChatGPTWrapper.Adventure.Services">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -19,21 +20,117 @@
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0"
-                   Text="Configure packets, world state, session link, and adventure settings. Side panel tabs hold reference notes and read-only state."
+                   Text="Tabs follow scope: this send → world state → AI tools → layout &amp; contract → session threads. Packet overrides also live in the play cockpit. Project instructions and sources are separate channels (Sources tab)."
                    TextWrapping="Wrap"
                    Foreground="{StaticResource TextMutedBrush}"
                    FontSize="11"
                    Margin="0,0,0,12"/>
 
-        <TabControl x:Name="SettingsTabControl" Grid.Row="1" Background="{StaticResource BgSurfaceBrush}">
-            <TabItem Header="Next send">
-                <ScrollViewer Margin="8" VerticalScrollBarVisibility="Auto">
+        <Grid Grid.Row="1" MinHeight="360">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="300"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="400" MinWidth="320"/>
+            </Grid.ColumnDefinitions>
+
+        <TabControl x:Name="SettingsTabControl" Grid.Column="0" Background="{StaticResource BgSurfaceBrush}">
+            <TabItem x:Name="InjectionTab" Header="Injection">
+                <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap" Style="{StaticResource ShellSectionHintStyle}" Margin="0,0,0,12"
+                                   Text="Controls which packet sections are included on the next Send and narrator behavior overrides (scope, pacing, violence, etc.). The live preview on the right reflects unsaved edits from this tab, World, Behavior, Play packet, and Memory &amp; cards. Click Save or OK to write changes to disk — until then, Send uses the last saved settings on disk, not this preview."/>
+
+                        <GroupBox Header="Preset &amp; budget" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Injection preset" Margin="0,0,0,4"/>
+                                <ComboBox x:Name="InjectionPresetCombo" Margin="0,0,0,4"
+                                          HorizontalAlignment="Stretch"
+                                          SelectionChanged="InjectionPolicy_Changed"/>
+                                <TextBlock x:Name="InjectionPresetHint" TextWrapping="Wrap"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           FontSize="11" Margin="0,0,0,10"/>
+                                <TextBlock Text="Max packet characters" Margin="0,0,0,4"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="72"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Slider x:Name="MaxPacketSlider" Minimum="4000" Maximum="50000" TickFrequency="2000"
+                                            IsSnapToTickEnabled="True" ValueChanged="MaxPacketSlider_ValueChanged"/>
+                                    <TextBox x:Name="MaxPacketSliderBox" Grid.Column="1" Margin="8,0,0,0"
+                                             HorizontalContentAlignment="Right"
+                                             LostFocus="MaxPacketSliderBox_LostFocus"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Sections to include" Margin="0,0,0,12">
+                            <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <CheckBox x:Name="IncludeSummaryCheck" Grid.Row="0" Grid.Column="0"
+                                          Content="Story so far" Margin="0,0,8,6"
+                                          Checked="InjectionPolicy_Changed" Unchecked="InjectionPolicy_Changed"/>
+                                <CheckBox x:Name="IncludeStateCheck" Grid.Row="0" Grid.Column="1"
+                                          Content="Current state" Margin="0,0,0,6"
+                                          Checked="InjectionPolicy_Changed" Unchecked="InjectionPolicy_Changed"/>
+                                <CheckBox x:Name="IncludeMemoryCheck" Grid.Row="1" Grid.Column="0"
+                                          Content="Pinned memory" Margin="0,0,8,6"
+                                          Checked="InjectionPolicy_Changed" Unchecked="InjectionPolicy_Changed"/>
+                                <CheckBox x:Name="IncludeTranscriptCheck" Grid.Row="1" Grid.Column="1"
+                                          Content="Recent transcript" Margin="0,0,0,6"
+                                          Checked="InjectionPolicy_Changed" Unchecked="InjectionPolicy_Changed"/>
+                                <CheckBox x:Name="IncludeCardsCheck" Grid.Row="2" Grid.Column="0"
+                                          Content="Lore cards" Margin="0,0,8,6"
+                                          Checked="InjectionPolicy_Changed" Unchecked="InjectionPolicy_Changed"/>
+                                <CheckBox x:Name="IncludeSourcesCheck" Grid.Row="2" Grid.Column="1"
+                                          Content="Source pointers (thin)" Margin="0,0,0,6"
+                                          Checked="InjectionPolicy_Changed" Unchecked="InjectionPolicy_Changed"/>
+                                <CheckBox x:Name="InjectAttachmentGuidanceInjectionCheck" Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2"
+                                          Content="Attachment guidance" Margin="0,0,0,4"
+                                          Checked="InjectAttachmentGuidance_Changed" Unchecked="InjectAttachmentGuidance_Changed"/>
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="Transcript max turns (0 = preset default):" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBox x:Name="TranscriptMaxTurnsBox" Width="48" LostFocus="InjectionPolicy_Changed"/>
+                            </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <Expander Header="Formatting" IsExpanded="False">
+                            <StackPanel Margin="0,8,0,0">
+                                <CheckBox x:Name="UseContextTagsCheck" Content="Use context tags ([[cgw:…]])"
+                                          Margin="0,0,0,4" Checked="InjectionPolicy_Changed" Unchecked="InjectionPolicy_Changed"/>
+                                <CheckBox x:Name="UseSectionInjectionCheck" Content="Section injection v2 (pointers)"
+                                          Margin="0,0,0,4" Checked="InjectionPolicy_Changed" Unchecked="InjectionPolicy_Changed"/>
+                            </StackPanel>
+                        </Expander>
+
+                        <GroupBox Header="Narrator behavior" Margin="0,12,0,0">
+                            <local:NarratorBehaviorPanel x:Name="InjectionNarratorPanel" ScopeGroupName="NarratorScopePlaySettings"
+                                                         SettingsChanged="InjectionNarratorPanel_SettingsChanged"/>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem x:Name="NextSendTab" Header="Next send">
+                <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}">
                     <StackPanel>
                         <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"
                                    FontSize="11" Margin="0,0,0,10"
                                    Text="Send precedence: 1) in-page composer (Play mode), 2) fallback player line below, 3) first line of continuation queue (consumed on Send)."/>
-                        <TextBlock x:Name="PreviewSourceLine" TextWrapping="Wrap"
-                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,0,0,8"/>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="11" Margin="0,0,0,10"
+                                   Text="Repair: if a turn reached ChatGPT without injected context, copy a repair packet and paste it into a user-message edit on the play thread."/>
                         <TextBlock Text="Continuation queue (one line per queued player input)" Margin="0,0,0,4"/>
                         <TextBox x:Name="QueueBox" MinHeight="64" AcceptsReturn="True" TextWrapping="Wrap"
                                  Margin="0,0,0,12" TextChanged="QueueBox_TextChanged" LostFocus="QueueBox_LostFocus"/>
@@ -60,87 +157,162 @@
                         </WrapPanel>
                         <TextBlock Text="Packet preview (read-only)" Margin="0,0,0,4"
                                    Foreground="{StaticResource TextMutedBrush}" FontSize="11"/>
+                        <TextBlock Text="Packet only — does not change Project instructions or sources."
+                                   FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6"/>
                         <TextBlock x:Name="PacketMetaLine" TextWrapping="Wrap"
                                    Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,0,0,6"/>
+                        <TextBlock x:Name="SectionManifestLine" TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,0,0,6"/>
                         <TextBox x:Name="MergedPreviewBox" IsReadOnly="True" AcceptsReturn="True"
-                                 TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas"
+                                 TextWrapping="Wrap" VerticalScrollBarVisibility="Disabled" FontFamily="Consolas"
                                  MinHeight="160" Margin="0,0,0,8"/>
                         <WrapPanel>
                             <Button Content="Refresh preview" Padding="10,5" Margin="0,0,8,4" Click="RefreshPreview_Click"/>
                             <Button Content="Copy packet" Padding="10,5" Margin="0,0,8,4" Click="CopyPacket_Click"/>
+                            <Button x:Name="CopyRepairPacketButton" Content="Copy packet for edit repair" Padding="10,5"
+                                    Margin="0,0,8,4" Click="CopyRepairPacket_Click"/>
                             <Button Content="View full…" Padding="10,5" Margin="0,0,8,4" Click="ViewFull_Click"/>
                             <Button x:Name="PreviewNarrativePacketButton" Content="Preview narrative start packet" Padding="10,5"
                                     Margin="0,0,8,4" Click="PreviewNarrativePacket_Click"/>
+                            <Button x:Name="CopyNarrativePacketButton" Content="Copy narrative start packet" Padding="10,5"
+                                    Margin="0,0,8,4" Click="CopyNarrativePacket_Click"/>
                             <Button x:Name="PreviewHandoffPacketButton" Content="Preview handoff packet" Padding="10,5"
                                     Margin="0,0,8,4" Click="PreviewHandoffPacket_Click" Visibility="Collapsed"/>
+                            <Button x:Name="CopyHandoffPacketButton" Content="Copy handoff packet" Padding="10,5"
+                                    Margin="0,0,8,4" Click="CopyHandoffPacket_Click" Visibility="Collapsed"/>
                         </WrapPanel>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
             <TabItem x:Name="WorldTab" Header="World">
-                <ScrollViewer Margin="8" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}">
                     <StackPanel>
                         <TextBlock Text="Fields merged into prompt packets on Send." Foreground="{StaticResource TextMutedBrush}"
                                    FontSize="11" Margin="0,0,0,10"/>
-                        <Border x:Name="SummaryReviewBanner" Padding="8" Margin="0,0,0,10"
-                                CornerRadius="{StaticResource RadiusControl}" Background="{StaticResource WarningSubtleBrush}"
-                                Visibility="Collapsed">
-                            <StackPanel>
-                                <TextBlock Text="Proposed summary awaiting review" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                                <TextBox x:Name="ProposedSummaryBox" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap"
-                                         Margin="0,0,0,6"/>
-                                <WrapPanel>
-                                    <Button Content="Accept" Padding="8,4" Margin="0,0,6,0" Click="AcceptSummary_Click"/>
-                                    <Button Content="Dismiss" Padding="8,4" Margin="0,0,6,0" Click="DismissSummary_Click"/>
-                                </WrapPanel>
-                            </StackPanel>
-                        </Border>
+                        <StackPanel x:Name="SummaryReviewPanel" Margin="0,0,0,12" Visibility="Collapsed">
+                            <TextBlock Text="Proposed rolling summary" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <TextBlock Text="From your last digest job — accept to replace the rolling summary below."
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       FontSize="11"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,8"/>
+                            <TextBox x:Name="ProposedSummaryBox" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap"
+                                     Margin="0,0,0,8"/>
+                            <WrapPanel>
+                                <Button Content="Accept" Padding="8,4" Margin="0,0,6,0" Click="AcceptSummary_Click"/>
+                                <Button Content="Dismiss" Padding="8,4" Margin="0,0,6,0" Click="DismissSummary_Click"/>
+                                <Button Content="Review all…" Padding="8,4" Tag="{x:Static services:ProposalReviewCategory.Summary}" Click="ReviewAllProposals_Click"/>
+                            </WrapPanel>
+                        </StackPanel>
                         <WrapPanel Margin="0,0,0,8">
                             <Button Content="Refresh summary (AI)" Padding="8,4" Margin="0,0,6,0"
                                     Click="RefreshSummaryAi_Click"/>
                         </WrapPanel>
                         <TextBlock Text="Rolling summary" Margin="0,0,0,4"/>
-                        <TextBox x:Name="SummaryBox" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <TextBox x:Name="SummaryBox" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" Margin="0,0,0,10"
+                                 TextChanged="InjectionAffectingText_Changed"/>
                         <TextBlock Text="Location" Margin="0,0,0,4"/>
-                        <TextBox x:Name="LocationBox" Margin="0,0,0,10"/>
+                        <TextBox x:Name="LocationBox" Margin="0,0,0,10" TextChanged="InjectionAffectingText_Changed"/>
                         <TextBlock Text="Objectives" Margin="0,0,0,4"/>
-                        <TextBox x:Name="ObjectivesBox" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                        <TextBox x:Name="ObjectivesBox" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap" Margin="0,0,0,10"
+                                 TextChanged="InjectionAffectingText_Changed"/>
                         <TextBlock Text="Author's note (style only)" Margin="0,0,0,4"/>
-                        <TextBox x:Name="AuthorsNoteBox" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap"/>
+                        <TextBox x:Name="AuthorsNoteBox" AcceptsReturn="True" MinHeight="64" TextWrapping="Wrap"
+                                 TextChanged="InjectionAffectingText_Changed"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem x:Name="AiActionsTab" Header="AI Actions">
-                <Grid Margin="8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="180" MinWidth="140"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="*" MinWidth="200"/>
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Column="0" Grid.ColumnSpan="3"
-                               Text="Instruction text sent on utility-thread seed and inlined in each job packet. Customize per action; reset restores the built-in default."
-                               TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"
-                               FontSize="11" Margin="0,0,0,8"/>
-                    <ListBox x:Name="AiActionsList" Grid.Row="1" Grid.Column="0"
-                             SelectionChanged="AiActionsList_SelectionChanged"/>
-                    <GridSplitter Grid.Row="1" Grid.Column="1"
-                                  Style="{StaticResource SidePanelGridSplitterStyle}"
-                                  ResizeBehavior="PreviousAndNext"
-                                  ResizeDirection="Columns"
-                                  Width="8"/>
-                    <ScrollViewer Grid.Row="1" Grid.Column="2" VerticalScrollBarVisibility="Auto">
+            <TabItem x:Name="AiActionsTab" Header="AI Tools">
+                <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}">
+                    <StackPanel Margin="8">
+                        <GroupBox Header="Automation after each turn" Margin="0,0,0,12">
+                            <StackPanel>
+                                <CheckBox x:Name="AutomationCheck" Content="Enable WebView automation (required for AI tools)"
+                                          Margin="0,0,0,8"/>
+                                <CheckBox x:Name="AutoExtractEntitiesCheck"
+                                          Content="Auto-extract entities"
+                                          Margin="0,0,0,4"/>
+                                <TextBlock x:Name="AutoExtractEntitiesHint"
+                                           Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <CheckBox x:Name="AutoProposeMemoriesCheck" Content="Auto-propose memories" Margin="0,0,0,4"/>
+                                <CheckBox x:Name="AutoUpdateSummaryCheck" Content="Auto-update rolling summary every N turns" Margin="0,0,0,4"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="Summary interval (turns):" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBox x:Name="SummaryIntervalBox" Width="48"/>
+                                </StackPanel>
+                                <CheckBox x:Name="AutoContinuityCheckCheck" Content="Auto-run continuity check" Margin="0,0,0,4"/>
+                                <CheckBox x:Name="AutoSyncInstructionsCheck"
+                                          Content="Auto-sync project instructions when saving play settings"
+                                          Margin="0,0,0,4"/>
+                                <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                           Text="Automation jobs require a linked ChatGPT Project. Proposals land in Reference review queues."/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Delivery &amp; visibility" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                           Margin="0,0,0,8"
+                                           Text="Play-time AI jobs run on the story chat thread. Design jobs use the pinned design thread. Utility worker handles overflow when configured."/>
+                                <TextBlock Text="Transport mode" Margin="0,0,0,4"/>
+                                <ComboBox x:Name="UtilityInjectionModeCombo" Margin="0,0,0,8"
+                                          SelectionChanged="UtilityDeliverySettings_Changed"/>
+                                <TextBlock Text="Lane policy" Margin="0,0,0,4"/>
+                                <ComboBox x:Name="UtilityExecutionPolicyCombo" Margin="0,0,0,8"
+                                          SelectionChanged="UtilityDeliverySettings_Changed"/>
+                                <TextBlock x:Name="UtilityWorkerStatusLine" TextWrapping="Wrap" FontSize="11"
+                                           Margin="0,0,0,8"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Max utility sections per play send:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBox x:Name="MaxUtilitySectionsBox" Width="40" LostFocus="UtilityDeliverySettings_Changed"/>
+                                </StackPanel>
+                                <CheckBox x:Name="AutoSpillToWorkerCheck"
+                                          Content="Spill overflow jobs to utility worker"
+                                          IsChecked="True" Margin="0,0,0,8"
+                                          Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
+                                <CheckBox x:Name="HideInlineUtilityCheck" Content="Hide inline utility traffic during play"
+                                          IsChecked="True" Margin="0,0,0,4"
+                                          Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
+                                <CheckBox x:Name="ShowInlineUtilityTrafficCheck" Content="Show inline utility traffic (debug peek)"
+                                          Margin="0,0,0,0"
+                                          Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <TextBlock Text="Per-action configuration" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="11" Margin="0,0,0,8"
+                                   Text="Job guides, response overrides, and story-context feeds for each AI action. Save play settings to persist."/>
+                        <Grid MinHeight="320">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="180" MinWidth="140"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*" MinWidth="200"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <ListBox x:Name="AiActionsList" Grid.Row="0" Grid.Column="0"
+                                     VerticalAlignment="Stretch"
+                                     SelectionChanged="AiActionsList_SelectionChanged"/>
+                            <GridSplitter Grid.Row="0" Grid.Column="1"
+                                          Style="{StaticResource SidePanelGridSplitterStyle}"
+                                          ResizeBehavior="PreviousAndNext"
+                                          ResizeDirection="Columns"
+                                          Width="8"/>
+                            <ScrollViewer Grid.Row="0"
+                                          Grid.Column="2"
+                                          Style="{StaticResource ShellTabScrollViewerStyle}"
+                                          Margin="0">
                         <StackPanel>
                             <TextBlock x:Name="AiActionTitleBlock" FontWeight="SemiBold" Margin="0,0,0,4"/>
                             <TextBlock x:Name="AiActionStatusBlock" Foreground="{StaticResource TextMutedBrush}"
                                        FontSize="11" Margin="0,0,0,6"/>
-                            <TextBlock Text="Instructions" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <TextBlock Text="Job guide" FontWeight="SemiBold" Margin="0,0,0,4"/>
                             <TextBox x:Name="AiActionInstructionBox" AcceptsReturn="True" TextWrapping="Wrap"
-                                     VerticalScrollBarVisibility="Auto" MinHeight="160" Margin="0,0,0,12"/>
+                                     VerticalScrollBarVisibility="Disabled" MinHeight="160" Margin="0,0,0,12"
+                                     TextChanged="AiActionInstructionBox_TextChanged"/>
                             <TextBlock Text="Job overrides" FontWeight="SemiBold" Margin="0,0,0,4"/>
                             <WrapPanel Margin="0,0,0,12">
                                 <StackPanel Margin="0,0,16,0">
@@ -261,11 +433,12 @@
                                        FontSize="11" TextWrapping="Wrap"/>
                         </StackPanel>
                     </ScrollViewer>
-                    <WrapPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,8,0,0">
-                        <Button Content="Apply" Padding="10,5" Margin="0,0,8,0" Click="ApplyAiAction_Click"/>
+                    <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,8,0,0">
                         <Button Content="Reset to default" Padding="10,5" Margin="0,0,8,0" Click="ResetAiAction_Click"/>
                     </WrapPanel>
-                </Grid>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
             <TabItem x:Name="SessionTab" Header="Session">
                 <ScrollViewer Margin="8" VerticalScrollBarVisibility="Auto">
@@ -276,6 +449,9 @@
                                    Text="{x:Static services:PlayThreadRotationCopy.SessionHelpText}"
                                    xmlns:services="clr-namespace:ChatGPTWrapper.Adventure.Services"/>
                         <WrapPanel Margin="0,0,0,8">
+                            <Button Content="Open Threads hub…" Padding="8,4" Margin="0,0,6,6"
+                                    ToolTip="Project link, play/design pins, handoff, and utility worker"
+                                    Click="OpenThreadsHub_Click"/>
                             <Button x:Name="StartNarrativeFromSourcesButton" Content="Start narrative from sources…" Padding="8,4" Margin="0,0,6,6"
                                     Click="StartNarrativeFromSources_Click"/>
                             <Button x:Name="HandOffToNewChatButton" Content="Hand off to new chat…" Padding="8,4" Margin="0,0,6,6"
@@ -311,17 +487,10 @@
                             </StackPanel>
                         </Expander>
                         <TextBlock x:Name="SourcesStatusBlock" Foreground="{StaticResource TextMutedBrush}"
-                                   FontSize="{StaticResource FontSizeHint}" TextWrapping="Wrap" Margin="0,0,0,4"/>
-                        <TextBlock Text="AI job delivery" FontWeight="SemiBold" Margin="0,8,0,4"/>
+                                   FontSize="{StaticResource FontSizeHint}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                         <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                   Margin="0,0,0,6"
-                                   Text="Play-time AI jobs run inline on the story chat with hidden [[cgw:utility]] tags. Design jobs use the pinned design thread."/>
-                        <CheckBox x:Name="HideInlineUtilityCheck" Content="Hide inline utility traffic during play"
-                                  IsChecked="True" Margin="0,0,0,4"
-                                  Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
-                        <CheckBox x:Name="ShowInlineUtilityTrafficCheck" Content="Show inline utility traffic (debug peek)"
-                                  Margin="0,0,0,8"
-                                  Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
+                                   Margin="0,0,0,8"
+                                   Text="AI automation and utility delivery settings are on the AI Tools tab. Thread visibility toggles also appear in Manage threads."/>
                         <Button Content="Open Sources tab…" Padding="10,5" HorizontalAlignment="Left"
                                 Click="GoToSourcesTab_Click"/>
                     </StackPanel>
@@ -349,12 +518,12 @@
                                 <DataGridComboBoxColumn Header="Mode" Width="140"
                                                         SelectedItemBinding="{Binding Mode, UpdateSourceTrigger=PropertyChanged}">
                                     <DataGridComboBoxColumn.ElementStyle>
-                                        <Style TargetType="ComboBox">
+                                        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
                                             <Setter Property="ItemsSource" Value="{Binding ModeOptions}"/>
                                         </Style>
                                     </DataGridComboBoxColumn.ElementStyle>
                                     <DataGridComboBoxColumn.EditingElementStyle>
-                                        <Style TargetType="ComboBox">
+                                        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
                                             <Setter Property="ItemsSource" Value="{Binding ModeOptions}"/>
                                         </Style>
                                     </DataGridComboBoxColumn.EditingElementStyle>
@@ -375,12 +544,12 @@
                                 <DataGridComboBoxColumn Header="Placement" Width="140"
                                                         SelectedItemBinding="{Binding Placement, UpdateSourceTrigger=PropertyChanged}">
                                     <DataGridComboBoxColumn.ElementStyle>
-                                        <Style TargetType="ComboBox">
+                                        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
                                             <Setter Property="ItemsSource" Value="{Binding PlacementOptions}"/>
                                         </Style>
                                     </DataGridComboBoxColumn.ElementStyle>
                                     <DataGridComboBoxColumn.EditingElementStyle>
-                                        <Style TargetType="ComboBox">
+                                        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
                                             <Setter Property="ItemsSource" Value="{Binding PlacementOptions}"/>
                                         </Style>
                                     </DataGridComboBoxColumn.EditingElementStyle>
@@ -390,53 +559,44 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem x:Name="AdventureSettingsTab" Header="Settings">
+            <TabItem x:Name="AdventureSettingsTab" Header="Narrator contract">
                 <ScrollViewer Margin="8" VerticalScrollBarVisibility="Auto">
                     <StackPanel>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                   Margin="0,0,0,12"
+                                   Text="Slow channel — copied into ChatGPT Project custom instructions. Play packets use a subset via injection; edit Sources or Design instructions for the full contract."/>
                         <TextBlock Text="Max packet characters" Margin="0,0,0,4"/>
-                        <TextBox x:Name="MaxPacketBox" Margin="0,0,0,12"/>
-                        <CheckBox x:Name="AutomationCheck" Content="Enable WebView automation" Margin="0,0,0,12"/>
+                        <TextBox x:Name="MaxPacketBox" Margin="0,0,0,12" TextChanged="InjectionAffectingText_Changed"/>
                         <Expander x:Name="AdvancedAutomationExpander"
-                                  Header="Advanced automation (developer)"
+                                  Header="Developer send options"
                                   IsExpanded="False"
                                   Margin="0,0,0,12">
                             <StackPanel Margin="0,8,0,0">
                                 <CheckBox x:Name="PreferDomPlaySendCheck"
                                           Content="Prefer DOM composer send (skip conversation API)"
-                                          Margin="0,0,0,4"/>
+                                          Margin="0,0,0,4"
+                                          Checked="PlaySettingsInputs_Changed" Unchecked="PlaySettingsInputs_Changed"/>
                                 <TextBlock x:Name="PreferDomPlaySendHint"
                                            Text="When enabled, play and utility messages submit through the native ChatGPT composer. Project source sync and file upload/download still use the API."
                                            Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
-                                <CheckBox x:Name="ForceFatPacketsCheck" Content="Force fat packets (ignore thin Project mode)"/>
+                                <CheckBox x:Name="ForceFatPacketsCheck" Content="Force fat packets (ignore thin Project mode)"
+                                          Checked="InjectionAffectingCheck_Changed" Unchecked="InjectionAffectingCheck_Changed"/>
                             </StackPanel>
                         </Expander>
                         <TextBlock Text="Perspective" Margin="0,0,0,4"/>
-                        <TextBox x:Name="PerspectiveBox" Margin="0,0,0,12"/>
+                        <TextBox x:Name="PerspectiveBox" Margin="0,0,0,12" TextChanged="InjectionAffectingText_Changed"/>
                         <TextBlock Text="Global content boundaries (one per line)" Margin="0,0,0,4"/>
-                        <TextBox x:Name="BoundariesBox" AcceptsReturn="True" MinHeight="80" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                        <TextBox x:Name="BoundariesBox" AcceptsReturn="True" MinHeight="80" TextWrapping="Wrap" Margin="0,0,0,12"
+                                 TextChanged="InjectionAffectingText_Changed"/>
                         <TextBlock Text="Character portrayal rules (Subject: rule, one per line)" Margin="0,0,0,4"/>
                         <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                                    Text="Per-character or per-subject narrator limits. Example: Mara: Avoid treating as passive or merely an obstacle."
                                    Margin="0,0,0,4"/>
-                        <TextBox x:Name="CharacterPortrayalBox" AcceptsReturn="True" MinHeight="80" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                        <TextBox x:Name="CharacterPortrayalBox" AcceptsReturn="True" MinHeight="80" TextWrapping="Wrap" Margin="0,0,0,12"
+                                 TextChanged="InjectionAffectingText_Changed"/>
                         <TextBlock Text="Instruction addendum (optional)" Margin="0,0,0,4"/>
-                        <TextBox x:Name="InstructionAddendumBox" AcceptsReturn="True" MinHeight="56" TextWrapping="Wrap" Margin="0,0,0,12"/>
-                        <CheckBox x:Name="AutoExtractEntitiesCheck"
-                                  Content="Auto-extract entities after each turn (AI)"
-                                  Margin="0,0,0,4"/>
-                        <TextBlock x:Name="AutoExtractEntitiesHint"
-                                   Text="Requires a linked Project. Proposals appear in Reference → review queue."
-                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
-                        <CheckBox x:Name="AutoProposeMemoriesCheck" Content="Auto-propose memories after each turn (AI)" Margin="0,0,0,4"/>
-                        <CheckBox x:Name="AutoUpdateSummaryCheck" Content="Auto-update summary every N turns (AI)" Margin="0,0,0,4"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                            <TextBlock Text="Summary interval (turns):" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBox x:Name="SummaryIntervalBox" Width="48"/>
-                        </StackPanel>
-                        <CheckBox x:Name="AutoContinuityCheckCheck" Content="Auto-run continuity check after each turn (AI)" Margin="0,0,0,12"/>
-                        <CheckBox x:Name="AutoSyncInstructionsCheck" Content="Auto-sync project instructions on OK" Margin="0,0,0,4"/>
-                        <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                   Text="Pushes narrator instructions from scenario and settings when saving Play settings."/>
+                        <TextBox x:Name="InstructionAddendumBox" AcceptsReturn="True" MinHeight="56" TextWrapping="Wrap" Margin="0,0,0,4"
+                                 TextChanged="InjectionAffectingText_Changed"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -460,7 +620,8 @@
                                     <ListBox x:Name="MemoryReviewList" MinHeight="48" MaxHeight="120" DisplayMemberPath="Text" Margin="0,0,0,4"/>
                                     <WrapPanel>
                                         <Button Content="Accept" Padding="8,4" Margin="0,0,6,0" Click="AcceptMemoryReview_Click"/>
-                                        <Button Content="Dismiss" Padding="8,4" Click="DismissMemoryReview_Click"/>
+                                        <Button Content="Dismiss" Padding="8,4" Margin="0,0,6,0" Click="DismissMemoryReview_Click"/>
+                                        <Button Content="Review all…" Padding="8,4" Tag="{x:Static services:ProposalReviewCategory.Memory}" Click="ReviewAllProposals_Click"/>
                                     </WrapPanel>
                                 </StackPanel>
                             </Expander>
@@ -488,7 +649,8 @@
                                     <ListBox x:Name="CardReviewList" MinHeight="48" MaxHeight="120" DisplayMemberPath="DisplayLabel" Margin="0,0,0,4"/>
                                     <WrapPanel>
                                         <Button Content="Accept" Padding="8,4" Margin="0,0,6,0" Click="AcceptCardReview_Click"/>
-                                        <Button Content="Dismiss" Padding="8,4" Click="DismissCardReview_Click"/>
+                                        <Button Content="Dismiss" Padding="8,4" Margin="0,0,6,0" Click="DismissCardReview_Click"/>
+                                        <Button Content="Review all…" Padding="8,4" Tag="{x:Static services:ProposalReviewCategory.Card}" Click="ReviewAllProposals_Click"/>
                                     </WrapPanel>
                                 </StackPanel>
                             </Expander>
@@ -501,94 +663,147 @@
                 </Grid>
             </TabItem>
             <TabItem x:Name="SourcesTab" Header="Sources">
-                <ScrollViewer Margin="8" VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
+                <DockPanel Margin="8" LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Top">
                         <TextBlock x:Name="SourceAutosaveLine" Foreground="{StaticResource TextMutedBrush}"
                                    FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
-                        <Border x:Name="ReadinessBanner" Padding="10,8" Margin="0,0,0,10"
+                        <Border x:Name="ReadinessBanner" Padding="10,8" Margin="0,0,0,8"
                                 CornerRadius="{StaticResource RadiusControl}" Background="{StaticResource WarningSubtleBrush}">
                             <TextBlock x:Name="ReadinessBannerText" TextWrapping="Wrap" FontSize="11"/>
                         </Border>
-
-                        <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,10"
-                                   Text="Manual publish only — copy instructions and drag source files to your ChatGPT Project. Use Manage sources… for the full Source Manager workflow."/>
-
-                        <TextBlock Text="Project instructions" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                        <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"
-                                   Text="Copy and paste into your ChatGPT Project custom instructions box."/>
-                        <TextBlock x:Name="InstructionsPastedLine" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
-                                   TextWrapping="Wrap" Margin="0,0,0,6"/>
-                        <WrapPanel Margin="0,0,0,12">
-                            <Button Content="Design instructions…" Padding="10,5" Margin="0,0,8,4" Click="DesignInstructions_Click"/>
-                            <Button Content="Copy instructions" Padding="10,5" Margin="0,0,8,4" Click="CopyInstructions_Click"/>
-                            <Button Content="Preview instructions…" Padding="10,5" Margin="0,0,8,4" Click="PreviewInstructions_Click"/>
-                            <Button Content="Mark instructions pasted" Padding="10,5" Margin="0,0,8,4" Click="MarkInstructionsPasted_Click"/>
-                            <Button x:Name="OpenProjectSettingsButton" Content="Open project settings" Padding="10,5"
-                                    Margin="0,0,8,4" Click="OpenProjectSettings_Click"/>
-                        </WrapPanel>
-
-                        <TextBlock Text="Source files" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                        <TextBlock x:Name="SourcesHintText" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
-                                   TextWrapping="Wrap" Margin="0,0,0,6"/>
-                        <DataGrid x:Name="SourcesGrid" AutoGenerateColumns="False" HeadersVisibility="Column"
-                                  CanUserAddRows="False" CanUserDeleteRows="False" MinHeight="160"
-                                  Margin="0,0,0,8" PreviewMouseMove="SourcesGrid_PreviewMouseMove"
-                                  SelectionChanged="SourcesGrid_SelectionChanged"
-                                  SelectionMode="Single">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="File" Binding="{Binding RelativePath}" Width="*" IsReadOnly="True"/>
-                                <DataGridTextColumn Header="Status" Binding="{Binding LocalStatus}" Width="100" IsReadOnly="True"/>
-                                <DataGridTextColumn Header="Last uploaded" Binding="{Binding LastUploaded}" Width="115" IsReadOnly="True"/>
-                                <DataGridTextColumn Header="Project match" Binding="{Binding ProjectMatch}" Width="105" IsReadOnly="True"/>
-                                <DataGridCheckBoxColumn Header="Published" Binding="{Binding IsPublished, UpdateSourceTrigger=PropertyChanged}" Width="72"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                        <WrapPanel Margin="0,0,0,8">
-                            <Button Content="Manage sources…" Padding="10,5" Margin="0,0,8,4" Click="ManageSources_Click"/>
-                            <Button Content="Sync sources from JSON" Padding="10,5" Margin="0,0,8,4" Click="SyncSourcesFromJson_Click"
-                                    ToolTip="Rewrite local sources/*.md from entities.json and scenario.json (JSON wins)."/>
-                            <Button Content="Refresh export" Padding="10,5" Margin="0,0,8,4" Click="RefreshExport_Click"/>
-                            <Button Content="Open sources folder" Padding="10,5" Margin="0,0,8,4" Click="OpenSourcesFolder_Click"/>
-                            <Button x:Name="ProbeProjectButton" Content="Probe project" Padding="10,5" Margin="0,0,8,4" Click="ProbeProject_Click"/>
-                            <Button x:Name="CompareSourceButton" Content="Compare selected" Padding="10,5" Margin="0,0,8,4" Click="CompareSource_Click"/>
-                            <Button Content="Copy selected file" Padding="10,5" Margin="0,0,8,4" Click="CopySourceFile_Click"/>
-                            <Button Content="Preview selected…" Padding="10,5" Margin="0,0,8,4" Click="PreviewSourceFile_Click"/>
-                            <Button Content="Mark all published" Padding="10,5" Margin="0,0,8,4" Click="MarkAllPublished_Click"/>
-                            <Button Content="Edit sources with AI…" Padding="10,5" Margin="0,0,8,4" Click="EditSourcesAi_Click"/>
-                        </WrapPanel>
-
-                        <local:EntityCanonCommitBar x:Name="CanonCommitBar" Margin="0,0,0,8" PlansChanged="CanonCommitBar_PlansChanged"/>
-
-                        <Border x:Name="CanonDriftBanner" Visibility="Collapsed" Padding="8" Margin="0,0,0,8"
-                                Background="{StaticResource WarningSubtleBrush}" CornerRadius="4">
+                        <Expander x:Name="SourceWalkthroughExpander" Header="How to publish project sources" IsExpanded="False" Margin="0,0,0,8">
+                            <StackPanel Margin="8,4,0,0">
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
+                                           Text="1. Refresh export writes canonical files under your adventure sources folder."/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
+                                           Text="2. Copy project instructions into ChatGPT Project → Custom instructions, then mark instructions pasted."/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
+                                           Text="3. Drag lore .md files onto ChatGPT Project → Files (or copy from the grid), then check Published for each file."/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Margin="0,0,0,6"
+                                           Text="4. Optional: Probe project to compare remote copies before play."/>
+                                <TextBlock x:Name="CanonicalPathLine" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                            </StackPanel>
+                        </Expander>
+                        <TextBlock x:Name="RepublishHintLine" TextWrapping="Wrap" FontSize="11"
+                                   Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,8"/>
+                        <Border Padding="10,8" Margin="0,0,0,8" CornerRadius="{StaticResource RadiusControl}"
+                                Background="{StaticResource BgSurfaceBrush}">
                             <StackPanel>
-                                <TextBlock x:Name="CanonDriftBannerText" TextWrapping="Wrap" FontSize="11"/>
-                                <Button Content="Sync sources from JSON now" Padding="8,4" Margin="0,6,0,0"
-                                        HorizontalAlignment="Left" Click="SyncSourcesFromJson_Click"/>
+                                <TextBlock Text="Project instructions" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"
+                                           Text="Slow channel — paste into ChatGPT Project custom instructions (not play packets). Save play settings before marking pasted if you changed Adventure or World."/>
+                                <TextBlock x:Name="InstructionsPastedLine" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                           TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                <TextBlock x:Name="InstructionDriftLine" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                           TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <WrapPanel>
+                                    <Button Content="Design instructions…" Padding="10,5" Margin="0,0,8,4" Click="DesignInstructions_Click"/>
+                                    <Button Content="Copy instructions" Padding="10,5" Margin="0,0,8,4" Click="CopyInstructions_Click"/>
+                                    <Button Content="Preview instructions…" Padding="10,5" Margin="0,0,8,4" Click="PreviewInstructions_Click"/>
+                                    <Button Content="Mark instructions pasted" Padding="10,5" Margin="0,0,8,4" Click="MarkInstructionsPasted_Click"/>
+                                    <Button x:Name="OpenProjectSettingsButton" Content="Open project settings" Padding="10,5"
+                                            Margin="0,0,8,4" Click="OpenProjectSettings_Click"/>
+                                </WrapPanel>
                             </StackPanel>
                         </Border>
-
-                        <TextBlock Text="AI source edit proposals" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                        <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"
-                                   Text="Proposals from Edit sources with AI. Entity profile edits and renames are handled in Design (canon commit bar), not here."/>
-                        <TextBlock x:Name="SourceEditReviewHeader" Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,0,0,4"/>
-                        <ListBox x:Name="SourceEditReviewList" MinHeight="48" Margin="0,0,0,4" DisplayMemberPath="DisplayLabel"
-                                 SelectionChanged="SourceEditReviewList_SelectionChanged"/>
-                        <TextBox x:Name="SourceEditDiffPreviewBox" MinHeight="96" MaxHeight="160"
-                                 IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas" FontSize="11" Margin="0,0,0,8"
-                                 Background="{StaticResource BgSurfaceBrush}"
-                                 Foreground="{StaticResource TextPrimaryBrush}"
-                                 BorderBrush="{StaticResource BorderSubtleBrush}"/>
-                        <WrapPanel Margin="0,0,0,12">
-                            <Button Content="Apply proposal" Padding="8,4" Margin="0,0,6,0" Click="AcceptSourceEdit_Click"/>
-                            <Button Content="Dismiss proposal" Padding="8,4" Click="DismissSourceEdit_Click"/>
-                        </WrapPanel>
-
                     </StackPanel>
-                </ScrollViewer>
+                    <Grid MinHeight="220">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="200"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="240" MinWidth="160" MaxWidth="360"/>
+                        </Grid.ColumnDefinitions>
+                        <GridSplitter Grid.Column="1"
+                                      Style="{StaticResource SidePanelGridSplitterStyle}"
+                                      ResizeBehavior="PreviousAndNext"
+                                      ResizeDirection="Columns"
+                                      Width="8"/>
+                        <DockPanel Grid.Column="0">
+                            <TextBlock DockPanel.Dock="Top" Text="Source files (world canon)" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <TextBlock x:Name="SourcesHintText" DockPanel.Dock="Top" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="0,0,0,6"/>
+                            <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                <Button Content="Refresh export" Padding="10,5" Margin="0,0,8,4" Click="RefreshExport_Click"/>
+                                <Button Content="Check canon" Padding="10,5" Margin="0,0,8,4" Click="CheckCanon_Click"/>
+                                <Button Content="Open folder for drag" Padding="10,5" Margin="0,0,8,4" Click="OpenFolderForDrag_Click"/>
+                                <Button Content="Open sources folder" Padding="10,5" Margin="0,0,8,4" Click="OpenSourcesFolder_Click"/>
+                                <Button Content="Open history folder" Padding="10,5" Margin="0,0,8,4" Click="OpenHistoryFolder_Click"/>
+                                <Button x:Name="ProbeProjectButton" Content="Probe project" Padding="10,5" Margin="0,0,8,4" Click="ProbeProject_Click"/>
+                                <Button Content="Mark all published" Padding="10,5" Margin="0,0,8,4" Click="MarkAllPublished_Click"/>
+                                <Button Content="Sync sources from JSON" Padding="10,5" Margin="0,0,8,4" Click="SyncSourcesFromJson_Click"
+                                        ToolTip="Rewrite local sources/*.md from entities.json and scenario.json (JSON wins)."/>
+                                <Button Content="Edit sources with AI…" Padding="10,5" Margin="0,0,8,4" Click="EditSourcesAi_Click"/>
+                                <Button x:Name="ApiSyncDiagnosticsButton" Content="API sync diagnostics…" Padding="10,5" Margin="0,0,8,4"
+                                        Click="ApiSyncDiagnostics_Click"/>
+                            </WrapPanel>
+                            <WrapPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                                <Button Content="Open selected" Padding="8,4" Margin="0,0,6,4" Click="OpenSelectedSource_Click"/>
+                                <Button Content="Copy selected" Padding="8,4" Margin="0,0,6,4" Click="CopySourceFile_Click"/>
+                                <Button Content="Preview selected…" Padding="8,4" Margin="0,0,6,4" Click="PreviewSourceFile_Click"/>
+                                <Button Content="Mark selected published" Padding="8,4" Margin="0,0,6,4" Click="MarkSelectedPublished_Click"/>
+                                <Button x:Name="ProbeFileButton" Content="Probe selected" Padding="8,4" Margin="0,0,6,4" Click="ProbeFile_Click"/>
+                                <Button x:Name="CompareSourceButton" Content="Compare selected" Padding="8,4" Margin="0,0,6,4" Click="CompareSource_Click"/>
+                                <Button Content="Restore version…" Padding="8,4" Margin="0,0,6,4" Click="RestoreSourceVersion_Click"/>
+                                <Button Content="Synthesize with AI…" Padding="8,4" Margin="0,0,6,4" Click="SynthesizeSource_Click"/>
+                            </WrapPanel>
+                            <DataGrid x:Name="SourcesGrid" AutoGenerateColumns="False" HeadersVisibility="Column"
+                                      CanUserAddRows="False" CanUserDeleteRows="False"
+                                      PreviewMouseMove="SourcesGrid_PreviewMouseMove"
+                                      SelectionChanged="SourcesGrid_SelectionChanged"
+                                      CellEditEnding="SourcesGrid_CellEditEnding"
+                                      CurrentCellChanged="SourcesGrid_CurrentCellChanged"
+                                      SelectionMode="Single">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="File" Binding="{Binding RelativePath}" Width="*" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding LocalStatus}" Width="100" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Last uploaded" Binding="{Binding LastUploaded}" Width="115" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Project match" Binding="{Binding ProjectMatch}" Width="105" IsReadOnly="True"/>
+                                    <DataGridCheckBoxColumn Header="Published" Binding="{Binding IsPublished, UpdateSourceTrigger=PropertyChanged}" Width="72"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                        <DockPanel Grid.Column="2">
+                            <TextBlock DockPanel.Dock="Top" Text="Version history" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                            <WrapPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                                <Button Content="Preview archive" Padding="8,4" Margin="0,0,6,4" Click="PreviewSourceArchive_Click"/>
+                                <Button Content="Compare vs current" Padding="8,4" Margin="0,0,0,4" Click="CompareSourceArchive_Click"/>
+                            </WrapPanel>
+                            <ListBox x:Name="SourceHistoryList" DisplayMemberPath="DisplayLabel" SelectionChanged="SourceHistoryList_SelectionChanged"/>
+                        </DockPanel>
+                    </Grid>
+                    <ScrollViewer DockPanel.Dock="Bottom" MaxHeight="300" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                        <StackPanel>
+                            <local:EntityCanonCommitBar x:Name="CanonCommitBar" Margin="0,0,0,8" PlansChanged="CanonCommitBar_PlansChanged"/>
+                            <Border x:Name="CanonDriftBanner" Visibility="Collapsed" Padding="8" Margin="0,0,0,8"
+                                    Background="{StaticResource WarningSubtleBrush}" CornerRadius="4">
+                                <StackPanel>
+                                    <TextBlock x:Name="CanonDriftBannerText" TextWrapping="Wrap" FontSize="11"/>
+                                    <Button Content="Sync sources from JSON now" Padding="8,4" Margin="0,6,0,0"
+                                            HorizontalAlignment="Left" Click="SyncSourcesFromJson_Click"/>
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="AI source edit proposals" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"
+                                       Text="Proposals from Edit sources with AI. Entity profile edits and renames are handled in Design (canon commit bar), not here."/>
+                            <TextBlock x:Name="SourceEditReviewHeader" Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,0,0,4"/>
+                            <ListBox x:Name="SourceEditReviewList" MinHeight="48" Margin="0,0,0,4" DisplayMemberPath="DisplayLabel"
+                                     SelectionChanged="SourceEditReviewList_SelectionChanged"/>
+                            <TextBox x:Name="SourceEditDiffPreviewBox" MinHeight="72" MaxHeight="120"
+                                     IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas" FontSize="11" Margin="0,0,0,8"
+                                     Background="{StaticResource BgSurfaceBrush}"
+                                     Foreground="{StaticResource TextPrimaryBrush}"
+                                     BorderBrush="{StaticResource BorderSubtleBrush}"/>
+                            <WrapPanel Margin="0,0,0,4">
+                                <Button Content="Apply proposal" Padding="8,4" Margin="0,0,6,0" Click="AcceptSourceEdit_Click"/>
+                                <Button Content="Dismiss proposal" Padding="8,4" Margin="0,0,6,0" Click="DismissSourceEdit_Click"/>
+                                <Button Content="Review all…" Padding="8,4" Tag="{x:Static services:ProposalReviewCategory.SourceEdit}" Click="ReviewAllProposals_Click"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
             </TabItem>
-            <TabItem Header="History">
+            <TabItem x:Name="HistoryTab" Header="History">
                 <DockPanel Margin="8">
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
                         <Button Content="View selected" Padding="10,5" Margin="0,0,8,0" Click="ViewHistory_Click"/>
@@ -596,14 +811,64 @@
                     </StackPanel>
                     <TextBlock DockPanel.Dock="Top" Text="Recently sent merged packets for this adventure."
                                Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,0,0,8"/>
-                    <ListBox x:Name="HistoryList" DisplayMemberPath="DisplayLabel"/>
+                    <ListBox x:Name="HistoryList"
+                             VerticalAlignment="Stretch"
+                             DisplayMemberPath="DisplayLabel"/>
                 </DockPanel>
             </TabItem>
         </TabControl>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="Cancel" Padding="12,6" Margin="0,0,8,0" IsCancel="True"/>
-            <Button Content="OK" Style="{StaticResource PrimaryButtonStyle}" MinWidth="88" IsDefault="True" Click="Ok_Click"/>
-        </StackPanel>
+        <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+        <Border Grid.Column="2" Padding="12" Background="{StaticResource BgSurfaceBrush}"
+                CornerRadius="{StaticResource RadiusControl}">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                    <TextBlock Text="Live packet preview" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,4"/>
+                    <TextBlock Text="Shows the merged play packet for the next Send. Packet only — does not change Project instructions or source files."
+                               FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+                    <TextBlock Text="Sample player line" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,4"/>
+                    <TextBlock Text="Used when the in-page composer is empty. Also reads continuation queue on Play packet tab."
+                               FontSize="10" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                    <TextBox x:Name="PreviewPlayerLinePanelBox" MinHeight="36" AcceptsReturn="True" TextWrapping="Wrap"
+                             Margin="0,0,0,6" TextChanged="PreviewPlayerLinePanelBox_TextChanged"
+                             LostFocus="PreviewPlayerLinePanelBox_LostFocus"/>
+
+                    <TextBlock x:Name="PreviewSourceLine" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextMutedBrush}" FontSize="10" Margin="0,0,0,4"/>
+                    <TextBlock x:Name="PreviewStagingHint" TextWrapping="Wrap"
+                               Foreground="{StaticResource AccentLinkBrush}" FontSize="10" Margin="0,0,0,8"/>
+
+                    <WrapPanel>
+                        <Button Content="Refresh" Padding="8,4" Margin="0,0,8,4" Click="RefreshPreview_Click"/>
+                        <Button Content="View full…" Padding="8,4" Margin="0,0,8,4" Click="ViewFull_Click"/>
+                        <Button Content="Copy packet" Padding="8,4" Margin="0,0,0,4" Click="CopyPacket_Click"/>
+                    </WrapPanel>
+                </StackPanel>
+                <local:InjectionPacketPreviewControl x:Name="InjectionPreviewPanel"/>
+            </DockPanel>
+        </Border>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,12,0,0">
+            <TextBlock x:Name="PlaySettingsSaveLine"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Left"
+                       Foreground="{StaticResource TextMutedBrush}"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Margin="0,0,12,0"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" Padding="12,6" Margin="0,0,8,0" IsCancel="True"/>
+                <Button x:Name="PlaySettingsSaveButton"
+                        Content="Save"
+                        Padding="12,6"
+                        Margin="0,0,8,0"
+                        IsEnabled="False"
+                        Click="SavePlaySettings_Click"/>
+                <Button Content="OK" Style="{StaticResource PrimaryButtonStyle}" MinWidth="88" IsDefault="True" Click="Ok_Click"/>
+            </StackPanel>
+        </Grid>
     </Grid>
-</Window>
+</shell:ShellDialogWindow>

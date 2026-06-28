@@ -41,9 +41,24 @@ public partial class AdventurePlayView : UserControl
 
     public Func<Task>? ProbeSourcesAsync { get; set; }
 
+    public Func<string, Task>? ProbeSourceFileAsync { get; set; }
+
+    public Func<Task>? OpenApiSyncDiagnosticsAsync { get; set; }
+
+    public Func<string, string, Task<string?>>? SynthesizeSourceAsync { get; set; }
+
     public Func<Task>? RefreshSourcesStatusAsync { get; set; }
 
     public Func<IReadOnlyList<PhraseHighlightRule>>? GetPhraseHighlightRules { get; set; }
+
+    public Action<IReadOnlyList<PhraseHighlightRule>>? CommitPhraseHighlightRules { get; set; }
+
+    public Func<Task<int>>? ResolveThreadUserTurnCountAsync { get; set; }
+
+    public event EventHandler<string>? InsertIntoComposerRequested;
+
+    public void RefreshActiveEntityHighlightState() =>
+        EntityReferencePanel.RefreshActiveHighlightState();
 
     public Func<Task>? ReconcileDuplicatesAsync { get; set; }
 
@@ -229,7 +244,9 @@ public partial class AdventurePlayView : UserControl
 
     public AdventurePlayView()
     {
+        _suppressNarratorControls = true;
         InitializeComponent();
+        _suppressNarratorControls = false;
         WireEntityReferencePanel();
         WarningsList.PreviewMouseRightButtonDown += WarningsList_PreviewMouseRightButtonDown;
         SizeChanged += (_, _) => ApplyLayout(
@@ -245,6 +262,8 @@ public partial class AdventurePlayView : UserControl
             new EntityReferenceEditCallbacks
             {
                 GetPhraseHighlightRules = () => GetPhraseHighlightRules?.Invoke(),
+                CommitPhraseHighlightRules = rules => CommitPhraseHighlightRules?.Invoke(rules),
+                InsertIntoComposer = text => InsertIntoComposerRequested?.Invoke(this, text),
                 OpenSourceManagerAsync = () => OpenSourceManagerAsync?.Invoke() ?? Task.CompletedTask,
                 OnBundleReloaded = bundle =>
                 {
@@ -297,8 +316,41 @@ public partial class AdventurePlayView : UserControl
     public bool IsSidePanelCollapsed =>
         _bundle?.Metadata.Settings.PlaySidePanelCollapsed == true;
 
+    private bool _settingsCommitNotifierAttached;
+
+    public void SyncTransportSettingsFromDisk()
+    {
+        if (_bundle is null)
+            return;
+
+        var meta = AdventureStore.ReadMetadataFromDisk(_bundle.Metadata.Id);
+        if (meta?.Settings is null)
+            return;
+
+        TransportSettingsStore.ApplyToBundle(_bundle, meta.Settings);
+    }
+
+    private void EnsureSettingsCommitNotifierAttached()
+    {
+        if (_settingsCommitNotifierAttached)
+            return;
+
+        _settingsCommitNotifierAttached = true;
+        AdventureSettingsCommitNotifier.SettingsCommitted += OnAdventureSettingsCommitted;
+    }
+
+    private void OnAdventureSettingsCommitted(object? sender, Guid adventureId)
+    {
+        if (_bundle?.Metadata.Id != adventureId)
+            return;
+
+        SyncTransportSettingsFromDisk();
+        PlaySettingsSaved?.Invoke(this, EventArgs.Empty);
+    }
+
     public void LoadAdventure(Guid id)
     {
+        EnsureSettingsCommitNotifierAttached();
         _bundle = AdventureStore.Load(id);
         if (_bundle is null)
             return;
@@ -354,29 +406,25 @@ public partial class AdventurePlayView : UserControl
         SetSideTabHeader(ReferenceSideTab, "Reference", reviewCount > 0 ? reviewCount : null);
         SetSideTabHeader(WarningsSideTab, "Warnings", warningCount > 0 ? warningCount : null);
         SetSideTabHeader(StateSideTab, "State", null);
-
-        var reviewsBadge = pendingCount > 0 ? pendingCount : reviewCount > 0 ? reviewCount : (int?)null;
-        SetExpanderHeader(ReviewsExpander, "Reviews", reviewsBadge);
-
-        ReviewsExpander.IsExpanded = pendingCount > 0 || reviewCount > 0;
+        UpdatePlaySettingsButtonBadge(pendingCount);
     }
 
-    private void SetExpanderHeader(Expander expander, string title, int? badgeCount)
+    private void UpdatePlaySettingsButtonBadge(int pendingCount)
     {
-        if (badgeCount is null or 0)
+        if (pendingCount <= 0)
         {
-            expander.Header = title;
+            PlaySettingsButton.Content = "Play settings…";
             return;
         }
 
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
         panel.Children.Add(new TextBlock
         {
-            Text = title,
+            Text = "Play settings…",
             VerticalAlignment = VerticalAlignment.Center,
         });
-        panel.Children.Add(CreateBadgeBorder(badgeCount.Value));
-        expander.Header = panel;
+        panel.Children.Add(CreateBadgeBorder(pendingCount));
+        PlaySettingsButton.Content = panel;
     }
 
     private void SetSideTabHeader(TabItem tab, string title, int? badgeCount)
@@ -550,6 +598,9 @@ public partial class AdventurePlayView : UserControl
         UpdateLinkProjectUi();
     }
 
+    public void SetConnectionSummary(string threadLine, string sourcesLine) =>
+        SetSessionLinkDetails(threadLine, sourcesLine);
+
     public void ShowCanonSyncNotice(string message)
     {
         CanonSyncNoticeText.Text = message;
@@ -603,6 +654,12 @@ public partial class AdventurePlayView : UserControl
         if (_bundle is null)
             return;
 
+        if (ProposalReviewService.HasAny(_bundle))
+        {
+            OpenProposalReviewHub();
+            return;
+        }
+
         var dlg = new CanonInboxDialog(_bundle) { Owner = Window.GetWindow(this) };
         dlg.NavigateRequested += (_, item) => NavigateCanonInboxItem(item);
         dlg.ShowDialog();
@@ -626,14 +683,15 @@ public partial class AdventurePlayView : UserControl
                 CanonCommitBar.Bind(_bundle);
                 break;
             case CanonInboxDestination.JsonImportReview:
-                OpenPlaySettings(PlaySettingsTab.Sources);
+                OpenProposalReviewHub(ProposalReviewCategory.JsonImport);
                 break;
         }
     }
 
     private bool _suppressNarratorControls;
+    private NarratorOverrideScope _lastNarratorScope = NarratorOverrideScope.Turn;
 
-    private void BindNarratorControls()
+    private void BindNarratorControls(bool resetSceneProfile = true)
     {
         if (_bundle is null)
             return;
@@ -641,38 +699,52 @@ public partial class AdventurePlayView : UserControl
         _suppressNarratorControls = true;
         var scope = GetSelectedNarratorScope();
 
-        NarratorSceneProfileCombo.ItemsSource = new List<NarratorPresetComboItem>
-        {
-            NarratorPresetComboItem.Inherit(),
-        }.Concat(NarratorPresetLibrary.SceneProfiles.Select(p => new NarratorPresetComboItem(p.Id, p.DisplayName)))
-        .ToList();
-        NarratorSceneProfileCombo.DisplayMemberPath = nameof(NarratorPresetComboItem.DisplayName);
-        NarratorSceneProfileCombo.SelectedIndex = 0;
-
-        NarratorControlsService.PopulateCombo(ResponseLengthCombo, _bundle, NarratorParameter.ResponseLength, scope);
-        NarratorControlsService.PopulateCombo(DetailLevelCombo, _bundle, NarratorParameter.DetailLevel, scope);
-        NarratorControlsService.PopulateCombo(ToneQuickCombo, _bundle, NarratorParameter.Tone, scope, isEditable: true);
-        NarratorControlsService.PopulateCombo(DifficultyQuickCombo, _bundle, NarratorParameter.Difficulty, scope, isEditable: true);
-
+        NarratorBehaviorPanelBinder.BindSceneProfile(NarratorSceneProfileCombo, _bundle, selectInherit: resetSceneProfile);
+        RefreshNarratorParameterCombos(scope);
+        _lastNarratorScope = scope;
         UpdateNarratorOverrideChips();
         _suppressNarratorControls = false;
     }
 
     private NarratorOverrideScope GetSelectedNarratorScope()
     {
-        if (NarratorScopeSessionRadio.IsChecked == true)
+        if (NarratorScopeSessionRadio?.IsChecked == true)
             return NarratorOverrideScope.Session;
-        if (NarratorScopeAdventureRadio.IsChecked == true)
+        if (NarratorScopeAdventureRadio?.IsChecked == true)
             return NarratorOverrideScope.Adventure;
         return NarratorOverrideScope.Turn;
     }
 
     private void NarratorScope_Changed(object sender, RoutedEventArgs e)
     {
-        if (_suppressNarratorControls)
+        if (_suppressNarratorControls || _bundle is null)
             return;
 
-        BindNarratorControls();
+        var newScope = GetSelectedNarratorScope();
+        if (newScope != _lastNarratorScope)
+            FlushNarratorParameterCombos(_lastNarratorScope);
+
+        _lastNarratorScope = newScope;
+
+        _suppressNarratorControls = true;
+        NarratorBehaviorPanelBinder.SelectSceneProfileInherit(NarratorSceneProfileCombo);
+        RefreshNarratorParameterCombos(newScope);
+        UpdateNarratorOverrideChips();
+        _suppressNarratorControls = false;
+    }
+
+    private void FlushNarratorParameterCombos(NarratorOverrideScope scope)
+    {
+        if (_bundle is null)
+            return;
+
+        NarratorControlsService.SaveComboValue(_bundle, ResponseLengthCombo, NarratorParameter.ResponseLength, scope);
+        NarratorControlsService.SaveComboValue(_bundle, DetailLevelCombo, NarratorParameter.DetailLevel, scope);
+        NarratorControlsService.SaveComboValue(_bundle, ToneQuickCombo, NarratorParameter.Tone, scope);
+        NarratorControlsService.SaveComboValue(_bundle, NarrativePacingCombo, NarratorParameter.NarrativePacing, scope);
+        NarratorControlsService.SaveComboValue(_bundle, DifficultyQuickCombo, NarratorParameter.Difficulty, scope);
+        NarratorControlsService.SaveComboValue(_bundle, ViolenceCombo, NarratorParameter.ViolenceLevel, scope);
+        NarratorControlsService.SaveComboValue(_bundle, ConsequenceWeightCombo, NarratorParameter.ConsequenceWeight, scope);
     }
 
     private void NarratorParameter_Changed(object sender, RoutedEventArgs e)
@@ -680,12 +752,7 @@ public partial class AdventurePlayView : UserControl
         if (_suppressNarratorControls || _bundle is null)
             return;
 
-        var scope = GetSelectedNarratorScope();
-        NarratorControlsService.SaveComboValue(_bundle, ResponseLengthCombo, NarratorParameter.ResponseLength, scope);
-        NarratorControlsService.SaveComboValue(_bundle, DetailLevelCombo, NarratorParameter.DetailLevel, scope);
-        NarratorControlsService.SaveComboValue(_bundle, ToneQuickCombo, NarratorParameter.Tone, scope);
-        NarratorControlsService.SaveComboValue(_bundle, DifficultyQuickCombo, NarratorParameter.Difficulty, scope);
-
+        FlushNarratorParameterCombos(GetSelectedNarratorScope());
         UpdateNarratorOverrideChips();
         AdventureStore.Save(_bundle);
     }
@@ -695,12 +762,40 @@ public partial class AdventurePlayView : UserControl
         if (_suppressNarratorControls || _bundle is null)
             return;
 
-        if (NarratorSceneProfileCombo.SelectedItem is not NarratorPresetComboItem item || item.IsInherit || item.Id is null)
+        if (NarratorSceneProfileCombo.SelectedItem is not NarratorPresetComboItem item)
             return;
 
-        NarratorPresetLibrary.ApplySceneProfile(_bundle, item.Id, GetSelectedNarratorScope());
-        BindNarratorControls();
+        var scope = GetSelectedNarratorScope();
+        if (item.IsInherit)
+        {
+            NarratorOverrideResolver.ResetScope(_bundle, scope);
+            RefreshNarratorParameterCombos(scope);
+            UpdateNarratorOverrideChips();
+            AdventureStore.Save(_bundle);
+            return;
+        }
+
+        if (item.Id is null)
+            return;
+
+        NarratorPresetLibrary.ApplySceneProfile(_bundle, item.Id, scope);
+        RefreshNarratorParameterCombos(scope);
+        UpdateNarratorOverrideChips();
         AdventureStore.Save(_bundle);
+    }
+
+    private void RefreshNarratorParameterCombos(NarratorOverrideScope scope)
+    {
+        if (_bundle is null)
+            return;
+
+        NarratorControlsService.PopulateCombo(ResponseLengthCombo, _bundle, NarratorParameter.ResponseLength, scope);
+        NarratorControlsService.PopulateCombo(DetailLevelCombo, _bundle, NarratorParameter.DetailLevel, scope);
+        NarratorControlsService.PopulateCombo(ToneQuickCombo, _bundle, NarratorParameter.Tone, scope, isEditable: true);
+        NarratorControlsService.PopulateCombo(NarrativePacingCombo, _bundle, NarratorParameter.NarrativePacing, scope);
+        NarratorControlsService.PopulateCombo(DifficultyQuickCombo, _bundle, NarratorParameter.Difficulty, scope, isEditable: true);
+        NarratorControlsService.PopulateCombo(ViolenceCombo, _bundle, NarratorParameter.ViolenceLevel, scope);
+        NarratorControlsService.PopulateCombo(ConsequenceWeightCombo, _bundle, NarratorParameter.ConsequenceWeight, scope);
     }
 
     private void ResetNarratorScope_Click(object sender, RoutedEventArgs e)
@@ -766,6 +861,9 @@ public partial class AdventurePlayView : UserControl
         LinkProjectRequested?.Invoke(this, EventArgs.Empty);
 
     private void ThreadStatus_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
+        ManageThreads_Click(sender, e);
+
+    private void ManageThreads_Click(object sender, RoutedEventArgs e) =>
         ManageThreadsRequested?.Invoke(this, EventArgs.Empty);
 
     public void SetSessionError(string message) =>
@@ -784,6 +882,7 @@ public partial class AdventurePlayView : UserControl
         {
             SessionLoadingBlock.Visibility = Visibility.Collapsed;
             PlaySettingsButton.IsEnabled = true;
+            JobActionsPanel.IsEnabled = true;
             UpdateJobButtonStates();
         }
     }
@@ -799,17 +898,32 @@ public partial class AdventurePlayView : UserControl
             SourcesButton.IsEnabled = false;
             GenerateRecapButton.IsEnabled = false;
             RunContinuityButton.IsEnabled = false;
+            RunContinuityCockpitButton.IsEnabled = false;
             AiToolsFlyoutButton.IsEnabled = false;
+            AiToolsExpander.IsEnabled = false;
             return;
         }
 
+        AdventureProjectBindingService.SyncLinkedProjectFields(_bundle.Metadata);
         var hasProject = AdventureProjectBindingService.HasLinkedProject(_bundle);
         var hasExchange = UtilityTranscriptScopeService.ResolveFromLocalLog(_bundle) is not null
                           || UtilityTranscriptScopeService.ResolveFallbackTurn(_bundle) is not null;
+        var workerReady = UtilityWorkerCapabilityGate.IsGreen(_bundle);
+        var canRunScopedJobs = hasProject && (hasExchange || workerReady);
 
-        ProcessLastExchangeButton.IsEnabled = hasProject && hasExchange;
-        EntityReferencePanel.UpdateSecondaryActionStates(hasProject, hasExchange);
-        SuggestMemoriesButton.IsEnabled = hasProject && hasExchange;
+        var scopedTooltip = hasExchange
+            ? "Bundled memories + entities for the latest play exchange"
+            : workerReady
+                ? "Uses live play thread context via the utility worker lane"
+                : "Send a play turn first, or verify the utility worker in Threads";
+
+        ProcessLastExchangeButton.IsEnabled = canRunScopedJobs;
+        ProcessLastExchangeButton.ToolTip = scopedTooltip;
+        EntityReferencePanel.UpdateSecondaryActionStates(hasProject, canRunScopedJobs);
+        SuggestMemoriesButton.IsEnabled = canRunScopedJobs;
+        SuggestMemoriesButton.ToolTip = workerReady && !hasExchange
+            ? "Propose memories from live play context via utility worker"
+            : "Propose memories from the latest logged exchange";
         RefreshSummaryButton.IsEnabled = hasProject;
         GenerateCardsButton.IsEnabled = hasProject;
         SourcesButton.IsEnabled = true;
@@ -817,13 +931,13 @@ public partial class AdventurePlayView : UserControl
         RunContinuityButton.IsEnabled = hasProject;
         RunContinuityCockpitButton.IsEnabled = hasProject;
 
-        var aiEnabled = ProcessLastExchangeButton.IsEnabled
-                        || SuggestMemoriesButton.IsEnabled
+        var aiEnabled = canRunScopedJobs
                         || RefreshSummaryButton.IsEnabled
                         || GenerateCardsButton.IsEnabled
                         || GenerateRecapButton.IsEnabled
                         || RunContinuityCockpitButton.IsEnabled;
         AiToolsFlyoutButton.IsEnabled = aiEnabled;
+        AiToolsExpander.IsEnabled = hasProject || workerReady;
     }
 
     private void BindWarnings()
@@ -1121,7 +1235,19 @@ public partial class AdventurePlayView : UserControl
         BindReviewQueue();
         BindPendingReview();
         _openPlaySettingsDialog?.ReloadBundleFromStore();
+        _openPlaySettingsDialog?.RefreshUtilityWorkerStatusFromDisk();
         _openPlaySettingsDialog?.RefreshReviewPanels();
+        UpdateJobButtonStates();
+    }
+
+    public void RefreshUtilityWorkerStatusFromDisk()
+    {
+        if (_bundle is null)
+            return;
+
+        AdventureStore.SyncUtilityWorkerCapabilitiesFromDisk(_bundle);
+        _openPlaySettingsDialog?.RefreshUtilityWorkerStatusFromDisk();
+        UpdateJobButtonStates();
     }
 
     private void BindPendingReview()
@@ -1130,14 +1256,11 @@ public partial class AdventurePlayView : UserControl
             return;
 
         var counts = PendingReviewService.GetCounts(_bundle);
-        PendingReviewBanner.Visibility = counts.Total > 0 ? Visibility.Visible : Visibility.Collapsed;
-        PendingReviewHeader.Text = PendingReviewService.FormatSummaryLine(counts);
-        PendingReviewPinnedRow.Visibility = counts.Total > 0 ? Visibility.Visible : Visibility.Collapsed;
-        PendingReviewPinnedText.Text = PendingReviewService.FormatSummaryLine(counts);
-        ReviewMemoriesButton.Visibility = counts.Memories > 0 ? Visibility.Visible : Visibility.Collapsed;
-        ReviewSummaryButton.Visibility = counts.Summary > 0 ? Visibility.Visible : Visibility.Collapsed;
-        ReviewEntitiesButton.Visibility = counts.Entities > 0 ? Visibility.Visible : Visibility.Collapsed;
-        ReviewCardsButton.Visibility = counts.Cards > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var visible = counts.Total > 0;
+        PendingReviewBar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        PendingReviewText.Text = visible
+            ? PendingReviewService.FormatSummaryLine(counts)
+            : "";
         UpdatePlayTabBadges();
     }
 
@@ -1150,9 +1273,6 @@ public partial class AdventurePlayView : UserControl
         ReviewQueueBanner.Visibility = queue.Count > 0 && _showReferenceReviewQueue
             ? Visibility.Visible
             : Visibility.Collapsed;
-        ReviewQueueHeader.Text = queue.Count > 0
-            ? $"{queue.Count} proposed entit{(queue.Count == 1 ? "y" : "ies")} awaiting review"
-            : "";
         ReviewQueueList.ItemsSource = queue
             .Select(q => new ReviewQueueListItem(q))
             .ToList();
@@ -1390,41 +1510,70 @@ public partial class AdventurePlayView : UserControl
         }
     }
 
-    private void PendingReviewPinnedRow_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
-        OpenPlaySettingsForFirstPending();
-
     private void ReviewProposals_Click(object sender, RoutedEventArgs e) =>
-        OpenPlaySettingsForFirstPending();
+        OpenProposalReviewHub();
 
-    private void ReviewMemories_Click(object sender, RoutedEventArgs e) =>
-        OpenPlaySettings(PlaySettingsTab.MemoryCards);
+    public void OpenProposalReviewHub(ProposalReviewCategory? focusCategory = null)
+    {
+        if (_bundle is null)
+            return;
 
-    private void ReviewSummary_Click(object sender, RoutedEventArgs e) =>
-        OpenPlaySettings(PlaySettingsTab.World);
+        var fresh = AdventureStore.Load(_bundle.Metadata.Id) ?? _bundle;
+        var dlg = new ProposalReviewHubDialog(fresh, focusCategory)
+        {
+            Owner = _openPlaySettingsDialog ?? Window.GetWindow(this),
+        };
+        dlg.EntityAccepted += (_, item) =>
+            TryPromptCanonReconcile(new CanonEditContext
+            {
+                Category = MapReviewEntityCategory(item.EntityType),
+                IsReviewAccept = true,
+            });
+        dlg.ItemsChanged += (_, _) =>
+        {
+            if (_bundle is null)
+                return;
+
+            _bundle = AdventureStore.Load(_bundle.Metadata.Id) ?? _bundle;
+            BindEntityGrid();
+            BindReviewQueue();
+            BindPendingReview();
+            BindWarnings();
+            _openPlaySettingsDialog?.ReloadBundleFromStore();
+            _openPlaySettingsDialog?.RefreshReviewPanels();
+            PlayStatusRefreshRequested?.Invoke(this, EventArgs.Empty);
+        };
+
+        dlg.ShowDialog();
+        if (dlg.ChangesSaved)
+        {
+            _bundle = AdventureStore.Load(_bundle.Metadata.Id) ?? _bundle;
+            BindEntityGrid();
+            BindReviewQueue();
+            BindPendingReview();
+            BindWarnings();
+            UpdateJobButtonStates();
+        }
+    }
+
+    public void TryOpenProposalReviewHubAfterJob(string jobId, int proposalCount)
+    {
+        if (_bundle is null || proposalCount <= 0)
+            return;
+
+        if (string.Equals(jobId, GenerationJobId.ProcessTurn, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        OpenProposalReviewHub(ProposalReviewService.ResolveCategoryForJob(jobId));
+    }
 
     private void OpenPlaySettingsForFirstPending()
     {
         if (_bundle is null)
             return;
 
-        var counts = PendingReviewService.GetCounts(_bundle);
-        if (counts.Memories > 0)
-            OpenPlaySettings(PlaySettingsTab.MemoryCards);
-        else if (counts.Summary > 0)
-            OpenPlaySettings(PlaySettingsTab.World);
-        else if (counts.Entities > 0)
-            FocusEntityReviewQueue();
-        else if (counts.Cards > 0)
-            OpenPlaySettings(PlaySettingsTab.MemoryCards);
-        else if (counts.SourceEdits > 0)
-            OpenPlaySettings(PlaySettingsTab.Sources);
+        OpenProposalReviewHub(ProposalReviewService.ListCategories(_bundle).FirstOrDefault()?.Category);
     }
-
-    private void ReviewCards_Click(object sender, RoutedEventArgs e) =>
-        OpenPlaySettings(PlaySettingsTab.MemoryCards);
-
-    private void ReviewEntities_Click(object sender, RoutedEventArgs e) =>
-        FocusEntityReviewQueue();
 
     private void FocusReferenceTab() => FocusEntityReviewQueue(scrollOnly: false);
 
@@ -1518,15 +1667,19 @@ public partial class AdventurePlayView : UserControl
 
     public void WirePlaySettingsDialog(PlayPromptInjectionDialog dlg)
     {
+        dlg.OpenThreadsHub = () => ManageThreadsRequested?.Invoke(this, EventArgs.Empty);
         dlg.ResolvePreviewComposerText = ResolvePreviewComposerText;
         dlg.ResolvePreviewAttachmentContext = ResolvePreviewAttachmentContext;
-        dlg.OpenSourceManagerAsync = OpenSourceManagerAsync;
         dlg.ProbeSourcesAsync = ProbeSourcesAsync;
+        dlg.ProbeSourceFileAsync = ProbeSourceFileAsync;
+        dlg.OpenApiSyncDiagnosticsAsync = OpenApiSyncDiagnosticsAsync;
+        dlg.SynthesizeSourceAsync = SynthesizeSourceAsync;
         dlg.RefreshSourcesStatusAsync = RefreshSourcesStatusAsync;
         dlg.ReconcileDuplicatesAsync = ReconcileDuplicatesAsync;
         dlg.SetSessionLinkDetails(ThreadStatusBlock.Text, SourcesStatusBlock.Text);
         dlg.StartNewPlayThreadAsync = request => StartNewPlayThreadAsync?.Invoke(request) ?? Task.CompletedTask;
         dlg.OpenPlayHandoffDialog = () => OpenPlayHandoffWizard();
+        dlg.OpenProposalReviewHub = category => OpenProposalReviewHub(category);
         dlg.DraftNewProjectChatAsync = () => DraftNewProjectChatAsync?.Invoke() ?? Task.CompletedTask;
         dlg.CancelProjectChatDraft = () => CancelProjectChatDraft?.Invoke();
         dlg.RunSourceEditJobAsync = (prompt, _) => RunSourceEditJobAsync?.Invoke(prompt) ?? Task.CompletedTask;
@@ -1557,6 +1710,12 @@ public partial class AdventurePlayView : UserControl
             BindPendingReview();
             BindReviewQueue();
             BindEntityGrid();
+        };
+
+        dlg.TransportSettingsCommitted += (_, _) =>
+        {
+            SyncTransportSettingsFromDisk();
+            PlaySettingsSaved?.Invoke(this, EventArgs.Empty);
         };
 
         if (_bundle is not null)

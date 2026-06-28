@@ -123,6 +123,27 @@ internal static class HighlightColorCapacityAnalyzer
         return map;
     }
 
+    internal static Dictionary<string, PhraseHighlightRule> IndexExistingRulesByEntity(
+        IEnumerable<PhraseHighlightRule>? existingRules)
+    {
+        var map = new Dictionary<string, PhraseHighlightRule>(StringComparer.OrdinalIgnoreCase);
+        if (existingRules is null)
+            return map;
+
+        foreach (var rule in existingRules)
+        {
+            if (!PhraseHighlightRuleService.IsEntityLinked(rule))
+                continue;
+
+            map.TryAdd(EntityKey(rule.EntityCategory!, rule.EntityId!.Value), rule);
+        }
+
+        return map;
+    }
+
+    internal static string EntityKey(string category, Guid entityId) =>
+        $"{category}:{entityId:D}";
+
     internal static void SeedFromExistingRules(
         IEnumerable<PhraseHighlightRule>? existingRules,
         ISet<string> usedColors,
@@ -146,33 +167,33 @@ internal static class HighlightColorCapacityAnalyzer
         }
     }
 
-    private static int CountNewDistinctColorsNeeded(
-        IReadOnlyList<CastPhraseImportCandidate> candidates,
+    public static int EstimateNewDistinctColorsNeeded(
+        IEnumerable<(string Phrase, string Role, bool AlreadyExists)> items,
         HighlightColorAssignmentOptions options)
     {
         var needed = 0;
-        var assignedCharacterColors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var assignedCharacterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var candidate in candidates)
+        foreach (var (phrase, role, alreadyExists) in items)
         {
-            if (candidate.AlreadyExists)
+            if (alreadyExists)
                 continue;
 
-            if (TryParseAliasParent(candidate.Role, out var parentName)
+            if (TryParseAliasParent(role, out var parentName)
                 && options.AliasColorMode != HighlightAliasColorMode.Distinct
-                && assignedCharacterColors.ContainsKey(parentName))
+                && assignedCharacterNames.Contains(parentName))
             {
                 continue;
             }
 
-            if (TryParseAliasParent(candidate.Role, out parentName)
+            if (TryParseAliasParent(role, out parentName)
                 && options.AliasColorMode != HighlightAliasColorMode.Distinct)
             {
-                assignedCharacterColors[parentName] = candidate.Color;
+                assignedCharacterNames.Add(parentName);
             }
-            else if (!TryParseAliasParent(candidate.Role, out _))
+            else if (!TryParseAliasParent(role, out _))
             {
-                assignedCharacterColors[candidate.Phrase] = candidate.Color;
+                assignedCharacterNames.Add(phrase);
             }
 
             needed++;
@@ -180,6 +201,13 @@ internal static class HighlightColorCapacityAnalyzer
 
         return needed;
     }
+
+    private static int CountNewDistinctColorsNeeded(
+        IReadOnlyList<CastPhraseImportCandidate> candidates,
+        HighlightColorAssignmentOptions options) =>
+        EstimateNewDistinctColorsNeeded(
+            candidates.Select(c => (c.Phrase, c.Role, c.AlreadyExists)),
+            options);
 
     private static HashSet<string> CollectDistinctColors(IEnumerable<PhraseHighlightRule> rules)
     {
