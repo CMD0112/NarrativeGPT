@@ -149,7 +149,8 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         string? displayPlayerLine = null,
         string? packetHash = null,
         bool attachmentsPreStaged = false,
-        bool hostCdpStaged = false)
+        bool hostCdpStaged = false,
+        bool allowKeyboardSubmitOnProjectHome = false)
     {
         var textJson = JsonSerializer.Serialize(text);
         var req = requireProjectContext ? "true" : "false";
@@ -157,9 +158,13 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         var hashJson = JsonSerializer.Serialize(packetHash ?? "");
         var preStagedJson = attachmentsPreStaged ? "true" : "false";
         var cdpJson = hostCdpStaged ? "true" : "false";
+        var keyboardJson = allowKeyboardSubmitOnProjectHome ? "true" : "false";
         var script =
             "(function(){var fn=globalThis.__cgwAdventureSubmitPrompt;"
             + "if(typeof fn!=='function')return false;"
+            + "globalThis.__cgwSubmitPromptOptions={allowKeyboardSubmitOnProjectHome:"
+            + keyboardJson
+            + "};"
             + $"fn({textJson},{req},{playerJson},{hashJson},[],false,{cdpJson},{preStagedJson});return true;}})()";
 
         var raw = await core.ExecuteScriptAsync(script);
@@ -176,14 +181,43 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         CoreWebView2 core,
         string text,
         int timeoutMs,
-        bool requireProjectContext)
+        bool requireProjectContext,
+        int? composerStableWaitMs = null)
     {
         var textJson = JsonSerializer.Serialize(text);
         var req = requireProjectContext ? "true" : "false";
+        var stableArg = composerStableWaitMs.HasValue
+            ? composerStableWaitMs.Value.ToString()
+            : "undefined";
         var script =
             "(function(){var fn=globalThis.__cgwAdventureSendPrompt;"
             + "if(typeof fn!=='function')return false;"
-            + $"fn({textJson},{timeoutMs},{req});return true;}})()";
+            + $"fn({textJson},{timeoutMs},{req},{stableArg});return true;}})()";
+
+        var raw = await core.ExecuteScriptAsync(script);
+        return raw.Contains("true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public async Task<bool> InvokeSendPromptWithAttachmentsAsync(
+        CoreWebView2 core,
+        string text,
+        int timeoutMs,
+        bool requireProjectContext,
+        int? composerStableWaitMs,
+        bool hostCdpStaged,
+        bool useWrapperAttachmentStash)
+    {
+        var textJson = JsonSerializer.Serialize(text);
+        var req = requireProjectContext ? "true" : "false";
+        var stableArg = composerStableWaitMs.HasValue
+            ? composerStableWaitMs.Value.ToString()
+            : "undefined";
+        var cdp = hostCdpStaged ? "true" : "false";
+        var stash = useWrapperAttachmentStash ? "true" : "false";
+        var script =
+            "(function(){var fn=globalThis.__cgwAdventureSendPrompt;"
+            + "if(typeof fn!=='function')return false;"
+            + $"fn({textJson},{timeoutMs},{req},{stableArg},{{hostCdpStaged:{cdp},useWrapperAttachmentStash:{stash}}});return true;}})()";
 
         var raw = await core.ExecuteScriptAsync(script);
         return raw.Contains("true", StringComparison.OrdinalIgnoreCase);
@@ -281,7 +315,8 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         string? packetHash,
         bool useWrapperAttachmentStash = false,
         bool hostCdpStaged = false,
-        bool attachmentsPreStaged = false)
+        bool attachmentsPreStaged = false,
+        bool allowKeyboardSubmitOnProjectHome = false)
     {
         SendCommand(core, new
         {
@@ -293,6 +328,7 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
             useWrapperAttachmentStash = useWrapperAttachmentStash,
             hostCdpStaged = hostCdpStaged,
             attachmentsPreStaged = attachmentsPreStaged,
+            allowKeyboardSubmitOnProjectHome = allowKeyboardSubmitOnProjectHome,
         });
     }
 

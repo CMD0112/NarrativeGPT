@@ -437,6 +437,7 @@ public partial class MainWindow
         }
 
         reloaded = AdventureStore.Load(adventureId) ?? reloaded;
+        ProjectChatDraftService.NoteDraftTab(reloaded, wv, ChatTabs);
         UpdateDesignLinkStatus();
         _designView?.SetStatus(AdventureDesignContextService.FormatDesignModeOpenStatus(reloaded));
 

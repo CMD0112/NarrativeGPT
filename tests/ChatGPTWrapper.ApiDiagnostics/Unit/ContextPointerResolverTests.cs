@@ -5,8 +5,8 @@ using ChatGPTWrapper.Adventure.Services.NarratorScales;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class ContextPointerResolverTests
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class ContextPointerResolverTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void Resolve_includes_baseline_opening_on_first_turns()

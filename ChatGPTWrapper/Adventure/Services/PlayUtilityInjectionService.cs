@@ -21,9 +21,20 @@ internal static class PlayUtilityInjectionService
         var remaining = Math.Max(0, max - bundle.Metadata.PlayUtilityInjectionQueue.Count);
         var spill = UtilityJobRouter.ShouldSpillAutoToWorker(bundle);
         var spillList = new List<string>();
+        var dualRun = LocalUtilityInferencePolicy.IsDualRun(bundle);
 
         foreach (var jobId in jobIds)
         {
+            if (dualRun && LocalUtilityInferencePolicy.SupportsJob(jobId))
+            {
+                UtilityOutboxService.Enqueue(
+                    bundle,
+                    jobId,
+                    UtilityExecutionChannel.AutoBackground,
+                    new GenerationJobContext { Turn = turn });
+                continue;
+            }
+
             if (remaining > 0)
             {
                 if (IsAlreadyQueued(bundle, jobId))
@@ -71,7 +82,8 @@ internal static class PlayUtilityInjectionService
 
     public static IReadOnlyList<string> BuildAndDrainUtilitySections(
         AdventureBundle bundle,
-        GenerationJobContext? turnContext = null)
+        GenerationJobContext? turnContext = null,
+        PlayPacketContextSnapshot? playSnapshot = null)
     {
         var queue = bundle.Metadata.PlayUtilityInjectionQueue ?? [];
         if (queue.Count == 0)
@@ -83,7 +95,7 @@ internal static class PlayUtilityInjectionService
         bundle.Metadata.PlayUtilityInjectionQueue = queue.Skip(take.Count).ToList();
 
         return take
-            .Select(pending => BuildUtilitySection(bundle, pending, turnContext))
+            .Select(pending => BuildUtilitySection(bundle, pending, turnContext, playSnapshot))
             .Where(section => !string.IsNullOrWhiteSpace(section))
             .ToList();
     }
@@ -91,10 +103,13 @@ internal static class PlayUtilityInjectionService
     public static string BuildUtilitySection(
         AdventureBundle bundle,
         PendingUtilityInjection pending,
-        GenerationJobContext? extraContext = null)
+        GenerationJobContext? extraContext = null,
+        PlayPacketContextSnapshot? playSnapshot = null)
     {
         var context = BuildJobContext(bundle, pending, extraContext);
-        ApplyReferenceFirstDefaults(bundle, context);
+        ApplyContextAssembly(bundle, pending, context, playSnapshot);
+        if (context.UtilityContextManifest is { } manifest)
+            pending.ContextManifest = manifest.ToRecord();
 
         var jobBody = GenerationJobHandlers.BuildJobPrompt(bundle, pending.JobId, context);
         jobBody = UtilityResponseSchemaRegistry.AppendResponseContract(jobBody, pending.JobId);
@@ -107,9 +122,12 @@ internal static class PlayUtilityInjectionService
             pending.RunId);
     }
 
-    public static string BuildUtilityOnlyPacket(AdventureBundle bundle, PendingUtilityInjection pending)
+    public static string BuildUtilityOnlyPacket(
+        AdventureBundle bundle,
+        PendingUtilityInjection pending,
+        PlayPacketContextSnapshot? playSnapshot = null)
     {
-        var section = BuildUtilitySection(bundle, pending);
+        var section = BuildUtilitySection(bundle, pending, playSnapshot: playSnapshot);
         return string.IsNullOrWhiteSpace(section) ? "" : section;
     }
 
@@ -161,6 +179,32 @@ internal static class PlayUtilityInjectionService
             SuppressInlineGuide = true,
             DesignStep = extraContext?.DesignStep,
         };
+    }
+
+    private static void ApplyContextAssembly(
+        AdventureBundle bundle,
+        PendingUtilityInjection pending,
+        GenerationJobContext context,
+        PlayPacketContextSnapshot? playSnapshot)
+    {
+        if (!UtilityJobContextAssembler.IsEnabled(bundle, pending.Channel))
+        {
+            ApplyReferenceFirstDefaults(bundle, context);
+            return;
+        }
+
+        var assembly = pending.Channel == UtilityExecutionChannel.AutoBackground && playSnapshot is not null
+            ? UtilityJobContextAssembler.AssemblePlayBundledSync(
+                bundle,
+                pending.JobId,
+                pending.Channel,
+                playSnapshot)
+            : UtilityJobContextAssembler.AssemblePlayUtilityOnlySync(
+                bundle,
+                pending.JobId,
+                pending.Channel);
+
+        assembly.ApplyTo(context);
     }
 
     private static void ApplyReferenceFirstDefaults(AdventureBundle bundle, GenerationJobContext context)

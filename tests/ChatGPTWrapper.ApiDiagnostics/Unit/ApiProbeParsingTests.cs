@@ -4,6 +4,7 @@ using ChatGPTWrapper;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.ChatGptApi;
+using ChatGPTWrapper.ChatGptApi.ProjectSource;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
@@ -1785,5 +1786,28 @@ public sealed class ApiProbeParsingTests
         };
 
         Assert.Equal([SourceSyncAction.Skip], ProjectFileSyncPlanner.GetAvailableActions(item));
+    }
+
+    [Fact]
+    public void IsLikelyApiErrorJsonPayload_detects_not_found_json()
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes("{\"detail\":\"Not found.\"}");
+        Assert.True(ProjectSourceIntegrityVerifier.IsLikelyApiErrorJsonPayload(bytes));
+    }
+
+    [Fact]
+    public void IsLikelyApiErrorJsonPayload_ignores_real_image_bytes()
+    {
+        var bytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10 };
+        Assert.False(ProjectSourceIntegrityVerifier.IsLikelyApiErrorJsonPayload(bytes));
+    }
+
+    [Fact]
+    public void BuildProjectScopedDownloadPathCandidates_omits_generic_files_path()
+    {
+        var paths = ChatGptApiEndpoints.BuildProjectScopedDownloadPathCandidates("file-1", "g-p-test");
+        Assert.Equal(4, paths.Count);
+        Assert.DoesNotContain(paths, p => p.StartsWith("/backend-api/files/", StringComparison.Ordinal));
+        Assert.All(paths, p => Assert.Contains("g-p-test", p, StringComparison.Ordinal));
     }
 }

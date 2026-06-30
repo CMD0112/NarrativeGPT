@@ -6,30 +6,15 @@ using ChatGPTWrapper.Adventure.Stores;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
+[Collection(FileLockAwareCollectionNames.Name)]
 public sealed class AdventureRenameServiceTests : IDisposable
 {
-    private readonly string _root;
+    private readonly FileLockAwareTestScope _scope;
 
-    public AdventureRenameServiceTests()
-    {
-        _root = Path.Combine(Path.GetTempPath(), "cgw-rename-" + Guid.NewGuid().ToString("N"));
-        AppDirectories.TestRootOverride = _root;
-        AppDirectories.EnsureCreated();
-    }
+    public AdventureRenameServiceTests() =>
+        _scope = FileLockAwareTestScope.Enter(typeof(AdventureRenameServiceTests));
 
-    public void Dispose()
-    {
-        AppDirectories.TestRootOverride = null;
-        try
-        {
-            if (Directory.Exists(_root))
-                Directory.Delete(_root, recursive: true);
-        }
-        catch
-        {
-            /* best effort */
-        }
-    }
+    public void Dispose() => _scope.Dispose();
 
     [Fact]
     public void TryRename_persists_new_title_to_adventure_json()

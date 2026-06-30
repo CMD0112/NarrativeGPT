@@ -5,30 +5,15 @@ using ChatGPTWrapper.Adventure.Stores;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
+[Collection(FileLockAwareCollectionNames.Name)]
 public sealed class NarrativeStartPacketTests : IDisposable
 {
-    private readonly string _root;
+    private readonly FileLockAwareTestScope _scope;
 
-    public NarrativeStartPacketTests()
-    {
-        _root = Path.Combine(Path.GetTempPath(), "cgw-narrative-start-" + Guid.NewGuid().ToString("N"));
-        AppDirectories.TestRootOverride = _root;
-        AppDirectories.EnsureCreated();
-    }
+    public NarrativeStartPacketTests() =>
+        _scope = FileLockAwareTestScope.Enter(typeof(NarrativeStartPacketTests));
 
-    public void Dispose()
-    {
-        AppDirectories.TestRootOverride = null;
-        try
-        {
-            if (Directory.Exists(_root))
-                Directory.Delete(_root, recursive: true);
-        }
-        catch
-        {
-            /* best effort */
-        }
-    }
+    public void Dispose() => _scope.Dispose();
 
     [Fact]
     public void BuildStartPlayerDirective_lists_core_source_files()

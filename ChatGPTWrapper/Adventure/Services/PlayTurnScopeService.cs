@@ -82,6 +82,12 @@ internal static class PlayTurnScopeService
 
     public static IReadOnlyList<TurnRecord> GetPacketAcceptedTurns(AdventureBundle bundle)
     {
+        if (ThreadConversationLogReader.HasActivePlayLog(bundle))
+        {
+            var entry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play)!;
+            return ThreadConversationLogReader.ToSyntheticTurnRecords(bundle, entry);
+        }
+
         var activeConversationId = GetActivePlayConversationId(bundle);
         var activeSessionId = GetActiveSessionId(bundle);
 
@@ -142,6 +148,12 @@ internal static class PlayTurnScopeService
     /// </summary>
     public static IReadOnlyList<TurnRecord> GetPacketContextTurns(AdventureBundle bundle)
     {
+        if (ThreadConversationLogReader.HasActivePlayLog(bundle))
+        {
+            var entry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play)!;
+            return ThreadConversationLogReader.ToSyntheticTurnRecords(bundle, entry);
+        }
+
         var activeConversationId = GetActivePlayConversationId(bundle);
         var activeSessionId = GetActiveSessionId(bundle);
 

@@ -246,14 +246,15 @@ public sealed class LiveApiDiagnosticRunner
 
             var testName = $"cgw-diag-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.md";
             var content = System.Text.Encoding.UTF8.GetBytes("# CGW attach diagnostic\n");
-            var fileId = await api.UploadProjectFileAsync(
+            var publish = await api.PublishProjectSourceFileAsync(
                 core,
                 target.Id,
                 testName,
                 content,
                 "text/markdown",
-                projectTitle: target.Title,
                 cancellationToken: cancellationToken);
+
+            var fileId = publish.File.FileId;
 
             if (string.IsNullOrWhiteSpace(fileId))
                 throw new InvalidOperationException("upload returned no file id");

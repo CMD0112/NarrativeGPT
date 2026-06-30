@@ -6,6 +6,17 @@ internal static class PlaySurfaceActionSendHelper
 {
     public static readonly string[] DefaultActionKeys = ["continue", "regenerate", "retry"];
 
+    /// <summary>Wrapper quick-action bar: continue is supported; regenerate/retry are native turn actions.</summary>
+    public static readonly string[] WrapperQuickActionKeys = ["continue"];
+
+    public static bool AllowsEmptyComposerSend(AdventureBundle bundle) =>
+        EnumerateActions(bundle).Any(e => IsInjectedOnly(e.Value));
+
+    public static bool ShouldShowWrapperQuickAction(string actionKey, string? mode) =>
+        WrapperQuickActionKeys.Any(k =>
+            string.Equals(k, actionKey, StringComparison.OrdinalIgnoreCase))
+        && (IsHidden(mode) || IsInjectedOnly(mode));
+
     public static string ApplyInjectedOnly(AdventureBundle bundle, string playerLine)
     {
         var trimmed = playerLine.Trim();
@@ -26,8 +37,25 @@ internal static class PlaySurfaceActionSendHelper
     public static string BuildActionPacket(string actionKey)
     {
         var name = actionKey.Trim().ToUpperInvariant();
-        return $"[[cgw:action name=\"{name}\"]]\n[[/cgw:action]]";
+        var body = ResolveActionDirectiveBody(actionKey);
+        return string.IsNullOrWhiteSpace(body)
+            ? $"[[cgw:action name=\"{name}\"]]\n[[/cgw:action]]"
+            : $"[[cgw:action name=\"{name}\"]]\n{body}\n[[/cgw:action]]";
     }
+
+    internal static string ResolveActionDirectiveBody(string actionKey) =>
+        actionKey.Trim().ToLowerInvariant() switch
+        {
+            "continue" =>
+                "The player requests you continue narrating — advance the scene with fresh prose "
+                + "without requiring a new player action.",
+            "regenerate" =>
+                "The player requests you regenerate your previous response with a different approach "
+                + "while preserving story continuity.",
+            "retry" =>
+                "The player requests you retry your previous response.",
+            _ => $"The player requests the {actionKey.Trim().ToUpperInvariant()} action.",
+        };
 
     private static IEnumerable<KeyValuePair<string, string>> EnumerateActions(AdventureBundle bundle)
     {
@@ -45,6 +73,9 @@ internal static class PlaySurfaceActionSendHelper
 
     private static bool IsInjectedOnly(string? mode) =>
         string.Equals(mode, "InjectedOnly", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsHidden(string? mode) =>
+        string.Equals(mode, "Hidden", StringComparison.OrdinalIgnoreCase);
 
     private static bool EndsWithActionToken(string text, string actionKey)
     {

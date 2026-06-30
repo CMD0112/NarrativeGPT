@@ -22,6 +22,7 @@ public partial class AdventureDesignView : UserControl
     private EntityEditSourceSyncResult? _lastCanonSyncResult;
     private DispatcherTimer? _canonSyncNoticeTimer;
     private bool _canonSyncNoticePersistent;
+    private bool _shellChromeActive;
 
     public event EventHandler? BackRequested;
 
@@ -69,6 +70,12 @@ public partial class AdventureDesignView : UserControl
     {
         InitializeComponent();
         WireEntityReferencePanel();
+    }
+
+    public void SetShellChromeState(bool shellChromeActive)
+    {
+        _shellChromeActive = shellChromeActive;
+        DesignHeaderGrid.Visibility = shellChromeActive ? Visibility.Collapsed : Visibility.Visible;
     }
 
     public Action<IReadOnlyList<PhraseHighlightRule>>? CommitPhraseHighlightRules { get; set; }
@@ -1790,14 +1797,6 @@ public partial class AdventureDesignView : UserControl
         {
             SetStatus(ex.Message);
         }
-    }
-
-    public void TryOpenProposalReviewHubAfterJob(string jobId, int proposalCount)
-    {
-        if (_bundle is null || proposalCount <= 0)
-            return;
-
-        OpenProposalReviewHub(ProposalReviewService.ResolveCategoryForJob(jobId));
     }
 
     public void OpenProposalReviewHub(ProposalReviewCategory? focusCategory = null)

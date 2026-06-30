@@ -14,6 +14,8 @@ public enum ProposalReviewCategory
     SourceEdit,
     JsonImport,
     ContinuityWarning,
+
+    DualRunCompare,
 }
 
 public sealed class ProposalReviewCategorySummary
@@ -49,6 +51,8 @@ public sealed class ProposalReviewListItem
 
     public string? Subtitle { get; init; }
 
+    public string? SourceLabel { get; init; }
+
     public bool CanAccept { get; init; } = true;
 
     public bool CanDismiss { get; init; } = true;
@@ -77,7 +81,43 @@ public static class ProposalReviewService
         Add(ProposalReviewCategory.JsonImport, "JSON import", counts.JsonImports);
         Add(ProposalReviewCategory.ContinuityWarning, "Continuity warnings", counts.ContinuityWarnings);
 
+        var dualCount = UtilityDualRunReviewService.ListPendingCompares(bundle.Metadata.Id).Count;
+        Add(ProposalReviewCategory.DualRunCompare, "Dual-run compare", dualCount);
+
         return list;
+    }
+
+    public static IReadOnlyList<string> ListInferenceSourceFilters() =>
+    [
+        "all",
+        UtilityLane.LocalLlm,
+        UtilityProposalInferenceTagging.ChatGptUtilityFilter,
+        UtilityLane.PlayLegacyInline,
+        UtilityLane.Worker,
+    ];
+
+    public static string FormatInferenceSourceFilterLabel(string filter) =>
+        filter switch
+        {
+            "all" => "All sources",
+            UtilityLane.LocalLlm => "Local LLM only",
+            UtilityProposalInferenceTagging.ChatGptUtilityFilter => "ChatGPT utility only",
+            UtilityLane.PlayLegacyInline => "ChatGPT inline only",
+            UtilityLane.Worker => "ChatGPT worker only",
+            _ => filter,
+        };
+
+    private static bool MatchesInferenceFilter(string? itemSource, string? filter) =>
+        UtilityProposalInferenceTagging.MatchesSourceFilter(itemSource, filter);
+
+    private static string? BuildSourceSubtitle(string? inferenceSource, string? extra = null)
+    {
+        var source = string.IsNullOrWhiteSpace(inferenceSource)
+            ? null
+            : UtilityProposalInferenceTagging.FormatSourceLabel(inferenceSource);
+        if (string.IsNullOrWhiteSpace(source))
+            return extra;
+        return string.IsNullOrWhiteSpace(extra) ? $"Source: {source}" : $"Source: {source} · {extra}";
     }
 
     public static bool HasAny(AdventureBundle bundle) =>
@@ -85,46 +125,45 @@ public static class ProposalReviewService
 
     public static IReadOnlyList<ProposalReviewListItem> ListItems(
         AdventureBundle bundle,
-        ProposalReviewCategory category)
+        ProposalReviewCategory category,
+        string? inferenceSourceFilter = null)
     {
         return category switch
         {
             ProposalReviewCategory.Entity => bundle.Entities.ReviewQueue
+                .Where(e => MatchesInferenceFilter(e.InferenceSource, inferenceSourceFilter))
                 .Select(e => new ProposalReviewListItem
                 {
                     Key = new ProposalReviewItemKey { Category = category, Id = e.Id },
                     Title = FormatEntityTitle(e),
                     Preview = FormatEntityPreview(e),
-                    Subtitle = e.CreatedAt.ToString("g"),
+                    Subtitle = BuildSourceSubtitle(e.InferenceSource, e.CreatedAt.ToString("g")),
+                    SourceLabel = UtilityProposalInferenceTagging.FormatSourceLabel(e.InferenceSource),
                 })
                 .ToList(),
             ProposalReviewCategory.Memory => bundle.Memory.ReviewQueue
+                .Where(m => MatchesInferenceFilter(m.InferenceSource, inferenceSourceFilter))
                 .Select(m => new ProposalReviewListItem
                 {
                     Key = new ProposalReviewItemKey { Category = category, Id = m.Id },
                     Title = Truncate(m.Text, 72),
                     Preview = FormatMemoryPreview(m),
-                    Subtitle = m.Tags.Count > 0 ? string.Join(", ", m.Tags) : null,
+                    Subtitle = BuildSourceSubtitle(
+                        m.InferenceSource,
+                        m.Tags.Count > 0 ? string.Join(", ", m.Tags) : null),
+                    SourceLabel = UtilityProposalInferenceTagging.FormatSourceLabel(m.InferenceSource),
                 })
                 .ToList(),
-            ProposalReviewCategory.Summary => SummaryReviewService.IsPending(bundle.Summary)
-                ?
-                [
-                    new ProposalReviewListItem
-                    {
-                        Key = new ProposalReviewItemKey { Category = category, Id = SummaryProposalKey },
-                        Title = "Rolling summary update",
-                        Preview = Truncate(bundle.Summary.ProposedSummary ?? "", 120),
-                    },
-                ]
-                : [],
+            ProposalReviewCategory.Summary => BuildSummaryItems(bundle, inferenceSourceFilter),
             ProposalReviewCategory.Card => bundle.Cards.ReviewQueue
+                .Where(c => MatchesInferenceFilter(c.InferenceSource, inferenceSourceFilter))
                 .Select(c => new ProposalReviewListItem
                 {
                     Key = new ProposalReviewItemKey { Category = category, Id = c.Id },
                     Title = FormatCardTitle(c),
                     Preview = Truncate(c.ProposedChange, 120),
-                    Subtitle = c.CreatedAt.ToString("g"),
+                    Subtitle = BuildSourceSubtitle(c.InferenceSource, c.CreatedAt.ToString("g")),
+                    SourceLabel = UtilityProposalInferenceTagging.FormatSourceLabel(c.InferenceSource),
                 })
                 .ToList(),
             ProposalReviewCategory.SourceEdit => SourceEditReviewPresentationService
@@ -138,17 +177,77 @@ public static class ProposalReviewService
                 .ToList(),
             ProposalReviewCategory.JsonImport => BuildJsonImportItems(bundle),
             ProposalReviewCategory.ContinuityWarning => ActiveContinuityWarnings(bundle)
+                .Where(w => MatchesInferenceFilter(
+                    string.Equals(w.Source, "local", StringComparison.OrdinalIgnoreCase) ? null : w.Source,
+                    inferenceSourceFilter))
                 .Select(w => new ProposalReviewListItem
                 {
                     Key = new ProposalReviewItemKey { Category = category, Id = w.Id },
                     Title = w.Severity,
                     Preview = w.Message,
-                    Subtitle = w.CreatedAt.ToString("g"),
+                    Subtitle = BuildSourceSubtitle(
+                        string.Equals(w.Source, "local", StringComparison.OrdinalIgnoreCase) ? null : w.Source,
+                        w.CreatedAt.ToString("g")),
+                    SourceLabel = string.Equals(w.Source, "local", StringComparison.OrdinalIgnoreCase)
+                        ? "Local analyzer"
+                        : UtilityProposalInferenceTagging.FormatSourceLabel(w.Source),
                     CanAccept = false,
+                })
+                .ToList(),
+            ProposalReviewCategory.DualRunCompare => UtilityDualRunReviewService
+                .ListPendingCompares(bundle.Metadata.Id)
+                .Select(c => new ProposalReviewListItem
+                {
+                    Key = new ProposalReviewItemKey { Category = category, Id = c.DualRunGroupId },
+                    Title = $"{c.JobLabel} — local vs ChatGPT",
+                    Preview = $"Local: {c.LocalProposalCount} proposal(s) · ChatGPT: {c.RemoteProposalCount} proposal(s)",
+                    Subtitle = c.LocalRun?.CapturedAt.ToString("g"),
+                    CanAccept = false,
+                    CanDismiss = true,
                 })
                 .ToList(),
             _ => [],
         };
+    }
+
+    private static IReadOnlyList<ProposalReviewListItem> BuildSummaryItems(
+        AdventureBundle bundle,
+        string? inferenceSourceFilter)
+    {
+        var items = new List<ProposalReviewListItem>();
+
+        var hasSourcePending = bundle.Summary.SourceProposals?.Any(p => !p.Resolved) ?? false;
+        var hasLegacy = bundle.Summary.ProposalRevision > bundle.Summary.ResolvedProposalRevision
+                        && !string.IsNullOrWhiteSpace(bundle.Summary.ProposedSummary);
+        if (hasLegacy && !hasSourcePending
+            && UtilityProposalInferenceTagging.MatchesSourceFilter(null, inferenceSourceFilter))
+        {
+            items.Add(new ProposalReviewListItem
+            {
+                Key = new ProposalReviewItemKey { Category = ProposalReviewCategory.Summary, Id = SummaryProposalKey },
+                Title = "Rolling summary update",
+                Preview = Truncate(bundle.Summary.ProposedSummary ?? "", 120),
+                SourceLabel = "ChatGPT",
+                Subtitle = "Source: ChatGPT",
+            });
+        }
+
+        foreach (var proposal in (bundle.Summary.SourceProposals ?? []).Where(p => !p.Resolved))
+        {
+            if (!MatchesInferenceFilter(proposal.InferenceSource, inferenceSourceFilter))
+                continue;
+
+            items.Add(new ProposalReviewListItem
+            {
+                Key = new ProposalReviewItemKey { Category = ProposalReviewCategory.Summary, Id = proposal.Id },
+                Title = "Rolling summary update",
+                Preview = Truncate(proposal.Text, 120),
+                SourceLabel = UtilityProposalInferenceTagging.FormatSourceLabel(proposal.InferenceSource),
+                Subtitle = BuildSourceSubtitle(proposal.InferenceSource),
+            });
+        }
+
+        return items;
     }
 
     public static string BuildDetail(AdventureBundle bundle, ProposalReviewItemKey key)
@@ -171,8 +270,15 @@ public static class ProposalReviewService
 
                 {memory.Text}
                 """,
-            ProposalReviewCategory.Summary when SummaryReviewService.IsPending(bundle.Summary) =>
+            ProposalReviewCategory.Summary when key.Id == SummaryProposalKey && SummaryReviewService.IsPending(bundle.Summary) =>
                 bundle.Summary.ProposedSummary ?? "",
+            ProposalReviewCategory.Summary when SummaryReviewService.FindSourceProposal(bundle.Summary, key.Id) is { } summaryProposal =>
+                summaryProposal.Text,
+            ProposalReviewCategory.DualRunCompare =>
+                UtilityDualRunReviewService.ListPendingCompares(bundle.Metadata.Id)
+                    .FirstOrDefault(c => c.DualRunGroupId == key.Id) is { } compare
+                    ? UtilityDualRunReviewService.FormatCompareDetail(compare)
+                    : "",
             ProposalReviewCategory.Card when FindCard(bundle, key.Id) is { } card =>
                 $"""
                 Created: {card.CreatedAt:g}
@@ -211,7 +317,7 @@ public static class ProposalReviewService
 
                 bundle.Entities.ReviewQueue.Remove(item);
                 AdventureStore.Save(bundle, AdventureSaveScope.Entities);
-                return ProposalReviewResult.Succeeded(requiresCanonReconcile: true);
+                return CompleteReviewAction(bundle, key.Category, requiresCanonReconcile: true);
             }
             case ProposalReviewCategory.Memory:
             {
@@ -229,16 +335,27 @@ public static class ProposalReviewService
                 });
                 bundle.Memory.ReviewQueue.Remove(item);
                 AdventureStore.Save(bundle, AdventureSaveScope.Memory);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             case ProposalReviewCategory.Summary:
             {
-                if (!SummaryReviewService.IsPending(bundle.Summary))
-                    return ProposalReviewResult.NotFound;
+                if (key.Id == SummaryProposalKey)
+                {
+                    if (!SummaryReviewService.IsPending(bundle.Summary))
+                        return ProposalReviewResult.NotFound;
 
-                SummaryReviewService.AcceptProposal(bundle);
+                    SummaryReviewService.AcceptProposal(bundle);
+                }
+                else
+                {
+                    if (SummaryReviewService.FindSourceProposal(bundle.Summary, key.Id) is null)
+                        return ProposalReviewResult.NotFound;
+
+                    SummaryReviewService.AcceptSourceProposal(bundle, key.Id);
+                }
+
                 AdventureStore.Save(bundle, AdventureSaveScope.Summary);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             case ProposalReviewCategory.Card:
             {
@@ -251,7 +368,7 @@ public static class ProposalReviewService
 
                 bundle.Cards.ReviewQueue.Remove(item);
                 AdventureStore.Save(bundle, AdventureSaveScope.Cards);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             case ProposalReviewCategory.SourceEdit:
             {
@@ -264,7 +381,7 @@ public static class ProposalReviewService
 
                 bundle.Scenario.SourceEditReviewQueue.Remove(item);
                 AdventureStore.Save(bundle);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             case ProposalReviewCategory.JsonImport:
             {
@@ -281,7 +398,7 @@ public static class ProposalReviewService
 
                 AdventureDesignService.HydrateFromScenario(bundle);
                 AdventureStore.Save(bundle);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             default:
                 return ProposalReviewResult.NotFound;
@@ -300,7 +417,7 @@ public static class ProposalReviewService
 
                 bundle.Entities.ReviewQueue.Remove(item);
                 AdventureStore.Save(bundle, AdventureSaveScope.Entities);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             case ProposalReviewCategory.Memory:
             {
@@ -310,16 +427,27 @@ public static class ProposalReviewService
 
                 bundle.Memory.ReviewQueue.Remove(item);
                 AdventureStore.Save(bundle, AdventureSaveScope.Memory);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             case ProposalReviewCategory.Summary:
             {
-                if (!SummaryReviewService.IsPending(bundle.Summary))
-                    return ProposalReviewResult.NotFound;
+                if (key.Id == SummaryProposalKey)
+                {
+                    if (!SummaryReviewService.IsPending(bundle.Summary))
+                        return ProposalReviewResult.NotFound;
 
-                SummaryReviewService.DismissProposal(bundle);
+                    SummaryReviewService.DismissProposal(bundle);
+                }
+                else
+                {
+                    if (SummaryReviewService.FindSourceProposal(bundle.Summary, key.Id) is null)
+                        return ProposalReviewResult.NotFound;
+
+                    SummaryReviewService.DismissSourceProposal(bundle, key.Id);
+                }
+
                 AdventureStore.Save(bundle, AdventureSaveScope.Summary);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             case ProposalReviewCategory.Card:
             {
@@ -329,7 +457,7 @@ public static class ProposalReviewService
 
                 bundle.Cards.ReviewQueue.Remove(item);
                 AdventureStore.Save(bundle, AdventureSaveScope.Cards);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             case ProposalReviewCategory.SourceEdit:
             {
@@ -339,7 +467,7 @@ public static class ProposalReviewService
 
                 bundle.Scenario.SourceEditReviewQueue.Remove(item);
                 AdventureStore.Save(bundle, AdventureSaveScope.Scenario);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             case ProposalReviewCategory.JsonImport:
             {
@@ -352,7 +480,7 @@ public static class ProposalReviewService
                     bundle.Scenario.JsonImportProposedSnapshot = null;
 
                 AdventureStore.Save(bundle, AdventureSaveScope.Scenario);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
             }
             case ProposalReviewCategory.ContinuityWarning:
             {
@@ -362,7 +490,12 @@ public static class ProposalReviewService
 
                 ContinuityWarningDismissalService.Dismiss(bundle.Continuity, item.Message);
                 AdventureStore.Save(bundle, AdventureSaveScope.Continuity);
-                return ProposalReviewResult.Succeeded();
+                return CompleteReviewAction(bundle, key.Category);
+            }
+            case ProposalReviewCategory.DualRunCompare:
+            {
+                UtilityDualRunReviewService.MarkGroupReviewResolved(bundle.Metadata.Id, key.Id);
+                return CompleteReviewAction(bundle, key.Category);
             }
             default:
                 return ProposalReviewResult.NotFound;
@@ -415,6 +548,15 @@ public static class ProposalReviewService
     };
 
     private static readonly Guid SummaryProposalKey = Guid.Parse("00000000-0000-0000-0000-000000000001");
+
+    private static ProposalReviewResult CompleteReviewAction(
+        AdventureBundle bundle,
+        ProposalReviewCategory category,
+        bool requiresCanonReconcile = false)
+    {
+        UtilityReviewCompletionService.MarkResolvedIfCategoryEmpty(bundle, category);
+        return ProposalReviewResult.Succeeded(requiresCanonReconcile);
+    }
 
     private static EntityReviewItem? FindEntity(AdventureBundle bundle, Guid id) =>
         bundle.Entities.ReviewQueue.FirstOrDefault(e => e.Id == id);

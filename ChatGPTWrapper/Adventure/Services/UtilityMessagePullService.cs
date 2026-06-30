@@ -61,6 +61,12 @@ internal static class UtilityMessagePullService
             }
         }
 
+        if (LocalUtilityInferencePolicy.IsDualRun(bundle))
+        {
+            context.InferenceSource = UtilityLane.Worker;
+            context.UtilityRunId = entry.RunId;
+        }
+
         var validation = UtilityResponseSchemaRegistry.Validate(entry.JobId, responseText);
         var applyPayload = validation.Payload ?? ContextTagFormat.UnwrapUtilityJobResponse(responseText);
         var applyError = validation.Ok ? captureError : validation.Error;
@@ -84,7 +90,9 @@ internal static class UtilityMessagePullService
             entry.AssistantMessageId,
             UtilityLane.Worker,
             entry.StreamComplete,
-            entry.PushedAt);
+            entry.PushedAt,
+            context.UtilityContextManifest?.ToRecord(),
+            context.DualRunGroupId);
 
         UtilityParseLogService.Append(
             bundle,
@@ -93,14 +101,6 @@ internal static class UtilityMessagePullService
             applyResult.ProposalCount,
             applyResult.Error ?? validation.Error,
             applyResult.ProposalIds);
-
-        ThreadMetadataService.RecordUtilityExchange(
-            bundle,
-            entry.JobId,
-            "",
-            responseText,
-            conversationId,
-            entry.Channel);
 
         UtilityWorkerSessionService.RecordJobCompleted(bundle.Metadata, applyResult.Success);
 

@@ -20,4 +20,6 @@ public sealed class PendingUtilityInjection
     public Guid? CardId { get; set; }
 
     public DateTimeOffset QueuedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public UtilityContextManifestRecord? ContextManifest { get; set; }
 }

@@ -5,8 +5,8 @@ using ChatGPTWrapper.Adventure.Stores;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class PlayThreadRegistrySendTests
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class PlayThreadRegistrySendTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void GetActiveConversationId_survives_schema6_save_without_legacy_field()

@@ -10,6 +10,7 @@ using ChatGPTWrapper.Adventure.Services.PlayLayout;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
 using ChatGPTWrapper.Diagnostics;
+using ChatGPTWrapper.Theme;
 using ChatGPTWrapper.Views;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -130,6 +131,7 @@ public partial class MainWindow
         _playView.UpdateJobButtonStates();
         RefreshAllChatTabHeaders();
         UpdateShellStatusBar();
+        UpdateSessionStatusChips();
     }
 
     public WebView2? GetAdventureWebView() => GetPlayWebView();
@@ -184,7 +186,10 @@ public partial class MainWindow
         dlg.OpenApiSyncDiagnosticsAsync = () => OpenSourceSyncDialogAsync(adventureId);
         dlg.SynthesizeSourceAsync = (targetPath, parsed) =>
             SynthesizeSourceContentAsync(adventureId, targetPath, parsed);
-        dlg.RunSourceEditJobAsync = (prompt, _) => RunSourceEditJobAsync(prompt);
+        dlg.RunSourceEditJobAsync = (prompt, attachments, referenceNote) =>
+            RunSourceEditJobAsync(prompt, attachments, referenceNote);
+        dlg.RunUtilityJobWithAttachmentsAsync = jobId => RunUtilityJobWithAttachmentsPromptAsync(jobId);
+        dlg.RefreshHostDelegates();
     }
 
     public async Task<bool> OpenSourceSyncDialogAsync(Guid adventureId)
@@ -587,21 +592,7 @@ public partial class MainWindow
         ShellViewMenu.Visibility = showChatChrome ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void UpdateModeButtonStyles()
-    {
-        var selected = (Style)FindResource("ModeButtonSelectedStyle");
-        var normal = (Style)FindResource("ModeButtonStyle");
-
-        if (_appMode is AppMode.Play or AppMode.Design)
-        {
-            BrowseModeButton.Style = normal;
-            AdventuresModeButton.Style = normal;
-            return;
-        }
-
-        BrowseModeButton.Style = _appMode == AppMode.Browse ? selected : normal;
-        AdventuresModeButton.Style = _appMode == AppMode.Adventures ? selected : normal;
-    }
+    private void UpdateModeButtonStyles() => SyncAppModeSegmentSelection();
 
     private void UpdateShellContext()
     {
@@ -616,17 +607,21 @@ public partial class MainWindow
                     title = bundle.Metadata.Title;
             }
 
-            ShellContextTitle.Text = $"Adventures › {title}";
+            ShellContextTitle.Text = title;
             UpdateAdventureSessionToggleStyles();
             UpdatePlaySessionChrome();
+            UpdateSessionStatusChips();
             _playView?.SetShellChromeState(true);
+            _designView?.SetShellChromeState(true);
             return;
         }
 
         ShellContextPanel.Visibility = Visibility.Collapsed;
         ShellContextTitle.Text = string.Empty;
         UpdatePlaySessionChrome();
+        UpdateSessionStatusChips();
         _playView?.SetShellChromeState(false);
+        _designView?.SetShellChromeState(false);
     }
 
     private void UpdatePlaySessionChrome()
@@ -637,14 +632,13 @@ public partial class MainWindow
         if (ShellPlayFocusButton is not null)
         {
             ShellPlayFocusButton.Visibility = inPlay ? Visibility.Visible : Visibility.Collapsed;
-            ShellPlayFocusButton.Content = _playPanelFocusModeActive ? "Show panels" : "Focus chat";
+            ShellPlayFocusButton.ToolTip = _playPanelFocusModeActive
+                ? "Show companion panels"
+                : "Focus chat — hide companion columns for maximum chat width";
         }
 
         if (FocusChatMenuItem is not null)
-        {
-            FocusChatMenuItem.Visibility = inPlay ? Visibility.Visible : Visibility.Collapsed;
-            FocusChatMenuItem.Header = _playPanelFocusModeActive ? "Show panels" : "Focus chat";
-        }
+            FocusChatMenuItem.Visibility = Visibility.Collapsed;
 
         if (PlaySettingsMenuItem is not null)
             PlaySettingsMenuItem.Visibility = hasAdventureSession ? Visibility.Visible : Visibility.Collapsed;
@@ -832,7 +826,24 @@ public partial class MainWindow
                 "Entering play mode",
                 adventureId: adventureId);
 
+            var enterBundle = AdventureStore.Load(adventureId);
+            if (enterBundle is not null)
+            {
+                PlayCompanionRestoreService.ApplyEnterPlayPreferences(
+                    enterBundle.Metadata.Settings,
+                    _chrome.PlaySurface);
+                AdventureStore.Save(enterBundle, AdventureSaveScope.Metadata);
+            }
+
             ReloadPlayAdventure(adventureId);
+
+            var loadedBundle = AdventureStore.Load(adventureId);
+            if (loadedBundle is not null)
+            {
+                if (UtilityWorkerPinService.TryReconcilePinFromCapabilities(loadedBundle))
+                    AdventureStore.Save(loadedBundle, AdventureSaveScope.Metadata);
+                WorkerCoordinator(adventureId).ResumeIncompleteOutbox(this);
+            }
 
             ApplyAllPlayPanelLayouts();
             SyncPlayComposerFromAdventurePanel();
@@ -1032,6 +1043,9 @@ public partial class MainWindow
             && ReferenceEquals(wv, _utilityWorkerWebView)
             && FindUtilityWorkerTabItem(wv) is { } utilityTab)
         {
+            if (Volatile.Read(ref _utilityWorkerDomSendInFlight) > 0)
+                return;
+
             UnparkUtilityWorkerWebView(wv, utilityTab);
         }
 
@@ -1277,6 +1291,11 @@ public partial class MainWindow
     }
 
     private const double DefaultPlaySidePanelWidth = 300;
+
+    private static double ResolveDefaultPlaySidePanelWidth() =>
+        ThemeRuntime.Current.CompanionDefaultWidth > 0
+            ? ThemeRuntime.Current.CompanionDefaultWidth
+            : DefaultPlaySidePanelWidth;
     private const double MinPlaySidePanelWidth = 200;
     private const double MaxPlaySidePanelWidth = 640;
     private const double DefaultPlayNotesPanelWidth = 240;
@@ -1308,7 +1327,7 @@ public partial class MainWindow
         if (AdventureColumn.Width.IsStar)
         {
             AdventureColumn.MinWidth = MinPlaySidePanelWidth;
-            AdventureColumn.Width = new GridLength(DefaultPlaySidePanelWidth);
+            AdventureColumn.Width = new GridLength(ResolveDefaultPlaySidePanelWidth());
         }
 
         AdventureHost.Visibility = Visibility.Visible;
@@ -1336,7 +1355,7 @@ public partial class MainWindow
     }
 
     private static double GetStoredPlaySidePanelWidth(AdventureSettings settings) =>
-        settings.PlaySidePanelWidth > 0 ? settings.PlaySidePanelWidth : DefaultPlaySidePanelWidth;
+        settings.PlaySidePanelWidth > 0 ? settings.PlaySidePanelWidth : ResolveDefaultPlaySidePanelWidth();
 
     private static double GetStoredPlayNotesPanelWidth(AdventureSettings settings) =>
         settings.PlayNotesPanelWidth > 0 ? settings.PlayNotesPanelWidth : DefaultPlayNotesPanelWidth;
@@ -1909,6 +1928,11 @@ public partial class MainWindow
 
     private void OnPlaySettingsSaved(object? sender, EventArgs e)
     {
+        var freshChrome = UiChromeStore.Load();
+        _chrome.PlaySurface = freshChrome.PlaySurface;
+        _playView?.ConfigurePlayChrome(_chrome.PlaySurface);
+        _playView?.RefreshPlayChromeFromSettings();
+
         ApplyWrapperComposerToPlayTab(_appMode == AppMode.Play);
         ApplyInlineUtilityToPlayTab();
         ApplyContextTagsToPlayTab();

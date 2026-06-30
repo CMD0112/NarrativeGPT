@@ -13,13 +13,16 @@ public sealed class EntityCanonParadigmTests : IDisposable
     public EntityCanonParadigmTests()
     {
         _root = Path.Combine(Path.GetTempPath(), "cgw-canon-paradigm-" + Guid.NewGuid().ToString("N"));
+        AppDirectories.ResetStoresForTests();
         AppDirectories.TestRootOverride = _root;
         AppDirectories.EnsureCreated();
     }
 
     public void Dispose()
     {
+        AppDirectories.ResetStoresForTests();
         AppDirectories.TestRootOverride = null;
+        AppDirectories.ResetStoresForTests();
         try
         {
             if (Directory.Exists(_root))

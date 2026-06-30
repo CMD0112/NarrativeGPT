@@ -72,4 +72,28 @@ internal static class ThreadTabBindingService
 
         return null;
     }
+
+    public static IReadOnlyList<BrowserTabSnapshot> ListWebViewTabs(TabControl tabs)
+    {
+        var list = new List<BrowserTabSnapshot>();
+        foreach (var item in tabs.Items)
+        {
+            if (item is not TabItem { Content: WebView2 wv } tab)
+                continue;
+
+            list.Add(new BrowserTabSnapshot(
+                GetOrAssignTabKey(tab),
+                tab.Header?.ToString() ?? "Tab",
+                wv.CoreWebView2?.Source,
+                wv));
+        }
+
+        return list;
+    }
 }
+
+public sealed record BrowserTabSnapshot(
+    string TabKey,
+    string Title,
+    string? SourceUrl,
+    WebView2 WebView);

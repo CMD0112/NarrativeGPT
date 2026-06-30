@@ -40,11 +40,13 @@ internal static class SourceJsonImportService
 
     public static IReadOnlyCollection<string> AllowedScenarioFields => ScenarioReaders.Keys;
 
-    public static string BuildImportPrompt(AdventureBundle bundle)
+    public static string BuildImportPrompt(AdventureBundle bundle, bool forLocalInference = false)
     {
         var sourceReferences = BuildSourceReferencesBlock(bundle);
         var excerpts = BuildLocalExcerptBlock(bundle);
-        var formatReference = CanonFormatReferenceService.BuildPromptBlock(bundle);
+        var formatReference = forLocalInference
+            ? ""
+            : CanonFormatReferenceService.BuildPromptBlock(bundle);
         var formatHints = ProjectSourceFileTemplates.BuildInlineFormatsSection(
             ProjectSourceImportService.ImportableLoreFileNames
                 .Where(file => File.Exists(Path.Combine(

@@ -54,13 +54,25 @@ internal static class UtilityJobRouter
         if (string.Equals(jobId, GenerationJobId.UtilityWorkerPing, StringComparison.OrdinalIgnoreCase))
             return new UtilityRouteDecision { Lane = UtilityRouteLane.WorkerOutbox };
 
+        if (LocalUtilityInferencePolicy.IsDualRun(bundle) && LocalUtilityInferencePolicy.SupportsJob(jobId))
+        {
+            if (UtilityEphemeralWorkerPolicy.IsWorkerLaneAvailable(bundle))
+                return new UtilityRouteDecision { Lane = UtilityRouteLane.WorkerOutbox };
+
+            return new UtilityRouteDecision
+            {
+                Lane = UtilityRouteLane.Blocked,
+                Reason = "dual_run_requires_utility_worker",
+            };
+        }
+
         var policy = bundle.Metadata.Settings.UtilityExecutionPolicy;
-        var workerGreen = UtilityWorkerCapabilityGate.IsGreen(bundle);
+        var workerAvailable = UtilityEphemeralWorkerPolicy.IsWorkerLaneAvailable(bundle);
         var injectionFirst = PlayUtilityInjectionService.UsesInjectionFirst(bundle);
 
         if (policy == UtilityExecutionPolicy.WorkerOnly)
         {
-            if (workerGreen)
+            if (workerAvailable)
                 return new UtilityRouteDecision { Lane = UtilityRouteLane.WorkerOutbox };
 
             return new UtilityRouteDecision
@@ -70,7 +82,7 @@ internal static class UtilityJobRouter
             };
         }
 
-        if (policy == UtilityExecutionPolicy.WorkerPreferred && workerGreen)
+        if (policy == UtilityExecutionPolicy.WorkerPreferred && workerAvailable)
             return new UtilityRouteDecision { Lane = UtilityRouteLane.WorkerOutbox };
 
         if (trigger == UtilityJobTrigger.AutoPostTurn)
@@ -78,7 +90,7 @@ internal static class UtilityJobRouter
             if (injectionFirst)
                 return new UtilityRouteDecision { Lane = UtilityRouteLane.PlayInjection };
 
-            if (workerGreen && policy == UtilityExecutionPolicy.WorkerPreferred)
+            if (workerAvailable && policy == UtilityExecutionPolicy.WorkerPreferred)
                 return new UtilityRouteDecision { Lane = UtilityRouteLane.WorkerOutbox };
 
             return new UtilityRouteDecision { Lane = UtilityRouteLane.PlayLegacyInline };
@@ -86,7 +98,7 @@ internal static class UtilityJobRouter
 
         if (trigger == UtilityJobTrigger.ManualCompanion)
         {
-            if (workerGreen)
+            if (workerAvailable)
                 return new UtilityRouteDecision { Lane = UtilityRouteLane.WorkerOutbox };
 
             if (injectionFirst)
@@ -95,7 +107,7 @@ internal static class UtilityJobRouter
             return new UtilityRouteDecision { Lane = UtilityRouteLane.PlayLegacyInline };
         }
 
-        if (HeavyJobs.Contains(jobId) && workerGreen
+        if (HeavyJobs.Contains(jobId) && workerAvailable
             && policy is UtilityExecutionPolicy.WorkerPreferred or UtilityExecutionPolicy.WorkerOnly)
         {
             return new UtilityRouteDecision { Lane = UtilityRouteLane.WorkerOutbox };
@@ -109,5 +121,5 @@ internal static class UtilityJobRouter
 
     public static bool ShouldSpillAutoToWorker(AdventureBundle bundle) =>
         bundle.Metadata.Settings.AutoSpillToWorker
-        && UtilityWorkerCapabilityGate.IsGreen(bundle);
+        && UtilityEphemeralWorkerPolicy.IsWorkerLaneAvailable(bundle);
 }

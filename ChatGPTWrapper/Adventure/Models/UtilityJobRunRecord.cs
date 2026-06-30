@@ -44,6 +44,17 @@ public sealed class UtilityJobRunRecord
     public string? PullError { get; set; }
 
     public DateTimeOffset? PushedAt { get; set; }
+
+    /// <summary>Set when the user has cleared this run's proposals from review (accept or dismiss).</summary>
+    public DateTimeOffset? ReviewResolvedAt { get; set; }
+
+    public UtilityContextManifestRecord? ContextManifest { get; set; }
+
+    /// <summary>Flight recorder entry when this run was bundled with a verified play send.</summary>
+    public Guid? LinkedFlightRecordId { get; set; }
+
+    /// <summary>Pairs local-llm and ChatGPT utility runs from the same dual-run job.</summary>
+    public Guid? DualRunGroupId { get; set; }
 }
 
 /// <summary>Index of latest utility runs per job id.</summary>

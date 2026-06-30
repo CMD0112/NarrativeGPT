@@ -10,7 +10,6 @@ internal static class PreparedSendArtifactBuilder
         ArgumentNullException.ThrowIfNull(request);
 
         var bundle = request.Bundle;
-        var fingerprint = PreparedSendSettingsFingerprint.Compute(bundle);
 
         var session = PlayPacketPrepareSession.Prepare(
             new PlayPacketPrepareRequest
@@ -29,14 +28,11 @@ internal static class PreparedSendArtifactBuilder
         if (string.IsNullOrWhiteSpace(session.PlayerLine))
             return null;
 
-        return new PreparedSendArtifact(
+        return FromPrepareResult(
             session.PlayerLine,
-            session.Prepared.MergedText,
-            session.Prepared.Hash,
-            fingerprint,
+            session.Prepared,
             request.PriorThreadUserMessageCount,
-            DateTimeOffset.UtcNow,
-            session.Prepared.WasTrimmed);
+            bundle);
     }
 
     public static PreparedSendArtifact FromPrepareResult(
@@ -51,7 +47,17 @@ internal static class PreparedSendArtifactBuilder
             PreparedSendSettingsFingerprint.Compute(bundle),
             priorThreadUserMessageCount,
             DateTimeOffset.UtcNow,
-            prepared.WasTrimmed);
+            prepared.WasTrimmed,
+            prepared.Profile,
+            prepared.DelegationMode,
+            prepared.AttachmentSendMode,
+            prepared.Sections,
+            prepared.Trimmed,
+            prepared.ContextText,
+            prepared.HasUtilityInjection,
+            prepared.UtilitySectionCount,
+            prepared.BaselinePointers,
+            prepared.ThisTurnPointers);
 }
 
 internal sealed class PreparedSendArtifactRequest

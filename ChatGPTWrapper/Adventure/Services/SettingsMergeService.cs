@@ -64,7 +64,13 @@ internal static class SettingsMergeService
         && left.PlayUtilityInjectionMode == right.PlayUtilityInjectionMode
         && left.MaxUtilitySectionsPerSend == right.MaxUtilitySectionsPerSend
         && left.UtilityExecutionPolicy == right.UtilityExecutionPolicy
-        && left.AutoSpillToWorker == right.AutoSpillToWorker;
+        && left.AutoSpillToWorker == right.AutoSpillToWorker
+        && left.UseEphemeralUtilityWorkerChat == right.UseEphemeralUtilityWorkerChat
+        && left.ForceUtilityWorkerDomAttach == right.ForceUtilityWorkerDomAttach
+        && left.LocalUtilityInference.Enabled == right.LocalUtilityInference.Enabled
+        && left.LocalUtilityInference.DualRun == right.LocalUtilityInference.DualRun
+        && string.Equals(left.LocalUtilityInference.BaseUrl, right.LocalUtilityInference.BaseUrl, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(left.LocalUtilityInference.Model, right.LocalUtilityInference.Model, StringComparison.OrdinalIgnoreCase);
 
     private sealed class ResetOnDispose(Action onDispose) : IDisposable
     {

@@ -1,3 +1,4 @@
+using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
 using Microsoft.Web.WebView2.Wpf;
@@ -40,7 +41,7 @@ public partial class MainWindow
             e.AssistantDomTurnId);
 
         AdventureStore.Save(bundle);
-        _ = ApplyThreadOrdinalMapToPlayTabAsync();
+        _ = SyncActiveThreadLogAsync(adventureId, AdventureThreadKind.Play, ThreadConversationLogCaptureSource.Invalidation);
     }
 
     private async Task ApplyThreadOrdinalMapToPlayTabAsync()
@@ -52,9 +53,9 @@ public partial class MainWindow
         if (bundle is null)
             return;
 
-        var map = ThreadMetadataService.BuildOrdinalMap(bundle);
-        var linkMap = ThreadMetadataService.BuildLogTurnLinkMap(bundle);
-        var hideEntries = ThreadMetadataService.BuildRevisionHideEntries(bundle);
+        var map = ThreadConversationLogReader.BuildOrdinalMap(bundle, AdventureThreadKind.Play);
+        var linkMap = ThreadConversationLogReader.BuildLogTurnLinkMap(bundle);
+        var hideEntries = ThreadConversationLogReader.BuildRevisionHideEntries(bundle);
         await ChatGptAdventureBridgeInjection.ApplyThreadOrdinalMapAsync(core, map);
         await ChatGptAdventureBridgeInjection.ApplyLogTurnLinkMapAsync(core, linkMap);
         await ChatGptAdventureBridgeInjection.ApplyRevisionHideEntriesAsync(core, hideEntries);

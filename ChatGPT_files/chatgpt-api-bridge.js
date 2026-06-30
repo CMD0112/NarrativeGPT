@@ -875,7 +875,7 @@
       var fileSize = bytes.length;
       var useCase = cmd.useCase || mimeToUseCase(mimeType);
 
-      if (cmd.useProjectLibrary !== false && cmd.gizmoId && isSnorlaxProjectId(cmd.gizmoId)) {
+      if (cmd.useProjectLibrary === true && cmd.gizmoId && isSnorlaxProjectId(cmd.gizmoId)) {
         var libraryResult = await tryUploadProjectLibrary(
           session,
           cmd,
@@ -884,6 +884,30 @@
           fileName
         );
         if (libraryResult.ok) {
+          if (cmd.waitForLibraryFinalize !== false) {
+            await waitForUploadProcessing(
+              session,
+              libraryResult.fileId,
+              fileName,
+              useCase,
+              30000
+            );
+            var finalized = await waitForFileFinalize(session, libraryResult.fileId, 45000);
+            if (!finalized.ok) {
+              return {
+                type: "apiError",
+                ok: false,
+                status: finalized.status || 0,
+                error: "upload_failed",
+                message: finalized.error || "finalize_failed",
+                fileId: libraryResult.fileId,
+                bodyText:
+                  finalized.bodyText && finalized.bodyText.length < 2000
+                    ? finalized.bodyText
+                    : null,
+              };
+            }
+          }
           return {
             type: "apiResult",
             ok: true,
@@ -1097,6 +1121,214 @@
     };
   }
 
+  var CGW_PROJECT_FILE_INPUT_MARK = "data-cgw-project-file-input";
+
+  function isInsideComposer(el) {
+    if (!el) return false;
+    return !!(
+      el.closest('[data-testid="composer"]') ||
+      el.closest("#cgw-play-composer-root")
+    );
+  }
+
+  function clickFirstVisible(selector, clicked, label) {
+    var nodes = document.querySelectorAll(selector);
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (isInsideComposer(el)) continue;
+      var style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      if (el.disabled) continue;
+      try {
+        el.click();
+        clicked.push(label || selector);
+        return true;
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+    return false;
+  }
+
+  function clickButtonsByText(pattern, clicked, label) {
+    var re = pattern instanceof RegExp ? pattern : new RegExp(pattern, "i");
+    var nodes = document.querySelectorAll("button, a, [role='tab'], [role='button']");
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (isInsideComposer(el)) continue;
+      var text =
+        (el.textContent && el.textContent.trim()) ||
+        el.getAttribute("aria-label") ||
+        "";
+      if (!re.test(text)) continue;
+      var style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      try {
+        el.click();
+        clicked.push(label || text.slice(0, 40));
+        return true;
+      } catch (_e2) {
+        /* ignore */
+      }
+    }
+    return false;
+  }
+
+  function clearProjectFileInputMarks() {
+    var marked = document.querySelectorAll("input[" + CGW_PROJECT_FILE_INPUT_MARK + '="1"]');
+    for (var i = 0; i < marked.length; i++) {
+      marked[i].removeAttribute(CGW_PROJECT_FILE_INPUT_MARK);
+    }
+  }
+
+  function scoreProjectFileInput(el) {
+    var score = 0;
+    if (el.closest('[role="dialog"]')) score += 12;
+    if (el.closest("aside")) score += 8;
+    if (el.closest('[class*="project"]')) score += 5;
+    if (el.closest("main")) score += 2;
+    var accept = el.getAttribute("accept") || "";
+    if (/\.md|text\/|markdown/i.test(accept)) score += 3;
+    if (el.multiple) score += 1;
+    var testId = el.getAttribute("data-testid") || "";
+    if (/file|upload|knowledge|project/i.test(testId)) score += 4;
+    return score;
+  }
+
+  function findBestProjectFileInput() {
+    clearProjectFileInputMarks();
+    var nodes = document.querySelectorAll('input[type="file"]');
+    var best = null;
+    var bestScore = -1;
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (isInsideComposer(el)) continue;
+      var score = scoreProjectFileInput(el);
+      if (score > bestScore) {
+        bestScore = score;
+        best = el;
+      }
+    }
+    if (!best) return null;
+    best.setAttribute(CGW_PROJECT_FILE_INPUT_MARK, "1");
+    return {
+      found: true,
+      score: bestScore,
+      accept: best.getAttribute("accept") || "",
+      testId: best.getAttribute("data-testid") || "",
+      multiple: !!best.multiple,
+    };
+  }
+
+  function listProjectFileUi() {
+    var fileInputs = [];
+    var nodes = document.querySelectorAll('input[type="file"]');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (isInsideComposer(el)) continue;
+      fileInputs.push({
+        accept: el.getAttribute("accept") || "",
+        multiple: !!el.multiple,
+        hidden: !el.offsetParent && el.type === "file",
+        id: el.id || "",
+        name: el.name || "",
+        testId: el.getAttribute("data-testid") || "",
+        score: scoreProjectFileInput(el),
+        inDialog: !!el.closest('[role="dialog"]'),
+      });
+    }
+
+    return {
+      href: location.href,
+      fileInputs: fileInputs,
+      composerInputsExcluded: true,
+    };
+  }
+
+  async function prepareProjectKnowledgeUpload(cmd) {
+    var clicked = [];
+    var settingSelectors = [
+      'button[aria-label*="Project settings"]',
+      'button[aria-label*="project settings"]',
+      'button[aria-label*="Customize"]',
+      'button[data-testid*="project-settings"]',
+      'button[data-testid*="project-modal"]',
+      '[data-testid="project-modal-trigger"]',
+    ];
+    for (var s = 0; s < settingSelectors.length; s++) {
+      if (clickFirstVisible(settingSelectors[s], clicked, settingSelectors[s])) break;
+    }
+
+    await sleep(400);
+
+    clickButtonsByText(/^(files|knowledge|sources)$/i, clicked, "tab:files");
+    await sleep(300);
+    clickButtonsByText(/add files|upload file|add file|upload files/i, clicked, "add-files");
+    await sleep(300);
+
+    var addSelectors = [
+      'button[aria-label*="Add files"]',
+      'button[aria-label*="Upload file"]',
+      'button[aria-label*="Upload files"]',
+      'button[data-testid*="file-upload"]',
+      'button[data-testid*="add-file"]',
+    ];
+    for (var a = 0; a < addSelectors.length; a++) {
+      clickFirstVisible(addSelectors[a], clicked, addSelectors[a]);
+    }
+
+    await sleep(300);
+    var fileInput = findBestProjectFileInput();
+    return {
+      type: "apiResult",
+      ok: !!(fileInput && fileInput.found),
+      json: {
+        href: location.href,
+        clicked: clicked,
+        fileInput: fileInput,
+        ui: listProjectFileUi(),
+      },
+      error: fileInput && fileInput.found ? null : "project_file_input_not_found",
+    };
+  }
+
+  function pollProjectKnowledgeUpload(cmd) {
+    var fileName = cmd.fileName || "";
+    var base = fileName.split("/").pop().split("\\").pop();
+    if (!base) {
+      return {
+        ready: false,
+        pending: false,
+        error: "missing_file_name",
+      };
+    }
+
+    var lowerBase = base.toLowerCase();
+    var nameNodes = document.querySelectorAll(
+      '[data-testid*="file"], [class*="file-name"], li, tr, [role="listitem"]'
+    );
+    var nameSeen = false;
+    for (var i = 0; i < nameNodes.length; i++) {
+      var text = (nameNodes[i].textContent || "").trim().toLowerCase();
+      if (text.indexOf(lowerBase) >= 0) {
+        nameSeen = true;
+        break;
+      }
+    }
+
+    var busy =
+      !!document.querySelector(
+        '[aria-busy="true"], [data-testid*="upload"], [data-testid*="spinner"]'
+      ) && !nameSeen;
+
+    return {
+      ready: nameSeen,
+      pending: busy,
+      fileName: base,
+      href: location.href,
+    };
+  }
+
   function listComposerFileUi() {
     var fileInputs = [];
     var nodes = document.querySelectorAll('input[type="file"]');
@@ -1240,6 +1472,7 @@
     var attempts = [];
     var failFast =
       !!cmd.failFast && String(cmd.location || "").toLowerCase() === "fs";
+    var requireProjectPaths = !!cmd.requireProjectPaths && !!cmd.gizmoId;
     var projectPathEnd = 0;
     for (var p = 0; p < paths.length; p++) {
       if (paths[p].indexOf("/backend-api/files/") !== 0) {
@@ -1260,7 +1493,7 @@
           attempts.push({ status: res.status, path: paths[i] });
           lastErr = { status: res.status, path: paths[i], attempts: attempts };
           if (
-            failFast &&
+            (failFast || requireProjectPaths) &&
             projectPathEnd > 0 &&
             i + 1 >= projectPathEnd &&
             attempts.length >= projectPathEnd
@@ -1617,6 +1850,20 @@
           type: "apiResult",
           ok: true,
           json: listComposerFileUi(),
+        };
+      case "listProjectFileUi":
+        return {
+          type: "apiResult",
+          ok: true,
+          json: listProjectFileUi(),
+        };
+      case "prepareProjectKnowledgeUpload":
+        return await prepareProjectKnowledgeUpload(cmd);
+      case "pollProjectKnowledgeUpload":
+        return {
+          type: "apiResult",
+          ok: true,
+          json: pollProjectKnowledgeUpload(cmd),
         };
       case "fetchBlobUrl":
         return await fetchBlobUrl(cmd);

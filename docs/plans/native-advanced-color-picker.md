@@ -250,7 +250,7 @@ Read-only CMYK, CIELab, explicit HSV labels, nearest CSS color name. Not require
 **Issue:** [CMD-344](https://linear.app/cmd0112/issue/CMD-344)  
 **Depends on:** CMD-335, CMD-338, CMD-339, CMD-340 (or ship incrementally)  
 
-Update `docs/user-guide.md` and `docs/settings-interactables-inventory.md`.
+Update `docs/user/user-guide.md` and `docs/settings/settings-interactables-inventory.md`.
 
 ---
 
@@ -345,7 +345,7 @@ Use `Ref CMD-XX` in PR bodies (manual QA on dialog changes).
 | [CMD-146](https://linear.app/cmd0112/issue/CMD-146) | Baseline format color picking |
 | [CMD-308](https://linear.app/cmd0112/issue/CMD-308) | Format readability diagnostics |
 | [CMD-274](https://linear.app/cmd0112/issue/CMD-274) | Unreadable highlight fix |
-| `docs/user-guide.md` | Author-facing picker docs (post-CMD-344) |
+| `docs/user/user-guide.md` | Author-facing picker docs (post-CMD-344) |
 
 ---
 

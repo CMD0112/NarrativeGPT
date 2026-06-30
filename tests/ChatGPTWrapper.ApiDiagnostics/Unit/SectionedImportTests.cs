@@ -5,8 +5,8 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class SectionedImportTests
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class SectionedImportTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void Import_updates_scenario_opening_from_scenario_md()

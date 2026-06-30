@@ -31,5 +31,6 @@ public sealed class PendingReviewServiceTests
 
         Assert.Contains("propose_memories", hint);
         Assert.Contains("Review all", hint);
+        Assert.Contains("when ready", hint);
     }
 }

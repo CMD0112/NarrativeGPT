@@ -17,6 +17,8 @@ public partial class EntityReferencePanel : UserControl
 
     public event EventHandler? SuggestEntitiesRequested;
 
+    public event EventHandler? SuggestEntitiesWithAttachmentsRequested;
+
     public event EventHandler<EntityReferenceRow>? ExpandEntityRequested;
 
     private AdventureBundle? _bundle;
@@ -63,6 +65,7 @@ public partial class EntityReferencePanel : UserControl
         PinEntityMenuItem.Visibility = options.ShowPinToggle ? Visibility.Visible : Visibility.Collapsed;
         EntityRowPinMenuItem.Visibility = options.ShowPinToggle ? Visibility.Visible : Visibility.Collapsed;
         SuggestEntitiesMenuItem.Visibility = options.ShowAiActions ? Visibility.Visible : Visibility.Collapsed;
+        SuggestEntitiesWithAttachmentsMenuItem.Visibility = options.ShowAiActions ? Visibility.Visible : Visibility.Collapsed;
         ExpandEntityMenuItem.Visibility = options.ShowAiActions ? Visibility.Visible : Visibility.Collapsed;
         EntityMoreMenu.Visibility = options.ShowMoreMenu && (options.ShowPinToggle || options.ShowAiActions)
             ? Visibility.Visible
@@ -287,6 +290,7 @@ public partial class EntityReferencePanel : UserControl
         if (_options.ShowAiActions)
         {
             SuggestEntitiesMenuItem.IsEnabled = hasLinkedProject && hasRecentExchange;
+            SuggestEntitiesWithAttachmentsMenuItem.IsEnabled = hasLinkedProject && hasRecentExchange;
             ExpandEntityMenuItem.IsEnabled = hasLinkedProject && SelectedRow is not null;
         }
 
@@ -535,6 +539,9 @@ public partial class EntityReferencePanel : UserControl
 
     private void SuggestEntities_Click(object sender, RoutedEventArgs e) =>
         SuggestEntitiesRequested?.Invoke(this, EventArgs.Empty);
+
+    private void SuggestEntitiesWithAttachments_Click(object sender, RoutedEventArgs e) =>
+        SuggestEntitiesWithAttachmentsRequested?.Invoke(this, EventArgs.Empty);
 
     private void ExpandEntity_Click(object sender, RoutedEventArgs e)
     {

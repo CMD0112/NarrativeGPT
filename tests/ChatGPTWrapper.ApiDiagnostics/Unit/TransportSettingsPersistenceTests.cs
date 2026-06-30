@@ -6,8 +6,8 @@ using ChatGPTWrapper.Adventure.Stores;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class TransportSettingsPersistenceTests : IDisposable
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class TransportSettingsPersistenceTests : IClassFixture<FileLockAwareFixture>, IDisposable
 {
     private readonly string _tempRoot;
 
@@ -128,6 +128,53 @@ public sealed class TransportSettingsPersistenceTests : IDisposable
         var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
         Assert.Equal(UtilityExecutionPolicy.WorkerOnly, reloaded.Metadata.Settings.UtilityExecutionPolicy);
         Assert.Single(reloaded.Cards.Cards);
+    }
+
+    [Fact]
+    public void Commit_persists_local_utility_inference_settings()
+    {
+        var bundle = AdventureStore.CreateNew("Local inference transport");
+        AdventureStore.Save(bundle);
+
+        bundle.Metadata.Settings.LocalUtilityInference.Enabled = true;
+        bundle.Metadata.Settings.LocalUtilityInference.DualRun = true;
+        bundle.Metadata.Settings.LocalUtilityInference.BaseUrl = "http://127.0.0.1:11434";
+        bundle.Metadata.Settings.LocalUtilityInference.Model = "qwen2.5:7b-instruct";
+        TransportSettingsStore.Commit(bundle, caller: "test");
+
+        var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
+        Assert.True(reloaded.Metadata.Settings.LocalUtilityInference.Enabled);
+        Assert.True(reloaded.Metadata.Settings.LocalUtilityInference.DualRun);
+        Assert.Equal("http://127.0.0.1:11434", reloaded.Metadata.Settings.LocalUtilityInference.BaseUrl);
+        Assert.Equal("qwen2.5:7b-instruct", reloaded.Metadata.Settings.LocalUtilityInference.Model);
+    }
+
+    [Fact]
+    public void Commit_persists_UseEphemeralUtilityWorkerChat()
+    {
+        var bundle = AdventureStore.CreateNew("Ephemeral worker setting");
+        AdventureStore.Save(bundle);
+
+        bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat = true;
+        TransportSettingsStore.Commit(bundle, caller: "test");
+
+        var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
+        Assert.True(reloaded.Metadata.Settings.UseEphemeralUtilityWorkerChat);
+    }
+
+    [Fact]
+    public void Commit_persists_ForceUtilityWorkerDomAttach()
+    {
+        var bundle = AdventureStore.CreateNew("Force DOM attach setting");
+        AdventureStore.Save(bundle);
+
+        bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat = true;
+        bundle.Metadata.Settings.ForceUtilityWorkerDomAttach = true;
+        TransportSettingsStore.Commit(bundle, caller: "test");
+
+        var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
+        Assert.True(reloaded.Metadata.Settings.UseEphemeralUtilityWorkerChat);
+        Assert.True(reloaded.Metadata.Settings.ForceUtilityWorkerDomAttach);
     }
 
     [Fact]

@@ -35,6 +35,8 @@ public sealed class ThemeSettings
 
     public List<ThemeUserPreset> UserPresets { get; set; } = [];
 
+    public ThemeDensityPreset DensityPreset { get; set; } = ThemeDensityPreset.Comfortable;
+
     public ThemeSettings Clone() => new()
     {
         SchemaVersion = SchemaVersion,
@@ -52,6 +54,7 @@ public sealed class ThemeSettings
         SpaceXl = SpaceXl,
         RadiusControl = RadiusControl,
         RadiusCard = RadiusCard,
+        DensityPreset = DensityPreset,
     };
 }
 

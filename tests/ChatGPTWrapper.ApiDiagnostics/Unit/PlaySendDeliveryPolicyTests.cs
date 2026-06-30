@@ -23,16 +23,16 @@ public sealed class PlaySendDeliveryPolicyTests
     }
 
     [Fact]
-    public void PreferDom_true_skips_api_text_capture_regenerate_and_warmup_but_not_worker_lane()
+    public void PreferDom_setting_retired_always_api_canonical()
     {
         var bundle = Bundle(preferDom: true);
 
-        Assert.True(PlaySendDeliveryPolicy.PreferDom(bundle));
-        Assert.False(PlaySendDeliveryPolicy.ShouldUseApiTextPlaySend(bundle));
-        Assert.False(PlaySendDeliveryPolicy.ShouldUseApiCapture(bundle));
-        Assert.False(PlaySendDeliveryPolicy.ShouldUseApiRegenerate(bundle));
-        Assert.False(PlaySendDeliveryPolicy.ShouldPrefetchApiWarmup(bundle));
-        Assert.False(PlaySendDeliveryPolicy.ShouldUseApiUtilitySend(
+        Assert.False(PlaySendDeliveryPolicy.PreferDom(bundle));
+        Assert.True(PlaySendDeliveryPolicy.ShouldUseApiTextPlaySend(bundle));
+        Assert.True(PlaySendDeliveryPolicy.ShouldUseApiCapture(bundle));
+        Assert.True(PlaySendDeliveryPolicy.ShouldUseApiRegenerate(bundle));
+        Assert.True(PlaySendDeliveryPolicy.ShouldPrefetchApiWarmup(bundle));
+        Assert.True(PlaySendDeliveryPolicy.ShouldUseApiUtilitySend(
             bundle,
             UtilityConversationReadinessLevel.Registered));
         Assert.True(PlaySendDeliveryPolicy.ShouldUseApiWorkerLaneSend(

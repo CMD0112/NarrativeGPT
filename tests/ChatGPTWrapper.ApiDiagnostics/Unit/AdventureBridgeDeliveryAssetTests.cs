@@ -18,6 +18,8 @@ public sealed class AdventureBridgeDeliveryAssetTests
         Assert.Contains("bridge_fill_readback", text);
         Assert.Contains("bridge_delivery_audit", text);
         Assert.Contains("injection_delivery_mismatch", text);
+        Assert.Contains("deferPostSubmitPromptCleanup", text);
+        Assert.Contains("bridge_delivery_audit_post_ack", text);
         Assert.Contains("waitForStableComposerText", text);
         Assert.Contains("options.displayUserLine", text);
         Assert.DoesNotContain("verifiedBy: \"composer_shortened\"", text);

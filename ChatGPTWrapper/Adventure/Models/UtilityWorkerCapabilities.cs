@@ -22,7 +22,12 @@ public sealed class UtilityWorkerCapabilities
 
     public string? WorkerConversationId { get; set; }
 
-    public bool IsGreen =>
-        HostReady && ApiPullOk && (
-            (ApiFetchOk && ApiPushOk) || DomRegistrationVerified);
+    /// <summary>Phase 0 API attach spike result (e.g. http_403, success).</summary>
+    public string? LastApiAttachProbeResult { get; set; }
+
+    public bool IsGreen => IsProductionReady(this);
+
+    /// <summary>Production worker jobs require full API transport — DOM registration alone is insufficient.</summary>
+    public static bool IsProductionReady(UtilityWorkerCapabilities? caps) =>
+        caps is { HostReady: true, ApiFetchOk: true, ApiPushOk: true, ApiPullOk: true };
 }

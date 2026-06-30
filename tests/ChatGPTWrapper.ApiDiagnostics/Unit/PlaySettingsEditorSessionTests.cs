@@ -5,8 +5,8 @@ using ChatGPTWrapper.Adventure.Stores;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class PlaySettingsEditorSessionTests : IDisposable
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class PlaySettingsEditorSessionTests : IClassFixture<FileLockAwareFixture>, IDisposable
 {
     private readonly string _tempRoot;
 
@@ -50,6 +50,7 @@ public sealed class PlaySettingsEditorSessionTests : IDisposable
         disk.Metadata.UtilityWorkerCapabilities = new UtilityWorkerCapabilities
         {
             HostReady = true,
+            ApiFetchOk = true,
             ApiPullOk = true,
             ApiPushOk = true,
             DomRegistrationVerified = true,

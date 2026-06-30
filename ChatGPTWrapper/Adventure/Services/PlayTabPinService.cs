@@ -133,14 +133,42 @@ internal static class PlayTabPinService
     public static void PinTab(AdventureBundle bundle, WebView2 webView, TabControl tabs)
     {
         AdventureThreadRegistryService.EnsureMigrated(bundle);
-        TryBindProjectSessionFromWebView(bundle, webView);
-
         var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)
                       ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play);
+        PinTabToEntry(bundle, entry.Id, webView, tabs, setActive: true);
+    }
 
-        var activeConversationId = PlayThreadBindingService.GetActiveConversationId(bundle);
-        if (!string.IsNullOrWhiteSpace(activeConversationId))
-            entry.ConversationId = activeConversationId;
+    public static void PinTabToEntry(
+        AdventureBundle bundle,
+        Guid entryId,
+        WebView2 webView,
+        TabControl tabs,
+        bool setActive = true)
+    {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetEntry(bundle, entryId)
+                    ?? throw new InvalidOperationException("Thread entry not found.");
+
+        if (entry.Kind != AdventureThreadKind.Play)
+            throw new InvalidOperationException("Entry is not a play thread.");
+
+        if (entry.Status == AdventureThreadStatus.Archived)
+            throw new InvalidOperationException("Cannot pin an archived thread.");
+
+        TryBindProjectSessionFromWebView(bundle, webView);
+
+        if (webView.CoreWebView2?.Source is { } source
+            && TryResolveConversationFromUrl(source, out var fromUrl)
+            && !string.IsNullOrWhiteSpace(fromUrl))
+        {
+            entry.ConversationId = fromUrl;
+        }
+        else if (AdventureThreadRegistryService.IsActiveEntry(bundle, entryId))
+        {
+            var activeConversationId = PlayThreadBindingService.GetActiveConversationId(bundle);
+            if (!string.IsNullOrWhiteSpace(activeConversationId))
+                entry.ConversationId = activeConversationId;
+        }
 
         AdventureThreadRegistryService.UpdatePinFromWebView(
             bundle,
@@ -148,7 +176,9 @@ internal static class PlayTabPinService
             webView,
             tabs,
             webView.CoreWebView2?.Source);
-        AdventureThreadRegistryService.SetActivePin(bundle, entry.Id);
+
+        if (setActive)
+            AdventureThreadRegistryService.SetActivePin(bundle, entry.Id);
 
         if (webView.CoreWebView2 is { } core)
             _ = PlayThreadBindingService.TryPromoteVerifiedFromPageAsync(bundle, core, turnService: null);

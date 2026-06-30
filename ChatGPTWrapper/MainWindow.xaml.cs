@@ -24,11 +24,13 @@ public partial class MainWindow : Window
         _suppressChromeEvents = false;
         ConfigureChatTabsChrome();
         WireShellStatusBarHandlers();
+        InitializeShellSegments();
         UpdateModeButtonStyles();
         InitializeShellShortcuts();
 
         Loaded += (_, _) =>
         {
+            RegisterProjectDomCompositor();
             PhraseHighlightRulesChanged += OnPhraseHighlightRulesChanged;
             StartBrowserTabsInitialization(async () =>
             {
@@ -143,6 +145,9 @@ public partial class MainWindow : Window
 
     private void PreferencesMenuItem_Click(object sender, RoutedEventArgs e) =>
         OpenPreferencesHub();
+
+    private void LocalInferenceLabMenuItem_Click(object sender, RoutedEventArgs e) =>
+        Views.LocalInferenceLabDialog.ShowForOwner(this);
 
     private void OpenPreferencesHub()
     {

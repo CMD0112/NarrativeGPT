@@ -5,9 +5,9 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
+[Collection(FileLockAwareCollectionNames.Name)]
 [Trait("Category", "Unit")]
-public sealed class PlayHandoffServiceTests
+public sealed class PlayHandoffServiceTests : IClassFixture<FileLockAwareFixture>
 {
     private static AdventureBundle CreateBundleWithTurns(string conversationId, int turnCount)
     {

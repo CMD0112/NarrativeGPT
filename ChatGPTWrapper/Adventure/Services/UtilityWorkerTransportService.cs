@@ -6,12 +6,57 @@ using Microsoft.Web.WebView2.Core;
 namespace ChatGPTWrapper.Adventure.Services;
 
 /// <summary>
-/// Unified utility send/probe transport for the worker lane and generation jobs.
-/// Routes API vs DOM via <see cref="PlaySendDeliveryPolicy"/>. Background outbox uses an off-screen
-/// host; API 403 falls back to DOM there without selecting the utility tab.
+/// Utility transport: production worker jobs use API-only; setup/probe may use DOM with visible tab.
 /// </summary>
 internal static class UtilityWorkerTransportService
 {
+    /// <summary>
+    /// Production worker lane — API POST first; DOM composer fallback when POST is blocked (http_403/404).
+    /// </summary>
+    public static async Task<ConversationSendResult> SendProductionPacketAsync(
+        CoreWebView2 core,
+        AdventureBundle bundle,
+        string conversationId,
+        string gizmoId,
+        string messageText,
+        string jobId,
+        ChatGptConversationSendService conversationSend,
+        AdventureTurnService turnService,
+        CancellationToken cancellationToken = default)
+    {
+        var apiResult = await UtilityWorkerApiTransport.PushAsync(
+            core,
+            conversationId,
+            gizmoId,
+            messageText,
+            conversationSend,
+            cancellationToken);
+
+        if (apiResult.Success)
+            return apiResult;
+
+        if (!UtilityConversationReadinessService.IsUnregisteredFetchError(apiResult.Error))
+            return apiResult;
+
+        TracePhase(
+            "send_api_dom_fallback",
+            jobId,
+            conversationId,
+            new { error = apiResult.Error });
+
+        return await SendPacketAsync(
+            core,
+            bundle,
+            conversationId,
+            gizmoId,
+            messageText,
+            jobId,
+            conversationSend,
+            turnService,
+            cancellationToken,
+            allowDomCapture: true);
+    }
+
     public static async Task<ConversationSendResult> SendPacketAsync(
         CoreWebView2 core,
         AdventureBundle bundle,
@@ -24,16 +69,19 @@ internal static class UtilityWorkerTransportService
         CancellationToken cancellationToken = default,
         bool seedOnly = false,
         bool allowDomCapture = true,
-        IUtilityWorkerHost? workerHost = null)
+        IUtilityWorkerHost? workerHost = null,
+        bool setupMode = false,
+        UtilityConversationReadinessResult? existingReadiness = null)
     {
-        var readiness = await UtilityConversationReadinessService.ProbeAsync(
+        var readiness = existingReadiness ?? await UtilityConversationReadinessService.ProbeAsync(
             core,
             conversationId,
             gizmoId,
             conversationSend,
             turnService,
             bundle,
-            cancellationToken);
+            cancellationToken,
+            skipNavigation: existingReadiness is not null);
 
         TracePhase(
             "readiness",
@@ -83,7 +131,7 @@ internal static class UtilityWorkerTransportService
             {
                 Success = false,
                 Error = readiness.Level == UtilityConversationReadinessLevel.DomOnly
-                    ? "worker_background_requires_api"
+                    ? "worker_api_not_ready"
                     : readiness.Error ?? "utility_page_not_ready",
                 ConversationId = conversationId,
             };
@@ -105,6 +153,30 @@ internal static class UtilityWorkerTransportService
             };
         }
 
+        if (setupMode)
+        {
+            if (turnService is null)
+            {
+                return new ConversationSendResult
+                {
+                    Success = false,
+                    Error = "utility_turn_service_required",
+                    ConversationId = conversationId,
+                };
+            }
+
+            TracePhase("send_dom_setup", jobId, conversationId, new { packetLength = messageText.Length });
+            return await SubmitDomUtilityPacketAsync(
+                turnService,
+                core,
+                conversationId,
+                gizmoId,
+                messageText,
+                jobId,
+                seedOnly,
+                cancellationToken);
+        }
+
         var timeoutMs = AdventureTurnService.ComputeUtilityJobTimeoutMs(messageText.Length);
         var captureJobId = seedOnly ? null : jobId;
         var result = await turnService.SubmitUtilityJobAsync(
@@ -112,9 +184,10 @@ internal static class UtilityWorkerTransportService
             conversationId,
             gizmoId,
             messageText,
-            timeoutMs,
-            captureJobId,
-            cancellationToken);
+            timeoutMs: timeoutMs,
+            jobId: captureJobId,
+            skipPageEnsure: true,
+            cancellationToken: cancellationToken);
 
         if (!result.Success
             && !string.IsNullOrWhiteSpace(readiness.Hint)
@@ -178,57 +251,6 @@ internal static class UtilityWorkerTransportService
         if (!UtilityConversationReadinessService.IsUnregisteredFetchError(apiResult.Error))
             return new(true, apiResult);
 
-        if (allowDomCapture && turnService is not null)
-        {
-            TracePhase(
-                "send_dom_offscreen",
-                jobId,
-                conversationId,
-                new { error = apiResult.Error });
-
-            var domResult = await SubmitDomUtilityPacketAsync(
-                turnService,
-                core,
-                conversationId,
-                gizmoId,
-                messageText,
-                jobId,
-                seedOnly: false,
-                cancellationToken);
-
-            if (domResult.Success
-                || (!string.IsNullOrWhiteSpace(domResult.AssistantText)
-                    && GenerationJobHandlers.IsSettledJobResponse(
-                        jobId,
-                        domResult.AssistantText,
-                        domResult.StreamComplete)))
-            {
-                return new(true, domResult);
-            }
-
-            return new(true, domResult);
-        }
-
-        if (!allowDomCapture)
-            return new(true, apiResult);
-
-        TracePhase(
-            "send_api_dom_fallback",
-            jobId,
-            conversationId,
-            new { error = apiResult.Error, domOnlyReason = readiness.DomOnlyReason });
-
-        var reprobe = await UtilityConversationReadinessService.ProbeAsync(
-            core,
-            conversationId,
-            gizmoId,
-            conversationSend,
-            turnService,
-            bundle,
-            cancellationToken);
-        if (reprobe.Level == UtilityConversationReadinessLevel.Unready)
-            return new(true, apiResult);
-
         return new(false, apiResult);
     }
 
@@ -273,9 +295,10 @@ internal static class UtilityWorkerTransportService
             conversationId,
             gizmoId,
             messageText,
-            timeoutMs,
-            captureJobId,
-            cancellationToken);
+            timeoutMs: timeoutMs,
+            jobId: captureJobId,
+            skipPageEnsure: true,
+            cancellationToken: cancellationToken);
 
         if (!result.Success
             && !seedOnly
@@ -296,6 +319,112 @@ internal static class UtilityWorkerTransportService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// DOM composer attach on the utility worker lane using shadow-compositor hosting (no tab switch).
+    /// </summary>
+    public static async Task<ConversationSendResult> SendProductionPacketWithAttachmentsAsync(
+        CoreWebView2 core,
+        AdventureBundle bundle,
+        string conversationId,
+        string gizmoId,
+        string messageText,
+        string jobId,
+        IReadOnlyList<DomAttachmentPayload> domAttachments,
+        AdventureTurnService turnService,
+        IUtilityWorkerHost? workerHost = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (domAttachments is not { Count: > 0 })
+        {
+            return new ConversationSendResult
+            {
+                Success = false,
+                Error = "missing_attachments",
+                ConversationId = conversationId,
+            };
+        }
+
+        TracePhase("send_dom_attach", jobId, conversationId, new
+        {
+            packetLength = messageText.Length,
+            attachmentCount = domAttachments.Count,
+        });
+
+        async Task<ConversationSendResult> SendAsync() =>
+            await turnService.SubmitUtilityJobWithAttachmentsAsync(
+                core,
+                conversationId,
+                gizmoId,
+                messageText,
+                domAttachments,
+                jobId,
+                cancellationToken: cancellationToken);
+
+        if (workerHost is not null)
+        {
+            using var domSend = workerHost.BeginDomAttachmentSend();
+            return await workerHost.WithUtilityWebViewActivatedAsync(core, SendAsync, cancellationToken);
+        }
+
+        return await SendAsync();
+    }
+
+    /// <summary>
+    /// DOM composer attach for ephemeral per-job chats (project-home or /c/ URL).
+    /// </summary>
+    public static async Task<ConversationSendResult> SendEphemeralPacketWithAttachmentsAsync(
+        CoreWebView2 core,
+        string conversationId,
+        string gizmoId,
+        string messageText,
+        string jobId,
+        IReadOnlyList<DomAttachmentPayload> domAttachments,
+        AdventureTurnService turnService,
+        IUtilityWorkerHost? workerHost = null,
+        bool skipPageEnsure = false,
+        bool allowKeyboardSubmitOnProjectHome = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (domAttachments is not { Count: > 0 })
+        {
+            return new ConversationSendResult
+            {
+                Success = false,
+                Error = "missing_attachments",
+                ConversationId = conversationId,
+            };
+        }
+
+        ProjectLinkDiagnostics.Log("ephemeral_attach_send");
+        TracePhase("send_ephemeral_dom_attach", jobId, conversationId, new
+        {
+            packetLength = messageText.Length,
+            attachmentCount = domAttachments.Count,
+            skipPageEnsure,
+            allowKeyboardSubmitOnProjectHome,
+        });
+
+        async Task<ConversationSendResult> SendAsync() =>
+            await turnService.SubmitUtilityJobWithAttachmentsAsync(
+                core,
+                conversationId,
+                gizmoId,
+                messageText,
+                domAttachments,
+                jobId,
+                skipPageEnsure,
+                allowKeyboardSubmitOnProjectHome,
+                cancellationToken);
+
+        if (workerHost is not null)
+        {
+            using var domSend = workerHost.BeginDomAttachmentSend();
+            return await workerHost.WithUtilityWebViewActivatedAsync(core, SendAsync, cancellationToken);
+        }
+
+        return await SendAsync();
     }
 
     public static async Task<ConversationSendResult> SendSeedAsync(
@@ -377,7 +506,9 @@ internal static class UtilityWorkerTransportService
         string gizmoId,
         ChatGptConversationSendService conversationSend,
         AdventureTurnService? turnService,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IUtilityWorkerHost? workerHost = null,
+        ChatGptProjectApiService? projectApi = null)
     {
         var caps = new UtilityWorkerCapabilities
         {
@@ -387,26 +518,81 @@ internal static class UtilityWorkerTransportService
 
         try
         {
-            var nav = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
+            if (workerHost is not null)
+            {
+                return await workerHost.WithUtilityWebViewActivatedAsync(
+                    workerCore,
+                    () => ProbeCapabilitiesCoreAsync(
+                        workerCore,
+                        bundle,
+                        workerConversationId,
+                        gizmoId,
+                        conversationSend,
+                        turnService,
+                        cancellationToken,
+                        workerHost,
+                        projectApi ?? workerHost.ProjectApi),
+                    cancellationToken);
+            }
+
+            return await ProbeCapabilitiesCoreAsync(
                 workerCore,
+                bundle,
                 workerConversationId,
                 gizmoId,
-                cancellationToken);
-            if (!nav.Success)
+                conversationSend,
+                turnService,
+                cancellationToken,
+                workerHost,
+                projectApi);
+        }
+        catch (Exception ex)
+        {
+            caps.LastProbeError = ex.Message;
+            UtilityWorkerSession.SyncCapabilitiesConversationId(bundle);
+            bundle.Metadata.UtilityWorkerCapabilities = caps;
+            return caps;
+        }
+    }
+
+    private static async Task<UtilityWorkerCapabilities> ProbeCapabilitiesCoreAsync(
+        CoreWebView2 workerCore,
+        AdventureBundle bundle,
+        string workerConversationId,
+        string gizmoId,
+        ChatGptConversationSendService conversationSend,
+        AdventureTurnService? turnService,
+        CancellationToken cancellationToken,
+        IUtilityWorkerHost? workerHost,
+        ChatGptProjectApiService? projectApi)
+    {
+        var caps = new UtilityWorkerCapabilities
+        {
+            WorkerConversationId = workerConversationId,
+            LastProbedAt = DateTimeOffset.UtcNow,
+        };
+
+        try
+        {
+            var effectiveConversationId = workerConversationId;
+            var session = UtilityWorkerSession.For(bundle.Metadata.Id);
+            var page = await session.EnsurePageReadyAsync(workerCore, bundle, cancellationToken);
+            if (!page.Success)
             {
-                caps.LastProbeError = nav.Error ?? "utility_page_not_ready";
+                caps.LastProbeError = page.Error ?? "utility_page_not_ready";
                 bundle.Metadata.UtilityWorkerCapabilities = caps;
                 return caps;
             }
 
             var readiness = await UtilityConversationReadinessService.ProbeAsync(
                 workerCore,
-                workerConversationId,
+                effectiveConversationId,
                 gizmoId,
                 conversationSend,
                 turnService,
                 bundle,
-                cancellationToken);
+                cancellationToken,
+                skipNavigation: true);
 
             var canRegister = UtilityConversationReadinessService.CanRegisterViaDomPing(readiness);
             caps.HostReady = readiness.Level != UtilityConversationReadinessLevel.Unready
@@ -430,19 +616,21 @@ internal static class UtilityWorkerTransportService
             }
 
             ProjectLinkDiagnostics.Log(
-                $"Utility worker probe on {workerCore.Source} (conv {workerConversationId}) level={readiness.Level}");
+                $"Utility worker probe on {workerCore.Source} (conv {effectiveConversationId}) level={readiness.Level}");
 
             var usedApiFirst = PlaySendDeliveryPolicy.ShouldUseApiWorkerLaneSend(readiness.Level);
             var probeId = Guid.NewGuid().ToString("N")[..8];
             var send = await SendWorkerPingAsync(
                 workerCore,
                 bundle,
-                workerConversationId,
+                effectiveConversationId,
                 gizmoId,
                 probeId,
                 conversationSend,
                 turnService,
-                cancellationToken);
+                cancellationToken,
+                workerHost,
+                readiness);
 
             if (!send.Success)
             {
@@ -451,11 +639,28 @@ internal static class UtilityWorkerTransportService
                 return caps;
             }
 
+            if (TryReconcileFromSend(bundle, effectiveConversationId, send.ConversationId, ref effectiveConversationId))
+            {
+                readiness = await UtilityConversationReadinessService.ProbeAsync(
+                    workerCore,
+                    effectiveConversationId,
+                    gizmoId,
+                    conversationSend,
+                    turnService,
+                    bundle,
+                    cancellationToken,
+                    skipNavigation: true);
+                caps.HostReady = readiness.Level != UtilityConversationReadinessLevel.Unready
+                                 && (readiness.ComposerFound
+                                     || readiness.Level == UtilityConversationReadinessLevel.Registered);
+                caps.ApiFetchOk = readiness.Level == UtilityConversationReadinessLevel.Registered;
+            }
+
             caps.ApiPullOk = await ValidatePingResponseAsync(
                 send,
                 probeId,
                 workerCore,
-                workerConversationId,
+                effectiveConversationId,
                 conversationSend,
                 cancellationToken);
             var domVerified = !usedApiFirst && caps.ApiPullOk;
@@ -473,7 +678,7 @@ internal static class UtilityWorkerTransportService
                                   || await ConfirmApiRegisteredAsync(
                                       conversationSend,
                                       workerCore,
-                                      workerConversationId,
+                                      effectiveConversationId,
                                       cancellationToken);
             }
 
@@ -482,18 +687,18 @@ internal static class UtilityWorkerTransportService
                 if (domVerified && caps.ApiPullOk)
                 {
                     caps.DomRegistrationVerified = true;
-                    caps.ApiPushOk = true;
                 }
                 else
                 {
                     readiness = await UtilityConversationReadinessService.ProbeAsync(
                         workerCore,
-                        workerConversationId,
+                        effectiveConversationId,
                         gizmoId,
                         conversationSend,
                         turnService,
                         bundle,
-                        cancellationToken);
+                        cancellationToken,
+                        skipNavigation: true);
                     caps.ApiFetchOk = readiness.Level == UtilityConversationReadinessLevel.Registered
                                       || caps.ApiFetchOk;
 
@@ -504,31 +709,38 @@ internal static class UtilityWorkerTransportService
                         var apiSend = await SendWorkerPingAsync(
                             workerCore,
                             bundle,
-                            workerConversationId,
+                            effectiveConversationId,
                             gizmoId,
                             apiProbeId,
                             conversationSend,
                             turnService,
-                            cancellationToken);
+                            cancellationToken,
+                            workerHost,
+                            readiness);
 
                         if (apiSend.Success)
                         {
+                            TryReconcileFromSend(
+                                bundle,
+                                effectiveConversationId,
+                                apiSend.ConversationId,
+                                ref effectiveConversationId);
+
                             caps.ApiPushOk = !string.IsNullOrWhiteSpace(apiSend.ParentMessageId);
                             caps.SseReliable = apiSend.StreamComplete;
                             caps.ApiPullOk = await ValidatePingResponseAsync(
                                 apiSend,
                                 apiProbeId,
                                 workerCore,
-                                workerConversationId,
+                                effectiveConversationId,
                                 conversationSend,
                                 cancellationToken);
                         }
                         else if (domVerified && caps.ApiPullOk)
                         {
                             ProjectLinkDiagnostics.Log(
-                                $"Utility worker probe: API verification failed ({apiSend.Error}); keeping DOM registration");
+                                $"Utility worker probe: API verification failed ({apiSend.Error}); DOM registered only");
                             caps.DomRegistrationVerified = true;
-                            caps.ApiPushOk = true;
                         }
                         else
                         {
@@ -551,41 +763,55 @@ internal static class UtilityWorkerTransportService
             if (domVerified && caps.ApiPullOk)
                 caps.DomRegistrationVerified = true;
 
-            if (!caps.ApiPullOk)
-                caps.LastProbeError ??= "worker_pull_failed";
-            else if (caps.IsGreen)
+            if (UtilityWorkerCapabilities.IsProductionReady(caps))
+            {
                 caps.LastProbeError = null;
+                var verifiedConversationId = ResolveVerifiedWorkerConversationId(
+                    workerCore,
+                    effectiveConversationId,
+                    send.ConversationId);
+                UtilityWorkerPinService.TryReconcileVerifiedWorkerConversation(
+                    bundle,
+                    verifiedConversationId,
+                    persist: false);
+                caps.WorkerConversationId = verifiedConversationId;
+
+                if (projectApi is not null)
+                {
+                    caps.LastApiAttachProbeResult = await UtilityWorkerApiAttachProbe.ProbeApiAttachAsync(
+                        workerCore,
+                        projectApi,
+                        conversationSend,
+                        verifiedConversationId,
+                        gizmoId,
+                        cancellationToken);
+                }
+            }
+            else if (!caps.ApiFetchOk || !caps.ApiPushOk)
+                caps.LastProbeError ??= "worker_api_not_ready";
+            else if (!caps.ApiPullOk)
+                caps.LastProbeError ??= "worker_pull_failed";
         }
         catch (Exception ex)
         {
             caps.LastProbeError = ex.Message;
         }
 
+        UtilityWorkerSession.SyncCapabilitiesConversationId(bundle);
         bundle.Metadata.UtilityWorkerCapabilities = caps;
         return caps;
     }
 
-    public static async Task<bool> ConfirmApiRegisteredAsync(
+    public static Task<bool> ConfirmApiRegisteredAsync(
         ChatGptConversationSendService conversationSend,
         CoreWebView2 workerCore,
         string workerConversationId,
-        CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            var fetch = await conversationSend.FetchConversationAsync(
-                workerCore,
-                workerConversationId,
-                cancellationToken);
-            if (fetch.Success)
-                return true;
-
-            if (attempt < 2)
-                await Task.Delay(TimeSpan.FromSeconds(1.5), cancellationToken);
-        }
-
-        return false;
-    }
+        CancellationToken cancellationToken) =>
+        UtilityWorkerApiTransport.ConfirmRegisteredAsync(
+            conversationSend,
+            workerCore,
+            workerConversationId,
+            cancellationToken);
 
     internal static string BuildPingPacket(string probeId)
     {
@@ -605,7 +831,9 @@ internal static class UtilityWorkerTransportService
         string probeId,
         ChatGptConversationSendService conversationSend,
         AdventureTurnService? turnService,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IUtilityWorkerHost? workerHost = null,
+        UtilityConversationReadinessResult? readiness = null)
     {
         var wrapped = BuildPingPacket(probeId);
         var send = await SendPacketAsync(
@@ -617,7 +845,10 @@ internal static class UtilityWorkerTransportService
             GenerationJobId.UtilityWorkerPing,
             conversationSend,
             turnService,
-            cancellationToken);
+            cancellationToken,
+            setupMode: true,
+            workerHost: workerHost,
+            existingReadiness: readiness);
 
         return NormalizeWorkerPingSend(send, probeId);
     }
@@ -656,6 +887,48 @@ internal static class UtilityWorkerTransportService
         }
 
         return send;
+    }
+
+    private static bool TryReconcileFromSend(
+        AdventureBundle bundle,
+        string currentConversationId,
+        string? sendConversationId,
+        ref string effectiveConversationId)
+    {
+        if (string.IsNullOrWhiteSpace(sendConversationId)
+            || string.Equals(sendConversationId, currentConversationId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!UtilityWorkerPinService.TryReconcileVerifiedWorkerConversation(
+                bundle,
+                sendConversationId,
+                persist: false))
+        {
+            return false;
+        }
+
+        effectiveConversationId = sendConversationId;
+        return true;
+    }
+
+    private static string ResolveVerifiedWorkerConversationId(
+        CoreWebView2 workerCore,
+        string effectiveConversationId,
+        string? sendConversationId)
+    {
+        if (!string.IsNullOrWhiteSpace(sendConversationId))
+            return sendConversationId;
+
+        if (Uri.TryCreate(workerCore.Source, UriKind.Absolute, out var uri)
+            && ChatGptUrls.TryParseConversationId(uri, out var fromSource)
+            && !string.IsNullOrWhiteSpace(fromSource))
+        {
+            return fromSource;
+        }
+
+        return effectiveConversationId;
     }
 
     private static async Task<bool> ValidatePingResponseAsync(

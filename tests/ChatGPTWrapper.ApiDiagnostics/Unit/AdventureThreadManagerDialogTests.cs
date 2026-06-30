@@ -38,14 +38,17 @@ public sealed class AdventureThreadManagerDialogTests
                     StartNarrativeFromSourcesAsync = () => Task.CompletedTask,
                     OpenPlayHandoffWizardAsync = () => Task.CompletedTask,
                     StartNewDesignThreadAsync = () => Task.CompletedTask,
+                    CreateThreadSlotAsync = _ => Task.FromResult<Guid?>(null),
                     ActivateEntryAsync = (_, _) => Task.CompletedTask,
                     OpenEntryAsync = (_, _) => Task.CompletedTask,
                     OpenProjectWorkspaceAsync = () => Task.CompletedTask,
-                    PinCurrentTabAsync = _ => Task.CompletedTask,
+                    PinTabToEntryAsync = (_, _, _) => Task.CompletedTask,
+                    ClearEntryPinAsync = (_, _) => Task.CompletedTask,
+                    RemoveEntryAsync = _ => Task.CompletedTask,
                     ProbeUtilityWorkerAsync = () => Task.CompletedTask,
                     SetupUtilityWorkerAsync = () => Task.CompletedTask,
                     SetupUtilityWorkerReplaceAsync = _ => Task.CompletedTask,
-                    PinCurrentTabAsUtilityWorkerAsync = () => Task.CompletedTask,
+                    PinUtilityWorkerFromCurrentTabAsync = () => Task.CompletedTask,
                     OpenUtilityWorkerAsync = () => Task.CompletedTask,
                 };
 
@@ -82,6 +85,7 @@ public sealed class AdventureThreadManagerDialogTests
         {
             try
             {
+                AppDirectories.ResetStoresForTests();
                 AppDirectories.TestRootOverride = configRoot;
                 if (System.Windows.Application.Current is null)
                 {
@@ -106,14 +110,17 @@ public sealed class AdventureThreadManagerDialogTests
                     StartNarrativeFromSourcesAsync = () => Task.CompletedTask,
                     OpenPlayHandoffWizardAsync = () => Task.CompletedTask,
                     StartNewDesignThreadAsync = () => Task.CompletedTask,
+                    CreateThreadSlotAsync = _ => Task.FromResult<Guid?>(null),
                     ActivateEntryAsync = (_, _) => Task.CompletedTask,
                     OpenEntryAsync = (_, _) => Task.CompletedTask,
                     OpenProjectWorkspaceAsync = () => Task.CompletedTask,
-                    PinCurrentTabAsync = _ => Task.CompletedTask,
+                    PinTabToEntryAsync = (_, _, _) => Task.CompletedTask,
+                    ClearEntryPinAsync = (_, _) => Task.CompletedTask,
+                    RemoveEntryAsync = _ => Task.CompletedTask,
                     ProbeUtilityWorkerAsync = () => Task.CompletedTask,
                     SetupUtilityWorkerAsync = () => Task.CompletedTask,
                     SetupUtilityWorkerReplaceAsync = _ => Task.CompletedTask,
-                    PinCurrentTabAsUtilityWorkerAsync = () => Task.CompletedTask,
+                    PinUtilityWorkerFromCurrentTabAsync = () => Task.CompletedTask,
                     OpenUtilityWorkerAsync = () => Task.CompletedTask,
                 };
 
@@ -128,6 +135,7 @@ public sealed class AdventureThreadManagerDialogTests
             }
             finally
             {
+                AppDirectories.ResetStoresForTests();
                 AppDirectories.TestRootOverride = null;
                 AppDirectories.ApplyAdventuresDirectoryOverride(null);
             }

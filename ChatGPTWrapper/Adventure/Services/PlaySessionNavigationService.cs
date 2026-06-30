@@ -42,6 +42,9 @@ internal static class PlaySessionNavigationService
         if (ProjectChatDraftService.ShouldStayOnProjectPage(bundle, source))
             return false;
 
+        if (AdventureNavigationService.IsOnLinkedProjectPage(source, bundle))
+            return false;
+
         if (PlayTabPinService.IsOnPlayTarget(source, bundle))
             return false;
 
@@ -163,15 +166,16 @@ internal static class PlaySessionNavigationService
     {
         PlayContextSessionCache.Invalidate(bundle.Metadata.Id);
 
-        if (ProjectChatDraftService.IsActive(bundle)
-            && (ProjectChatDraftService.ShouldStayOnProjectPage(bundle, core.Source)
-                || ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id)
-                    is ProjectChatDraftKind.Utility or ProjectChatDraftKind.Design))
+        if (ProjectChatDraftService.ShouldSuppressPinnedThreadReroute(
+                bundle,
+                core.Source,
+                AdventureNavigationIntent.Play))
         {
             return new PlayNavigationResult
             {
-                Success = AdventureNavigationService.IsOnLinkedProjectPage(core.Source, bundle),
-                OnProjectPage = true,
+                Success = AdventureNavigationService.IsOnLinkedProjectPage(core.Source, bundle)
+                          || ProjectChatDraftService.IsDraftWorkspaceConversation(bundle, core.Source),
+                OnProjectPage = AdventureNavigationService.IsOnLinkedProjectPage(core.Source, bundle),
             };
         }
 

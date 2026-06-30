@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
 using Microsoft.Web.WebView2.Core;
 
@@ -22,6 +23,12 @@ internal sealed class UtilityWorkerCoordinator
 
     public static UtilityWorkerCoordinator For(Guid adventureId) =>
         Coordinators.GetOrAdd(adventureId, id => new UtilityWorkerCoordinator(id));
+
+    public void ResumeIncompleteOutbox(IUtilityWorkerHost host)
+    {
+        if (UtilityOutboxService.PendingCount(_adventureId) > 0)
+            RequestOutboxPump(host);
+    }
 
     public async Task<bool> ProbeAsync(IUtilityWorkerHost host, CancellationToken cancellationToken = default)
     {
@@ -55,7 +62,7 @@ internal sealed class UtilityWorkerCoordinator
                 return false;
 
             gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
-            var conversationId = UtilityWorkerSessionService.GetWorkerConversationId(bundle);
+            var conversationId = UtilityWorkerSession.GetConversationId(bundle);
             if (string.IsNullOrWhiteSpace(conversationId))
                 return false;
 
@@ -69,7 +76,9 @@ internal sealed class UtilityWorkerCoordinator
                 gizmoId,
                 host.ConversationSend,
                 turnService,
-                cancellationToken);
+                cancellationToken,
+                host,
+                host.ProjectApi);
 
             UtilityWorkerPinService.TryReconcilePinFromCapabilities(bundle);
             AdventureStore.Save(bundle);
@@ -161,25 +170,34 @@ internal sealed class UtilityWorkerCoordinator
         }
 
         host.RegisterWorkerTab(workerWv);
-        var workerTurnService = host.GetTurnService(workerWv);
 
         host.SetStatus($"Utility worker: {jobId} sending…");
-        await host.EnsureWorkerWebViewBackgroundHostedAsync(workerWv, cancellationToken);
 
-        var playWv = host.GetPlayWebView();
-        var playCore = playWv?.CoreWebView2;
-        var playTurnService = playWv is not null ? host.GetTurnService(playWv) : null;
+        var embeddedAttachmentCount = pendingBefore?.Attachments?.Count ?? 0;
+        if (embeddedAttachmentCount > 0)
+        {
+            host.SetStatus(
+                $"Utility worker: {jobId} — staging {embeddedAttachmentCount} reference file(s)…");
+        }
 
+        await host.EnsureWorkerWebViewBackgroundHostedAsync(workerWv, apiOnlyWarm: false, cancellationToken);
+
+        var session = UtilityWorkerSession.For(_adventureId);
+        var pageReady = await session.EnsurePageReadyAsync(workerCore, bundle, cancellationToken);
+        if (!pageReady.Success)
+        {
+            return FailOutboxJob(bundle, jobId, pageReady.Error ?? "utility_page_not_ready");
+        }
+
+        var turnService = host.GetTurnService(workerWv);
         GenerationJobResult? result;
         try
         {
-            result = await UtilityWorkerOrchestrator.ProcessNextAsync(
+            result = await UtilityWorkerJobRunner.RunNextAsync(
                 bundle,
                 workerCore,
-                playCore,
                 host.ConversationSend,
-                playTurnService,
-                workerTurnService,
+                turnService,
                 host,
                 cancellationToken);
         }

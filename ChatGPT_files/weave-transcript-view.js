@@ -17,6 +17,15 @@
 
   function blocksToPlainText(blocks) {
     if (!blocks || !blocks.length) return "";
+    var rf = globalThis.__cgwContinuousRichFormat;
+    if (rf && typeof rf.blockPlainText === "function") {
+      return blocks
+        .map(function (b) {
+          return rf.blockPlainText(b);
+        })
+        .join("\n")
+        .trim();
+    }
     return blocks
       .map(function (b) {
         if (b.text) return b.text;
@@ -29,6 +38,55 @@
       })
       .join("\n")
       .trim();
+  }
+
+  function isPlayerFacingBlock(block) {
+    return block && block.kind !== "packetContext";
+  }
+
+  function buildPlayerBlocksFromLine(line) {
+    var pd = globalThis.__cgwPacketDisplay;
+    if (pd && typeof pd.buildPlayerBlocks === "function") {
+      return pd.buildPlayerBlocks(line) || [];
+    }
+    var trimmed = (line || "").trim();
+    if (!trimmed) return [];
+    return [{ kind: "prose", html: "<p>" + trimmed + "</p>" }];
+  }
+
+  function resolveWeaveEmbedBlocks(seg) {
+    var blocks = (seg.blocks || []).filter(isPlayerFacingBlock);
+    if (blocks.length) return blocks;
+
+    var turnId = seg.turnId;
+    var registry = globalThis.__cgwTurnRegistry || {};
+    var entry = turnId != null ? registry[turnId] : null;
+
+    if (entry && entry.playerSnippet) {
+      blocks = buildPlayerBlocksFromLine(entry.playerSnippet);
+      if (blocks.length) return blocks;
+    }
+
+    if (entry && entry.wrap) {
+      var stamped = entry.wrap.getAttribute("data-cgw-user-line");
+      if (stamped) {
+        blocks = buildPlayerBlocksFromLine(stamped);
+        if (blocks.length) return blocks;
+      }
+    }
+
+    return blocks;
+  }
+
+  function packetContextBlocks(blocks) {
+    return (blocks || []).filter(function (block) {
+      return block && block.kind === "packetContext";
+    });
+  }
+
+  function composeWeaveEmbedBlocks(seg) {
+    var playerBlocks = resolveWeaveEmbedBlocks(seg);
+    return playerBlocks.concat(packetContextBlocks(seg.blocks));
   }
 
   function readWeaveEmbedPreset() {
@@ -51,7 +109,7 @@
       return "blockquote";
     }
 
-    var text = blocksToPlainText(seg.blocks);
+    var text = blocksToPlainText(seg.blocks || []);
     if (!text) return "blockquote";
 
     if (
@@ -108,12 +166,15 @@
         if (streamingThis) bodyRun.streaming = true;
       } else if (seg.role === "user") {
         bodyRun = null;
+        var embedBlocks = composeWeaveEmbedBlocks(seg);
+        if (!embedBlocks.length) return;
+        var playerBlocks = resolveWeaveEmbedBlocks(seg);
         flow.push({
           kind: "embed",
           turnId: seg.turnId,
           role: "user",
-          blocks: seg.blocks,
-          embedKind: resolveEmbedKind(seg),
+          blocks: embedBlocks,
+          embedKind: resolveEmbedKind({ blocks: playerBlocks }),
         });
       }
     });
@@ -161,17 +222,17 @@
     return body;
   }
 
-  function createWeaveEmbedElement(item) {
+  function applyWeaveEmbedClasses(embed, item) {
     var k = kernel();
-    var embed = document.createElement("blockquote");
     embed.className =
       "cgw-weave-embed cgw-weave-embed--" +
       item.embedKind +
       " " +
       (k.INTERACTIVE_SEGMENT_CLASS || "cgw-continuous-segment--interactive");
-    embed.setAttribute("data-cgw-turn-id", String(item.turnId));
-    embed.setAttribute("data-cgw-turn-role", "user");
-    embed.setAttribute("data-cgw-voice", "player");
+    embed.classList.remove(
+      "cgw-has-packet-context",
+      "cgw-weave-embed--has-hidden-packet"
+    );
     if (
       item.role === "user" &&
       k.segmentHasPacketContextBlock &&
@@ -182,6 +243,14 @@
         embed.classList.add("cgw-weave-embed--has-hidden-packet");
       }
     }
+  }
+
+  function createWeaveEmbedElement(item) {
+    var embed = document.createElement("div");
+    embed.setAttribute("data-cgw-turn-id", String(item.turnId));
+    embed.setAttribute("data-cgw-turn-role", "user");
+    embed.setAttribute("data-cgw-voice", "player");
+    applyWeaveEmbedClasses(embed, item);
     return embed;
   }
 
@@ -297,11 +366,7 @@
         }
         changedTurnIds = changedTurnIds.concat(item.turnIds);
       } else {
-        el.className =
-          "cgw-weave-embed cgw-weave-embed--" +
-          item.embedKind +
-          " " +
-          (k.INTERACTIVE_SEGMENT_CLASS || "cgw-continuous-segment--interactive");
+        applyWeaveEmbedClasses(el, item);
         fillWeaveBlocks(el, item.blocks, item.turnId);
         changedTurnIds.push(item.turnId);
       }
@@ -337,6 +402,13 @@
       k.applyScrollSurface(scrollHost, container, scrollTop, stickToBottom);
     }
     return changedTurnIds;
+  }
+
+  function containerHasWeaveMarkup(container) {
+    return (
+      !!container &&
+      !!container.querySelector(".cgw-weave-body, .cgw-weave-embed")
+    );
   }
 
   function applyWeaveViewCore() {
@@ -385,9 +457,7 @@
     var container = document.getElementById(containerId);
     var prevFingerprint = globalThis.__cgwWeaveViewFingerprint;
     var unchanged =
-      container &&
-      container.childElementCount > 0 &&
-      fingerprint === prevFingerprint;
+      containerHasWeaveMarkup(container) && fingerprint === prevFingerprint;
 
     if (
       unchanged &&
@@ -541,6 +611,7 @@
   globalThis.__cgwRenderWeaveFlow = renderWeaveFlow;
   globalThis.__cgwSyncWeaveFlow = syncWeaveFlow;
   globalThis.__cgwResolveWeaveEmbedKind = resolveEmbedKind;
+  globalThis.__cgwResolveWeaveEmbedBlocks = resolveWeaveEmbedBlocks;
 
   if (typeof globalThis.__cgwRegisterTranscriptRenderer === "function") {
     globalThis.__cgwRegisterTranscriptRenderer("weave", {

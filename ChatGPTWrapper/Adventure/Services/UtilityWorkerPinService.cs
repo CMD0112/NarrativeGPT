@@ -12,25 +12,73 @@ internal static class UtilityWorkerPinService
         "worker_pin_required: Threads → Utility worker → Set up utility worker";
 
     public static bool HasWorkerPin(AdventureBundle? bundle) =>
-        bundle is not null && !string.IsNullOrWhiteSpace(GetWorkerConversationId(bundle));
+        bundle is not null && UtilityWorker.UtilityWorkerSession.HasPin(bundle);
 
     /// <summary>
-    /// Restores thread registry + utility session pin from verified capabilities when a stale save dropped binding.
+    /// Restores registry pin from capabilities cache when a stale save dropped binding.
+    /// When capabilities are green, the verified conversation id wins over a stale registry pin.
     /// </summary>
     public static bool TryReconcilePinFromCapabilities(AdventureBundle bundle)
     {
+        var caps = bundle.Metadata.UtilityWorkerCapabilities;
+        if (caps is { IsGreen: true }
+            && !string.IsNullOrWhiteSpace(caps.WorkerConversationId)
+            && TryPreferCapabilitiesWorkerId(bundle, caps.WorkerConversationId))
+        {
+            return true;
+        }
+
         if (HasWorkerPin(bundle))
             return false;
 
-        var caps = bundle.Metadata.UtilityWorkerCapabilities;
-        if (caps?.IsGreen != true || string.IsNullOrWhiteSpace(caps.WorkerConversationId))
+        if (string.IsNullOrWhiteSpace(caps?.WorkerConversationId))
             return false;
 
         return TryBindWorkerConversation(bundle, caps.WorkerConversationId, persist: false);
     }
 
+    /// <summary>
+    /// Binds registry/session to the conversation that actually passed verify when it differs from the pinned id.
+    /// </summary>
+    public static bool TryReconcileVerifiedWorkerConversation(
+        AdventureBundle bundle,
+        string verifiedConversationId,
+        bool persist = true)
+    {
+        if (string.IsNullOrWhiteSpace(verifiedConversationId))
+            return false;
+
+        var current = GetWorkerConversationId(bundle);
+        if (string.Equals(current, verifiedConversationId, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (IsReservedConversation(bundle, verifiedConversationId))
+            return false;
+
+        ProjectLinkDiagnostics.Log(
+            $"Utility worker conv reconcile: {current ?? "(none)"} -> {verifiedConversationId}");
+
+        return TryBindWorkerConversation(
+            bundle,
+            verifiedConversationId,
+            persist: persist,
+            clearCapabilities: false);
+    }
+
+    private static bool TryPreferCapabilitiesWorkerId(AdventureBundle bundle, string capsConversationId)
+    {
+        if (IsReservedConversation(bundle, capsConversationId))
+            return false;
+
+        var current = GetWorkerConversationId(bundle);
+        if (string.Equals(current, capsConversationId, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return TryBindWorkerConversation(bundle, capsConversationId, persist: false);
+    }
+
     public static string? GetWorkerConversationId(AdventureBundle bundle) =>
-        UtilityWorkerSessionService.GetWorkerConversationId(bundle);
+        UtilityWorker.UtilityWorkerSession.GetConversationId(bundle);
 
     public static string? GetWorkerTargetUrl(AdventureBundle bundle)
     {

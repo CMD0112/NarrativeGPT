@@ -4,9 +4,9 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
+[Collection(FileLockAwareCollectionNames.Name)]
 [Trait("Category", "Unit")]
-public sealed class PlayThreadPacketServiceTests
+public sealed class PlayThreadPacketServiceTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void BuildStartPacket_reflects_scenario_json_edited_on_disk()

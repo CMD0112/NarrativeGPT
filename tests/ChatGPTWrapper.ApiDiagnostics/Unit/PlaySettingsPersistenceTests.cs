@@ -6,8 +6,8 @@ using ChatGPTWrapper.Adventure.Stores;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class PlaySettingsPersistenceTests : IDisposable
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class PlaySettingsPersistenceTests : IClassFixture<FileLockAwareFixture>, IDisposable
 {
     private readonly string _tempRoot;
 
@@ -240,6 +240,7 @@ public sealed class PlaySettingsPersistenceTests : IDisposable
         bundle.Metadata.UtilityWorkerCapabilities = new UtilityWorkerCapabilities
         {
             HostReady = true,
+            ApiFetchOk = true,
             ApiPullOk = true,
             DomRegistrationVerified = true,
             ApiPushOk = true,

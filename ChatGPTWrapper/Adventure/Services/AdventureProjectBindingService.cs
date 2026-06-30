@@ -1,4 +1,4 @@
-// Instruction vs source delegation: docs/instruction-sources-paradigm.md
+// Instruction vs source delegation: docs/user/instruction-sources-paradigm.md
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;

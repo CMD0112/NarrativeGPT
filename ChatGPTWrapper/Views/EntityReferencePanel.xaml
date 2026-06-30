@@ -257,6 +257,12 @@
 
                                   ToolTip="Requires a linked Project and a recent play exchange"/>
 
+                        <MenuItem x:Name="SuggestEntitiesWithAttachmentsMenuItem" Header="Suggest entities with reference files…"
+
+                                  Click="SuggestEntitiesWithAttachments_Click"
+
+                                  ToolTip="Attach entities.json or other reference files with instructions for the utility worker job"/>
+
                         <MenuItem x:Name="ExpandEntityMenuItem" Header="Expand selected (AI)"
 
                                   Click="ExpandEntity_Click"

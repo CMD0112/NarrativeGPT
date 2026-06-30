@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using ChatGPTWrapper.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Services.PlayLayout;
@@ -64,6 +65,10 @@ public partial class AdventurePlayView : UserControl
 
     public Func<Task>? SuggestEntitiesAsync { get; set; }
 
+    public Func<Task>? SuggestEntitiesWithAttachmentsAsync { get; set; }
+
+    public Func<string, Task>? RunUtilityJobWithAttachmentsAsync { get; set; }
+
     public Func<Task>? SuggestMemoriesAsync { get; set; }
 
     public Func<Task>? RefreshSummaryAsync { get; set; }
@@ -86,11 +91,13 @@ public partial class AdventurePlayView : UserControl
 
     public Action? CancelProjectChatDraft { get; set; }
 
-    public Func<string, Task>? RunSourceEditJobAsync { get; set; }
+    public Func<string, IReadOnlyList<DomAttachmentPayload>?, string?, Task>? RunSourceEditJobAsync { get; set; }
 
     public Func<Task>? ContinueDesignAsync { get; set; }
 
     public Func<Task>? PromptThreadLogSyncAsync { get; set; }
+
+    public Func<Task>? PromptThreadLogDumpAsync { get; set; }
 
     public Func<Task<IReadOnlyList<ConversationFileRef>>>? ListThreadFilesAsync { get; set; }
 
@@ -126,6 +133,10 @@ public partial class AdventurePlayView : UserControl
     private PlayLayoutSnapshot _layoutSnapshot = new(
         PlayLayoutContext.Empty(PlayPanelSide.Left),
         PlayLayoutContext.Empty(PlayPanelSide.Right));
+
+    private PlaySurfaceChromeDefaults _playChrome = new();
+
+    private bool _suppressCompanionPersist;
 
     public void SetRightTabControl(TabControl? rightTabControl) =>
         _rightTabControl = rightTabControl;
@@ -248,6 +259,13 @@ public partial class AdventurePlayView : UserControl
         InitializeComponent();
         _suppressNarratorControls = false;
         WireEntityReferencePanel();
+        WireCompanionPersistence();
+        CockpitSectionSegment.ItemsSource = new SegmentedItem[]
+        {
+            new() { Content = "Session", Tag = "Session" },
+            new() { Content = "Narrator", Tag = "Narrator" },
+            new() { Content = "Tools", Tag = "Tools" },
+        };
         WarningsList.PreviewMouseRightButtonDown += WarningsList_PreviewMouseRightButtonDown;
         SizeChanged += (_, _) => ApplyLayout(
             PlayLayoutCoordinator.CreateSnapshot(ActualWidth, _layoutSnapshot.Companion.PanelWidth));
@@ -293,6 +311,8 @@ public partial class AdventurePlayView : UserControl
         };
         EntityReferencePanel.SuggestEntitiesRequested += (_, _) =>
             SuggestEntities_Click(EntityReferencePanel, new RoutedEventArgs());
+        EntityReferencePanel.SuggestEntitiesWithAttachmentsRequested += (_, _) =>
+            _ = RunJobButtonAsync(SuggestEntitiesWithAttachmentsAsync, RefreshAfterGenerationJob);
         EntityReferencePanel.ExpandEntityRequested += (_, row) => _ = ExpandEntityForRowAsync(row);
     }
 
@@ -323,11 +343,7 @@ public partial class AdventurePlayView : UserControl
         if (_bundle is null)
             return;
 
-        var meta = AdventureStore.ReadMetadataFromDisk(_bundle.Metadata.Id);
-        if (meta?.Settings is null)
-            return;
-
-        TransportSettingsStore.ApplyToBundle(_bundle, meta.Settings);
+        TransportSettingsStore.SyncFromDisk(_bundle);
     }
 
     private void EnsureSettingsCommitNotifierAttached()
@@ -344,6 +360,10 @@ public partial class AdventurePlayView : UserControl
         if (_bundle?.Metadata.Id != adventureId)
             return;
 
+        AdventureStore.ReloadInto(_bundle);
+        BindPendingReview();
+        BindReviewQueue();
+        BindWarnings();
         SyncTransportSettingsFromDisk();
         PlaySettingsSaved?.Invoke(this, EventArgs.Empty);
     }
@@ -356,13 +376,12 @@ public partial class AdventurePlayView : UserControl
             return;
 
         AdventureNavigationService.SyncLinkedFields(_bundle);
-        var reconcile = ThreadMetadataReconcileService.Reconcile(_bundle);
+        ThreadConversationLogMigrationService.MigrateIfNeeded(_bundle);
         var normalized = PlayTurnScopeService.NormalizeIncompleteCaptureTurns(_bundle);
-        if (reconcile.Changed || normalized)
+        if (normalized)
             AdventureStore.Save(_bundle);
 
         FinalizeLegacyPendingTurns();
-        TitleBlock.Text = _bundle.Metadata.Title;
         UpdatePreviewPlayerLineFromBootstrap();
         UpdatePlayTabPinUi();
         BindStateTable();
@@ -377,18 +396,107 @@ public partial class AdventurePlayView : UserControl
         UpdateJobButtonStates();
         ApplyLayout(
             PlayLayoutCoordinator.CreateSnapshot(ActualWidth, _layoutSnapshot.Companion.PanelWidth));
+        RestoreCompanionUi();
+        ApplyNarratorPanelDensity();
+        RefreshAiToolActionList();
         SetShellChromeState(_shellBreadcrumbVisible);
+    }
+
+    public void ConfigurePlayChrome(PlaySurfaceChromeDefaults chrome) =>
+        _playChrome = chrome ?? new PlaySurfaceChromeDefaults();
+
+    private void WireCompanionPersistence()
+    {
+        PlaySideTabControl.SelectionChanged += (_, _) =>
+        {
+            if (_suppressCompanionPersist || _bundle is null)
+                return;
+
+            if (PlaySideTabControl.SelectedItem is TabItem { Tag: string tag })
+                PersistCompanionTab(tag);
+        };
+    }
+
+    private void CockpitSectionSegment_SelectionChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppressCompanionPersist)
+            return;
+
+        ApplyCockpitSection(ResolveCockpitSectionTag());
+        if (_bundle is not null && _playChrome.PlayCompanionRememberExpanders)
+        {
+            PlayCompanionRestoreService.PersistSection(_bundle.Metadata.Settings, ResolveCockpitSectionTag());
+            AdventureStore.Save(_bundle, AdventureSaveScope.Metadata);
+        }
+    }
+
+    private string ResolveCockpitSectionTag() =>
+        CockpitSectionSegment.SelectedTag as string ?? "Session";
+
+    private void ApplyCockpitSection(string section)
+    {
+        SessionSectionPanel.Visibility = string.Equals(section, "Session", StringComparison.OrdinalIgnoreCase)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        NarratorSectionPanel.Visibility = string.Equals(section, "Narrator", StringComparison.OrdinalIgnoreCase)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        AiToolsSectionPanel.Visibility = string.Equals(section, "Tools", StringComparison.OrdinalIgnoreCase)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void RestoreCompanionUi()
+    {
+        if (_bundle is null)
+            return;
+
+        _suppressCompanionPersist = true;
+        try
+        {
+            var tab = PlayCompanionRestoreService.ResolveTab(_bundle.Metadata.Settings, _playChrome);
+            if (GetTabByName(tab) is TabItem item)
+                PlaySideTabControl.SelectedItem = item;
+
+            var section = PlayCompanionRestoreService.ResolveSection(_bundle.Metadata.Settings, _playChrome);
+            var sectionIndex = section switch
+            {
+                "Narrator" => 1,
+                "Tools" => 2,
+                _ => 0,
+            };
+            CockpitSectionSegment.SelectedIndex = sectionIndex;
+            ApplyCockpitSection(section);
+        }
+        finally
+        {
+            _suppressCompanionPersist = false;
+        }
+    }
+
+    private void PersistCompanionTab(string tabName)
+    {
+        PlayCompanionRestoreService.PersistTab(_bundle!.Metadata.Settings, tabName);
+        AdventureStore.Save(_bundle, AdventureSaveScope.Metadata);
+    }
+
+    public void RefreshPlayChromeFromSettings()
+    {
+        ApplyNarratorPanelDensity();
+        RefreshAiToolActionList();
+        RestoreCompanionUi();
+    }
+
+    private void ApplyNarratorPanelDensity()
+    {
+        var full = string.Equals(_playChrome.NarratorPanelDensity, "Full", StringComparison.OrdinalIgnoreCase);
+        NarratorFullPanel.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
+        NarratorSettingsButton.Visibility = full ? Visibility.Collapsed : Visibility.Visible;
     }
 
     public void SetShellChromeState(bool shellBreadcrumbVisible)
     {
         _shellBreadcrumbVisible = shellBreadcrumbVisible;
-        BackButton.Visibility = shellBreadcrumbVisible ? Visibility.Collapsed : Visibility.Visible;
-        if (shellBreadcrumbVisible)
-            Grid.SetColumn(TitleBlock, 0);
-        else
-            Grid.SetColumn(TitleBlock, 1);
-        TitleBlock.Margin = shellBreadcrumbVisible ? new Thickness(0, 0, 8, 0) : new Thickness(0, 0, 8, 0);
         if (_layoutSnapshot.Shell.IsUsable)
             ApplyShellLayout(_layoutSnapshot.Shell);
     }
@@ -401,30 +509,10 @@ public partial class AdventurePlayView : UserControl
         var warningCount = _bundle is null
             ? 0
             : ContinuityWarningDismissalService.FilterActive(_bundle.Continuity).Count;
-        var pendingCount = _bundle is null ? 0 : PendingReviewService.GetCounts(_bundle).Total;
 
         SetSideTabHeader(ReferenceSideTab, "Reference", reviewCount > 0 ? reviewCount : null);
         SetSideTabHeader(WarningsSideTab, "Warnings", warningCount > 0 ? warningCount : null);
         SetSideTabHeader(StateSideTab, "State", null);
-        UpdatePlaySettingsButtonBadge(pendingCount);
-    }
-
-    private void UpdatePlaySettingsButtonBadge(int pendingCount)
-    {
-        if (pendingCount <= 0)
-        {
-            PlaySettingsButton.Content = "Play settings…";
-            return;
-        }
-
-        var panel = new StackPanel { Orientation = Orientation.Horizontal };
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Play settings…",
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-        panel.Children.Add(CreateBadgeBorder(pendingCount));
-        PlaySettingsButton.Content = panel;
     }
 
     private void SetSideTabHeader(TabItem tab, string title, int? badgeCount)
@@ -491,43 +579,20 @@ public partial class AdventurePlayView : UserControl
         var cap = context.Capabilities;
         RootGrid.Margin = new Thickness(context.Margin);
 
-        BackButton.Content = cap.ShowFullBackLabel ? "← Dashboard" : "←";
-        BackButton.Visibility = _shellBreadcrumbVisible ? Visibility.Collapsed : Visibility.Visible;
+        FooterSearchButton.Content = cap.UseFullFooterLabels ? "Search" : "Search";
+        FooterExportButton.Content = cap.UseFullFooterLabels ? "Export" : "Export";
+        MoreActionsButton.Content = cap.UseCompactFooterMore ? "More" : "More actions";
 
-        PlaySettingsButton.Content = cap.ShowFullPlaySettingsLabel
-            ? "Play settings…"
-            : cap.ShowIntermediatePlaySettingsLabel
-                ? "Settings"
-                : "⚙";
-        PlaySettingsButton.Padding = cap.ShowFullBackLabel ? new Thickness(10, 4, 10, 4) : new Thickness(8, 4, 8, 4);
-        PlaySettingsButton.MinWidth = cap.ShowFullBackLabel ? 0 : 32;
-
-        SourcesButton.Visibility = cap.ShowSourcesButton ? Visibility.Visible : Visibility.Collapsed;
-        HeaderMoreMenu.Visibility = Visibility.Visible;
-
-        AiToolsFlyoutMenu.Visibility = cap.UseShellHeaderFlyouts ? Visibility.Visible : Visibility.Collapsed;
-        JobActionsPanel.Visibility = cap.UseShellHeaderFlyouts ? Visibility.Collapsed : Visibility.Visible;
-
-        NarratorFlyoutMenu.Visibility = cap.UseShellHeaderFlyouts ? Visibility.Visible : Visibility.Collapsed;
-        NarratorControlsPanel.Visibility = cap.UseShellHeaderFlyouts ? Visibility.Collapsed : Visibility.Visible;
-        NarratorExpander.Visibility = Visibility.Visible;
-
-        var footerPadding = cap.UseFullFooterLabels
-            ? new Thickness(10, 5, 10, 5)
-            : new Thickness(8, 5, 8, 5);
-        FooterSearchButton.Padding = footerPadding;
-        FooterExportButton.Padding = footerPadding;
-        MoreActionsButton.Padding = footerPadding;
-        FooterSearchButton.Content = cap.UseFullFooterLabels ? "Search…" : "Search";
-        FooterExportButton.Content = cap.UseFullFooterLabels ? "Export…" : "Export";
-        FooterExportButton.ToolTip = "Save adventure to a file — Markdown, HTML, JSON, or ZIP archive";
-        MoreActionsButton.Content = cap.UseCompactFooterMore ? "More…" : "More actions…";
-
-        SessionCockpit.Padding = cap.UseCompactSessionPadding ? new Thickness(6) : new Thickness(8);
+        SessionCockpit.Padding = cap.UseCompactSessionPadding
+            ? new Thickness(8)
+            : new Thickness(12);
 
         EditWorldButton.Content = cap.UseFullFooterLabels
-            ? "Edit in Play settings → World"
-            : "Edit world in settings";
+            ? "Edit world in settings"
+            : "Edit world";
+
+        if (_bundle is not null)
+            UpdatePlayTabBadges();
     }
 
     private void ApplyReferenceLayout(PlayLayoutContext context)
@@ -808,26 +873,8 @@ public partial class AdventurePlayView : UserControl
         AdventureStore.Save(_bundle);
     }
 
-    private void NarratorAdvanced_Click(object sender, RoutedEventArgs e)
-    {
-        if (_bundle is null)
-            return;
-
-        var dialog = new NarratorAdvancedDialog(_bundle, GetSelectedNarratorScope())
-        {
-            Owner = Window.GetWindow(this),
-        };
-        if (dialog.ShowDialog() == true)
-        {
-            BindNarratorControls();
-            AdventureStore.Save(_bundle);
-        }
-    }
-
-    private void NarratorFlyoutExpand_Click(object sender, RoutedEventArgs e)
-    {
-        NarratorExpander.IsExpanded = true;
-    }
+    private void NarratorSettings_Click(object sender, RoutedEventArgs e) =>
+        OpenPlaySettings(PlaySettingsTab.Injection);
 
     private void UpdateNarratorOverrideChips()
     {
@@ -845,11 +892,6 @@ public partial class AdventurePlayView : UserControl
         var showBanner = AdventureProjectBindingService.ShouldShowLinkProjectBanner(_bundle);
         LinkProjectBanner.Visibility = showBanner ? Visibility.Visible : Visibility.Collapsed;
         var hasProject = !showBanner;
-        HeaderLinkProjectMenuItem.Visibility = showBanner ? Visibility.Collapsed : Visibility.Visible;
-        HeaderLinkProjectMenuItem.Header = hasProject ? "Change Project…" : "Link Project…";
-        HeaderLinkProjectMenuItem.ToolTip = hasProject
-            ? "Switch to a different ChatGPT Project or unlink"
-            : "Connect this adventure to a ChatGPT Project";
         LinkProjectButton.Visibility = Visibility.Collapsed;
         ThreadStatusBlock.Cursor = System.Windows.Input.Cursors.Hand;
         ThreadStatusBlock.ToolTip = hasProject
@@ -875,14 +917,12 @@ public partial class AdventurePlayView : UserControl
         {
             SessionLoadingBlock.Text = message ?? "Preparing play session…";
             SessionLoadingBlock.Visibility = Visibility.Visible;
-            JobActionsPanel.IsEnabled = false;
-            PlaySettingsButton.IsEnabled = false;
+            AiToolsSectionPanel.IsEnabled = false;
         }
         else
         {
             SessionLoadingBlock.Visibility = Visibility.Collapsed;
-            PlaySettingsButton.IsEnabled = true;
-            JobActionsPanel.IsEnabled = true;
+            AiToolsSectionPanel.IsEnabled = true;
             UpdateJobButtonStates();
         }
     }
@@ -891,16 +931,8 @@ public partial class AdventurePlayView : UserControl
     {
         if (_bundle is null)
         {
-            ProcessLastExchangeButton.IsEnabled = false;
-            SuggestMemoriesButton.IsEnabled = false;
-            RefreshSummaryButton.IsEnabled = false;
-            GenerateCardsButton.IsEnabled = false;
-            SourcesButton.IsEnabled = false;
-            GenerateRecapButton.IsEnabled = false;
             RunContinuityButton.IsEnabled = false;
-            RunContinuityCockpitButton.IsEnabled = false;
-            AiToolsFlyoutButton.IsEnabled = false;
-            AiToolsExpander.IsEnabled = false;
+            RefreshAiToolActionList();
             return;
         }
 
@@ -911,33 +943,38 @@ public partial class AdventurePlayView : UserControl
         var workerReady = UtilityWorkerCapabilityGate.IsGreen(_bundle);
         var canRunScopedJobs = hasProject && (hasExchange || workerReady);
 
-        var scopedTooltip = hasExchange
-            ? "Bundled memories + entities for the latest play exchange"
-            : workerReady
-                ? "Uses live play thread context via the utility worker lane"
-                : "Send a play turn first, or verify the utility worker in Threads";
-
-        ProcessLastExchangeButton.IsEnabled = canRunScopedJobs;
-        ProcessLastExchangeButton.ToolTip = scopedTooltip;
         EntityReferencePanel.UpdateSecondaryActionStates(hasProject, canRunScopedJobs);
-        SuggestMemoriesButton.IsEnabled = canRunScopedJobs;
-        SuggestMemoriesButton.ToolTip = workerReady && !hasExchange
-            ? "Propose memories from live play context via utility worker"
-            : "Propose memories from the latest logged exchange";
-        RefreshSummaryButton.IsEnabled = hasProject;
-        GenerateCardsButton.IsEnabled = hasProject;
-        SourcesButton.IsEnabled = true;
-        GenerateRecapButton.IsEnabled = hasProject;
         RunContinuityButton.IsEnabled = hasProject;
-        RunContinuityCockpitButton.IsEnabled = hasProject;
+        RefreshAiToolActionList();
+    }
 
-        var aiEnabled = canRunScopedJobs
-                        || RefreshSummaryButton.IsEnabled
-                        || GenerateCardsButton.IsEnabled
-                        || GenerateRecapButton.IsEnabled
-                        || RunContinuityCockpitButton.IsEnabled;
-        AiToolsFlyoutButton.IsEnabled = aiEnabled;
-        AiToolsExpander.IsEnabled = hasProject || workerReady;
+    private void RefreshAiToolActionList()
+    {
+        AiToolsActionList.ItemsSource = AiToolActionRowBuilder.Build(_bundle)
+            .Select(state => new AiToolActionRowViewModel(state, () => RunAiToolAction(state.ActionKey)))
+            .ToList();
+    }
+
+    private void RunAiToolAction(string actionKey)
+    {
+        switch (actionKey)
+        {
+            case "ProcessLastExchange":
+                ProcessLastExchange_Click(this, new RoutedEventArgs());
+                break;
+            case "Memories":
+                SuggestMemories_Click(this, new RoutedEventArgs());
+                break;
+            case "Digest":
+                RefreshSummary_Click(this, new RoutedEventArgs());
+                break;
+            case "Cards":
+                GenerateCards_Click(this, new RoutedEventArgs());
+                break;
+            case "Continuity":
+                RunContinuityCheck_Click(this, new RoutedEventArgs());
+                break;
+        }
     }
 
     private void BindWarnings()
@@ -1232,6 +1269,8 @@ public partial class AdventurePlayView : UserControl
         if (_bundle is null)
             return;
 
+        AdventureStore.SyncReviewDomainsFromDisk(_bundle);
+
         BindReviewQueue();
         BindPendingReview();
         _openPlaySettingsDialog?.ReloadBundleFromStore();
@@ -1255,12 +1294,7 @@ public partial class AdventurePlayView : UserControl
         if (_bundle is null)
             return;
 
-        var counts = PendingReviewService.GetCounts(_bundle);
-        var visible = counts.Total > 0;
-        PendingReviewBar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        PendingReviewText.Text = visible
-            ? PendingReviewService.FormatSummaryLine(counts)
-            : "";
+        AdventureStore.SyncReviewDomainsFromDisk(_bundle);
         UpdatePlayTabBadges();
     }
 
@@ -1293,6 +1327,7 @@ public partial class AdventurePlayView : UserControl
             _bundle.Entities.ReviewQueue.Remove(item);
 
         AdventureStore.Save(_bundle);
+        UtilityReviewCompletionService.MarkResolvedIfCategoryEmpty(_bundle, ProposalReviewCategory.Entity);
         TryPromptCanonReconcile(new CanonEditContext
         {
             Category = MapReviewEntityCategory(item.EntityType),
@@ -1401,6 +1436,7 @@ public partial class AdventurePlayView : UserControl
 
         _bundle.Entities.ReviewQueue.Remove(item);
         AdventureStore.Save(_bundle);
+        UtilityReviewCompletionService.MarkResolvedIfCategoryEmpty(_bundle, ProposalReviewCategory.Entity);
         BindReviewQueue();
     }
 
@@ -1413,6 +1449,7 @@ public partial class AdventurePlayView : UserControl
             _bundle.Entities.ReviewQueue.Remove(item);
 
         AdventureStore.Save(_bundle);
+        UtilityReviewCompletionService.MarkResolvedIfCategoryEmpty(_bundle, ProposalReviewCategory.Entity);
         TryPromptCanonReconcile(new CanonEditContext
         {
             Category = MapReviewEntityCategory(item.EntityType),
@@ -1453,12 +1490,19 @@ public partial class AdventurePlayView : UserControl
         }
     }
 
+    private void LocalInferenceLab_Click(object sender, RoutedEventArgs e) =>
+        LocalInferenceLabDialog.ShowForOwner(Window.GetWindow(this));
+
     private void Back_Click(object sender, RoutedEventArgs e) => BackRequested?.Invoke(this, EventArgs.Empty);
 
     private void PlaySettings_Click(object sender, RoutedEventArgs e) =>
         OpenPlaySettings(PlaySettingsTab.NextSend);
 
-    private void Rename_Click(object sender, RoutedEventArgs e)
+    private void Rename_Click(object sender, RoutedEventArgs e) => RenameAdventure();
+
+    public void RenameFromShell() => RenameAdventure();
+
+    private void RenameAdventure()
     {
         if (_bundle is null)
             return;
@@ -1478,7 +1522,6 @@ public partial class AdventurePlayView : UserControl
             return;
         }
 
-        TitleBlock.Text = _bundle.Metadata.Title;
         TitleRenamed?.Invoke(this, _bundle.Metadata.Id);
     }
 
@@ -1519,6 +1562,7 @@ public partial class AdventurePlayView : UserControl
             return;
 
         var fresh = AdventureStore.Load(_bundle.Metadata.Id) ?? _bundle;
+        UtilityProposalRehydrateService.TryRehydrate(fresh);
         var dlg = new ProposalReviewHubDialog(fresh, focusCategory)
         {
             Owner = _openPlaySettingsDialog ?? Window.GetWindow(this),
@@ -1554,17 +1598,6 @@ public partial class AdventurePlayView : UserControl
             BindWarnings();
             UpdateJobButtonStates();
         }
-    }
-
-    public void TryOpenProposalReviewHubAfterJob(string jobId, int proposalCount)
-    {
-        if (_bundle is null || proposalCount <= 0)
-            return;
-
-        if (string.Equals(jobId, GenerationJobId.ProcessTurn, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        OpenProposalReviewHub(ProposalReviewService.ResolveCategoryForJob(jobId));
     }
 
     private void OpenPlaySettingsForFirstPending()
@@ -1682,7 +1715,10 @@ public partial class AdventurePlayView : UserControl
         dlg.OpenProposalReviewHub = category => OpenProposalReviewHub(category);
         dlg.DraftNewProjectChatAsync = () => DraftNewProjectChatAsync?.Invoke() ?? Task.CompletedTask;
         dlg.CancelProjectChatDraft = () => CancelProjectChatDraft?.Invoke();
-        dlg.RunSourceEditJobAsync = (prompt, _) => RunSourceEditJobAsync?.Invoke(prompt) ?? Task.CompletedTask;
+        dlg.RunSourceEditJobAsync = (prompt, attachments, referenceNote) =>
+            RunSourceEditJobAsync?.Invoke(prompt, attachments, referenceNote) ?? Task.CompletedTask;
+        dlg.RunUtilityJobWithAttachmentsAsync = jobId =>
+            RunUtilityJobWithAttachmentsAsync?.Invoke(jobId) ?? Task.CompletedTask;
         dlg.ListThreadFilesAsync = () => ListThreadFilesAsync?.Invoke() ?? Task.FromResult<IReadOnlyList<ConversationFileRef>>([]);
         dlg.DownloadThreadFileAsync = file =>
             DownloadThreadFileAsync?.Invoke(file) ?? Task.FromResult(Array.Empty<byte>());
@@ -1744,6 +1780,8 @@ public partial class AdventurePlayView : UserControl
                 RefreshDialogSessionStatus();
             };
         }
+
+        dlg.RefreshHostDelegates();
     }
 
     private void Branch_Click(object sender, RoutedEventArgs e)
@@ -1828,6 +1866,14 @@ public partial class AdventurePlayView : UserControl
             return;
 
         _ = PromptThreadLogSyncAsync();
+    }
+
+    private void DumpThreadLog_Click(object sender, RoutedEventArgs e)
+    {
+        if (PromptThreadLogDumpAsync is null)
+            return;
+
+        _ = PromptThreadLogDumpAsync();
     }
 
     public void OpenPlayHandoffWizard()

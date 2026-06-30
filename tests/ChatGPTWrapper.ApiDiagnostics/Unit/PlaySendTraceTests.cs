@@ -5,36 +5,16 @@ using ChatGPTWrapper.PageIntegration;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(DiagnosticsTestCollection.Name)]
+[Trait("Category", "Unit")]
+[Trait("Diagnostics", "Logged")]
 public sealed class PlaySendTraceTests : IDisposable
 {
-    private readonly string _root;
+    private readonly DiagnosticTestSession _session;
 
-    public PlaySendTraceTests()
-    {
-        _root = Path.Combine(Path.GetTempPath(), "cgw-play-send-trace", Guid.NewGuid().ToString("N"));
-        DiagnosticsOptions.ResetForTests();
-        AppDirectories.ResetStoresForTests();
-        AppDirectories.TestRootOverride = _root;
-        DiagnosticsOptions.Initialize(["--extended-diagnostics"]);
-        AppDirectories.EnsureCreated();
-    }
+    public PlaySendTraceTests() =>
+        _session = DiagnosticTestSession.Enter(typeof(PlaySendTraceTests));
 
-    public void Dispose()
-    {
-        DiagnosticsOptions.ResetForTests();
-        AppDirectories.ResetStoresForTests();
-        AppDirectories.TestRootOverride = null;
-        try
-        {
-            if (Directory.Exists(_root))
-                Directory.Delete(_root, recursive: true);
-        }
-        catch
-        {
-            /* ignore */
-        }
-    }
+    public void Dispose() => _session.Dispose();
 
     [Fact]
     public void Event_writes_jsonl_line()
@@ -46,12 +26,8 @@ public sealed class PlaySendTraceTests : IDisposable
             "test event",
             data: new { ok = true });
 
-        Assert.True(File.Exists(PlaySendTrace.TracePath));
-        var line = File.ReadAllLines(PlaySendTrace.TracePath)
-            .Last(l => l.Contains("send_gate", StringComparison.Ordinal));
-        using var doc = JsonDocument.Parse(line);
-        Assert.Equal("send_gate", doc.RootElement.GetProperty("event").GetString());
-        Assert.Equal("test event", doc.RootElement.GetProperty("message").GetString());
+        _session.ReloadTraces();
+        _session.Traces.PlaySend.ContainsEvent(PlaySendTraceEvents.SendGate);
     }
 
     [Fact]
@@ -61,7 +37,8 @@ public sealed class PlaySendTraceTests : IDisposable
         using var scope = PlaySendTrace.BeginSend(adventureId, "hello", "https://chatgpt.com/c/test");
         scope.Complete("ok", data: new { conversationId = "abc" });
 
-        Assert.True(File.Exists(PlaySendTrace.TracePath));
+        _session.ReloadTraces();
+        _session.Traces.PlaySend.ContainsEvent(PlaySendTraceEvents.SendRunEnd);
         var summaryPath = PlaySendTrace.GetRunSummaryPath(scope.Run.RunIdShort);
         Assert.True(File.Exists(summaryPath));
     }
@@ -75,10 +52,10 @@ public sealed class PlaySendTraceTests : IDisposable
             """);
         PlaySendTrace.LogFromPage(doc.RootElement);
 
-        var line = File.ReadAllLines(PlaySendTrace.TracePath)
-            .Last(l => l.Contains("bridge_submit_not_found", StringComparison.Ordinal));
-        using var logged = JsonDocument.Parse(line);
-        Assert.Equal("bridge_submit_not_found", logged.RootElement.GetProperty("event").GetString());
-        Assert.Equal("error", logged.RootElement.GetProperty("level").GetString());
+        _session.ReloadTraces();
+        _session.Traces.PlaySend.ContainsEvent("bridge_submit_not_found");
+        var line = _session.Traces.PlaySend.Lines
+            .Last(l => l.Event == "bridge_submit_not_found");
+        Assert.Equal("error", line.Level);
     }
 }

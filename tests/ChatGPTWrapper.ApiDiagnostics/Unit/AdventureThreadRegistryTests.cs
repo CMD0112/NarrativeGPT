@@ -206,4 +206,59 @@ public sealed class AdventureThreadRegistryTests
             "conv-updated",
             AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Play));
     }
+
+    [Fact]
+    public void RemoveEntry_deletes_archived_row()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata { Id = Guid.NewGuid() },
+        };
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+
+        var active = AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play, label: "Active");
+        AdventureThreadRegistryService.SetActivePin(bundle, active.Id, notifyPlayThreadChanged: false);
+
+        var archived = AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play, label: "Old");
+        AdventureThreadRegistryService.ArchiveEntry(bundle, archived.Id);
+
+        AdventureThreadRegistryService.RemoveEntry(bundle, archived.Id);
+
+        Assert.DoesNotContain(bundle.Metadata.ThreadRegistry, e => e.Id == archived.Id);
+        Assert.Equal(active.Id, AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)!.Id);
+    }
+
+    [Fact]
+    public void RemoveEntry_rejects_active_thread()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata { Id = Guid.NewGuid() },
+        };
+        var entry = AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
+        AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            AdventureThreadRegistryService.RemoveEntry(bundle, entry.Id));
+    }
+
+    [Fact]
+    public void ClearEntryPin_clears_pin_triple()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata { Id = Guid.NewGuid() },
+        };
+        var entry = AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Play);
+        entry.PinnedTabKey = "tab-key";
+        entry.PinnedTabTitle = "Title";
+        entry.PinnedTabUrl = "https://chatgpt.com/c/test";
+
+        AdventureThreadRegistryService.ClearEntryPin(bundle, entry.Id);
+
+        Assert.Null(entry.PinnedTabKey);
+        Assert.Null(entry.PinnedTabTitle);
+        Assert.Null(entry.PinnedTabUrl);
+        Assert.False(AdventureThreadRegistryService.EntryHasPin(entry));
+    }
 }

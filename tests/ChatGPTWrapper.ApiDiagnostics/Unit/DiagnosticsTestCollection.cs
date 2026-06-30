@@ -1,11 +1,8 @@
-namespace ChatGPTWrapper.ApiDiagnostics.Unit;
+using ChatGPTWrapper.ApiDiagnostics.Infrastructure;
 
-[CollectionDefinition(DiagnosticsTestCollection.Name, DisableParallelization = true)]
-public sealed class DiagnosticsTestCollectionDefinition : ICollectionFixture<object>
-{
-}
+namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 public static class DiagnosticsTestCollection
 {
-    public const string Name = "Diagnostics isolation";
+    public const string Name = FileLockAwareCollectionNames.Name;
 }

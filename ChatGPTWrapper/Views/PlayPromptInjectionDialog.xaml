@@ -225,6 +225,23 @@
             <TabItem x:Name="AiActionsTab" Header="AI Tools">
                 <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}">
                     <StackPanel Margin="8">
+                        <GroupBox Header="Proposal review" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                           Margin="0,0,0,8"
+                                           Text="After utility jobs run, accept or dismiss results here — entities, memories, cards, source edits, JSON import, and continuity warnings."/>
+                                <WrapPanel>
+                                    <Button Content="Review proposals…" Padding="10,5" Margin="0,0,8,0"
+                                            Click="ReviewAllProposals_Click"/>
+                                </WrapPanel>
+                                <TextBlock x:Name="AiToolsPendingReviewLine"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
                         <GroupBox Header="Automation after each turn" Margin="0,0,0,12">
                             <StackPanel>
                                 <CheckBox x:Name="AutomationCheck" Content="Enable WebView automation (required for AI tools)"
@@ -236,16 +253,59 @@
                                            Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
                                 <CheckBox x:Name="AutoProposeMemoriesCheck" Content="Auto-propose memories" Margin="0,0,0,4"/>
                                 <CheckBox x:Name="AutoUpdateSummaryCheck" Content="Auto-update rolling summary every N turns" Margin="0,0,0,4"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                    <TextBlock Text="Summary interval (turns):" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                    <TextBox x:Name="SummaryIntervalBox" Width="48"/>
-                                </StackPanel>
                                 <CheckBox x:Name="AutoContinuityCheckCheck" Content="Auto-run continuity check" Margin="0,0,0,4"/>
                                 <CheckBox x:Name="AutoSyncInstructionsCheck"
                                           Content="Auto-sync project instructions when saving play settings"
-                                          Margin="0,0,0,4"/>
+                                          Margin="0,0,0,8"/>
+                                <TextBlock Text="Context window per automation" FontWeight="SemiBold" Margin="0,0,0,4"/>
                                 <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
-                                           Text="Automation jobs require a linked ChatGPT Project. Proposals land in Reference review queues."/>
+                                           Margin="0,0,0,6"
+                                           Text="How many recent turn pairs and which lookback anchor each automation uses when it runs. Defaults are shown in the grid; adjust as needed and reset any row back to defaults."/>
+                                <DataGrid x:Name="AutomationContextGrid"
+                                          AutoGenerateColumns="False"
+                                          CanUserAddRows="False"
+                                          CanUserDeleteRows="False"
+                                          HeadersVisibility="Column"
+                                          MinHeight="120"
+                                          Margin="0,0,0,6"
+                                          CellEditEnding="AutomationContextGrid_CellEditEnding">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Automation" Binding="{Binding Label}" IsReadOnly="True" Width="*"/>
+                                        <DataGridTextColumn Header="Turn pairs" Binding="{Binding TurnPairs, UpdateSourceTrigger=LostFocus}" Width="72"/>
+                                        <DataGridTextColumn Header="Default turns" Binding="{Binding DefaultTurnPairs}" IsReadOnly="True" Width="84"/>
+                                        <DataGridTemplateColumn Header="Lookback" Width="180">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <ComboBox ItemsSource="{Binding LookbackChoices}"
+                                                              SelectedValue="{Binding Lookback, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                              SelectedValuePath="Anchor"
+                                                              DisplayMemberPath="Label"
+                                                              SelectionChanged="AutomationContextLookback_SelectionChanged"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="Default lookback" Binding="{Binding DefaultLookbackLabel}" IsReadOnly="True" Width="*"/>
+                                        <DataGridTemplateColumn Header="" Width="72">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Button Content="Reset" Padding="6,2" Tag="{Binding JobId}" Click="ResetAutomationContextRow_Click"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="Summary run interval (turns):" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBox x:Name="SummaryIntervalBox" Width="48" LostFocus="PlaySettingsInputs_Changed"/>
+                                    <TextBlock Text="(default: 5)" Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                               VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </StackPanel>
+                                <WrapPanel Margin="0,0,0,4">
+                                    <Button Content="Reset all automation context" Padding="8,4" Margin="0,0,6,0"
+                                            Click="ResetAllAutomationContext_Click"/>
+                                </WrapPanel>
+                                <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                           Text="Automation jobs require a linked ChatGPT Project. Proposals queue for review — open Review proposals when ready."/>
                             </StackPanel>
                         </GroupBox>
 
@@ -270,12 +330,46 @@
                                           Content="Spill overflow jobs to utility worker"
                                           IsChecked="True" Margin="0,0,0,8"
                                           Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
+                                <CheckBox x:Name="UseEphemeralUtilityWorkerChatCheck"
+                                          Content="Use ephemeral project chats for utility worker (experimental)"
+                                          Margin="0,0,0,4"
+                                          Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
+                                <CheckBox x:Name="ForceUtilityWorkerDomAttachCheck"
+                                          Content="Force DOM composer attach for reference files (testing)"
+                                          Margin="16,0,0,4"
+                                          Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
+                                <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                           Margin="0,0,0,8"
+                                           Text="Each worker job creates a short-lived hidden chat (~20–40s). With force DOM attach, staged files use composer chips (shadow compositor) even when they would normally embed in the packet. Requires ephemeral mode."/>
                                 <CheckBox x:Name="HideInlineUtilityCheck" Content="Hide inline utility traffic during play"
                                           IsChecked="True" Margin="0,0,0,4"
                                           Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
                                 <CheckBox x:Name="ShowInlineUtilityTrafficCheck" Content="Show inline utility traffic (debug peek)"
-                                          Margin="0,0,0,0"
+                                          Margin="0,0,0,8"
                                           Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
+                                <CheckBox x:Name="LocalUtilityInferenceCheck"
+                                          Content="Route utility jobs to local LLM (Ollama)"
+                                          Margin="0,0,0,4"
+                                          Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
+                                <CheckBox x:Name="LocalUtilityInferenceDualRunCheck"
+                                          Content="Dual run — also send to ChatGPT utility thread and collect both for review"
+                                          Margin="16,0,0,4"
+                                          Checked="UtilityDeliverySettings_Changed" Unchecked="UtilityDeliverySettings_Changed"/>
+                                <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                           Margin="0,0,0,4"
+                                           Text="Dual run queues proposals from both sources and saves separate utility run records (local-llm vs play/worker). When dual run is off, local LLM replaces the utility thread with ChatGPT fallback on failure."/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                                    <TextBlock Text="Local base URL:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBox x:Name="LocalInferenceBaseUrlBox" Width="220"
+                                              LostFocus="UtilityDeliverySettings_Changed"
+                                              TextChanged="UtilityDeliveryText_Changed"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                    <TextBlock Text="Local model:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBox x:Name="LocalInferenceModelBox" Width="220"
+                                              LostFocus="UtilityDeliverySettings_Changed"
+                                              TextChanged="UtilityDeliveryText_Changed"/>
+                                </StackPanel>
                             </StackPanel>
                         </GroupBox>
 
@@ -329,20 +423,52 @@
                             <TextBlock Text="Story context feed" FontWeight="SemiBold" Margin="0,0,0,4"/>
                             <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"
                                        Margin="0,0,0,6"
-                                       Text="Configure live/local transcript pulls injected into utility job packets."/>
-                            <CheckBox x:Name="StoryContextPerJobOverrideCheck" Content="Override adventure defaults for selected action"
-                                      Margin="0,0,0,8" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed"/>
+                                       Text="Configure the transcript and ancillary context injected into utility job packets."/>
+                            <GroupBox Header="Context window" Margin="0,0,0,8">
+                                <StackPanel Margin="4">
+                                    <TextBlock x:Name="StoryContextJobDefaultHint" Foreground="{StaticResource TextMutedBrush}"
+                                               FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                    <TextBlock x:Name="StoryContextEffectiveHint" Foreground="{StaticResource TextMutedBrush}"
+                                               FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                    <WrapPanel Margin="0,0,0,8">
+                                        <StackPanel Margin="0,0,16,4">
+                                            <TextBlock Text="Turn pairs" Margin="0,0,0,4"/>
+                                            <TextBox x:Name="StoryContextMaxTurnsBox" Width="72"
+                                                     HorizontalContentAlignment="Left" LostFocus="StoryContextSettings_Changed"/>
+                                            <TextBlock x:Name="StoryContextMaxTurnsDefaultHint" Foreground="{StaticResource TextMutedBrush}"
+                                                       FontSize="11" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,16,4">
+                                            <TextBlock Text="Lookback anchor" Margin="0,0,0,4"/>
+                                            <ComboBox x:Name="StoryContextAnchorCombo" Width="200" Margin="0,0,0,0"
+                                                      SelectionChanged="StoryContextSettings_Changed"/>
+                                            <TextBlock x:Name="StoryContextLookbackDefaultHint" Foreground="{StaticResource TextMutedBrush}"
+                                                       FontSize="11" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,0,4">
+                                            <TextBlock Text="Max context chars" Margin="0,0,0,4"/>
+                                            <TextBox x:Name="StoryContextMaxCharsBox" Width="96"
+                                                     HorizontalContentAlignment="Left" LostFocus="StoryContextSettings_Changed"/>
+                                            <TextBlock x:Name="StoryContextMaxCharsDefaultHint" Foreground="{StaticResource TextMutedBrush}"
+                                                       FontSize="11" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                    <CheckBox x:Name="StoryContextPerJobOverrideCheck"
+                                              Content="Customize context for this action only (otherwise edits apply adventure-wide)"
+                                              Margin="0,0,0,8"
+                                              Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed"/>
+                                    <Button Content="Reset context window to defaults" Padding="8,4" HorizontalAlignment="Left"
+                                            Click="ResetStoryContext_Click"/>
+                                </StackPanel>
+                            </GroupBox>
 
-                            <Expander Header="Source &amp; lookback" IsExpanded="True" Margin="0,0,0,6">
+                            <Expander Header="Advanced context options" IsExpanded="False" Margin="0,0,0,6">
+                                <StackPanel Margin="8,4,0,0">
+                            <Expander Header="Source &amp; lookback" IsExpanded="False" Margin="0,0,0,6">
                                 <StackPanel Margin="8,4,0,0">
                                     <TextBlock Text="Source" Margin="0,0,0,4"/>
                                     <ComboBox x:Name="StoryContextSourceCombo" Margin="0,0,0,8" SelectionChanged="StoryContextSettings_Changed"/>
                                     <WrapPanel Margin="0,0,0,8">
-                                        <StackPanel Margin="0,0,12,4">
-                                            <TextBlock Text="Max turn pairs" Margin="0,0,0,4"/>
-                                            <TextBox x:Name="StoryContextMaxTurnsBox" Width="72"
-                                                     HorizontalContentAlignment="Left" LostFocus="StoryContextSettings_Changed"/>
-                                        </StackPanel>
                                         <StackPanel Margin="0,0,12,4">
                                             <TextBlock Text="Skip newest pairs" Margin="0,0,0,4"/>
                                             <TextBox x:Name="StoryContextSkipNewestBox" Width="72"
@@ -357,10 +483,8 @@
                                     <TextBlock Text="Max transcript chars (0 = unlimited)" Margin="0,0,0,4"/>
                                     <TextBox x:Name="StoryContextMaxTranscriptCharsBox" Width="96" Margin="0,0,0,8"
                                               HorizontalContentAlignment="Left" LostFocus="StoryContextSettings_Changed"/>
-                                    <Expander Header="Advanced lookback" Margin="0,0,0,4">
+                                    <Expander Header="Anchor turn index" Margin="0,0,0,4">
                                         <StackPanel Margin="8,4,0,0">
-                                            <TextBlock Text="Anchor mode" Margin="0,0,0,4"/>
-                                            <ComboBox x:Name="StoryContextAnchorCombo" Margin="0,0,0,8" SelectionChanged="StoryContextSettings_Changed"/>
                                             <TextBlock Text="Anchor turn index (for Since turn index)" Margin="0,0,0,4"/>
                                             <TextBox x:Name="StoryContextAnchorTurnIndexBox" Width="72" LostFocus="StoryContextSettings_Changed"/>
                                         </StackPanel>
@@ -368,7 +492,7 @@
                                 </StackPanel>
                             </Expander>
 
-                            <Expander Header="Transcript roles &amp; layout" IsExpanded="True" Margin="0,0,0,6">
+                            <Expander Header="Transcript roles &amp; layout" IsExpanded="False" Margin="0,0,0,6">
                                 <StackPanel Margin="8,4,0,0">
                                     <CheckBox x:Name="StoryContextIncludePlayerCheck" Content="Include player messages"
                                               Margin="0,0,0,4" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed"/>
@@ -414,26 +538,26 @@
 
                             <Expander Header="Treatment &amp; job packet" Margin="0,0,0,6">
                                 <StackPanel Margin="8,4,0,0">
-                                    <TextBlock Text="Max total chars" Margin="0,0,0,4"/>
-                                    <TextBox x:Name="StoryContextMaxCharsBox" Width="96" Margin="0,0,0,8"
-                                             HorizontalContentAlignment="Left" LostFocus="StoryContextSettings_Changed"/>
                                     <TextBlock Text="Trim strategy" Margin="0,0,0,4"/>
                                     <ComboBox x:Name="StoryContextTrimCombo" Margin="0,0,0,8" SelectionChanged="StoryContextSettings_Changed"/>
                                     <CheckBox x:Name="StoryContextOmitRedundantCheck" Content="Omit redundant turn slices in job body when transcript present"
                                               IsChecked="True" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed"/>
                                 </StackPanel>
                             </Expander>
+                                </StackPanel>
+                            </Expander>
 
                             <WrapPanel Margin="0,0,0,4">
                                 <Button Content="Preview (local)" Padding="8,4" Margin="0,0,6,0" Click="PreviewStoryContextLocal_Click"/>
                                 <Button Content="Preview (live)" Padding="8,4" Margin="0,0,6,0" Click="PreviewStoryContextLive_Click"/>
-                                <Button Content="Reset context defaults" Padding="8,4" Click="ResetStoryContext_Click"/>
                             </WrapPanel>
                             <TextBlock x:Name="StoryContextPreviewMeta" Foreground="{StaticResource TextMutedBrush}"
                                        FontSize="11" TextWrapping="Wrap"/>
                         </StackPanel>
                     </ScrollViewer>
                     <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,8,0,0">
+                        <Button Content="Run selected action…" Padding="10,5" Margin="0,0,8,0" Click="RunSelectedAiActionWithAttachments_Click"
+                                ToolTip="Run the selected AI Tool with optional reference files and instructions (utility worker lane)"/>
                         <Button Content="Reset to default" Padding="10,5" Margin="0,0,8,0" Click="ResetAiAction_Click"/>
                     </WrapPanel>
                         </Grid>
@@ -509,7 +633,7 @@
 
                         <TextBlock Text="Play surface quick actions" FontWeight="SemiBold" Margin="0,0,0,4"/>
                         <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"
-                                   Text="Visible keeps native buttons. Hidden removes them. InjectedOnly hides the button and injects a [[cgw:action]] packet on send when the composer is empty or ends with the action name."/>
+                                   Text="Continue: with the wrapper composer, Hidden/InjectedOnly shows a Continue button in the compose bar. InjectedOnly also allows empty Send (injects [[cgw:action]]). Regenerate and Retry target native message actions — not available in the wrapper composer yet."/>
                         <DataGrid x:Name="PlaySurfaceActionsGrid" AutoGenerateColumns="False" CanUserAddRows="False"
                                   HeadersVisibility="Column" MinHeight="100" Margin="0,0,0,12"
                                   CellEditEnding="PlaySurfaceActionsGrid_CellEditEnding">
@@ -556,6 +680,27 @@
                                 </DataGridComboBoxColumn>
                             </DataGrid.Columns>
                         </DataGrid>
+
+                        <TextBlock Text="Cockpit on enter" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                        <TextBlock Text="When opening Play for an adventure" Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                        <ComboBox x:Name="PlayCompanionOnEnterCombo" Margin="0,0,0,8"
+                                  SelectionChanged="PlayChromeSettings_Changed"/>
+                        <TextBlock Text="Default companion tab (first visit)" Margin="0,0,0,4"/>
+                        <ComboBox x:Name="PlayCompanionDefaultTabCombo" Margin="0,0,0,8"
+                                  SelectionChanged="PlayChromeSettings_Changed"/>
+                        <CheckBox x:Name="PlayCompanionRememberExpandersCheck"
+                                  Content="Remember cockpit section per adventure"
+                                  Margin="0,0,0,8"
+                                  Checked="PlayChromeSettings_Changed" Unchecked="PlayChromeSettings_Changed"/>
+
+                        <TextBlock Text="Default cockpit section (first visit)" Margin="0,0,0,4"/>
+                        <ComboBox x:Name="PlayCompanionDefaultSectionCombo" Margin="0,0,0,8"
+                                  SelectionChanged="PlayChromeSettings_Changed"/>
+
+                        <TextBlock Text="Narrator cockpit density" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <ComboBox x:Name="NarratorPanelDensityCombo" Margin="0,0,0,4"
+                                  SelectionChanged="PlayChromeSettings_Changed"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -575,10 +720,12 @@
                                 <CheckBox x:Name="PreferDomPlaySendCheck"
                                           Content="Prefer DOM composer send (skip conversation API)"
                                           Margin="0,0,0,4"
+                                          Visibility="Collapsed"
                                           Checked="PlaySettingsInputs_Changed" Unchecked="PlaySettingsInputs_Changed"/>
                                 <TextBlock x:Name="PreferDomPlaySendHint"
-                                           Text="When enabled, play and utility messages submit through the native ChatGPT composer. Project source sync and file upload/download still use the API."
-                                           Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                           Text="Retired — play sends use the conversation API. DOM send bypass was removed in CMD-379."
+                                           Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"
+                                           Visibility="Collapsed"/>
                                 <CheckBox x:Name="ForceFatPacketsCheck" Content="Force fat packets (ignore thin Project mode)"
                                           Checked="InjectionAffectingCheck_Changed" Unchecked="InjectionAffectingCheck_Changed"/>
                             </StackPanel>
@@ -804,17 +951,7 @@
                 </DockPanel>
             </TabItem>
             <TabItem x:Name="HistoryTab" Header="History">
-                <DockPanel Margin="8">
-                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
-                        <Button Content="View selected" Padding="10,5" Margin="0,0,8,0" Click="ViewHistory_Click"/>
-                        <Button Content="Copy selected" Padding="10,5" Click="CopyHistory_Click"/>
-                    </StackPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="Recently sent merged packets for this adventure."
-                               Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,0,0,8"/>
-                    <ListBox x:Name="HistoryList"
-                             VerticalAlignment="Stretch"
-                             DisplayMemberPath="DisplayLabel"/>
-                </DockPanel>
+                <local:FlightRecorderPanel x:Name="FlightRecorderPanel" Margin="8"/>
             </TabItem>
         </TabControl>
 

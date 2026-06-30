@@ -1,8 +1,9 @@
 # Utility job context assembly — design track
 
-**Status:** Backlog — design track (Linear [CMD-390](https://linear.app/cmd0112/issue/CMD-390))  
+**Status:** Implemented v1 (2026-06-28) — behind `UseUtilityJobContextAssembler` (default `true`); manual QA on long-play sessions pending  
 **ADR (spike):** [utility-job-context-assembly-adr.md](../utility-job-context-assembly-adr.md) ([CMD-391](https://linear.app/cmd0112/issue/CMD-391))  
-**Tracker:** [strategic-value-additions-tracker.md](strategic-value-additions-tracker.md) (SVA-11)  
+**E2E review:** [utility-job-e2e-review.md]() — bottom-up lanes, retrieval, field constraints  
+**Tracker:** [strategic-value-additions-tracker.md]() (SVA-11)  
 **Related:** [play-thread-utility-orchestration-adr.md](../play-thread-utility-orchestration-adr.md) · [utility-worker-lane-adr.md](../utility-worker-lane-adr.md) · [injection-policy-adr.md](../injection-policy-adr.md) · [prompt-construction-guide.md](../prompt-construction-guide.md)
 
 ---
@@ -15,29 +16,31 @@ Make **what utility workers receive** deliberate, complete, and lane-aware — s
 
 ---
 
-## Problem (current state)
+## Problem (was — gaps closed in v1)
 
-Utility jobs are assembled through **three divergent paths**:
+Utility jobs were assembled through **three divergent paths** (now unified behind `UtilityJobContextAssembler` when enabled):
 
-| Path | Story context | Reference-first | Typical use |
-|------|---------------|---------------|-------------|
-| **Worker lane** | `UtilityStoryContextBuilder` → `StoryContextBlock` | `ApplyReferenceFirstDefaults` in push | Manual/heavy jobs, auto spill |
-| **Legacy inline** | Same builder in `RunInlineJobAsync` | Same | Fallback when injection-first off |
-| **Injection-first bundled** | **No** `StoryContextBlock` — only `OmitRedundantJobTurnSlices` on job body | Assumes play thread + same-send narrator context | Auto jobs in next play packet |
+| Path | Story context (v1) | Reference-first / dedup | Typical use |
+|------|-------------------|-------------------------|-------------|
+| **Worker lane** | Assembler + worker lore + canon slices | Worker solo flags; self-contained every send | Manual/heavy jobs, auto spill |
+| **Legacy inline** | Assembler via `GenerationJobService` | Same as worker/manual lane | Fallback when injection-first off |
+| **Injection-first bundled** | No story block; snapshot dedup | `PlayPacketContextSnapshot` from `PrepareSend` | Auto jobs in next play packet |
 
-### Known gaps
+### Resolved in v1 (CMD-392–398)
 
-1. **Worker isolation** — Worker conversation cannot see the play thread. Reference-first flags that omit transcript/summary assume thread visibility; worker jobs need **self-contained** context every time.
+1. **Worker isolation** — Worker path builds full story block + `[[cgw:sources mode="utility-worker"]]`; flags from actual block, not play-thread turn count.
+2. **Bundled dedup** — `PlayPacketContextSnapshotBuilder` + assembler bundled sync path (CMD-393).
+3. **Single assembler** — Worker, play bundled, play utility-only, legacy inline, preview (CMD-392, CMD-397).
+4. **Handler dedup** — `UtilityStoryContextDedup` + consolidated `BuildContinuityCheckPrompt` (CMD-396).
+5. **Worker lore + canon slices** — `UtilityWorkerLoreChannelService` + `UtilityCanonSliceSelector` (CMD-394, CMD-395).
+6. **Preview manifest** — `UtilityContextManifestRecord` on runs + AI Actions preview (CMD-397).
 
-2. **Bundled dedup is implicit** — Injection-first prepends `[[cgw:utility]]` to a play packet but does not compute an explicit **overlap manifest** (what narrator context already included vs what the job still needs).
+### Remaining / icebox
 
-3. **Scattered assembly** — `UtilityStoryContextBuilder`, `UtilityStoryContextProfiles`, `GenerationJobHandlers.BuildContinuityCheckPrompt`, and per-job prompt builders each slice context differently.
-
-4. **Generic profiles, not task-aware** — Job profiles cap turn pairs and toggle sections statically; they do not select **relevant canon** for the triggering turn (e.g. entities mentioned, location, continuity-relevant source sections).
-
-5. **No Project lore channel for worker** — Worker packets rarely include `[[cgw:sources]]`-style retrieve guidance or thin inline excerpts; heavy jobs (`continuity_check`, `process_turn`) may lack published lore access on an isolated conversation.
-
-6. **Injection-first manual gap** — Manual utility-only sends via play thread may omit story block when not using legacy inline path.
+- **50+ turn field validation** — Needs manual QA on real adventures (WorkerOnly + long play history).
+- **v2 improvements (umbrella)** — [CMD-401](https://linear.app/cmd0112/issue/CMD-401) inventories adaptive budgets, legacy retirement, preview parity, outcome correlation, lexical canon v2, and settings UX.
+- **Semantic canon ranker** — [CMD-399](https://linear.app/cmd0112/issue/CMD-399) workstream A under CMD-401; optional CMD-381 synergy only.
+- **Legacy fallback** — `ApplyReferenceFirstDefaults` still used when `UseUtilityJobContextAssembler` is off (retire via CMD-401 workstream B).
 
 ---
 
@@ -116,21 +119,36 @@ Extends [injection-policy-adr.md](../injection-policy-adr.md):
 
 ## Implementation phases (Linear)
 
-| Phase | Issue | Focus |
-|-------|-------|-------|
-| 0 | [CMD-391](https://linear.app/cmd0112/issue/CMD-391) | ADR: lane matrix + job content matrix + dedup |
-| 1 | [CMD-392](https://linear.app/cmd0112/issue/CMD-392) | `UtilityJobContextAssembler` |
-| 2 | [CMD-393](https://linear.app/cmd0112/issue/CMD-393) | Lane-aware dedup (bundled vs worker solo) |
-| 3 | [CMD-394](https://linear.app/cmd0112/issue/CMD-394) | Worker lore channel |
-| 4 | [CMD-395](https://linear.app/cmd0112/issue/CMD-395) | Job-scoped canon slices (lexical) |
-| 5 | [CMD-396](https://linear.app/cmd0112/issue/CMD-396) | Handler consolidation |
-| 6 | [CMD-397](https://linear.app/cmd0112/issue/CMD-397) | Preview manifest |
-| 7 | [CMD-398](https://linear.app/cmd0112/issue/CMD-398) | Docs + tracker sync |
-| — | [CMD-399](https://linear.app/cmd0112/issue/CMD-399) | Optional semantic lore (CMD-381 synergy, icebox) |
+| Phase | Issue | Focus | Status |
+|-------|-------|-------|--------|
+| 0 | [CMD-391](https://linear.app/cmd0112/issue/CMD-391) | ADR spike | **Done** |
+| 1 | [CMD-392](https://linear.app/cmd0112/issue/CMD-392) | `UtilityJobContextAssembler` | **Done** |
+| 2 | [CMD-393](https://linear.app/cmd0112/issue/CMD-393) | `PlayPacketContextSnapshot` bundled dedup | **Done** |
+| 3 | [CMD-394](https://linear.app/cmd0112/issue/CMD-394) | Worker lore channel | **Done** |
+| 4 | [CMD-395](https://linear.app/cmd0112/issue/CMD-395) | Lexical canon slices (inline excerpts) | **Done** |
+| 5 | [CMD-396](https://linear.app/cmd0112/issue/CMD-396) | Handler consolidation | **Done** |
+| 6 | [CMD-397](https://linear.app/cmd0112/issue/CMD-397) | Preview manifest | **Done** |
+| 7 | [CMD-398](https://linear.app/cmd0112/issue/CMD-398) | Docs + tracker sync | **Done** |
+| — | [CMD-401](https://linear.app/cmd0112/issue/CMD-401) | v2 icebox umbrella (adaptive assembly, quality, legacy) | Icebox |
+| — | [CMD-399](https://linear.app/cmd0112/issue/CMD-399) | Semantic canon slices (CMD-401 workstream A) | Icebox |
 
 ---
 
-## Out of scope
+## Field constraints (extended diagnostics)
+
+Real sessions (2026-06) inform implementation priorities:
+
+| Observation | Implication for this track |
+|-------------|---------------------------|
+| **`WorkerOnly` policy** common | Worker assembler path (CMD-392) is primary, not edge case |
+| **`http_403` on API** → DOM worker send | Large self-contained packets; avoid duplication (CMD-393, CMD-396) |
+| **Pin vs caps split** (fixed: `TryReconcilePinFromCapabilities`) | Jobs must reach orchestrator before context matters |
+| **`process_turn` 7k packet → parse fail** | Context quality + handler dedup may help schema adherence; retrieval OK |
+| **Play injection bundled: flags only** | CMD-393 highest risk for wrong lore/context |
+
+Full bottom-up review: [utility-job-e2e-review.md]().
+
+---
 
 - Utility **transport** (outbox, push/pull, injection-first scheduling) — [CMD-326](https://linear.app/cmd0112/issue/CMD-326), [CMD-358](https://linear.app/cmd0112/issue/CMD-358)
 - Utility **response parse/retrieval** — [CMD-332](https://linear.app/cmd0112/issue/CMD-332)
@@ -141,25 +159,32 @@ Extends [injection-policy-adr.md](../injection-policy-adr.md):
 
 ## Success criteria
 
-- [ ] Worker `continuity_check` and `propose_memories` succeed with useful context when play thread has 50+ turns and worker never saw them
-- [ ] Injection-first bundled jobs do not duplicate summary/transcript already in the same play send
-- [ ] AI Actions preview shows lane-specific assembly + dedup manifest
-- [ ] One assembler replaces three divergent call sites
-- [ ] Linked Project adventures: worker jobs include lore retrieval guidance without inlining full `cast.md`
+- [ ] Worker `continuity_check` and `propose_memories` succeed with useful context when play thread has 50+ turns and worker never saw them *(needs manual QA)*
+- [x] Injection-first bundled jobs do not duplicate summary/transcript already in the same play send
+- [x] AI Actions preview shows lane-specific assembly + dedup manifest
+- [x] One assembler replaces three divergent call sites (when `UseUtilityJobContextAssembler` enabled)
+- [x] Linked Project adventures: worker jobs include lore retrieval guidance without inlining full `cast.md`
 
 ---
 
-## Related code (today)
+## Implementation (v1 code)
 
 | File | Role |
 |------|------|
-| `UtilityStoryContextBuilder.cs` | Story block assembly |
-| `UtilityStoryContextProfiles.cs` | Static per-job caps |
-| `PlayUtilityInjectionService.cs` | Injection-first sections (no story block) |
-| `UtilityWorkerOrchestrator.cs` | Worker push + story build |
-| `UtilityMessagePushService.cs` | Reference-first defaults on push |
-| `GenerationJobHandlers.cs` | Job body + duplicate continuity slices |
-| `GenerationJobService.cs` | Legacy inline story build |
+| `UtilityJobContextAssembler.cs` | Single entry — all lanes + manifest |
+| `UtilityJobContextPreviewService.cs` | AI Actions local/live preview |
+| `PlayPacketContextSnapshotBuilder.cs` | Bundled play-packet overlap snapshot |
+| `UtilityStoryContextDedup.cs` | Shared job-core vs story-block dedup rules |
+| `UtilityWorkerLoreChannelService.cs` | Worker `[[cgw:sources mode="utility-worker"]]` |
+| `UtilityCanonSliceSelector.cs` | Lexical slices + inline excerpt caps |
+| `UtilityCanonSliceProfiles.cs` | Per-job inline char budgets |
+| `UtilityJobScopeSignals.cs` | Turn/scope/entity signals for canon selection |
+| `UtilityContextManifest.cs` / `UtilityContextManifestRecord.cs` | Preview + flight recorder |
+| `PlayUtilityInjectionService.cs` | Bundled / utility-only assembly + manifest on pending |
+| `UtilityWorkerOrchestrator.cs` | Worker push assembly |
+| `GenerationJobService.cs` | Legacy inline assembly |
+| `GenerationJobHandlers.cs` | Job body (deduped continuity / memory / summary) |
+| `UtilityStoryContextBuilder.cs` | Story block sections (input to assembler) |
 
 ---
 

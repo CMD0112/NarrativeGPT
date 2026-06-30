@@ -19,6 +19,8 @@ internal sealed class UtilityWorkerSetupStatus
 
     public string? ProbeError { get; init; }
 
+    public string? ApiAttachProbeResult { get; init; }
+
     public string? ConversationId { get; init; }
 
     public string? LinkedProjectId { get; init; }
@@ -27,7 +29,12 @@ internal sealed class UtilityWorkerSetupStatus
 
     public string StepProject => UtilityWorkerSetupCopy.FormatStepProject(ProjectLinked, LinkedProjectId);
 
-    public string StepWorkerChat => UtilityWorkerSetupCopy.FormatStepWorkerChat(WorkerPinned, ProjectLinked);
+    public bool EphemeralWorkerEnabled { get; init; }
+
+    public string StepWorkerChat => UtilityWorkerSetupCopy.FormatStepWorkerChat(
+        WorkerPinned,
+        ProjectLinked,
+        EphemeralWorkerEnabled);
 
     public string StepVerified => UtilityWorkerSetupCopy.FormatStepVerified(
         ConnectionGreen,
@@ -42,7 +49,8 @@ internal sealed class UtilityWorkerSetupStatus
         HostReady,
         ApiRegistered,
         DomRegistrationVerified,
-        ProbeError);
+        ProbeError,
+        ApiAttachProbeResult);
 
     public bool CanSetup => ProjectLinked;
 
@@ -59,7 +67,8 @@ internal sealed class UtilityWorkerSetupStatus
         WorkerPinned,
         HostReady,
         ApiRegistered,
-        ProbeError);
+        ProbeError,
+        EphemeralWorkerEnabled);
 
     public UtilityConnectionBannerState ConnectionBannerState =>
         UtilityWorkerSetupCopy.ResolveConnectionBannerState(
@@ -104,8 +113,10 @@ internal static class UtilityWorkerSetupService
             ApiRegistered = caps?.ApiFetchOk == true,
             DomRegistrationVerified = caps?.DomRegistrationVerified == true,
             ProbeError = caps?.LastProbeError,
+            ApiAttachProbeResult = caps?.LastApiAttachProbeResult,
             ConversationId = conversationId,
             TabTitle = entry?.PinnedTabTitle,
+            EphemeralWorkerEnabled = UtilityEphemeralWorkerPolicy.IsEnabled(bundle),
         };
     }
 }

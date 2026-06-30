@@ -15,7 +15,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,8">
+        <Grid x:Name="DesignHeaderGrid" Grid.Row="0" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*" MinWidth="0"/>
@@ -129,7 +129,9 @@
             </StackPanel>
         </Border>
 
-        <TabControl x:Name="StepTabs" Grid.Row="4" Margin="0,0,0,4" SelectionChanged="StepTabs_SelectionChanged">
+        <TabControl x:Name="StepTabs" Grid.Row="4" Margin="0,0,0,4"
+                    Style="{StaticResource ShellCompanionTabControlStyle}"
+                    SelectionChanged="StepTabs_SelectionChanged">
             <TabItem Header="Concept" Tag="Concept"/>
             <TabItem Header="World" Tag="World"/>
             <TabItem Header="Plot" Tag="Plot"/>

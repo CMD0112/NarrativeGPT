@@ -1,6 +1,7 @@
 using System.Windows;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Adventure.Services.UtilityWorker;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
 using ChatGPTWrapper.Views;
@@ -168,7 +169,9 @@ public partial class MainWindow
     private async Task<GenerationJobResult?> RunGenerationJobForActiveAdventureAsync(
         string jobId,
         GenerationJobContext? context = null,
-        bool forceRotate = false)
+        bool forceRotate = false,
+        IReadOnlyList<DomAttachmentPayload>? domAttachments = null,
+        string? attachmentReferenceNote = null)
     {
         if (_activeAdventureId is not { } adventureId)
         {
@@ -184,6 +187,38 @@ public partial class MainWindow
         }
 
         context ??= new GenerationJobContext();
+        if (!string.IsNullOrWhiteSpace(attachmentReferenceNote))
+        {
+            context = new GenerationJobContext
+            {
+                Turn = context.Turn,
+                Scope = context.Scope,
+                CardId = context.CardId,
+                EntityId = context.EntityId,
+                EntityKind = context.EntityKind,
+                ForceRotate = context.ForceRotate,
+                UserPrompt = context.UserPrompt,
+                ProcessTurnIncludeMemories = context.ProcessTurnIncludeMemories,
+                ProcessTurnIncludeEntities = context.ProcessTurnIncludeEntities,
+                ProcessTurnIncludeSummary = context.ProcessTurnIncludeSummary,
+                StoryContextBlock = context.StoryContextBlock,
+                StoryContextHasTranscript = context.StoryContextHasTranscript,
+                OmitRedundantJobTurnSlices = context.OmitRedundantJobTurnSlices,
+                StoryContextIncludesSummary = context.StoryContextIncludesSummary,
+                StoryContextIncludesState = context.StoryContextIncludesState,
+                SuppressInlineGuide = context.SuppressInlineGuide,
+                UtilityContextAssembled = context.UtilityContextAssembled,
+                UtilityContextManifest = context.UtilityContextManifest,
+                DesignStep = context.DesignStep,
+                InferenceSource = context.InferenceSource,
+                UtilityRunId = context.UtilityRunId,
+                DualRunGroupId = context.DualRunGroupId,
+                AllowCrossSourceDuplicates = context.AllowCrossSourceDuplicates,
+                ForLocalInference = context.ForLocalInference,
+                JobAttachments = context.JobAttachments,
+                AttachmentReferenceNote = attachmentReferenceNote,
+            };
+        }
         context = EnrichJobContextWithScope(bundle, jobId, context, forceRotate);
         if (context is null)
         {
@@ -218,7 +253,8 @@ public partial class MainWindow
                     adventureId,
                     bundle,
                     jobId,
-                    context);
+                    context,
+                    domAttachments);
             }
         }
 
@@ -304,6 +340,21 @@ public partial class MainWindow
                 if (playWv is not null)
                     GetOrRegisterAdventureBridge(playWv);
                 var service = GetOrCreateGenerationJobService(wv);
+                CoreWebView2? workerCore = null;
+                AdventureTurnService? workerTurnService = null;
+                if (LocalUtilityInferencePolicy.IsDualRun(bundle)
+                    && LocalUtilityInferencePolicy.SupportsJob(jobId))
+                {
+                    var workerWv = await ResolveUtilityWorkerWebViewAsync(bundle);
+                    if (workerWv is not null)
+                    {
+                        GetOrRegisterAdventureBridge(workerWv);
+                        WireProjectServices(workerWv);
+                        workerCore = workerWv.CoreWebView2;
+                        workerTurnService = GetOrCreateTurnService(workerWv);
+                    }
+                }
+
                 var runContext = new GenerationJobContext
                 {
                     Turn = context.Turn,
@@ -320,7 +371,8 @@ public partial class MainWindow
                     SuppressInlineGuide = context.SuppressInlineGuide,
                 };
                 jobResult = await service.RunJobAsync(
-                    core, bundle, jobId, runContext, turnService, playCore, playTurnService);
+                    core, bundle, jobId, runContext, turnService, playCore, playTurnService,
+                    workerCore, workerTurnService, this);
                 var result = jobResult;
 
                 bundle.Metadata.UtilityJobLastErrors ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -410,10 +462,8 @@ public partial class MainWindow
         if (result.Success && result.ProposalCount > 0)
         {
             status = jobId == GenerationJobId.ProposeJsonImport
-                ? $"Queued {result.ProposalCount} JSON import proposal(s) — review in Review proposals."
-                : $"Extracted {result.ProposalCount} proposal(s) — review in Review proposals.";
-
-            _designView.TryOpenProposalReviewHubAfterJob(jobId, result.ProposalCount);
+                ? $"Queued {result.ProposalCount} JSON import proposal(s) — use Review all… when ready."
+                : $"Extracted {result.ProposalCount} proposal(s) — use Review all… when ready.";
         }
         else if (!result.Success && result.SkippedReason is null)
             status = FormatDesignJobStatusError(jobId, result.Error);
@@ -467,6 +517,8 @@ public partial class MainWindow
                     $"{jobId} failed: rate limited — wait ~30s and retry.",
                 "no_proposals_parsed" =>
                     $"{jobId}: no proposals parsed — check utility worker chat or retry the job.",
+                "file_input_not_found" or "file_input_node_not_found" or "attach_stage_failed" or "cdp_stage_failed" =>
+                    $"{jobId} failed: could not stage attachment on utility worker — open Threads → Utility worker and retry.",
                 _ => $"{jobId} failed: {result.Error ?? "unknown"}",
             };
         }
@@ -481,6 +533,10 @@ public partial class MainWindow
         {
             if (result.RanOnUtilityWorker)
                 status += " · utility worker";
+            else if (result.RanDualInference)
+                status += " · dual run (local + utility)";
+            else if (result.RanOnLocalInference)
+                status += " · local LLM";
             else if (_activeAdventureId is { } adventureId)
             {
                 var bundle = AdventureStore.Load(adventureId);
@@ -496,9 +552,6 @@ public partial class MainWindow
         {
             SetPlayComposeStatus(result.StoryContextStatusHint);
         }
-
-        if (result.Success && result.ProposalCount > 0)
-            _playView?.TryOpenProposalReviewHubAfterJob(jobId, result.ProposalCount);
     }
 
     private async Task<UtilityStoryContextBuildResult> BuildLiveStoryContextPreviewAsync(Guid adventureId, string jobId)
@@ -519,10 +572,14 @@ public partial class MainWindow
 
         var sendService = _conversationSendService
                           ?? throw new InvalidOperationException("Conversation send service not ready.");
-        var transcriptService = new PlayThreadTranscriptService(sendService, playTurnService);
-        var builder = new UtilityStoryContextBuilder(transcriptService);
         var domOnlyCapture = UtilityDeliveryModeService.UsesInlineDelivery(bundle);
-        return await builder.BuildAsync(bundle, jobId, playCore, domOnlyCapture: domOnlyCapture);
+        return await UtilityJobContextPreviewService.BuildLiveAsync(
+            bundle,
+            jobId,
+            playCore,
+            playTurnService,
+            sendService,
+            domOnlyCapture);
     }
 
     private async Task RunScheduledJobsAfterTurnAsync(AdventureBundle bundle, TurnRecord turn)
@@ -581,6 +638,42 @@ public partial class MainWindow
             turn is null ? null : new GenerationJobContext { Turn = turn },
             forceRotate);
 
+    private Task RunEntityExtractionWithAttachmentsAsync() =>
+        RunUtilityJobWithAttachmentsPromptAsync(GenerationJobId.ExtractEntities);
+
+    private async Task<GenerationJobResult?> RunUtilityJobWithAttachmentsPromptAsync(
+        string jobId,
+        GenerationJobContext? context = null,
+        bool forceRotate = false)
+    {
+        if (_activeAdventureId is not { } adventureId)
+            return null;
+
+        var bundle = AdventureStore.Load(adventureId);
+        if (bundle is null)
+            return null;
+
+        var label = GenerationJobGuideService.GetDisplayLabel(jobId);
+        if (!UtilityJobAttachmentLaunchDialog.TryShow(
+                this,
+                label,
+                UtilityJobAttachmentLaunchService.GetDefaultReferenceNote(jobId),
+                UtilityJobAttachmentLaunchService.GetSuggestedPaths(bundle, jobId),
+                out var launch)
+            || launch is null)
+        {
+            return null;
+        }
+
+        var merged = UtilityJobAttachmentLaunchService.ApplyLaunch(context, launch);
+        return await RunGenerationJobForActiveAdventureAsync(
+            jobId,
+            merged,
+            forceRotate,
+            launch.Attachments,
+            launch.ReferenceNote);
+    }
+
     private Task RunProposeMemoriesAsync() =>
         RunGenerationJobForActiveAdventureAsync(GenerationJobId.ProposeMemories);
 
@@ -622,10 +715,18 @@ public partial class MainWindow
     private Task RunContinuityCheckAsync() =>
         RunGenerationJobForActiveAdventureAsync(GenerationJobId.ContinuityCheck);
 
-    private Task RunSourceEditJobAsync(string userPrompt) =>
+    private Task RunSourceEditJobAsync(
+        string userPrompt,
+        IReadOnlyList<DomAttachmentPayload>? domAttachments = null,
+        string? attachmentReferenceNote = null) =>
         RunGenerationJobForActiveAdventureAsync(
             GenerationJobId.ProposeSourceEdits,
-            new GenerationJobContext { UserPrompt = userPrompt });
+            new GenerationJobContext
+            {
+                UserPrompt = userPrompt,
+                AttachmentReferenceNote = attachmentReferenceNote,
+            },
+            domAttachments: domAttachments);
 
     private async Task<DesignExtractResult?> RunProposeJsonImportAsync(Guid adventureId)
     {

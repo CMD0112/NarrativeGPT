@@ -5,33 +5,10 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
+[Collection(FileLockAwareCollectionNames.Name)]
 [Trait("Category", "Unit")]
-public sealed class ProposalReviewServiceTests : IDisposable
+public sealed class ProposalReviewServiceTests : IClassFixture<FileLockAwareFixture>
 {
-    private readonly string _tempRoot;
-
-    public ProposalReviewServiceTests()
-    {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "cgw-proposal-review-" + Guid.NewGuid().ToString("N"));
-        AppDirectories.TestRootOverride = _tempRoot;
-        AppDirectories.ResetStoresForTests();
-        AppDirectories.EnsureCreated();
-    }
-
-    public void Dispose()
-    {
-        AppDirectories.TestRootOverride = null;
-        AppDirectories.ResetStoresForTests();
-        try
-        {
-            Directory.Delete(_tempRoot, recursive: true);
-        }
-        catch
-        {
-            /* best effort */
-        }
-    }
 
     [Fact]
     public void ListCategories_includes_all_pending_types()

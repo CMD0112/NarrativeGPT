@@ -378,7 +378,11 @@ internal sealed class PlaySendOrchestrator
                 {
                     host.InvalidatePlayContext(adventureId);
                     host.CopyToClipboard(prepared.MergedText);
-                    var error = $"Delivery could not be verified ({verification.FailureCode}).";
+                    var failureDetail = verification.FailureCode == "delivery_failed"
+                                        && !string.IsNullOrWhiteSpace(deliveryResult.Error)
+                        ? $"{verification.FailureCode} ({deliveryResult.Error})"
+                        : verification.FailureCode;
+                    var error = $"Delivery could not be verified ({failureDetail}).";
                     host.SetComposeStatus($"Send failed: {error}", composeInjection);
                     host.ShowSendError(
                         PlaySendTrace.FormatRunContextForError(
@@ -405,7 +409,19 @@ internal sealed class PlaySendOrchestrator
                 }
 
                 turn = TurnTimelineService.CreateTurn(bundle, playerLine);
-                turnService.RecordPrompt(bundle, turn, prepared.MergedText, prepared.Hash);
+                turnService.RecordPrompt(
+                    bundle,
+                    turn,
+                    artifact,
+                    new FlightDeliverySnapshot
+                    {
+                        Channel = capabilities.DeliveryChannel.ToString(),
+                        Outcome = "ok",
+                        Verified = true,
+                        ConversationId = deliveryResult.ConversationId,
+                    },
+                    PlaySendTrace.ActiveRunId,
+                    bundle.Metadata.LastDispatchedUtilityJobs);
 
                 if (!string.IsNullOrWhiteSpace(deliveryResult.ConversationId))
                 {

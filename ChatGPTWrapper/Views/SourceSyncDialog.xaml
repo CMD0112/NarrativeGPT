@@ -45,9 +45,16 @@
                 <Button x:Name="OpenLogsButton" Content="Open logs folder" Padding="12,6" Margin="0,0,8,4" Click="OpenLogs_Click"/>
             </WrapPanel>
             <WrapPanel Margin="0,0,0,8">
+                <TextBlock Text="Test upload" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <Button x:Name="PublishSelectedButton" Content="Publish selected file" Padding="12,6" Margin="0,0,8,4" Click="PublishSelected_Click"/>
+                <Button x:Name="UploadTestFileButton" Content="Upload test file…" Padding="12,6" Margin="0,0,8,4" Click="UploadTestFile_Click"/>
+                <Button x:Name="CancelPublishButton" Content="Cancel publish" Padding="12,6" Margin="0,0,8,4" Click="CancelPublish_Click" IsEnabled="False"/>
+            </WrapPanel>
+            <WrapPanel Margin="0,0,0,8">
                 <TextBlock Text="Plan" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,4"/>
                 <Button x:Name="RefreshButton" Content="Refresh plan" Padding="12,6" Margin="0,0,8,4" Click="Refresh_Click"/>
                 <Button x:Name="ReconcileDuplicatesButton" Content="Reconcile duplicates…" Padding="12,6" Margin="0,0,8,4" Click="ReconcileDuplicates_Click"/>
+                <Button x:Name="DeleteRemoteButton" Content="Delete remote file" Padding="12,6" Margin="0,0,8,4" Click="DeleteRemote_Click"/>
                 <Button x:Name="ClearBindingsButton" Content="Clear remote bindings" Padding="12,6" Margin="0,0,8,4" Click="ClearBindings_Click"/>
             </WrapPanel>
             <WrapPanel HorizontalAlignment="Right">

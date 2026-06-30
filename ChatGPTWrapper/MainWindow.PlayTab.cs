@@ -162,6 +162,7 @@ public partial class MainWindow
 
         SelectTabForWebView(wv);
         _playWebView = wv;
+        ProjectChatDraftService.NoteDraftTab(bundle, wv, ChatTabs);
 
         var projectUrl = ChatGptUrls.BuildProjectUrl(gizmoId);
         if (!AdventureNavigationService.IsOnLinkedProjectPage(core.Source, bundle))
@@ -315,6 +316,10 @@ public partial class MainWindow
             await ChatGptPlayComposeInjection.ApplyNativePassthroughAsync(core, false);
     }
 
+    private bool ShouldUseLegacyNativePassthrough(AdventureBundle bundle, WebView2 wv, string? source = null) =>
+        PlayTabSessionResolver.ResolveCapabilities(bundle, wv, ChatTabs, source)
+            .LegacySuppressPlayAutomation;
+
     internal void RefreshPlayComposeNavigationState(WebView2 wv, AdventureBundle bundle)
     {
         if (wv.CoreWebView2 is not { } core)
@@ -329,11 +334,7 @@ public partial class MainWindow
                 new { source = core.Source });
         }
 
-        var suppress = PlayTabSessionResolver.ResolveCapabilities(
-            bundle,
-            wv,
-            ChatTabs,
-            core.Source).LegacySuppressPlayAutomation;
+        var suppress = ShouldUseLegacyNativePassthrough(bundle, wv, core.Source);
 
         if (_playComposeInjections.TryGetValue(wv, out var injection))
             _ = injection.SetNativePassthroughAsync(suppress);
@@ -723,11 +724,7 @@ public partial class MainWindow
         {
             var bundle = AdventureStore.Load(adventureId);
             if (bundle is not null
-                && ProjectChatDraftService.ShouldSuppressPlayAutomation(
-                    bundle,
-                    wv,
-                    ChatTabs,
-                    wv.CoreWebView2?.Source))
+                && ShouldUseLegacyNativePassthrough(bundle, wv, wv.CoreWebView2?.Source))
             {
                 return;
             }
@@ -775,7 +772,7 @@ public partial class MainWindow
             if (bundle is null || injection.WebView.CoreWebView2 is not { } core)
                 return;
 
-            if (ProjectChatDraftService.ShouldSuppressPlayAutomation(bundle, injection.WebView, ChatTabs, core.Source))
+            if (ShouldUseLegacyNativePassthrough(bundle, injection.WebView, core.Source))
                 return;
 
             DebouncedPlaySendWarmup(bundle, core);
@@ -792,11 +789,7 @@ public partial class MainWindow
             var bundle = AdventureStore.Load(adventureId);
             if (bundle is not null)
             {
-                if (PlayTabSessionResolver.ResolveCapabilities(
-                        bundle,
-                        wv,
-                        ChatTabs,
-                        wv.CoreWebView2?.Source).LegacySuppressPlayAutomation)
+                if (ShouldUseLegacyNativePassthrough(bundle, wv, wv.CoreWebView2?.Source))
                 {
                     if (_playComposeInjections.TryGetValue(wv, out var existing))
                         _ = existing.SetNativePassthroughAsync(true);
@@ -824,11 +817,10 @@ public partial class MainWindow
             && !PlayTabPinService.IsSameTabAsPlayPin(registrationBundle, wv, ChatTabs)
             && ReferenceEquals(wv, GetActiveWebView()))
         {
-            suppressOnActiveOnly = PlayTabSessionResolver.ResolveCapabilities(
+            suppressOnActiveOnly = ShouldUseLegacyNativePassthrough(
                 registrationBundle,
                 wv,
-                ChatTabs,
-                wv.CoreWebView2?.Source).LegacySuppressPlayAutomation;
+                wv.CoreWebView2?.Source);
         }
 
         if (!PlayComposeInjectionPolicy.ShouldRegisterIntercept(

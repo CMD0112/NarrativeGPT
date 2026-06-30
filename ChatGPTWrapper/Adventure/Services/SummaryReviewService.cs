@@ -10,8 +10,18 @@ namespace ChatGPTWrapper.Adventure.Services;
 internal static class SummaryReviewService
 {
     public static bool IsPending(SummaryDocument summary) =>
-        summary.ProposalRevision > summary.ResolvedProposalRevision
-        && !string.IsNullOrWhiteSpace(summary.ProposedSummary);
+        GetPendingCount(summary) > 0;
+
+    public static int GetPendingCount(SummaryDocument summary)
+    {
+        EnsureRevisionFields(summary);
+        var legacy = summary.ProposalRevision > summary.ResolvedProposalRevision
+                     && !string.IsNullOrWhiteSpace(summary.ProposedSummary)
+            ? 1
+            : 0;
+        var multi = summary.SourceProposals?.Count(p => !p.Resolved) ?? 0;
+        return legacy + multi;
+    }
 
     public static void EnsureRevisionFields(SummaryDocument summary)
     {
@@ -32,11 +42,24 @@ internal static class SummaryReviewService
         summary.ProposedSummary = null;
     }
 
-    public static void QueueProposal(AdventureBundle bundle, string proposedText)
+    public static void QueueProposal(AdventureBundle bundle, string proposedText, GenerationJobContext? context = null)
     {
         var text = proposedText.Trim();
         if (string.IsNullOrWhiteSpace(text))
             return;
+
+        if (context?.AllowCrossSourceDuplicates == true
+            && !string.IsNullOrWhiteSpace(context.InferenceSource))
+        {
+            bundle.Summary.SourceProposals ??= [];
+            bundle.Summary.SourceProposals.Add(new SummarySourceProposal
+            {
+                Text = text,
+                InferenceSource = context.InferenceSource,
+                UtilityRunId = context.UtilityRunId,
+            });
+            return;
+        }
 
         EnsureRevisionFields(bundle.Summary);
         bundle.Summary.ProposalRevision++;
@@ -59,6 +82,28 @@ internal static class SummaryReviewService
         EnsureRevisionFields(bundle.Summary);
         bundle.Summary.ResolvedProposalRevision = bundle.Summary.ProposalRevision;
         ClearActiveProposal(bundle.Summary);
+    }
+
+    public static SummarySourceProposal? FindSourceProposal(SummaryDocument summary, Guid proposalId) =>
+        summary.SourceProposals?.FirstOrDefault(p => p.Id == proposalId && !p.Resolved);
+
+    public static void AcceptSourceProposal(AdventureBundle bundle, Guid proposalId, string? acceptedText = null)
+    {
+        var proposal = FindSourceProposal(bundle.Summary, proposalId);
+        if (proposal is null)
+            return;
+
+        bundle.Summary.RollingSummary = string.IsNullOrWhiteSpace(acceptedText) ? proposal.Text : acceptedText.Trim();
+        proposal.Resolved = true;
+    }
+
+    public static void DismissSourceProposal(AdventureBundle bundle, Guid proposalId)
+    {
+        var proposal = bundle.Summary.SourceProposals?.FirstOrDefault(p => p.Id == proposalId);
+        if (proposal is null)
+            return;
+
+        proposal.Resolved = true;
     }
 
     public static void SyncFromDisk(SummaryDocument target, SummaryDocument disk)

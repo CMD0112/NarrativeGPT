@@ -239,10 +239,14 @@ internal static class EntityExtractionService
         if (string.IsNullOrWhiteSpace(normalized))
             return null;
 
+        var valid = UtilityJsonRepairService.TryEnsureValidJson(normalized);
+        if (string.IsNullOrWhiteSpace(valid))
+            return null;
+
         try
         {
-            using var doc = JsonDocument.Parse(normalized);
-            return doc.RootElement.ValueKind == JsonValueKind.Object ? normalized : null;
+            using var doc = JsonDocument.Parse(valid);
+            return doc.RootElement.ValueKind == JsonValueKind.Object ? valid : null;
         }
         catch (JsonException)
         {
@@ -258,41 +262,37 @@ internal static class EntityExtractionService
         var fenced = StripMarkdownFence(response);
         if (!string.IsNullOrWhiteSpace(fenced))
         {
-            try
-            {
-                using var fullDoc = JsonDocument.Parse(fenced);
-                var fromFull = fullDoc.RootElement.ValueKind switch
-                {
-                    JsonValueKind.Array => FilterArrayToObjectElementsJson(fullDoc.RootElement),
-                    JsonValueKind.Object => UnwrapObjectToArrayJson(fullDoc.RootElement),
-                    _ => null,
-                };
-                if (!string.IsNullOrWhiteSpace(fromFull))
-                    return fromFull;
-            }
-            catch (JsonException)
-            {
-                /* fall through */
-            }
+            var fromFenced = TryNormalizeParsedJsonRoot(fenced);
+            if (!string.IsNullOrWhiteSpace(fromFenced))
+                return fromFenced;
         }
 
         var normalized = TryNormalizeJsonResponse(response);
         if (string.IsNullOrWhiteSpace(normalized))
             return null;
 
+        return TryNormalizeParsedJsonRoot(normalized);
+    }
+
+    private static string? TryNormalizeParsedJsonRoot(string text)
+    {
+        var valid = UtilityJsonRepairService.TryEnsureValidJson(text);
+        if (string.IsNullOrWhiteSpace(valid))
+            return null;
+
         try
         {
-            using var doc = JsonDocument.Parse(normalized);
+            using var doc = JsonDocument.Parse(valid);
             return doc.RootElement.ValueKind switch
             {
                 JsonValueKind.Array => FilterArrayToObjectElementsJson(doc.RootElement),
                 JsonValueKind.Object => UnwrapObjectToArrayJson(doc.RootElement),
-                _ => normalized,
+                _ => null,
             };
         }
         catch (JsonException)
         {
-            return normalized;
+            return null;
         }
     }
 

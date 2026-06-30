@@ -15,4 +15,7 @@ public sealed class SummaryDocument
 
     /// <summary>Set to <see cref="ProposalRevision"/> when the user accepts or dismisses that proposal.</summary>
     public int ResolvedProposalRevision { get; set; }
+
+    /// <summary>Additional per-source summary proposals (dual-run compare).</summary>
+    public List<SummarySourceProposal> SourceProposals { get; set; } = [];
 }

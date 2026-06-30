@@ -6,9 +6,9 @@ using ChatGPTWrapper.Adventure.Stores;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 /// <summary>Diagnostic against the user's real adventure folder when present locally.</summary>
-[Collection(nameof(IsolatedAppRootCollection))]
+[Collection(FileLockAwareCollectionNames.Name)]
 [Trait("Category", "Unit")]
-public sealed class KingInRedBootstrapDiagnosticTests
+public sealed class KingInRedBootstrapDiagnosticTests : IClassFixture<FileLockAwareFixture>
 {
     private static readonly Guid KingInRedId = Guid.Parse("b9233735-fdfa-47fe-8f2c-e7122d562f83");
 

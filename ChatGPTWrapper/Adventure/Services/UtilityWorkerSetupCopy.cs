@@ -95,11 +95,13 @@ internal static class UtilityWorkerSetupCopy
                 ? "1. ChatGPT Project linked ✓"
                 : "1. ChatGPT Project — link one above (Link project…)";
 
-    public static string FormatStepWorkerChat(bool pinned, bool hasLinkedProject) =>
+    public static string FormatStepWorkerChat(bool pinned, bool hasLinkedProject, bool ephemeralWorkerEnabled = false) =>
         pinned
             ? "2. Worker chat in Project ✓"
             : hasLinkedProject
-                ? "2. Worker chat — Create worker chat (auto; asks you to click New chat only if needed)"
+                ? ephemeralWorkerEnabled
+                    ? "2. Worker chat — optional for ephemeral jobs (WebView tab still recommended)"
+                    : "2. Worker chat — Create worker chat (auto; asks you to click New chat only if needed)"
                 : "2. Worker chat — link a Project first";
 
     public static string FormatStepVerified(
@@ -163,10 +165,14 @@ internal static class UtilityWorkerSetupCopy
         bool pinned,
         bool hostReady,
         bool apiRegistered,
-        string? error)
+        string? error,
+        bool ephemeralWorkerEnabled = false)
     {
         if (!projectLinked)
             return "Link a ChatGPT Project on the Play tab first.";
+
+        if (ephemeralWorkerEnabled && !pinned)
+            return "Ephemeral worker jobs enabled — linked Project + utility WebView tab required; pinned worker optional.";
 
         if (green && pinned)
             return apiRegistered
@@ -198,7 +204,8 @@ internal static class UtilityWorkerSetupCopy
         bool hostReady,
         bool apiRegistered,
         bool domRegistered,
-        string? probeError)
+        string? probeError,
+        string? apiAttachProbeResult = null)
     {
         if (!hostReady)
             return "Capabilities: page not ready";
@@ -210,6 +217,9 @@ internal static class UtilityWorkerSetupCopy
             parts.Add("DOM registered");
         else
             parts.Add("not registered");
+
+        if (!string.IsNullOrWhiteSpace(apiAttachProbeResult))
+            parts.Add($"API attach probe: {apiAttachProbeResult}");
 
         if (probeError is { Length: > 0 })
             parts.Add($"last error: {probeError}");

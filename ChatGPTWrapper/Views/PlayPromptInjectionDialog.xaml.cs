@@ -9,10 +9,12 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using ChatGPTWrapper;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
+using Microsoft.Win32;
 
 namespace ChatGPTWrapper.Views;
 
@@ -25,6 +27,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
     private readonly NarratorSettingsSession _narratorSession;
     private readonly bool _sharedNarratorSession;
     private AdventureSettings _narratorBaselineAtOpen;
+    private readonly UiChromeSettings _chromeSettings = UiChromeStore.Load();
     private string _lastMergedText = "";
     private string _lastPreviewMetaLine = "";
     private InjectionPreviewSnapshot? _lastPreviewSnapshot;
@@ -76,7 +79,9 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
 
     public Func<string, Task<UtilityStoryContextBuildResult>>? PreviewLiveStoryContextAsync { get; set; }
 
-    public Func<string, string, Task>? RunSourceEditJobAsync { get; set; }
+    public Func<string, IReadOnlyList<DomAttachmentPayload>?, string?, Task>? RunSourceEditJobAsync { get; set; }
+
+    public Func<string, Task>? RunUtilityJobWithAttachmentsAsync { get; set; }
 
     public Func<Task<IReadOnlyList<ConversationFileRef>>>? ListThreadFilesAsync { get; set; }
 
@@ -181,6 +186,13 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         SelectTab(initialTab);
         _playSettingsBinding = false;
         UpdatePlaySettingsSaveUi();
+        Loaded += (_, _) => RefreshApiSyncDiagnosticsAvailability();
+    }
+
+    /// <summary>Call after host callbacks (e.g. OpenApiSyncDiagnosticsAsync) are wired — constructor runs BindSources too early.</summary>
+    internal void RefreshHostDelegates()
+    {
+        RefreshApiSyncDiagnosticsAvailability();
     }
 
     private void ApplyPlaySettingsTabOrder()
@@ -254,7 +266,30 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         StoryContextSourceCombo.ItemsSource = Enum.GetValues<UtilityStorySource>();
         StoryContextFormatCombo.ItemsSource = UtilityStoryContextSettingsNormalizer.LayoutFormats;
         StoryContextTrimCombo.ItemsSource = Enum.GetValues<UtilityTrimStrategy>();
-        StoryContextAnchorCombo.ItemsSource = Enum.GetValues<UtilityLookbackAnchor>();
+        StoryContextAnchorCombo.ItemsSource = LookbackAnchorChoices;
+        StoryContextAnchorCombo.DisplayMemberPath = nameof(LookbackAnchorChoice.Label);
+        StoryContextAnchorCombo.SelectedValuePath = nameof(LookbackAnchorChoice.Anchor);
+    }
+
+    private void UpdateStoryContextHints(string jobId, UtilityStoryContextSettings baseSettings)
+    {
+        var jobDefaults = UtilityStoryContextDefaults.GetJobProfileDefaults(jobId);
+        var effective = UtilityStoryContextSettingsService.Resolve(_bundle, jobId);
+        var hasOverride = StoryContextPerJobOverrideCheck.IsChecked == true;
+
+        StoryContextJobDefaultHint.Text =
+            $"Built-in default for {GenerationJobGuideService.GetDisplayLabel(jobId)}: " +
+            UtilityStoryContextDefaults.FormatContextWindowSummary(jobDefaults) + ".";
+        StoryContextEffectiveHint.Text =
+            $"Effective after profile: {UtilityStoryContextDefaults.FormatContextWindowSummary(effective)}.";
+        StoryContextMaxTurnsDefaultHint.Text = $"Default: {jobDefaults.MaxTurnPairs}";
+        StoryContextLookbackDefaultHint.Text =
+            $"Default: {UtilityStoryContextDefaults.FormatLookbackAnchor(jobDefaults.LookbackAnchor)}";
+        StoryContextMaxCharsDefaultHint.Text =
+            $"Default: {UtilityStoryContextDefaults.FormatContextCharBudget(jobDefaults.MaxContextChars)}";
+        StoryContextPreviewMeta.Text = hasOverride
+            ? "Per-action context override active."
+            : "Edits apply adventure-wide unless you enable per-action customization.";
     }
 
     private void AiActionsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -287,15 +322,18 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         _suppressStoryContextEvents = true;
         try
         {
-            var hasOverride = settingsOverride is null && UtilityStoryContextSettingsService.HasJobOverride(_bundle, jobId);
+            var hasOverride = settingsOverride is null && UtilityStoryContextDefaults.UsesJobOverride(_bundle, jobId);
             StoryContextPerJobOverrideCheck.IsChecked = settingsOverride is null && hasOverride;
-            var settings = settingsOverride ?? UtilityStoryContextSettingsService.Resolve(_bundle, jobId);
+            var settings = settingsOverride
+                ?? (hasOverride
+                    ? UtilityStoryContextDefaults.GetEditableBase(_bundle, jobId)
+                    : _bundle.Metadata.Settings.UtilityStoryContext.Clone());
             StoryContextSourceCombo.SelectedItem = settings.Source;
             StoryContextMaxTurnsBox.Text = settings.MaxTurnPairs.ToString();
             StoryContextSkipNewestBox.Text = settings.SkipNewestTurnPairs.ToString();
             StoryContextMinTurnsBox.Text = settings.MinTurnPairs.ToString();
             StoryContextMaxTranscriptCharsBox.Text = settings.MaxTranscriptChars.ToString();
-            StoryContextAnchorCombo.SelectedItem = settings.LookbackAnchor;
+            StoryContextAnchorCombo.SelectedValue = settings.LookbackAnchor;
             StoryContextAnchorTurnIndexBox.Text = settings.AnchorTurnIndex.ToString();
             StoryContextMaxCharsBox.Text = settings.MaxContextChars.ToString();
             StoryContextFormatCombo.SelectedItem = settings.Format;
@@ -313,11 +351,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             StoryContextIncludeEntitiesCheck.IsChecked = settings.IncludeEntityIndex;
             StoryContextIncludeScenarioCheck.IsChecked = settings.IncludeScenarioExcerpt;
             StoryContextDirectionBox.Text = settings.DirectionPreamble ?? "";
-            StoryContextPreviewMeta.Text = settingsOverride is null
-                ? hasOverride
-                    ? "Per-action override active."
-                    : "Using adventure-wide story context defaults."
-                : "Using adventure-wide story context defaults.";
+            UpdateStoryContextHints(jobId, settings);
         }
         finally
         {
@@ -331,14 +365,14 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         if (StoryContextSourceCombo.SelectedItem is UtilityStorySource source)
             settings.Source = source;
         if (int.TryParse(StoryContextMaxTurnsBox.Text, out var turns))
-            settings.MaxTurnPairs = Math.Max(1, turns);
+            settings.MaxTurnPairs = Math.Max(0, turns);
         if (int.TryParse(StoryContextSkipNewestBox.Text, out var skipNewest))
             settings.SkipNewestTurnPairs = Math.Max(0, skipNewest);
         if (int.TryParse(StoryContextMinTurnsBox.Text, out var minTurns))
             settings.MinTurnPairs = Math.Max(0, minTurns);
         if (int.TryParse(StoryContextMaxTranscriptCharsBox.Text, out var maxTranscript))
             settings.MaxTranscriptChars = Math.Max(0, maxTranscript);
-        if (StoryContextAnchorCombo.SelectedItem is UtilityLookbackAnchor anchor)
+        if (StoryContextAnchorCombo.SelectedValue is UtilityLookbackAnchor anchor)
             settings.LookbackAnchor = anchor;
         if (int.TryParse(StoryContextAnchorTurnIndexBox.Text, out var anchorIndex))
             settings.AnchorTurnIndex = Math.Max(0, anchorIndex);
@@ -374,9 +408,9 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         if (_suppressStoryContextEvents || StoryContextPreviewMeta is null)
             return;
 
-        StoryContextPreviewMeta.Text = StoryContextPerJobOverrideCheck.IsChecked == true
-            ? "Per-action override active."
-            : "Using adventure-wide story context defaults.";
+        if (_selectedAiActionJobId is { } jobId)
+            UpdateStoryContextHints(jobId, ReadStoryContextFromForm());
+
         MarkPlaySettingsDirty();
     }
 
@@ -386,10 +420,12 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             return;
 
         SaveStoryContextSettings();
-        var preview = UtilityStoryContextBuilder.BuildPreviewFromLocal(_bundle, jobId);
-        StoryContextPreviewMeta.Text = $"Preview (local): {preview.FormatStatusHint()}";
+        var preview = UtilityJobContextPreviewService.BuildLocal(_bundle, jobId);
+        StoryContextPreviewMeta.Text = preview.Manifest is not null
+            ? $"Preview (local): {preview.Manifest.FormatSummary()}"
+            : $"Preview (local): {preview.FormatStatusHint()}";
 
-        var dlg = new RecapDialog(preview.Text) { Owner = this };
+        var dlg = new RecapDialog(preview.FormatPreviewBody()) { Owner = this };
         dlg.Title = "Story context preview (local)";
         dlg.ShowDialog();
     }
@@ -409,8 +445,10 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         try
         {
             var preview = await PreviewLiveStoryContextAsync(jobId);
-            StoryContextPreviewMeta.Text = $"Preview (live): {preview.FormatStatusHint()}";
-            var dlg = new RecapDialog(preview.Text) { Owner = this };
+            StoryContextPreviewMeta.Text = preview.Manifest is not null
+                ? $"Preview (live): {preview.Manifest.FormatSummary()}"
+                : $"Preview (live): {preview.FormatStatusHint()}";
+            var dlg = new RecapDialog(preview.FormatPreviewBody()) { Owner = this };
             dlg.Title = "Story context preview (live)";
             dlg.ShowDialog();
         }
@@ -426,9 +464,19 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             return;
 
         _suppressStoryContextEvents = true;
-        StoryContextPerJobOverrideCheck.IsChecked = false;
-        BindStoryContextPanel(jobId, new UtilityStoryContextSettings());
-        StoryContextPreviewMeta.Text = "Using adventure-wide story context defaults.";
+        if (StoryContextPerJobOverrideCheck.IsChecked == true)
+        {
+            UtilityStoryContextDefaults.ClearJobOverride(_bundle, jobId);
+            StoryContextPerJobOverrideCheck.IsChecked = false;
+            BindStoryContextPanel(jobId);
+        }
+        else
+        {
+            UtilityStoryContextDefaults.ResetAdventureBaseline(_bundle.Metadata);
+            BindStoryContextPanel(jobId);
+        }
+
+        BindAutomationContextGrid();
         _suppressStoryContextEvents = false;
         MarkPlaySettingsDirty();
     }
@@ -506,6 +554,64 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             string.Equals(i.Id, s.PlayLayoutPresetId, StringComparison.OrdinalIgnoreCase))
             ?? presetItems[0];
         _suppressPresetChange = false;
+
+        BindPlayChromeSettings();
+    }
+
+    private void BindPlayChromeSettings()
+    {
+        var chrome = _chromeSettings.PlaySurface;
+        PlayCompanionOnEnterCombo.ItemsSource = new[]
+        {
+            new PlayChromeComboItem(PlayCompanionOnEnterModes.RememberLast, "Remember last"),
+            new PlayChromeComboItem(PlayCompanionOnEnterModes.AlwaysCollapsed, "Always collapsed"),
+            new PlayChromeComboItem(PlayCompanionOnEnterModes.AlwaysOpen, "Always open"),
+        };
+        PlayCompanionOnEnterCombo.DisplayMemberPath = nameof(PlayChromeComboItem.Label);
+        PlayCompanionOnEnterCombo.SelectedItem = PlayCompanionOnEnterCombo.Items
+            .Cast<PlayChromeComboItem>()
+            .FirstOrDefault(i => string.Equals(i.Id, chrome.PlayCompanionOnEnter, StringComparison.OrdinalIgnoreCase))
+            ?? PlayCompanionOnEnterCombo.Items[0];
+
+        PlayCompanionDefaultTabCombo.ItemsSource = new[] { "Reference", "Warnings", "State" };
+        PlayCompanionDefaultTabCombo.SelectedItem = string.IsNullOrWhiteSpace(chrome.PlayCompanionDefaultTab)
+            ? "Reference"
+            : chrome.PlayCompanionDefaultTab;
+
+        PlayCompanionRememberExpandersCheck.IsChecked = chrome.PlayCompanionRememberExpanders;
+
+        PlayCompanionDefaultSectionCombo.ItemsSource = new[] { "Session", "Narrator", "Tools" };
+        PlayCompanionDefaultSectionCombo.SelectedItem = string.IsNullOrWhiteSpace(chrome.PlayCompanionDefaultSection)
+            ? "Session"
+            : chrome.PlayCompanionDefaultSection;
+
+        NarratorPanelDensityCombo.ItemsSource = new[] { "Minimal", "Full" };
+        NarratorPanelDensityCombo.SelectedItem = string.IsNullOrWhiteSpace(chrome.NarratorPanelDensity)
+            ? "Minimal"
+            : chrome.NarratorPanelDensity;
+    }
+
+    private void SavePlayChromeSettings()
+    {
+        var chrome = _chromeSettings.PlaySurface;
+        if (PlayCompanionOnEnterCombo.SelectedItem is PlayChromeComboItem onEnter)
+            chrome.PlayCompanionOnEnter = onEnter.Id;
+        if (PlayCompanionDefaultTabCombo.SelectedItem is string defaultTab)
+            chrome.PlayCompanionDefaultTab = defaultTab;
+        chrome.PlayCompanionRememberExpanders = PlayCompanionRememberExpandersCheck.IsChecked == true;
+        if (PlayCompanionDefaultSectionCombo.SelectedItem is string defaultSection)
+            chrome.PlayCompanionDefaultSection = defaultSection;
+        if (NarratorPanelDensityCombo.SelectedItem is string narratorDensity)
+            chrome.NarratorPanelDensity = narratorDensity;
+        UiChromeStore.Save(_chromeSettings);
+    }
+
+    private void PlayChromeSettings_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded)
+            return;
+
+        MarkPlaySettingsDirty();
     }
 
     private void RebindPlayTabPlacementGrid()
@@ -667,8 +773,10 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
     private void BindAdventureSettings()
     {
         var s = _bundle.Metadata.Settings;
+        if (s.PreferDomPlaySend)
+            s.PreferDomPlaySend = false;
         MaxPacketBox.Text = s.MaxPacketChars.ToString();
-        PreferDomPlaySendCheck.IsChecked = s.PreferDomPlaySend;
+        PreferDomPlaySendCheck.IsChecked = false;
         ForceFatPacketsCheck.IsChecked = s.ForceInlineLore;
         PerspectiveBox.Text = s.Perspective;
         BoundariesBox.Text = string.Join(Environment.NewLine, s.ContentBoundaries);
@@ -716,7 +824,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         var s = _bundle.Metadata.Settings;
         s.MaxPacketChars = ReadEffectiveMaxPacketChars();
         MaxPacketBox.Text = s.MaxPacketChars.ToString();
-        s.PreferDomPlaySend = PreferDomPlaySendCheck.IsChecked == true;
+        s.PreferDomPlaySend = false;
         s.UseWrapperComposer = false;
         s.ForceInlineLore = ForceFatPacketsCheck.IsChecked == true;
         s.Perspective = PerspectiveBox.Text.Trim();
@@ -806,17 +914,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             : "";
     }
 
-    private void BindHistory()
-    {
-        var rows = _bundle.PromptHistory.Entries
-            .OrderByDescending(e => e.At)
-            .Take(40)
-            .Select(e => new PromptHistoryListItem(e))
-            .ToList();
-        HistoryList.ItemsSource = rows;
-        if (rows.Count > 0)
-            HistoryList.SelectedIndex = 0;
-    }
+    private void BindHistory() => FlightRecorderPanel.Bind(_bundle);
 
     private void BindSources()
     {
@@ -829,7 +927,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         UpdateInstructionsUi();
         ProbeProjectButton.IsEnabled = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
         ProbeFileButton.IsEnabled = ProbeProjectButton.IsEnabled;
-        ApiSyncDiagnosticsButton.IsEnabled = OpenApiSyncDiagnosticsAsync is not null;
+        RefreshApiSyncDiagnosticsAvailability();
 
         var sourcesDir = ProjectSourceExportService.SourcesDirectory(_bundle);
         CanonicalPathLine.Text = $"Canonical folder: {sourcesDir}";
@@ -1179,10 +1277,29 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             return;
 
         var prompt = dlg.ResultText;
+        if (!UtilityJobAttachmentLaunchDialog.TryShow(
+                this,
+                GenerationJobGuideService.GetDisplayLabel(GenerationJobId.ProposeSourceEdits),
+                UtilityJobAttachmentLaunchService.GetDefaultReferenceNote(GenerationJobId.ProposeSourceEdits),
+                UtilityJobAttachmentLaunchService.GetSuggestedPaths(_bundle, GenerationJobId.ProposeSourceEdits),
+                out var launch)
+            || launch is null)
+        {
+            return;
+        }
 
-        await RunSourceEditJobAsync(prompt, "");
+        await RunSourceEditJobAsync(prompt, launch.Attachments, launch.ReferenceNote);
         ReloadBundleFromStore();
         BindSourceEditReview();
+    }
+
+    private async void RunSelectedAiActionWithAttachments_Click(object sender, RoutedEventArgs e)
+    {
+        if (RunUtilityJobWithAttachmentsAsync is null || string.IsNullOrWhiteSpace(_selectedAiActionJobId))
+            return;
+
+        FlushCurrentAiActionEdits();
+        await RunUtilityJobWithAttachmentsAsync(_selectedAiActionJobId);
     }
 
     private void SourcesGrid_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -1328,11 +1445,26 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
 
     public void RefreshReviewPanels()
     {
+        AdventureStore.SyncReviewDomainsFromDisk(_bundle);
         BindWorldPanel();
         BindNextSendPanel();
         BindMemoryAndCards();
         BindSourceEditReview();
+        BindAiToolsPendingReviewLine();
         RefreshUtilityParseLog();
+    }
+
+    private void BindAiToolsPendingReviewLine()
+    {
+        if (AiToolsPendingReviewLine is null)
+            return;
+
+        var counts = PendingReviewService.GetCounts(_bundle);
+        AiToolsPendingReviewLine.Text = counts.Total switch
+        {
+            0 => "No proposals queued yet. Run an AI tool below, then return here to review results.",
+            _ => PendingReviewService.FormatSummaryLine(counts),
+        };
     }
 
     private void RefreshUtilityParseLog()
@@ -1412,6 +1544,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
 
         SaveAdventureSettingsTo(staging.Metadata.Settings);
         SaveAutomationSettingsTo(staging.Metadata.Settings);
+        SaveAutomationContextFromGrid(staging);
         SaveUtilityDeliverySettingsTo(staging.Metadata.Settings);
         SaveTurnOverrideSettingsTo(staging.Metadata.Settings);
         SavePlaySurfaceSettingsTo(staging);
@@ -1426,7 +1559,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
     private void SaveAdventureSettingsTo(AdventureSettings s)
     {
         s.MaxPacketChars = ReadEffectiveMaxPacketChars();
-        s.PreferDomPlaySend = PreferDomPlaySendCheck.IsChecked == true;
+        s.PreferDomPlaySend = false;
         s.ForceInlineLore = ForceFatPacketsCheck.IsChecked == true;
         s.Perspective = PerspectiveBox.Text.Trim();
         s.ContentBoundaries = BoundariesBox.Text
@@ -1439,15 +1572,24 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
     private void SaveStoryContextSettingsTo(AdventureBundle target)
     {
         var settings = ReadStoryContextFromForm();
+        string? affectedJobId = null;
         if (StoryContextPerJobOverrideCheck.IsChecked == true && _selectedAiActionJobId is { } jobId)
         {
             UtilityStoryContextSettingsService.SetJobOverride(target, jobId, settings);
-            return;
+            affectedJobId = jobId;
+        }
+        else
+        {
+            target.Metadata.Settings.UtilityStoryContext = settings;
+            if (_selectedAiActionJobId is { } clearJobId)
+            {
+                UtilityStoryContextSettingsService.SetJobOverride(target, clearJobId, null);
+                affectedJobId = clearJobId;
+            }
         }
 
-        target.Metadata.Settings.UtilityStoryContext = settings;
-        if (_selectedAiActionJobId is { } clearJobId)
-            UtilityStoryContextSettingsService.SetJobOverride(target, clearJobId, null);
+        if (ReferenceEquals(target, _bundle) && affectedJobId is not null)
+            RefreshAutomationContextRow(affectedJobId);
     }
 
     private void SaveJobOverrideSettingsTo(AdventureSettings settings)
@@ -1593,8 +1735,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         if (HasAutomationChanges())
             hints.Add("AI automation");
 
-        if (PreferDomPlaySendCheck.IsChecked != s.PreferDomPlaySend
-            || ForceFatPacketsCheck.IsChecked != s.ForceInlineLore)
+        if (ForceFatPacketsCheck.IsChecked != s.ForceInlineLore)
         {
             hints.Add("developer send options");
         }
@@ -1631,6 +1772,9 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
 
         if (HasNarratorBehaviorChanges())
             hints.Add("narrator behavior");
+
+        if (HasAutomationContextChanges())
+            hints.Add("automation context");
 
         if (HasStoryContextChanges())
             hints.Add("story context");
@@ -1684,7 +1828,35 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             return true;
 
         var placement = ReadPlayTabPlacementFromUi();
-        return !DictionaryEquals(placement, s.PlayTabPlacement);
+        if (!DictionaryEquals(placement, s.PlayTabPlacement))
+            return true;
+
+        return HasPlayChromeChanges();
+    }
+
+    private bool HasPlayChromeChanges()
+    {
+        var chrome = _chromeSettings.PlaySurface;
+        if (PlayCompanionOnEnterCombo.SelectedItem is PlayChromeComboItem onEnter
+            && !string.Equals(onEnter.Id, chrome.PlayCompanionOnEnter, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var defaultTab = PlayCompanionDefaultTabCombo.SelectedItem as string ?? "Reference";
+        if (!string.Equals(defaultTab, chrome.PlayCompanionDefaultTab, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if ((PlayCompanionRememberExpandersCheck.IsChecked == true) != chrome.PlayCompanionRememberExpanders)
+            return true;
+
+        var defaultSection = PlayCompanionDefaultSectionCombo.SelectedItem as string ?? "Session";
+        if (!string.Equals(defaultSection, chrome.PlayCompanionDefaultSection, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var narratorDensity = NarratorPanelDensityCombo.SelectedItem as string ?? "Minimal";
+        if (!string.Equals(narratorDensity, chrome.NarratorPanelDensity, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
     }
 
     private Dictionary<string, string> ReadPlaySurfaceActionsFromUi()
@@ -1753,11 +1925,9 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         var current = ReadStoryContextFromForm();
         if (StoryContextPerJobOverrideCheck.IsChecked == true && _selectedAiActionJobId is { } jobId)
         {
-            var key = GenerationJobHandlers.GetUtilityJobId(jobId);
-            if (_bundle.Metadata.UtilityJobGuideOverrides?.TryGetValue(key, out var over) == true && over.Context is { } saved)
-                return !StoryContextSettingsEqual(saved, current);
-
-            return !StoryContextSettingsEqual(new UtilityStoryContextSettings(), current);
+            var saved = UtilityStoryContextSettingsService.TryGetJobOverride(_bundle, jobId)
+                ?? UtilityStoryContextDefaults.AdventureBaseline.Clone();
+            return !StoryContextSettingsEqual(saved, current);
         }
 
         return !StoryContextSettingsEqual(_bundle.Metadata.Settings.UtilityStoryContext, current);
@@ -1843,10 +2013,12 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         SaveWorldPanel();
         SaveAdventureSettings();
         SaveAutomationSettingsTo(_bundle.Metadata.Settings);
+        SaveAutomationContextFromGrid(_bundle);
         SaveUtilityDeliverySettings();
         SaveTurnOverrideSettings();
         SaveInjectionPolicyPanel();
         SavePlaySurfaceSettings();
+        SavePlayChromeSettings();
         SaveNarratorBehaviorSettings();
         FlushCurrentAiActionEdits();
         SaveAiActionGuides();
@@ -2095,45 +2267,17 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         }.ShowDialog();
     }
 
-    private PromptHistoryEntry? SelectedHistoryEntry =>
-        (HistoryList.SelectedItem as PromptHistoryListItem)?.Entry;
-
-    private void ViewHistory_Click(object sender, RoutedEventArgs e)
+    private void SaveMemoryWithoutWipingReviewQueue()
     {
-        var entry = SelectedHistoryEntry;
-        if (entry is null || string.IsNullOrWhiteSpace(entry.PacketText))
-        {
-            MessageBox.Show(this, "Select a history entry with packet text.", "History");
-            return;
-        }
-
-        var meta = $"{entry.At:g} | Hash: {entry.PacketHash ?? "—"} | Chars: {entry.PacketText.Length}";
-        new ContextViewerDialog(entry.PacketText, meta, useStructuredPreview: _bundle.Metadata.Settings.UseContextTags)
-        {
-            Owner = this,
-        }.ShowDialog();
-    }
-
-    private void CopyHistory_Click(object sender, RoutedEventArgs e)
-    {
-        var entry = SelectedHistoryEntry;
-        if (entry is null || string.IsNullOrWhiteSpace(entry.PacketText))
-            return;
-
-        try
-        {
-            Clipboard.SetText(entry.PacketText);
-        }
-        catch
-        {
-            /* ignore */
-        }
+        if (_bundle.Memory.ReviewQueue.Count == 0)
+            AdventureStore.SyncReviewDomainsFromDisk(_bundle);
+        AdventureStore.Save(_bundle, AdventureSaveScope.Memory);
     }
 
     private void AddMemory_Click(object sender, RoutedEventArgs e)
     {
         _bundle.Memory.Entries.Add(new MemoryEntry { Text = "New memory — edit in review." });
-        AdventureStore.Save(_bundle, AdventureSaveScope.Memory);
+        SaveMemoryWithoutWipingReviewQueue();
         BindMemoryAndCards();
         SchedulePreviewRefresh();
     }
@@ -2144,7 +2288,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             return;
 
         entry.Pinned = !entry.Pinned;
-        AdventureStore.Save(_bundle, AdventureSaveScope.Memory);
+        SaveMemoryWithoutWipingReviewQueue();
         BindMemoryAndCards();
         SchedulePreviewRefresh();
     }
@@ -2162,6 +2306,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         });
         _bundle.Memory.ReviewQueue.Remove(item);
         AdventureStore.Save(_bundle, AdventureSaveScope.Memory);
+        UtilityReviewCompletionService.MarkResolvedIfCategoryEmpty(_bundle, ProposalReviewCategory.Memory);
         BindMemoryAndCards();
         MemoryReviewList.SelectedItem = null;
         ReviewQueueChanged?.Invoke(this, EventArgs.Empty);
@@ -2175,6 +2320,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
 
         _bundle.Memory.ReviewQueue.Remove(item);
         AdventureStore.Save(_bundle, AdventureSaveScope.Memory);
+        UtilityReviewCompletionService.MarkResolvedIfCategoryEmpty(_bundle, ProposalReviewCategory.Memory);
         BindMemoryAndCards();
         MemoryReviewList.SelectedItem = null;
         ReviewQueueChanged?.Invoke(this, EventArgs.Empty);
@@ -2189,6 +2335,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             _bundle.Cards.ReviewQueue.Remove(row.Item);
 
         AdventureStore.Save(_bundle, AdventureSaveScope.Cards);
+        UtilityReviewCompletionService.MarkResolvedIfCategoryEmpty(_bundle, ProposalReviewCategory.Card);
         BindMemoryAndCards();
         CardReviewList.SelectedItem = null;
         ReviewQueueChanged?.Invoke(this, EventArgs.Empty);
@@ -2202,6 +2349,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
 
         _bundle.Cards.ReviewQueue.Remove(row.Item);
         AdventureStore.Save(_bundle, AdventureSaveScope.Cards);
+        UtilityReviewCompletionService.MarkResolvedIfCategoryEmpty(_bundle, ProposalReviewCategory.Card);
         BindMemoryAndCards();
         CardReviewList.SelectedItem = null;
         ReviewQueueChanged?.Invoke(this, EventArgs.Empty);
@@ -2212,6 +2360,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         SummaryReviewService.AcceptProposal(_bundle, ProposedSummaryBox.Text);
         SummaryBox.Text = _bundle.Summary.RollingSummary;
         AdventureStore.Save(_bundle, AdventureSaveScope.Summary);
+        UtilityReviewCompletionService.MarkResolvedIfCategoryEmpty(_bundle, ProposalReviewCategory.Summary);
         BindWorldPanel();
         SchedulePreviewRefresh();
         ReviewQueueChanged?.Invoke(this, EventArgs.Empty);
@@ -2221,6 +2370,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
     {
         SummaryReviewService.DismissProposal(_bundle);
         AdventureStore.Save(_bundle, AdventureSaveScope.Summary);
+        UtilityReviewCompletionService.MarkResolvedIfCategoryEmpty(_bundle, ProposalReviewCategory.Summary);
         BindWorldPanel();
         ReviewQueueChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -2312,19 +2462,6 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         Close();
     }
 
-    private sealed class PromptHistoryListItem
-    {
-        public PromptHistoryListItem(PromptHistoryEntry entry)
-        {
-            Entry = entry;
-        }
-
-        public PromptHistoryEntry Entry { get; }
-
-        public string DisplayLabel =>
-            $"{Entry.At:g}  hash={Entry.PacketHash ?? "—"}  ({Entry.PacketText.Length} chars)";
-    }
-
     private sealed class UtilityJobRowViewModel
     {
         public UtilityJobRowViewModel(AdventureBundle bundle, string jobId)
@@ -2381,6 +2518,13 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
                 return text.Length <= 80 ? text : text[..80] + "…";
             }
         }
+    }
+
+    private sealed class PlayChromeComboItem(string id, string label)
+    {
+        public string Id { get; } = id;
+
+        public string Label { get; } = label;
     }
 
     private sealed class PlaySurfaceActionRow

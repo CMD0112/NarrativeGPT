@@ -10,6 +10,31 @@ internal static class ContextPointerResolver
         bool fatFallback,
         bool freshNarrativeBootstrap = false)
     {
+        var baseline = freshNarrativeBootstrap
+            ? BuildNarrativeStartBaseline(bundle, signals)
+            : BuildBaseline(bundle, signals, freshNarrativeBootstrap);
+        return ResolveCore(bundle, signals, fatFallback, baseline);
+    }
+
+    /// <summary>Task-scoped pointers for utility worker lore (CMD-394) — no narrator ALWAYS RETRIEVE set.</summary>
+    public static ContextResolveResult ResolveTaskScoped(
+        AdventureBundle bundle,
+        ContextSignalBag signals,
+        bool includeMinimalCanonBaseline,
+        bool fatFallback = false)
+    {
+        var baseline = includeMinimalCanonBaseline
+            ? BuildUtilityMinimalBaseline(bundle, signals)
+            : [];
+        return ResolveCore(bundle, signals, fatFallback, baseline);
+    }
+
+    private static ContextResolveResult ResolveCore(
+        AdventureBundle bundle,
+        ContextSignalBag signals,
+        bool fatFallback,
+        IReadOnlyList<ContextPointer> baselinePointers)
+    {
         var index = new SectionAliasIndex(bundle);
         var candidates = new Dictionary<string, ContextPointer>(StringComparer.OrdinalIgnoreCase);
 
@@ -25,13 +50,11 @@ internal static class ContextPointerResolver
             candidates[pointer.MachineId] = pointer;
         }
 
-        foreach (var baselinePointer in BuildBaseline(bundle, signals, freshNarrativeBootstrap))
+        foreach (var baselinePointer in baselinePointers)
             Add(baselinePointer);
 
         foreach (var indexed in index.All.Where(i => i.Section.Pinned))
-        {
             Add(MakePointer(indexed, 40, PointerSource.Pin, signals));
-        }
 
         if (!string.IsNullOrWhiteSpace(signals.StateLocation))
         {
@@ -101,6 +124,34 @@ internal static class ContextPointerResolver
             ThisTurn = thisTurn,
             All = filtered,
         };
+    }
+
+    private static List<ContextPointer> BuildUtilityMinimalBaseline(
+        AdventureBundle bundle,
+        ContextSignalBag signals)
+    {
+        var list = new List<ContextPointer>();
+        var index = new SectionAliasIndex(bundle);
+
+        void TryBaseline(string file, string sectionId)
+        {
+            var indexed = index.All.FirstOrDefault(i =>
+                string.Equals(i.FileName, file, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(i.Section.Id, sectionId, StringComparison.OrdinalIgnoreCase));
+            if (indexed is null)
+                return;
+
+            if (sectionId == "opening" && !IncludeOpening(bundle, signals, indexed.Section))
+                return;
+            if (sectionId == "rules" && !IncludeRules(signals, indexed.Section))
+                return;
+
+            list.Add(MakePointer(indexed, 100, PointerSource.Baseline, signals));
+        }
+
+        TryBaseline(SectionSchema.WorldFile, "rules");
+        TryBaseline(SectionSchema.ScenarioFile, "opening");
+        return list;
     }
 
     private static List<ContextPointer> BuildBaseline(

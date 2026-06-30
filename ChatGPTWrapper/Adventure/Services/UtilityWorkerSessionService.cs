@@ -18,17 +18,8 @@ internal static class UtilityWorkerSessionService
     public static GenerationUtilitySession? GetSession(AdventureMetadata metadata) =>
         GenerationUtilitySessionService.GetSession(metadata, SessionJobId);
 
-    public static string? GetWorkerConversationId(AdventureBundle bundle)
-    {
-        AdventureThreadRegistryService.EnsureMigrated(bundle);
-        var fromRegistry = AdventureThreadRegistryService.GetActiveConversationId(
-            bundle,
-            AdventureThreadKind.UtilityWorker);
-        if (!string.IsNullOrWhiteSpace(fromRegistry))
-            return fromRegistry;
-
-        return GetSession(bundle.Metadata)?.ConversationId;
-    }
+    public static string? GetWorkerConversationId(AdventureBundle bundle) =>
+        UtilityWorker.UtilityWorkerSession.GetConversationId(bundle);
 
     public static bool MatchesWorkerConversationTitle(string? title, Guid adventureId) =>
         !string.IsNullOrWhiteSpace(title)

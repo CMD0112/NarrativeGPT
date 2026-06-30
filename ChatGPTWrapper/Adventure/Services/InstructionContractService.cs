@@ -6,7 +6,7 @@ namespace ChatGPTWrapper.Adventure.Services;
 
 /// <summary>
 /// Canonical narrator instruction contract: boundaries, portrayal rules, and design/play sync.
-/// See docs/instruction-sources-paradigm.md.
+/// See docs/user/instruction-sources-paradigm.md.
 /// </summary>
 internal static class InstructionContractService
 {

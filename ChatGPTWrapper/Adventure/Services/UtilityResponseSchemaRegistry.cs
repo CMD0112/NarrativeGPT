@@ -40,14 +40,11 @@ internal static class UtilityResponseSchemaRegistry
         if (GenerationJobHandlers.ExpectsJsonArrayResponse(jobId)
             || GenerationJobHandlers.ExpectsJsonObjectResponse(jobId))
         {
-            try
-            {
-                using var _ = JsonDocument.Parse(payload);
-            }
-            catch (JsonException)
-            {
+            var valid = UtilityJsonRepairService.TryEnsureValidJson(payload);
+            if (string.IsNullOrWhiteSpace(valid))
                 return UtilitySchemaValidation.Failure("invalid_json");
-            }
+
+            return UtilitySchemaValidation.Success(valid);
         }
 
         return UtilitySchemaValidation.Success(payload);

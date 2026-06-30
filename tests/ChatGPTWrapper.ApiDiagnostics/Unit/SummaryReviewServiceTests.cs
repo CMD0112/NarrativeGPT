@@ -6,8 +6,8 @@ using ChatGPTWrapper.Adventure.Stores;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class SummaryReviewServiceTests : IDisposable
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class SummaryReviewServiceTests : IClassFixture<FileLockAwareFixture>, IDisposable
 {
     private readonly string _tempRoot;
 

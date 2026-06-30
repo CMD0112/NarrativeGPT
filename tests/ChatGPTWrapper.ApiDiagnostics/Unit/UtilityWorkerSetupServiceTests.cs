@@ -97,6 +97,70 @@ public sealed class UtilityWorkerSetupServiceTests
     }
 
     [Fact]
+    public void TryReconcilePinFromCapabilities_prefers_green_caps_over_stale_registry()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: "g-p-test");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var workerEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(
+            bundle,
+            AdventureThreadKind.UtilityWorker,
+            "Utility worker");
+        workerEntry.ConversationId = "dead-worker-conv";
+        var playEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play);
+        playEntry.ConversationId = "play-conv";
+        bundle.Metadata.UtilityWorkerCapabilities = new UtilityWorkerCapabilities
+        {
+            WorkerConversationId = "verified-worker-conv",
+            HostReady = true,
+            ApiFetchOk = true,
+            ApiPushOk = true,
+            ApiPullOk = true,
+        };
+
+        Assert.True(UtilityWorkerPinService.TryReconcilePinFromCapabilities(bundle));
+        Assert.Equal(
+            "verified-worker-conv",
+            AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.UtilityWorker));
+    }
+
+    [Fact]
+    public void TryReconcileVerifiedWorkerConversation_updates_registry_when_ids_differ()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: "g-p-test");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var workerEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(
+            bundle,
+            AdventureThreadKind.UtilityWorker,
+            "Utility worker");
+        workerEntry.ConversationId = "old-worker-conv";
+        AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play).ConversationId = "play-conv";
+
+        Assert.True(UtilityWorkerPinService.TryReconcileVerifiedWorkerConversation(
+            bundle,
+            "new-worker-conv",
+            persist: false));
+        Assert.Equal(
+            "new-worker-conv",
+            AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.UtilityWorker));
+        Assert.Equal(
+            "new-worker-conv",
+            UtilityWorkerSessionService.GetWorkerConversationId(bundle));
+    }
+
+    [Fact]
+    public void TryReconcileVerifiedWorkerConversation_rejects_play_conversation()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: "g-p-test");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play).ConversationId = "play-conv";
+
+        Assert.False(UtilityWorkerPinService.TryReconcileVerifiedWorkerConversation(
+            bundle,
+            "play-conv",
+            persist: false));
+    }
+
+    [Fact]
     public void Manual_create_copy_mentions_automatic_continuation()
     {
         Assert.Contains("automatically", UtilityWorkerSetupCopy.ManualCreatePromptMessage, StringComparison.OrdinalIgnoreCase);

@@ -29,6 +29,16 @@ public sealed class ResolvedTheme
 
     public double RadiusCard { get; init; } = 8;
 
+    public double ControlMinHeight { get; init; } = 32;
+
+    public double CompanionDefaultWidth { get; init; } = 300;
+
+    public double ComposeFontSize { get; init; } = 16;
+
+    public double ComposeSendSize { get; init; } = 32;
+
+    public ThemeDensityPreset DensityPreset { get; init; } = ThemeDensityPreset.Default;
+
     public string GetHex(string tokenKey) =>
         Tokens.TryGetValue(tokenKey, out var hex) ? hex : "#000000";
 
@@ -48,7 +58,10 @@ public sealed class ResolvedTheme
             .Append(SpaceLg).Append('|')
             .Append(SpaceXl).Append('|')
             .Append(RadiusControl).Append('|')
-            .Append(RadiusCard).Append('|');
+            .Append(RadiusCard).Append('|')
+            .Append(ControlMinHeight).Append('|')
+            .Append(CompanionDefaultWidth).Append('|')
+            .Append(DensityPreset).Append('|');
 
         foreach (var token in ThemeTokenCatalog.All.OrderBy(t => t.TokenKey, StringComparer.OrdinalIgnoreCase))
         {
@@ -91,20 +104,45 @@ public static class ThemeApplicationService
 
         var userPreset = ThemeUserPresetService.Find(settings.UserPresets, settings.ActivePresetId);
 
+        var fontSizeBody = settings.FontSizeBody ?? userPreset?.FontSizeBody ?? 13;
+        var fontSizeTitle = settings.FontSizeTitle ?? userPreset?.FontSizeTitle ?? 15;
+        var fontSizeHint = settings.FontSizeHint ?? userPreset?.FontSizeHint ?? 11;
+        var spaceXs = settings.SpaceXs ?? userPreset?.SpaceXs ?? 4;
+        var spaceSm = settings.SpaceSm ?? userPreset?.SpaceSm ?? 8;
+        var spaceMd = settings.SpaceMd ?? userPreset?.SpaceMd ?? 12;
+        var spaceLg = settings.SpaceLg ?? userPreset?.SpaceLg ?? 16;
+        var spaceXl = settings.SpaceXl ?? userPreset?.SpaceXl ?? 24;
+
+        var mergedTypography = ThemeDensityProfiles.MergeTypography(
+            settings,
+            fontSizeBody,
+            fontSizeTitle,
+            fontSizeHint,
+            spaceXs,
+            spaceSm,
+            spaceMd,
+            spaceLg,
+            spaceXl);
+
         return new ResolvedTheme
         {
             Tokens = merged,
             FontFamily = settings.FontFamily ?? userPreset?.FontFamily ?? "Segoe UI Variable, Segoe UI",
-            FontSizeBody = settings.FontSizeBody ?? userPreset?.FontSizeBody ?? 13,
-            FontSizeTitle = settings.FontSizeTitle ?? userPreset?.FontSizeTitle ?? 15,
-            FontSizeHint = settings.FontSizeHint ?? userPreset?.FontSizeHint ?? 11,
-            SpaceXs = settings.SpaceXs ?? userPreset?.SpaceXs ?? 4,
-            SpaceSm = settings.SpaceSm ?? userPreset?.SpaceSm ?? 8,
-            SpaceMd = settings.SpaceMd ?? userPreset?.SpaceMd ?? 12,
-            SpaceLg = settings.SpaceLg ?? userPreset?.SpaceLg ?? 16,
-            SpaceXl = settings.SpaceXl ?? userPreset?.SpaceXl ?? 24,
+            FontSizeBody = mergedTypography.FontSizeBody,
+            FontSizeTitle = mergedTypography.FontSizeTitle,
+            FontSizeHint = mergedTypography.FontSizeHint,
+            SpaceXs = mergedTypography.SpaceXs,
+            SpaceSm = mergedTypography.SpaceSm,
+            SpaceMd = mergedTypography.SpaceMd,
+            SpaceLg = mergedTypography.SpaceLg,
+            SpaceXl = mergedTypography.SpaceXl,
             RadiusControl = settings.RadiusControl ?? userPreset?.RadiusControl ?? 6,
             RadiusCard = settings.RadiusCard ?? userPreset?.RadiusCard ?? 8,
+            ControlMinHeight = mergedTypography.ControlMinHeight,
+            CompanionDefaultWidth = mergedTypography.CompanionDefaultWidth,
+            ComposeFontSize = mergedTypography.ComposeFontSize,
+            ComposeSendSize = mergedTypography.ComposeSendSize,
+            DensityPreset = settings.DensityPreset,
         };
     }
 
@@ -148,6 +186,12 @@ public static class ThemeApplicationService
         sb.Append("  --cgw-radius: ")
             .Append(theme.RadiusControl.ToString(CultureInfo.InvariantCulture))
             .AppendLine("px;");
+        sb.Append("  --cgw-compose-font-size: ")
+            .Append(theme.ComposeFontSize.ToString(CultureInfo.InvariantCulture))
+            .AppendLine("px;");
+        sb.Append("  --cgw-compose-send-size: ")
+            .Append(theme.ComposeSendSize.ToString(CultureInfo.InvariantCulture))
+            .AppendLine("px;");
         sb.AppendLine("}");
         _cachedCssFingerprint = fingerprint;
         _cachedCssVariableBlock = sb.ToString();
@@ -179,6 +223,7 @@ public static class ThemeApplicationService
     public static ThemeSettings CreateDefaultSettings() => new()
     {
         ActivePresetId = ThemePresetIds.DefaultDark,
+        DensityPreset = ThemeDensityPreset.Comfortable,
     };
 
     /// <summary>

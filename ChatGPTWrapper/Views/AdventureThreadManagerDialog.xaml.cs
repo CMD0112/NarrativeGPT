@@ -19,13 +19,19 @@ public sealed class AdventureThreadManagerActions
 
     public required Func<Task> StartNewDesignThreadAsync { get; init; }
 
+    public required Func<AdventureThreadKind, Task<Guid?>> CreateThreadSlotAsync { get; init; }
+
     public required Func<AdventureThreadKind, Guid, Task> ActivateEntryAsync { get; init; }
 
     public required Func<AdventureThreadKind, Guid, Task> OpenEntryAsync { get; init; }
 
     public required Func<Task> OpenProjectWorkspaceAsync { get; init; }
 
-    public required Func<AdventureThreadKind, Task> PinCurrentTabAsync { get; init; }
+    public required Func<AdventureThreadKind, Guid, bool, Task> PinTabToEntryAsync { get; init; }
+
+    public required Func<AdventureThreadKind, Guid, Task> ClearEntryPinAsync { get; init; }
+
+    public required Func<Guid, Task> RemoveEntryAsync { get; init; }
 
     public required Func<Task> ProbeUtilityWorkerAsync { get; init; }
 
@@ -33,7 +39,7 @@ public sealed class AdventureThreadManagerActions
 
     public required Func<bool, Task> SetupUtilityWorkerReplaceAsync { get; init; }
 
-    public required Func<Task> PinCurrentTabAsUtilityWorkerAsync { get; init; }
+    public required Func<Task> PinUtilityWorkerFromCurrentTabAsync { get; init; }
 
     public required Func<Task> OpenUtilityWorkerAsync { get; init; }
 }
@@ -46,6 +52,7 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
     private UtilityWorkerTabContent? _utilityWorkerTab;
     private bool _changed;
     private bool _suppressDeliverySettings;
+    private bool _showArchived = true;
     private Guid? _selectedEntryId;
 
     public AdventureThreadManagerDialog(
@@ -201,22 +208,70 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
         });
 
         var actions = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
+
+        var newSlot = new Button
+        {
+            Content = ThreadManagerCopy.NewThreadSlotButton,
+            Padding = new Thickness(10, 4, 10, 4),
+            Margin = new Thickness(0, 0, 6, 4),
+        };
+        newSlot.Click += async (_, _) =>
+        {
+            var entryId = await _actions.CreateThreadSlotAsync(kind);
+            if (entryId is { } id)
+            {
+                _selectedEntryId = id;
+                _changed = true;
+                RefreshCurrentTab();
+            }
+        };
+
+        var pinCurrent = new Button
+        {
+            Content = ThreadManagerCopy.PinCurrentToSelectedButton,
+            Padding = new Thickness(10, 4, 10, 4),
+            Margin = new Thickness(0, 0, 6, 4),
+        };
+        pinCurrent.Click += (_, _) => RunRowAction(grid, row => PinTabToSelectedAsync(kind, row, usePicker: false));
+
+        var pickTab = new Button
+        {
+            Content = ThreadManagerCopy.PickTabToPinButton,
+            Padding = new Thickness(10, 4, 10, 4),
+            Margin = new Thickness(0, 0, 6, 4),
+        };
+        pickTab.Click += (_, _) => RunRowAction(grid, row => PinTabToSelectedAsync(kind, row, usePicker: true));
+
+        var clearPin = new Button
+        {
+            Content = ThreadManagerCopy.ClearPinButton,
+            Padding = new Thickness(10, 4, 10, 4),
+            Margin = new Thickness(0, 0, 6, 4),
+        };
+        clearPin.Click += (_, _) => RunRowAction(grid, row => ClearPinAsync(kind, row));
+
         var setActive = new Button { Content = "Set active", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 4) };
         setActive.Click += (_, _) => RunRowAction(grid, row => SetActiveAsync(kind, row));
+
         var archive = new Button { Content = "Archive", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 4) };
         archive.Click += (_, _) => RunRowAction(grid, row => ArchiveAsync(kind, row));
+
+        var remove = new Button
+        {
+            Content = ThreadManagerCopy.RemoveButton,
+            Padding = new Thickness(10, 4, 10, 4),
+            Margin = new Thickness(0, 0, 6, 4),
+        };
+        remove.Click += (_, _) => RunRowAction(grid, row => RemoveAsync(row));
+
         var open = new Button { Content = "Open in browser", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 4) };
         open.Click += (_, _) => RunRowAction(grid, row => OpenAsync(kind, row));
-        var pinCurrent = new Button { Content = "Pin current tab", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 4) };
-        pinCurrent.Click += async (_, _) =>
-        {
-            await _actions.PinCurrentTabAsync(kind);
-            _changed = true;
-            RefreshCurrentTab();
-        };
+
         var newNarrative = new Button
         {
-            Content = PlayThreadRotationCopy.NarrativeFromSourcesButton,
+            Content = kind == AdventureThreadKind.Design
+                ? ThreadManagerCopy.StartNewDesignThreadButton
+                : PlayThreadRotationCopy.NarrativeFromSourcesButton,
             Padding = new Thickness(10, 4, 10, 4),
             Margin = new Thickness(0, 0, 6, 4),
         };
@@ -230,6 +285,7 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
         newNarrative.Visibility = kind == AdventureThreadKind.UtilityWorker
             ? Visibility.Collapsed
             : Visibility.Visible;
+
         var handOff = new Button
         {
             Content = PlayThreadRotationCopy.HandoffToNewChatButton,
@@ -238,6 +294,16 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
             Visibility = kind == AdventureThreadKind.Play ? Visibility.Visible : Visibility.Collapsed,
         };
         handOff.Click += async (_, _) => await _actions.OpenPlayHandoffWizardAsync();
+
+        var showArchived = new CheckBox
+        {
+            Content = ThreadManagerCopy.ShowArchivedCheck,
+            IsChecked = _showArchived,
+            Margin = new Thickness(0, 0, 12, 4),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        showArchived.Checked += (_, _) => { _showArchived = true; RefreshCurrentTab(); };
+        showArchived.Unchecked += (_, _) => { _showArchived = false; RefreshCurrentTab(); };
 
         if (kind == AdventureThreadKind.UtilityWorker)
         {
@@ -256,13 +322,18 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
             actions.Children.Add(probe);
         }
 
+        actions.Children.Add(newSlot);
+        actions.Children.Add(pinCurrent);
+        actions.Children.Add(pickTab);
+        actions.Children.Add(clearPin);
         actions.Children.Add(setActive);
         actions.Children.Add(archive);
+        actions.Children.Add(remove);
         actions.Children.Add(open);
-        actions.Children.Add(pinCurrent);
         actions.Children.Add(newNarrative);
         if (kind == AdventureThreadKind.Play)
             actions.Children.Add(handOff);
+        actions.Children.Add(showArchived);
 
         var panel = new StackPanel();
         panel.Children.Add(grid);
@@ -272,9 +343,15 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
         {
             Grid = grid,
             Root = panel,
+            NewSlotButton = newSlot,
+            PinCurrentButton = pinCurrent,
+            PickTabButton = pickTab,
+            ClearPinButton = clearPin,
             SetActiveButton = setActive,
             ArchiveButton = archive,
+            RemoveButton = remove,
             OpenButton = open,
+            ShowArchivedCheck = showArchived,
         };
 
         foreach (TabItem tab in KindTabs.Items)
@@ -357,7 +434,7 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
             useCurrent.IsEnabled = false;
             try
             {
-                await _actions.PinCurrentTabAsUtilityWorkerAsync();
+                await _actions.PinUtilityWorkerFromCurrentTabAsync();
                 _changed = true;
                 RefreshCurrentTab();
             }
@@ -537,8 +614,14 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
             }
             else
             {
+                foreach (var tabPanel in _tabPanels.Values)
+                {
+                    if (tabPanel.ShowArchivedCheck.IsChecked != _showArchived)
+                        tabPanel.ShowArchivedCheck.IsChecked = _showArchived;
+                }
+
                 var panel = _tabPanels[kind];
-                var rows = AdventureThreadRegistryService.ListEntries(bundle, kind)
+                var rows = AdventureThreadRegistryService.ListEntries(bundle, kind, includeArchived: _showArchived)
                     .Select(entry => ThreadManagerRow.FromEntry(bundle, entry))
                     .ToList();
                 panel.Grid.ItemsSource = new ObservableCollection<ThreadManagerRow>(rows);
@@ -715,10 +798,16 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
     private static void UpdateRowActions(ThreadTabContent panel)
     {
         var row = panel.Grid.SelectedItem as ThreadManagerRow;
-        var hasRow = row is not null;
-        panel.SetActiveButton.IsEnabled = hasRow && row!.IsActive == false && row.IsArchived == false;
-        panel.ArchiveButton.IsEnabled = hasRow && row!.IsActive == false && row.IsArchived == false;
-        panel.OpenButton.IsEnabled = hasRow;
+        var hasRow = row is not null && row.IsArchived == false;
+        var hasArchivedRow = row is not null && row.IsArchived;
+        panel.NewSlotButton.IsEnabled = true;
+        panel.PinCurrentButton.IsEnabled = hasRow;
+        panel.PickTabButton.IsEnabled = hasRow;
+        panel.ClearPinButton.IsEnabled = hasRow && row!.HasPin;
+        panel.SetActiveButton.IsEnabled = hasRow && row!.IsActive == false;
+        panel.ArchiveButton.IsEnabled = hasRow && row!.IsActive == false;
+        panel.RemoveButton.IsEnabled = hasArchivedRow && row!.IsActive == false;
+        panel.OpenButton.IsEnabled = row is not null;
     }
 
     private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
@@ -814,6 +903,78 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
         return Task.CompletedTask;
     }
 
+    private async Task PinTabToSelectedAsync(AdventureThreadKind kind, ThreadManagerRow row, bool usePicker)
+    {
+        if (row.IsArchived)
+        {
+            MessageBox.Show(this, "Select an active thread row to pin a browser tab.", Title, MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        await _actions.PinTabToEntryAsync(kind, row.EntryId, usePicker);
+        _changed = true;
+        RefreshCurrentTab();
+    }
+
+    private async Task ClearPinAsync(AdventureThreadKind kind, ThreadManagerRow row)
+    {
+        if (row.IsArchived)
+            return;
+
+        if (!row.HasPin)
+            return;
+
+        if (MessageBox.Show(
+                this,
+                ThreadManagerCopy.ClearPinConfirmBody(row.Label),
+                Title,
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question) != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        await _actions.ClearEntryPinAsync(kind, row.EntryId);
+        _changed = true;
+        RefreshCurrentTab();
+    }
+
+    private Task RemoveAsync(ThreadManagerRow row)
+    {
+        if (!row.IsArchived || row.IsActive)
+        {
+            MessageBox.Show(
+                this,
+                "Only archived threads can be removed. Archive the thread first, or switch active to another row.",
+                Title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return Task.CompletedTask;
+        }
+
+        if (MessageBox.Show(
+                this,
+                ThreadManagerCopy.RemoveConfirmBody(row.Label),
+                Title,
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question) != MessageBoxResult.Yes)
+        {
+            return Task.CompletedTask;
+        }
+
+        return RemoveEntryConfirmedAsync(row);
+    }
+
+    private async Task RemoveEntryConfirmedAsync(ThreadManagerRow row)
+    {
+        await _actions.RemoveEntryAsync(row.EntryId);
+        if (_selectedEntryId == row.EntryId)
+            _selectedEntryId = null;
+
+        _changed = true;
+        RefreshCurrentTab();
+    }
+
     private async Task OpenAsync(AdventureThreadKind kind, ThreadManagerRow row)
     {
         await _actions.OpenEntryAsync(kind, row.EntryId);
@@ -857,11 +1018,23 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
 
         public required Panel Root { get; init; }
 
+        public required Button NewSlotButton { get; init; }
+
+        public required Button PinCurrentButton { get; init; }
+
+        public required Button PickTabButton { get; init; }
+
+        public required Button ClearPinButton { get; init; }
+
         public required Button SetActiveButton { get; init; }
 
         public required Button ArchiveButton { get; init; }
 
+        public required Button RemoveButton { get; init; }
+
         public required Button OpenButton { get; init; }
+
+        public required CheckBox ShowArchivedCheck { get; init; }
     }
 
     private sealed class UtilityWorkerTabContent
@@ -907,6 +1080,8 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
 
         public bool IsArchived { get; init; }
 
+        public bool HasPin { get; init; }
+
         public static ThreadManagerRow FromEntry(AdventureBundle bundle, AdventureThreadEntry entry)
         {
             var isActive = AdventureThreadRegistryService.IsActiveEntry(bundle, entry.Id);
@@ -920,11 +1095,16 @@ public partial class AdventureThreadManagerDialog : ShellDialogWindow
             {
                 EntryId = entry.Id,
                 Label = entry.Label,
-                StatusDisplay = isActive ? "Active" : entry.Status.ToString(),
+                StatusDisplay = isActive
+                    ? "Active"
+                    : entry.Status == AdventureThreadStatus.Archived
+                        ? "Archived"
+                        : "Inactive",
                 ConversationDisplay = conversation,
                 TabTitleDisplay = string.IsNullOrWhiteSpace(entry.PinnedTabTitle) ? "—" : entry.PinnedTabTitle,
                 IsActive = isActive,
                 IsArchived = entry.Status == AdventureThreadStatus.Archived,
+                HasPin = AdventureThreadRegistryService.EntryHasPin(entry),
             };
         }
     }

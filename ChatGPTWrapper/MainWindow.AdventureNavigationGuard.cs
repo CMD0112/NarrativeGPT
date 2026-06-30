@@ -134,13 +134,27 @@ public partial class MainWindow
             return;
 
         if (_appMode == AppMode.Play)
-            ProjectChatDraftService.TryCancelAutoEnteredDraft(bundle);
+        {
+            if (!ProjectChatDraftService.ShouldSuppressPinnedThreadReroute(
+                    bundle,
+                    core.Source,
+                    AdventureNavigationIntent.Play))
+            {
+                ProjectChatDraftService.TryCancelAutoEnteredDraft(bundle);
+            }
+        }
         else if (_appMode == AppMode.Design)
+        {
             ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, core.Source, wv, ChatTabs);
+        }
+
+        var guardIntent = _appMode == AppMode.Design
+            ? AdventureNavigationIntent.Design
+            : AdventureNavigationIntent.Play;
 
         if (ProjectChatDraftService.IsActive(bundle)
             && (ProjectChatDraftService.IsDraftTab(bundle, wv, ChatTabs)
-                || ProjectChatDraftService.ShouldStayOnProjectPage(bundle, core.Source)))
+                || ProjectChatDraftService.ShouldSuppressPinnedThreadReroute(bundle, core.Source, guardIntent)))
         {
             if (_appMode == AppMode.Play)
                 RefreshPlayComposeNavigationState(wv, bundle);
@@ -148,9 +162,7 @@ public partial class MainWindow
             return;
         }
 
-        var intent = _appMode == AppMode.Design
-            ? AdventureNavigationIntent.Design
-            : AdventureNavigationIntent.Play;
+        var intent = guardIntent;
 
         var accessDenied = await AdventureNavigationRecoveryProbe.ShowsAccessDeniedAsync(core);
 

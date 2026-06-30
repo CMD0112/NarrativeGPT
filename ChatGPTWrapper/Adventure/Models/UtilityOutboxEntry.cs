@@ -42,4 +42,10 @@ public sealed class UtilityOutboxEntry
     public DateTimeOffset? PushedAt { get; set; }
 
     public DateTimeOffset? CompletedAt { get; set; }
+
+    public List<UtilityOutboxAttachment>? Attachments { get; set; }
+
+    public string? UserPrompt { get; set; }
+
+    public string? AttachmentReferenceNote { get; set; }
 }

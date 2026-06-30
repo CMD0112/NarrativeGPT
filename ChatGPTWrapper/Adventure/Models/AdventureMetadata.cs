@@ -283,6 +283,15 @@ public sealed class AdventureSettings
     /// <summary>When true, adventure play side panel is collapsed to maximize chat width.</summary>
     public bool PlaySidePanelCollapsed { get; set; }
 
+    /// <summary>Last selected companion tab (Reference, Warnings, State).</summary>
+    public string? PlayCompanionLastTab { get; set; }
+
+    /// <summary>Last selected cockpit section (Session, Narrator, Tools).</summary>
+    public string? PlayCompanionLastSection { get; set; }
+
+    /// <summary>Cockpit expander open state keyed by expander name.</summary>
+    public Dictionary<string, bool>? PlayCompanionExpanderState { get; set; }
+
     /// <summary>Expanded play side panel width in device-independent pixels.</summary>
     public double PlaySidePanelWidth { get; set; } = 300;
 
@@ -380,11 +389,20 @@ public sealed class AdventureSettings
     /// <summary>When true, auto jobs that exceed <see cref="MaxUtilitySectionsPerSend"/> spill to worker outbox.</summary>
     public bool AutoSpillToWorker { get; set; } = true;
 
+    /// <summary>CMD-412: ephemeral project chat for worker setup + per-job sends.</summary>
+    public bool UseEphemeralUtilityWorkerChat { get; set; }
+
+    /// <summary>CMD-424: when ephemeral is on, stage all reference files via DOM composer (testing).</summary>
+    public bool ForceUtilityWorkerDomAttach { get; set; }
+
     /// <summary>Developer-only: allow DomOnly utility sends when worker diagnostics enabled.</summary>
     public bool AllowDomOnlyUtilityDiagnostics { get; set; }
 
     /// <summary>CMD-392: lane-aware utility job context assembly (worker lane first).</summary>
     public bool UseUtilityJobContextAssembler { get; set; } = true;
+
+    /// <summary>Route eligible utility jobs to local inference (Ollama) instead of ChatGPT utility lanes.</summary>
+    public LocalUtilityInferenceSettings LocalUtilityInference { get; set; } = new();
 }
 
 public sealed class CharacterPortrayalRule

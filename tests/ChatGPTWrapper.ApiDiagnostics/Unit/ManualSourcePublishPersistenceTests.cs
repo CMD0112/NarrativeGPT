@@ -5,9 +5,9 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
+[Collection(FileLockAwareCollectionNames.Name)]
 [Trait("Category", "Unit")]
-public sealed class ManualSourcePublishPersistenceTests
+public sealed class ManualSourcePublishPersistenceTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void Manual_publish_flags_survive_adventure_store_round_trip()

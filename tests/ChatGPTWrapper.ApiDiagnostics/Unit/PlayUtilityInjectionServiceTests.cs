@@ -81,4 +81,34 @@ public sealed class PlayUtilityInjectionServiceTests
         Assert.True(prepared.HasUtilityInjection);
         Assert.Contains("[[cgw:utility", prepared.MergedText, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuildUtilitySection_bundled_continuity_omits_summary_when_snapshot_includes_it()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle();
+        bundle.Metadata.Settings.UseUtilityJobContextAssembler = true;
+        bundle.Summary.RollingSummary = "Campaign so far.";
+        bundle.State.CurrentLocation = "Hall";
+        bundle.State.OpenObjectives = "Investigate";
+
+        var pending = new PendingUtilityInjection
+        {
+            JobId = GenerationJobId.ContinuityCheck,
+            Channel = UtilityExecutionChannel.AutoBackground,
+        };
+
+        var snapshot = new PlayPacketContextSnapshot
+        {
+            IncludesRollingSummary = true,
+            IncludesState = true,
+            TranscriptTailChars = 80,
+        };
+
+        var section = PlayUtilityInjectionService.BuildUtilitySection(bundle, pending, playSnapshot: snapshot);
+
+        Assert.Contains("[[cgw:utility", section, StringComparison.Ordinal);
+        Assert.DoesNotContain("=== SUMMARY ===", section);
+        Assert.DoesNotContain("=== STATE ===", section);
+        Assert.DoesNotContain("=== RECENT TURNS ===", section);
+    }
 }

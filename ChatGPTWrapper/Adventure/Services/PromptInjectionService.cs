@@ -63,6 +63,10 @@ internal sealed class PromptInjectionPrepareResult
     public bool HasUtilityInjection { get; init; }
 
     public int UtilitySectionCount { get; init; }
+
+    public IReadOnlyList<ContextPointer> BaselinePointers { get; init; } = [];
+
+    public IReadOnlyList<ContextPointer> ThisTurnPointers { get; init; } = [];
 }
 
 
@@ -183,7 +187,11 @@ internal static class PromptInjectionService
 
 
 
-        var utilitySections = PlayUtilityInjectionService.BuildAndDrainUtilitySections(bundle);
+        var playSnapshot = PlayPacketContextSnapshotBuilder.Build(ctx.ContextText, merged);
+
+        var utilitySections = PlayUtilityInjectionService.BuildAndDrainUtilitySections(
+            bundle,
+            playSnapshot: playSnapshot);
 
         if (utilitySections.Count > 0)
 
@@ -240,6 +248,10 @@ internal static class PromptInjectionService
             HasUtilityInjection = utilitySections.Count > 0,
 
             UtilitySectionCount = utilitySections.Count,
+
+            BaselinePointers = packet.BaselinePointers,
+
+            ThisTurnPointers = packet.ThisTurnPointers,
 
         };
 

@@ -28,6 +28,7 @@ public sealed class PreparedSendArtifactTests
         Assert.Contains(playerLine, artifact.MergedText);
         Assert.False(string.IsNullOrWhiteSpace(artifact.Hash));
         Assert.False(string.IsNullOrWhiteSpace(artifact.SettingsFingerprint));
+        Assert.NotEmpty(artifact.Sections);
     }
 
     [Fact]

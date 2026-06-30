@@ -265,4 +265,74 @@ public sealed class ProjectChatDraftServiceTests
         Assert.False(ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, source));
         Assert.False(ProjectChatDraftService.IsActive(bundle));
     }
+
+    [Fact]
+    public void ShouldNavigateToPlayTarget_false_on_linked_project_page_without_draft()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-pause",
+                LinkedConversationId = "conv-play",
+            },
+        };
+
+        var source = ChatGptUrls.BuildProjectUrl("g-p-pause");
+        var target = AdventureNavigationService.ResolvePlayBrowseUrl(bundle)!;
+
+        Assert.False(AdventureNavigationService.ShouldNavigateToPlayTarget(source, bundle, target));
+    }
+
+    [Fact]
+    public void ShouldSuppressPinnedThreadReroute_true_on_new_project_conversation_during_design_draft()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("New conv draft");
+        bundle.Metadata.LinkedProjectId = "g-p-design";
+        ProjectChatDraftService.BeginDesignDraft(bundle);
+
+        try
+        {
+            var source = ChatGptUrls.BuildProjectConversationUrl("conv-new", "g-p-design");
+
+            Assert.True(ProjectChatDraftService.ShouldSuppressPinnedThreadReroute(
+                bundle,
+                source,
+                AdventureNavigationIntent.Design));
+            Assert.True(ProjectChatDraftService.IsDraftWorkspaceConversation(bundle, source));
+        }
+        finally
+        {
+            ProjectChatDraftService.Complete(bundle);
+        }
+    }
+
+    [Fact]
+    public void IsValidDraftTarget_true_on_new_project_conversation_during_play_rotation_draft()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-rotate",
+            },
+        };
+
+        ProjectChatDraftService.BeginPlayDraft(bundle);
+
+        try
+        {
+            var source = ChatGptUrls.BuildProjectConversationUrl("conv-fresh", "g-p-rotate");
+
+            Assert.True(
+                AdventureNavigationService.IsOnValidAdventureWebTarget(
+                    source,
+                    bundle,
+                    AdventureNavigationIntent.Play));
+        }
+        finally
+        {
+            ProjectChatDraftService.Complete(bundle);
+        }
+    }
 }

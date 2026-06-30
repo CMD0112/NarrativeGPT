@@ -4344,7 +4344,7 @@
     var prevFingerprint = globalThis.__cgwContinuousViewFingerprint;
     var unchanged =
       container &&
-      container.childElementCount > 0 &&
+      container.querySelector(".cgw-continuous-segment") &&
       fingerprint === prevFingerprint &&
       container.childElementCount === segments.length;
 
@@ -4387,6 +4387,7 @@
     } else if (ensureOverlayInScrollHost(scrollHost, container)) {
       reparented = true;
     }
+    container.classList.remove("cgw-weave-view");
 
     if (needsAtomicSwap) {
       container.style.visibility = "hidden";
@@ -4410,7 +4411,7 @@
 
     var stickToBottom = shouldStickToBottom(scrollHost, container);
     unchanged =
-      container.childElementCount > 0 &&
+      container.querySelector(".cgw-continuous-segment") &&
       fingerprint === prevFingerprint &&
       container.childElementCount === segments.length;
 
@@ -4579,6 +4580,8 @@
       delete globalThis.__cgwContinuousViewFingerprint;
       delete globalThis.__cgwSegmentFingerprints;
       delete globalThis.__cgwSegmentBlockFingerprints;
+      delete globalThis.__cgwWeaveViewFingerprint;
+      delete globalThis.__cgwWeaveFlowFingerprints;
       invalidateTurnExtractCache();
       if (mode !== "native") {
         markPreferBottomScroll();

@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\composer-fixture.html" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\packet-display-parity.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\source-sync-fixture.html" CopyToOutputDirectory="PreserveNewest" />

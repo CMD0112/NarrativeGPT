@@ -82,7 +82,7 @@
   },
   {
     "id": "CMD-22",
-    "description": "## Context\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n## Acceptance criteria\n- [ ] Deliverables in description below are complete and verified\n\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n**Parent:** <issue id=\"b6ef647e-59bc-4f8e-a8ec-537ac66dc5db\" href=\"https://linear.app/cmd0112/issue/CMD-13/adventure-design-instructions-customizability\">CMD-13</issue> (instruction contract model)\n\n**Docs:** `docs/instruction-contract-guide.md`"
+    "description": "## Context\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n## Acceptance criteria\n- [ ] Deliverables in description below are complete and verified\n\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n**Parent:** <issue id=\"b6ef647e-59bc-4f8e-a8ec-537ac66dc5db\" href=\"https://linear.app/cmd0112/issue/CMD-13/adventure-design-instructions-customizability\">CMD-13</issue> (instruction contract model)\n\n**Docs:** `docs/user/instruction-contract-guide.md`"
   },
   {
     "id": "CMD-29",

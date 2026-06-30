@@ -5,9 +5,9 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
+[Collection(FileLockAwareCollectionNames.Name)]
 [Trait("Category", "Unit")]
-public sealed class AdventureNavigationServiceTests
+public sealed class AdventureNavigationServiceTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void ResolveTrustedFallbackUrl_uses_project_page_not_homepage_when_linked()

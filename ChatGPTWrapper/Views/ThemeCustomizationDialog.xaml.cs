@@ -661,6 +661,7 @@ public partial class ThemeCustomizationDialog : ShellDialogWindow
             FontSizeBodyBox.Text = resolved.FontSizeBody.ToString("0.##");
             FontSizeTitleBox.Text = resolved.FontSizeTitle.ToString("0.##");
             FontSizeHintBox.Text = resolved.FontSizeHint.ToString("0.##");
+            SelectDensityPresetCombo(_working.DensityPreset);
             SpaceXsBox.Text = resolved.SpaceXs.ToString("0.##");
             SpaceSmBox.Text = resolved.SpaceSm.ToString("0.##");
             SpaceMdBox.Text = resolved.SpaceMd.ToString("0.##");
@@ -839,6 +840,43 @@ public partial class ThemeCustomizationDialog : ShellDialogWindow
         _original = _working.Clone();
         _applyTheme?.Invoke(ResultSettings, PersistAll);
         RefreshPreview();
+    }
+
+    private void DensityPresetCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressFieldEvents || DensityPresetCombo.SelectedItem is not ComboBoxItem item)
+            return;
+
+        _working.DensityPreset = item.Tag?.ToString() switch
+        {
+            "Comfortable" => ThemeDensityPreset.Comfortable,
+            "Compact" => ThemeDensityPreset.Compact,
+            _ => ThemeDensityPreset.Default,
+        };
+        LoadFieldsFromWorking();
+        PushLivePreview(PreviewAll);
+    }
+
+    private void SelectDensityPresetCombo(ThemeDensityPreset preset)
+    {
+        if (DensityPresetCombo is null)
+            return;
+
+        var tag = preset switch
+        {
+            ThemeDensityPreset.Comfortable => "Comfortable",
+            ThemeDensityPreset.Compact => "Compact",
+            _ => "Default",
+        };
+
+        foreach (var obj in DensityPresetCombo.Items)
+        {
+            if (obj is ComboBoxItem item && string.Equals(item.Tag?.ToString(), tag, StringComparison.Ordinal))
+            {
+                DensityPresetCombo.SelectedItem = item;
+                return;
+            }
+        }
     }
 
     private void ReadTypographyFields()

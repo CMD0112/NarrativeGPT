@@ -30,8 +30,6 @@ public partial class NarratorBehaviorPanel : UserControl
 
     public event EventHandler? SettingsChanged;
 
-    public event EventHandler? AdvancedRequested;
-
     public NarratorSettingsSession? Session => _session;
 
     private IReadOnlyDictionary<NarratorParameter, ComboBox> ParameterCombos =>
@@ -54,6 +52,7 @@ public partial class NarratorBehaviorPanel : UserControl
         NarratorBehaviorPanelBinder.BindSceneProfile(SceneProfileCombo, session.Bundle);
         session.BindScopeToUi(ScopeTurnRadio, ScopeSessionRadio, ScopeAdventureRadio);
         session.BindParameterCombos(session.SelectedScope, ParameterCombos);
+        BindAdvancedFields();
         UpdateChips();
         UpdateScopeHint();
 
@@ -70,6 +69,7 @@ public partial class NarratorBehaviorPanel : UserControl
             return;
 
         _session.FlushFromPanel(ParameterCombos);
+        FlushAdvancedFields();
         UpdateChips();
     }
 
@@ -128,6 +128,7 @@ public partial class NarratorBehaviorPanel : UserControl
         _session.BindParameterCombos(_session.SelectedScope, ParameterCombos);
         UpdateChips();
         UpdateScopeHint();
+        BindAdvancedFields();
         _suppressEvents = false;
 
         SettingsChanged?.Invoke(this, EventArgs.Empty);
@@ -185,25 +186,67 @@ public partial class NarratorBehaviorPanel : UserControl
         _suppressEvents = false;
     }
 
-    private void Advanced_Click(object sender, RoutedEventArgs e)
+    private void AdvancedField_Changed(object sender, RoutedEventArgs e) => RaiseSettingsChanged();
+
+    private void BindAdvancedFields()
     {
         if (_session is null)
             return;
 
-        if (AdvancedRequested is not null)
-        {
-            AdvancedRequested(this, EventArgs.Empty);
-            return;
-        }
+        var settings = _session.Bundle.Metadata.Settings;
+        TurnDirectiveBox.Text = settings.PlayTurnOverrides.TurnDirective ?? "";
 
-        var dialog = new NarratorAdvancedDialog(_session.Bundle, ReadScope())
+        var sessionOverrides = NarratorOverrideResolver.GetSessionOverrides(_session.Bundle)
+                               ?? new PlaySessionNarratorOverrides();
+        SessionAddendumBox.Text = sessionOverrides.TemporaryAddendum ?? "";
+
+        var scope = ReadScope();
+        EmphasizeBoundariesCheck.IsChecked = scope switch
         {
-            Owner = Window.GetWindow(this),
+            NarratorOverrideScope.Turn => settings.PlayTurnOverrides.EmphasizeBoundaries,
+            NarratorOverrideScope.Session => sessionOverrides.EmphasizeBoundaries,
+            _ => settings.PlayTurnOverrides.EmphasizeBoundaries || sessionOverrides.EmphasizeBoundaries,
         };
-        if (dialog.ShowDialog() == true)
+        EmphasizePortrayalRulesCheck.IsChecked = scope switch
         {
-            Bind(_session);
-            RaiseSettingsChanged();
+            NarratorOverrideScope.Turn => settings.PlayTurnOverrides.EmphasizePortrayalRules,
+            NarratorOverrideScope.Session => sessionOverrides.EmphasizePortrayalRules,
+            _ => settings.PlayTurnOverrides.EmphasizePortrayalRules || sessionOverrides.EmphasizePortrayalRules,
+        };
+    }
+
+    private void FlushAdvancedFields()
+    {
+        if (_session is null)
+            return;
+
+        var bundle = _session.Bundle;
+        var settings = bundle.Metadata.Settings;
+        settings.PlayTurnOverrides.TurnDirective = string.IsNullOrWhiteSpace(TurnDirectiveBox.Text)
+            ? null
+            : TurnDirectiveBox.Text.Trim();
+
+        var sessionOverrides = NarratorOverrideResolver.GetOrCreateSessionOverrides(bundle);
+        sessionOverrides.TemporaryAddendum = string.IsNullOrWhiteSpace(SessionAddendumBox.Text)
+            ? null
+            : SessionAddendumBox.Text.Trim();
+
+        switch (ReadScope())
+        {
+            case NarratorOverrideScope.Turn:
+                settings.PlayTurnOverrides.EmphasizeBoundaries = EmphasizeBoundariesCheck.IsChecked == true;
+                settings.PlayTurnOverrides.EmphasizePortrayalRules = EmphasizePortrayalRulesCheck.IsChecked == true;
+                break;
+            case NarratorOverrideScope.Session:
+                sessionOverrides.EmphasizeBoundaries = EmphasizeBoundariesCheck.IsChecked == true;
+                sessionOverrides.EmphasizePortrayalRules = EmphasizePortrayalRulesCheck.IsChecked == true;
+                break;
+            case NarratorOverrideScope.Adventure:
+                settings.PlayTurnOverrides.EmphasizeBoundaries = EmphasizeBoundariesCheck.IsChecked == true;
+                settings.PlayTurnOverrides.EmphasizePortrayalRules = EmphasizePortrayalRulesCheck.IsChecked == true;
+                sessionOverrides.EmphasizeBoundaries = EmphasizeBoundariesCheck.IsChecked == true;
+                sessionOverrides.EmphasizePortrayalRules = EmphasizePortrayalRulesCheck.IsChecked == true;
+                break;
         }
     }
 }

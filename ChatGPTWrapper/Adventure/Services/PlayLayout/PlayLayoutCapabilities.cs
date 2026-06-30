@@ -11,6 +11,7 @@ public sealed record PlayLayoutCapabilities
     public bool ShowFullPlaySettingsLabel { get; init; }
     public bool ShowIntermediatePlaySettingsLabel { get; init; }
     public bool UseShellHeaderFlyouts { get; init; }
+    public bool UseUnifiedSessionChrome { get; init; } = true;
     public bool UseFullFooterLabels { get; init; }
     public bool UseCompactFooterMore { get; init; }
     public bool UseCompactEntityMore { get; init; }
@@ -37,7 +38,8 @@ public sealed record PlayLayoutCapabilities
             ShowFullBackLabel = w >= PlayResponsiveTiers.ShellBackFull,
             ShowIntermediatePlaySettingsLabel = w >= PlayResponsiveTiers.ShellBackFull,
             ShowFullPlaySettingsLabel = w >= PlayResponsiveTiers.ShellPlaySettingsFull,
-            UseShellHeaderFlyouts = w < PlayResponsiveTiers.ShellHeaderFullChrome,
+            UseUnifiedSessionChrome = true,
+            UseShellHeaderFlyouts = false,
             UseFullFooterLabels = w >= PlayResponsiveTiers.ShellHeaderFullChrome,
             UseCompactFooterMore = w < PlayResponsiveTiers.ShellFooterFullChrome,
             UseCompactEntityMore = w < PlayResponsiveTiers.ShellFooterFullChrome,

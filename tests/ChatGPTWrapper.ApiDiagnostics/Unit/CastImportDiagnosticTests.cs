@@ -4,8 +4,8 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class CastImportDiagnosticTests
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class CastImportDiagnosticTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void King_in_red_cast_file_imports_all_headings()

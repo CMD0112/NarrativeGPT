@@ -6,9 +6,9 @@ using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
+[Collection(FileLockAwareCollectionNames.Name)]
 [Trait("Category", "Unit")]
-public sealed class PlaySessionPersistenceTests
+public sealed class PlaySessionPersistenceTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void Save_preserves_link_metadata_when_stale_bundle_overwrites()

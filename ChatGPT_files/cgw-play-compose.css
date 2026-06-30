@@ -206,6 +206,38 @@ html[data-cgw-wrapper-composer="1"] [data-testid="composer"]:has(#cgw-play-compo
   overflow: clip;
 }
 
+#cgw-play-composer-root .cgw-compose-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+#cgw-play-composer-root .cgw-compose-quick-actions[hidden] {
+  display: none !important;
+}
+
+#cgw-play-composer-root .cgw-compose-quick-action {
+  appearance: none;
+  border: 1px solid var(--cgw-compose-border, rgba(255, 255, 255, 0.12));
+  background: color-mix(in srgb, var(--cgw-compose-text, #ededf0) 8%, transparent);
+  color: var(--cgw-compose-text, #ededf0);
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1.2;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+#cgw-play-composer-root .cgw-compose-quick-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cgw-compose-text, #ededf0) 14%, transparent);
+}
+
+#cgw-play-composer-root .cgw-compose-quick-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 #cgw-play-composer-root .cgw-compose-main {
   display: flex;
   align-items: center;

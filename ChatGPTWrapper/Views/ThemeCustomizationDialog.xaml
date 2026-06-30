@@ -260,6 +260,20 @@
                         <TextBlock Text="Hint size" VerticalAlignment="Center"/>
                         <TextBox x:Name="FontSizeHintBox" Grid.Column="1" TextChanged="TypographyField_TextChanged"/>
                     </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Density preset" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="DensityPresetCombo"
+                                  Grid.Column="1"
+                                  SelectionChanged="DensityPresetCombo_SelectionChanged">
+                            <ComboBoxItem Content="Default (legacy)" Tag="Default"/>
+                            <ComboBoxItem Content="Comfortable" Tag="Comfortable"/>
+                            <ComboBoxItem Content="Compact" Tag="Compact"/>
+                        </ComboBox>
+                    </Grid>
                 </StackPanel>
             </TabItem>
             <TabItem Header="Spacing &amp; shape">

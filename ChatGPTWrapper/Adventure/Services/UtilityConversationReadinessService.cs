@@ -1,4 +1,5 @@
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.UtilityWorker;
 using ChatGPTWrapper.ChatGptApi;
 using Microsoft.Web.WebView2.Core;
 
@@ -36,7 +37,6 @@ internal static class UtilityConversationReadinessService
         "Pin a utility Project tab for more reliable jobs.";
 
     private static readonly TimeSpan[] RateLimitFetchBackoff = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)];
-    private static DateTimeOffset _rateLimitBackoffUntil = DateTimeOffset.MinValue;
 
     public static async Task<UtilityConversationReadinessResult> ProbeAsync(
         CoreWebView2 core,
@@ -45,9 +45,10 @@ internal static class UtilityConversationReadinessService
         ChatGptConversationSendService conversationSend,
         AdventureTurnService? turnService,
         AdventureBundle? bundle,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool skipNavigation = false)
     {
-        if (DateTimeOffset.UtcNow < _rateLimitBackoffUntil)
+        if (bundle is not null && UtilityWorkerSession.For(bundle.Metadata.Id).IsRateLimited)
         {
             return new UtilityConversationReadinessResult
             {
@@ -57,22 +58,53 @@ internal static class UtilityConversationReadinessService
             };
         }
 
-        var nav = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
-            core,
-            conversationId,
-            gizmoId,
-            cancellationToken);
-        if (!nav.Success)
+        if (!skipNavigation)
+        {
+            var nav = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
+                core,
+                conversationId,
+                gizmoId,
+                cancellationToken);
+            if (!nav.Success)
+            {
+                return new UtilityConversationReadinessResult
+                {
+                    Level = UtilityConversationReadinessLevel.Unready,
+                    Error = nav.Error ?? "utility_page_not_ready",
+                    PageHref = await UtilityConversationPageService.GetPageHrefAsync(core),
+                };
+            }
+        }
+
+        var pageHref = await UtilityConversationPageService.GetPageHrefAsync(core);
+        if (UtilityConversationPageService.IsProjectHomePage(pageHref) && bundle is not null)
+        {
+            var settled = await UtilityConversationPageService.WaitForStableOnConversationPageAsync(
+                core,
+                conversationId,
+                gizmoId,
+                cancellationToken,
+                maxWaitSeconds: 8);
+            pageHref = await UtilityConversationPageService.GetPageHrefAsync(core);
+            if (!settled.Success || UtilityConversationPageService.IsProjectHomePage(pageHref))
+            {
+                return new UtilityConversationReadinessResult
+                {
+                    Level = UtilityConversationReadinessLevel.Unready,
+                    Error = "utility_page_not_ready",
+                    PageHref = pageHref,
+                };
+            }
+        }
+        else if (UtilityConversationPageService.IsProjectHomePage(pageHref))
         {
             return new UtilityConversationReadinessResult
             {
                 Level = UtilityConversationReadinessLevel.Unready,
-                Error = nav.Error ?? "utility_page_not_ready",
-                PageHref = await UtilityConversationPageService.GetPageHrefAsync(core),
+                Error = "utility_page_not_ready",
+                PageHref = pageHref,
             };
         }
-
-        var pageHref = await UtilityConversationPageService.GetPageHrefAsync(core);
 
         if (turnService is null || !await turnService.EnsureUtilityBridgeReadyAsync(core, cancellationToken))
         {
@@ -114,8 +146,8 @@ internal static class UtilityConversationReadinessService
             };
         }
 
-        if (IsRateLimitFetchError(domOnlyReason))
-            _rateLimitBackoffUntil = DateTimeOffset.UtcNow.AddSeconds(15);
+        if (IsRateLimitFetchError(domOnlyReason) && bundle is not null)
+            UtilityWorkerSession.For(bundle.Metadata.Id).ApplyRateLimit(TimeSpan.FromSeconds(15));
 
         await turnService.EnsureUtilityComposerReadyAsync(
             core,

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -42,7 +43,8 @@ internal static class UtilityOutboxService
         AdventureBundle bundle,
         string jobId,
         UtilityExecutionChannel channel,
-        GenerationJobContext? context = null)
+        GenerationJobContext? context = null,
+        IReadOnlyList<DomAttachmentPayload>? domAttachments = null)
     {
         var entry = new UtilityOutboxEntry
         {
@@ -56,8 +58,17 @@ internal static class UtilityOutboxService
             EntityId = context?.EntityId,
             EntityKind = context?.EntityKind,
             CardId = context?.CardId,
+            UserPrompt = context?.UserPrompt,
+            AttachmentReferenceNote = context?.AttachmentReferenceNote,
             QueuedAt = DateTimeOffset.UtcNow,
         };
+
+        if (domAttachments is { Count: > 0 })
+        {
+            entry.Attachments = UtilityJobAttachmentStaging
+                .Stage(bundle.Metadata.Id, entry.RunId, domAttachments)
+                .ToList();
+        }
 
         var all = LoadAll(bundle.Metadata.Id).ToList();
         all.Add(entry);

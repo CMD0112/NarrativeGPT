@@ -4,8 +4,8 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class AdventureSessionModePolicyTests
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class AdventureSessionModePolicyTests : IClassFixture<FileLockAwareFixture>
 {
     private static void RemoveImportableLoreSources(AdventureBundle bundle)
     {

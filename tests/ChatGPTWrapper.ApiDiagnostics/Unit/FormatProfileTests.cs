@@ -55,6 +55,7 @@ public sealed class FormatProfileTests
         var temp = Path.Combine(Path.GetTempPath(), "cgw-format-profile-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
         var prior = AppDirectories.TestRootOverride;
+        AppDirectories.ResetStoresForTests();
         AppDirectories.TestRootOverride = temp;
 
         try
@@ -90,6 +91,7 @@ public sealed class FormatProfileTests
         }
         finally
         {
+            AppDirectories.ResetStoresForTests();
             AppDirectories.TestRootOverride = prior;
             if (Directory.Exists(temp))
                 Directory.Delete(temp, recursive: true);

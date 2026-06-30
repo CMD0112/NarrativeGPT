@@ -14,13 +14,16 @@ public sealed class EntityReferenceEditServiceCommitTests : IDisposable
     public EntityReferenceEditServiceCommitTests()
     {
         _root = Path.Combine(Path.GetTempPath(), "cgw-entity-commit-" + Guid.NewGuid().ToString("N"));
+        AppDirectories.ResetStoresForTests();
         AppDirectories.TestRootOverride = _root;
         AppDirectories.EnsureCreated();
     }
 
     public void Dispose()
     {
+        AppDirectories.ResetStoresForTests();
         AppDirectories.TestRootOverride = null;
+        AppDirectories.ResetStoresForTests();
         try
         {
             if (Directory.Exists(_root))

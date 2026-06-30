@@ -15,13 +15,10 @@ internal static class DesignThreadRotationService
 
         AdventureThreadRegistryService.EnsureMigrated(bundle);
 
-        var jobId = GenerationJobId.DesignAdventure;
-        var session = GenerationUtilitySessionService.GetSession(bundle.Metadata, jobId);
-        if (session is not null && AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design) is null)
-            GenerationUtilitySessionService.ArchiveSession(bundle.Metadata, jobId, session, "manual_rotate");
-
         AdventureThreadRegistryService.BeginNewActiveThread(bundle, AdventureThreadKind.Design);
+        AdventureThreadRegistryService.SyncActiveDesignUtilitySession(bundle);
 
+        var jobId = GenerationJobId.DesignAdventure;
         bundle.Metadata.UtilityConversationLastError = null;
         bundle.Metadata.UtilityJobLastErrors?.Remove(jobId);
         bundle.Metadata.UtilityJobLastErrors?.Remove(GenerationJobId.DesignExtractStep);

@@ -83,8 +83,22 @@
         <WrapPanel Margin="0,4,0,0">
             <Button Content="Reset scope" Padding="6,2" Margin="0,0,8,4"
                     Click="ResetScope_Click"/>
-            <Button Content="Advanced…" Padding="6,2" Margin="0,0,0,4"
-                    Click="Advanced_Click"/>
         </WrapPanel>
+        <Expander Header="Turn &amp; session directives" Margin="0,8,0,0" IsExpanded="False">
+            <StackPanel Margin="0,8,0,0">
+                <TextBlock Text="Turn directive (next send only)" Margin="0,0,0,4"/>
+                <TextBox x:Name="TurnDirectiveBox" AcceptsReturn="True" TextWrapping="Wrap"
+                         MinHeight="48" Margin="0,0,0,8" LostFocus="AdvancedField_Changed"
+                         ToolTip="Freeform instruction injected once into the next play packet."/>
+                <TextBlock Text="Session addendum (this session)" Margin="0,0,0,4"/>
+                <TextBox x:Name="SessionAddendumBox" AcceptsReturn="True" TextWrapping="Wrap"
+                         MinHeight="48" Margin="0,0,0,8" LostFocus="AdvancedField_Changed"
+                         ToolTip="Optional note appended to turn overrides for the rest of this play session."/>
+                <CheckBox x:Name="EmphasizeBoundariesCheck" Content="Emphasize content boundaries"
+                          Margin="0,0,0,6" Checked="AdvancedField_Changed" Unchecked="AdvancedField_Changed"/>
+                <CheckBox x:Name="EmphasizePortrayalRulesCheck" Content="Emphasize portrayal rules"
+                          Checked="AdvancedField_Changed" Unchecked="AdvancedField_Changed"/>
+            </StackPanel>
+        </Expander>
     </StackPanel>
 </UserControl>

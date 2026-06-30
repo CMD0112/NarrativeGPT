@@ -1,34 +1,18 @@
-using ChatGPTWrapper;
+using ChatGPTWrapper.ApiDiagnostics.Infrastructure;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[CollectionDefinition(nameof(IsolatedAppRootCollection), DisableParallelization = true)]
-public sealed class IsolatedAppRootCollection : ICollectionFixture<IsolatedAppRootFixture>;
+public static class IsolatedAppRootCollection
+{
+    public const string Name = FileLockAwareCollectionNames.Name;
+}
 
+[Obsolete("Use FileLockAwareFixture.")]
 public sealed class IsolatedAppRootFixture : IDisposable
 {
-    public IsolatedAppRootFixture()
-    {
-        Root = Path.Combine(
-            Path.GetTempPath(),
-            "ChatGPTWrapper-History-" + Guid.NewGuid().ToString("N"));
-        AppDirectories.TestRootOverride = Root;
-        AppDirectories.EnsureCreated();
-    }
+    private readonly FileLockAwareFixture _inner = new();
 
-    public string Root { get; }
+    public string Root => _inner.Root;
 
-    public void Dispose()
-    {
-        AppDirectories.TestRootOverride = null;
-        try
-        {
-            if (Directory.Exists(Root))
-                Directory.Delete(Root, recursive: true);
-        }
-        catch
-        {
-            /* best effort */
-        }
-    }
+    public void Dispose() => _inner.Dispose();
 }

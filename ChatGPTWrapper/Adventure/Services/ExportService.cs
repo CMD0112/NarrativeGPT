@@ -57,7 +57,8 @@ internal static class ExportService
         sb.AppendLine($"# {bundle.Metadata.Title}");
         sb.AppendLine();
 
-        foreach (var turn in bundle.Log.Turns.Where(t => t.Status == TurnStatus.Accepted).OrderBy(t => t.Index))
+        var turns = ResolveExportTurns(bundle);
+        foreach (var turn in turns)
         {
             if (!string.IsNullOrWhiteSpace(turn.PlayerText))
             {
@@ -73,6 +74,20 @@ internal static class ExportService
         }
 
         return sb.ToString();
+    }
+
+    private static IEnumerable<(string? PlayerText, string? NarratorText)> ResolveExportTurns(AdventureBundle bundle)
+    {
+        if (ThreadConversationLogReader.HasActivePlayLog(bundle))
+        {
+            var entry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play)!;
+            foreach (var pair in ThreadConversationLogService.ToTranscriptPairs(bundle.Metadata.Id, entry.Id))
+                yield return (pair.PlayerText, pair.NarratorText);
+            yield break;
+        }
+
+        foreach (var turn in bundle.Log.Turns.Where(t => t.Status == TurnStatus.Accepted).OrderBy(t => t.Index))
+            yield return (turn.PlayerText, turn.NarratorText);
     }
 
     public static string ExportPlainText(AdventureBundle bundle, bool polishedOnly = false) =>

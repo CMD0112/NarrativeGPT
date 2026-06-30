@@ -453,15 +453,8 @@ public partial class MainWindow
 
         if (PlayTurnScopeService.IsIncompleteNarratorCapture(narratorText))
         {
-            TurnTimelineService.LeavePendingIncompleteCapture(turn, narratorText);
-            ThreadMetadataService.RecordPlayTurnExchange(
-                bundle,
-                turn,
-                turn.PlayerText,
-                null,
-                turn.PromptPacketHash,
-                conversationId);
             AdventureStore.Save(bundle);
+            _ = SyncActiveThreadLogAsync(bundle.Metadata.Id, AdventureThreadKind.Play, ThreadConversationLogCaptureSource.Send);
             return string.IsNullOrWhiteSpace(narratorText)
                 ? "Sent — narrator response not captured yet. Send again or use context menu Edit response when ready."
                 : "Sent — narrator still generating (placeholder captured). Use context menu Edit response or retry when ready.";
@@ -476,18 +469,10 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(narratorForTurn))
             narratorForTurn = narratorText ?? "";
 
-        TurnTimelineService.AcceptTurn(turn, narratorForTurn);
         NarratorOverrideResolver.ClearTurnOverrides(bundle.Metadata.Settings);
         CanonReconciliationService.ClearNotify(bundle);
-        ThreadMetadataService.RecordPlayTurnExchange(
-            bundle,
-            turn,
-            turn.PlayerText,
-            narratorForTurn,
-            turn.PromptPacketHash,
-            conversationId);
         AdventureStore.Save(bundle);
-        _ = ApplyThreadOrdinalMapToPlayTabAsync();
+        await SyncActiveThreadLogAsync(bundle.Metadata.Id, AdventureThreadKind.Play, ThreadConversationLogCaptureSource.Send);
 
         if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
             _ = RunScheduledJobsAfterTurnAsync(bundle, turn);

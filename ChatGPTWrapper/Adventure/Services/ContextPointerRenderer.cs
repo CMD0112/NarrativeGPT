@@ -63,6 +63,80 @@ internal static class ContextPointerRenderer
         return $"[[cgw:sources v=\"2\" mode=\"minimal\"]]\n{body}\n[[/cgw:sources]]";
     }
 
+    public static string BuildUtilityWorkerSourcesBlock(
+        AdventureBundle bundle,
+        ContextResolveResult resolved,
+        ProjectSourceReadiness readiness,
+        bool useContextTags = true)
+    {
+        var inner = BuildUtilityWorkerInnerLines(bundle, resolved, readiness);
+        if (inner.Count == 0)
+            return "";
+
+        if (!useContextTags)
+            return "=== UTILITY PROJECT SOURCES ===\n" + string.Join('\n', inner);
+
+        return $"[[cgw:sources v=\"2\" mode=\"utility-worker\"]]\n{string.Join('\n', inner)}\n[[/cgw:sources]]";
+    }
+
+    private static List<string> BuildUtilityWorkerInnerLines(
+        AdventureBundle bundle,
+        ContextResolveResult resolved,
+        ProjectSourceReadiness readiness)
+    {
+        var lines = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
+            lines.Add($"Project: {bundle.Metadata.LinkedProjectId}");
+
+        if (lines.Count > 0)
+            lines.Add("");
+
+        lines.Add("CANON CORE:");
+        if (resolved.Baseline.Count == 0)
+            lines.Add("- (none — retrieve task-scoped sections below)");
+        else
+            foreach (var p in resolved.Baseline)
+                lines.Add("- " + FormatProsePointer(bundle, p));
+
+        lines.Add("");
+        lines.Add("TASK-SCOPED:");
+        var taskPointers = resolved.ThisTurn
+            .Where(p => p.Mode != RenderMode.InlineFull && p.Mode != RenderMode.InlineFlavor)
+            .ToList();
+        if (taskPointers.Count == 0)
+            lines.Add("- (none matched this job scope)");
+        else
+            foreach (var p in taskPointers)
+                lines.Add("- " + FormatProsePointer(bundle, p));
+
+        if (!readiness.CanDelegateStaticContent && readiness.HasLinkedProject)
+        {
+            lines.Add("");
+            lines.Add("READINESS:");
+            if (!string.IsNullOrWhiteSpace(readiness.BlockingReason))
+                lines.Add($"- Sources not ready: {readiness.BlockingReason}");
+            if (!string.IsNullOrWhiteSpace(readiness.SuggestedAction))
+                lines.Add($"- {readiness.SuggestedAction}");
+        }
+
+        var inlines = resolved.All
+            .Where(p => p.Mode is RenderMode.InlineFull or RenderMode.InlineFlavor)
+            .ToList();
+        if (inlines.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("INLINE EXCERPTS:");
+            foreach (var p in inlines)
+            {
+                lines.Add($"--- Inline: {p.FileName} / {DisplaySectionPath(p.SectionId)} / {p.Title} ---");
+                lines.Add(ContextRenderPolicy.ExtractInlineBody(p));
+            }
+        }
+
+        return lines;
+    }
+
     public static string BuildFatSourcesBlock(
         AdventureBundle bundle,
         ContextResolveResult resolved,

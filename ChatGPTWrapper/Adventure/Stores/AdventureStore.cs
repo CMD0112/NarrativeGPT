@@ -166,6 +166,9 @@ internal static class AdventureStore
         var entitiesMigrated = EntitiesDocumentMigration.Migrate(entities);
         var canonSchemaMigrated = CanonSchemaMigrationService.Migrate(meta);
 
+        var promptHistory = LoadJson<PromptHistoryDocument>(PromptHistoryPath(id)) ?? new();
+        var promptHistoryMigrated = PromptHistoryMigration.Migrate(promptHistory);
+
         var bundle = new AdventureBundle
         {
             Metadata = meta,
@@ -177,7 +180,7 @@ internal static class AdventureStore
             Entities = entities,
             Cards = LoadJson<CardsDocument>(CardsPath(id)) ?? new(),
             Continuity = LoadJson<ContinuityDocument>(ContinuityPath(id)) ?? new(),
-            PromptHistory = LoadJson<PromptHistoryDocument>(PromptHistoryPath(id)) ?? new(),
+            PromptHistory = promptHistory,
             UtilityExchanges = LoadJson<UtilityExchangesDocument>(UtilityExchangesPath(id)) ?? new(),
             ThreadMetadata = LoadJson<ThreadMetadataDocument>(ThreadMetadataPath(id)) ?? new(),
             Notes = File.Exists(NotesPath(id)) ? File.ReadAllText(NotesPath(id)) : "",
@@ -203,13 +206,16 @@ internal static class AdventureStore
         SummaryReviewService.Normalize(bundle.Summary);
         var workerPinReconciled = UtilityWorkerPinService.TryReconcilePinFromCapabilities(bundle);
         var needsPersist = entitiesMigrated || canonSchemaMigrated || sourcesBootstrapped > 0 || manifestReconciled
-            || loreMaterialized || sourcesPushed || queuePruned > 0 || bindingTrustMigrated || workerPinReconciled;
+            || loreMaterialized || sourcesPushed || queuePruned > 0 || bindingTrustMigrated || workerPinReconciled
+            || promptHistoryMigrated;
         if (needsPersist)
         {
             var scope = entitiesMigrated || canonSchemaMigrated || sourcesBootstrapped > 0 || manifestReconciled
                 || loreMaterialized || sourcesPushed || queuePruned > 0 || bindingTrustMigrated
                 ? AdventureSaveScope.All
-                : AdventureSaveScope.Metadata;
+                : promptHistoryMigrated
+                    ? AdventureSaveScope.PromptHistory
+                    : AdventureSaveScope.Metadata;
             Save(bundle, scope);
         }
         return bundle;
@@ -332,11 +338,23 @@ internal static class AdventureStore
             WriteJson(StatePath(id), bundle.State);
         }
         if (scope.HasFlag(AdventureSaveScope.Memory))
+        {
+            if (scope != AdventureSaveScope.Memory)
+                PreserveMemoryReviewQueueOnFullSave(bundle.Memory, id);
             WriteJson(MemoryPath(id), bundle.Memory);
+        }
         if (scope.HasFlag(AdventureSaveScope.Entities))
+        {
+            if (scope != AdventureSaveScope.Entities)
+                PreserveEntitiesReviewQueueOnFullSave(bundle.Entities, id);
             WriteJson(EntitiesPath(id), bundle.Entities);
+        }
         if (scope.HasFlag(AdventureSaveScope.Cards))
+        {
+            if (scope != AdventureSaveScope.Cards)
+                PreserveCardsReviewQueueOnFullSave(bundle.Cards, id);
             WriteJson(CardsPath(id), bundle.Cards);
+        }
         if (scope.HasFlag(AdventureSaveScope.Continuity))
             WriteJson(ContinuityPath(id), bundle.Continuity);
         if (scope.HasFlag(AdventureSaveScope.PromptHistory))
@@ -358,6 +376,16 @@ internal static class AdventureStore
     public static void SaveSourceManifestOnly(AdventureBundle bundle) =>
         Save(bundle, AdventureSaveScope.SourceManifest);
 
+    /// <summary>Persists all domains that hold utility-job review proposals.</summary>
+    public static void SaveReviewDomains(AdventureBundle bundle) =>
+        Save(bundle,
+            AdventureSaveScope.Memory
+            | AdventureSaveScope.Entities
+            | AdventureSaveScope.Cards
+            | AdventureSaveScope.Summary
+            | AdventureSaveScope.Continuity
+            | AdventureSaveScope.Scenario);
+
     /// <summary>
     /// Persists play-settings UI changes without overwriting structured canon
     /// (<c>entities.json</c> / most of <c>scenario.json</c>) that may have been updated elsewhere.
@@ -376,11 +404,26 @@ internal static class AdventureStore
 
         SummaryReviewService.SyncFromDisk(target.Summary, disk.Summary);
 
-        if (disk.Memory.ReviewQueue.Count > 0 && target.Memory.ReviewQueue.Count == 0)
+        if (disk.Entities.ReviewQueue.Count > target.Entities.ReviewQueue.Count)
+            target.Entities.ReviewQueue = CloneJson(disk.Entities.ReviewQueue);
+
+        if (disk.Memory.ReviewQueue.Count > target.Memory.ReviewQueue.Count)
             target.Memory.ReviewQueue = CloneJson(disk.Memory.ReviewQueue);
 
-        if (disk.Cards.ReviewQueue.Count > 0 && target.Cards.ReviewQueue.Count == 0)
+        if (disk.Cards.ReviewQueue.Count > target.Cards.ReviewQueue.Count)
             target.Cards.ReviewQueue = CloneJson(disk.Cards.ReviewQueue);
+
+        if (disk.Scenario.SourceEditReviewQueue.Count > target.Scenario.SourceEditReviewQueue.Count)
+            target.Scenario.SourceEditReviewQueue = CloneJson(disk.Scenario.SourceEditReviewQueue);
+
+        if (disk.Scenario.JsonImportReviewQueue.Count > target.Scenario.JsonImportReviewQueue.Count)
+            target.Scenario.JsonImportReviewQueue = CloneJson(disk.Scenario.JsonImportReviewQueue);
+
+        if (disk.Continuity.Warnings.Count > target.Continuity.Warnings.Count)
+            target.Continuity.Warnings = CloneJson(disk.Continuity.Warnings);
+
+        if (disk.Continuity.DismissedWarningHashes.Count > target.Continuity.DismissedWarningHashes.Count)
+            target.Continuity.DismissedWarningHashes = CloneJson(disk.Continuity.DismissedWarningHashes);
 
         SyncUtilityWorkerCapabilitiesFromDisk(target);
     }
@@ -455,6 +498,9 @@ internal static class AdventureStore
 
         var manifest = LoadSourceManifest(id);
 
+        var promptHistory = LoadJson<PromptHistoryDocument>(PromptHistoryPath(id)) ?? new();
+        PromptHistoryMigration.Migrate(promptHistory);
+
         return new AdventureBundle
         {
             Metadata = meta,
@@ -466,7 +512,7 @@ internal static class AdventureStore
             Entities = LoadJson<EntitiesDocument>(EntitiesPath(id)) ?? new(),
             Cards = LoadJson<CardsDocument>(CardsPath(id)) ?? new(),
             Continuity = LoadJson<ContinuityDocument>(ContinuityPath(id)) ?? new(),
-            PromptHistory = LoadJson<PromptHistoryDocument>(PromptHistoryPath(id)) ?? new(),
+            PromptHistory = promptHistory,
             UtilityExchanges = LoadJson<UtilityExchangesDocument>(UtilityExchangesPath(id)) ?? new(),
             ThreadMetadata = LoadJson<ThreadMetadataDocument>(ThreadMetadataPath(id)) ?? new(),
             Notes = File.Exists(NotesPath(id)) ? File.ReadAllText(NotesPath(id)) : "",
@@ -765,6 +811,42 @@ internal static class AdventureStore
             if (existing.UtilitySessions is { Count: > 0 })
                 incoming.UtilitySessions = existing.UtilitySessions;
         }
+    }
+
+    private static void PreserveMemoryReviewQueueOnFullSave(MemoryDocument incoming, Guid id)
+    {
+        if (incoming.ReviewQueue.Count > 0)
+            return;
+
+        var onDisk = LoadJson<MemoryDocument>(MemoryPath(id));
+        if (onDisk is null || onDisk.ReviewQueue.Count == 0)
+            return;
+
+        incoming.ReviewQueue = CloneJson(onDisk.ReviewQueue);
+    }
+
+    private static void PreserveEntitiesReviewQueueOnFullSave(EntitiesDocument incoming, Guid id)
+    {
+        if (incoming.ReviewQueue.Count > 0)
+            return;
+
+        var onDisk = LoadJson<EntitiesDocument>(EntitiesPath(id));
+        if (onDisk is null || onDisk.ReviewQueue.Count == 0)
+            return;
+
+        incoming.ReviewQueue = CloneJson(onDisk.ReviewQueue);
+    }
+
+    private static void PreserveCardsReviewQueueOnFullSave(CardsDocument incoming, Guid id)
+    {
+        if (incoming.ReviewQueue.Count > 0)
+            return;
+
+        var onDisk = LoadJson<CardsDocument>(CardsPath(id));
+        if (onDisk is null || onDisk.ReviewQueue.Count == 0)
+            return;
+
+        incoming.ReviewQueue = CloneJson(onDisk.ReviewQueue);
     }
 
     private static void WriteJson<T>(string path, T value)

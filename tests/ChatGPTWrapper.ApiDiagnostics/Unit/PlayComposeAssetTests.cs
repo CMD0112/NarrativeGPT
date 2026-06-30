@@ -135,6 +135,44 @@ public sealed class PlayComposeAssetTests
         Assert.Contains("attachmentsPreStaged: attachmentsPreStaged", text);
     }
 
+    [Fact]
+    public void Bridge_cdp_staged_attachments_wait_for_upload_not_file_input_only()
+    {
+        var bridge = File.ReadAllText(BridgeJsPath);
+        Assert.Contains("nativeComposerUploadPending", bridge);
+        Assert.Contains("file_input_awaiting_upload", bridge);
+        Assert.Contains("requireUploadComplete", bridge);
+    }
+
+    [Fact]
+    public void Native_composer_staging_polls_upload_ready_after_cdp()
+    {
+        var path = FindRepoFile("ChatGPTWrapper", "ChatGptApi", "NativeComposerFileStaging.cs");
+        var text = File.ReadAllText(path);
+        Assert.Contains("WaitForUploadReadyAsync", text);
+        Assert.Contains("hostCdpStaged: true", text);
+        Assert.Contains("consecutiveReady", text);
+    }
+
+    [Fact]
+    public void Utility_worker_uses_dual_lane_attachment_delivery()
+    {
+        var pushPath = FindRepoFile("ChatGPTWrapper", "Adventure", "Services", "UtilityMessagePushService.cs");
+        var pushText = File.ReadAllText(pushPath);
+        Assert.Contains("UtilityReferenceAttachmentPolicy", pushText);
+        Assert.Contains("UtilityAttachmentDeliveryClassifier", pushText);
+        Assert.Contains("SendProductionPacketWithAttachmentsAsync", pushText);
+        Assert.Contains("UtilityAttachWorkerService", pushText);
+
+        var hostingPath = FindRepoFile("ChatGPTWrapper", "MainWindow.UtilityWorkerHosting.cs");
+        var hostingText = File.ReadAllText(hostingPath);
+        Assert.Contains("utility_worker_shadow_compositor_active", hostingText);
+
+        var attachPath = FindRepoFile("ChatGPTWrapper", "Adventure", "Services", "UtilityAttachWorkerService.cs");
+        var attachText = File.ReadAllText(attachPath);
+        Assert.Contains("WebView2AttachWorkerUserDataDirectory", attachText);
+    }
+
     private static string FindRepoFile(params string[] relativeParts)
     {
         var dir = AppContext.BaseDirectory;

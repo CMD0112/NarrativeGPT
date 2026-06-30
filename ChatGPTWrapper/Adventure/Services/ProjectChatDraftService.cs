@@ -68,12 +68,61 @@ internal static class ProjectChatDraftService
     public static ProjectChatDraftKind? GetActiveKind(Guid adventureId) =>
         Active.TryGetValue(adventureId, out var snapshot) ? snapshot.Kind : null;
 
-    public static bool ShouldStayOnProjectPage(AdventureBundle bundle, string? source)
+    public static bool ShouldStayOnProjectPage(AdventureBundle bundle, string? source) =>
+        ShouldSuppressPinnedThreadReroute(bundle, source);
+
+    /// <summary>
+    /// When true, auto-navigation and recovery must not pull the WebView back to a pinned play/design thread.
+    /// Covers the linked Project page, explicit rotation drafts, and new project chats not yet pinned.
+    /// </summary>
+    public static bool ShouldSuppressPinnedThreadReroute(
+        AdventureBundle bundle,
+        string? source,
+        AdventureNavigationIntent? intent = null)
     {
         if (!IsActive(bundle.Metadata.Id))
             return false;
 
-        return AdventureNavigationService.IsOnLinkedProjectPage(source, bundle);
+        if (AdventureNavigationService.IsOnLinkedProjectPage(source, bundle))
+            return true;
+
+        if (!AdventureNavigationService.HasLinkedProject(bundle))
+            return false;
+
+        return IsDraftWorkspaceConversation(bundle, source);
+    }
+
+    /// <summary>
+    /// Conversation URL inside the linked Project while a draft is active (e.g. after New chat).
+    /// </summary>
+    public static bool IsDraftWorkspaceConversation(AdventureBundle bundle, string? source)
+    {
+        if (!IsActive(bundle.Metadata.Id))
+            return false;
+
+        return IsLinkedProjectConversationDuringDraft(bundle, source);
+    }
+
+    private static bool IsLinkedProjectConversationDuringDraft(AdventureBundle bundle, string? source)
+    {
+        var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
+        if (string.IsNullOrWhiteSpace(gizmoId))
+            return false;
+
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri)
+            || !ChatGptUrls.IsTrustedChatGptTopLevelUri(uri)
+            || !ChatGptUrls.TryParseConversationId(uri, out _))
+        {
+            return false;
+        }
+
+        if (ChatGptUrls.TryParseGizmoId(uri, out var parsedGizmo)
+            && ChatGptUrls.GizmoIdsEqual(parsedGizmo, gizmoId))
+        {
+            return true;
+        }
+
+        return AdventurePlayContextService.TryGetLinkedProjectConversationFromUrl(source, gizmoId, out _);
     }
 
     public static bool ShouldSuppressPlayTabSelection(AdventureBundle bundle) =>
@@ -126,16 +175,7 @@ internal static class ProjectChatDraftService
         if (!IsActive(bundle.Metadata.Id))
             return false;
 
-        if (AdventureNavigationService.IsOnLinkedProjectPage(source, bundle))
-            return true;
-
-        if (intent == AdventureNavigationIntent.Design
-            && DesignTabPinService.IsOnDesignTarget(source, bundle))
-        {
-            return true;
-        }
-
-        return false;
+        return ShouldSuppressPinnedThreadReroute(bundle, source, intent);
     }
 
     public static string FormatStatusLine(AdventureBundle bundle)

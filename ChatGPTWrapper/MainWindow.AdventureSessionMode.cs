@@ -18,25 +18,7 @@ public partial class MainWindow
     private void ShellDesignModeButton_Click(object sender, RoutedEventArgs e) =>
         _ = SwitchToDesignSessionAsync();
 
-    private void UpdateAdventureSessionToggleStyles()
-    {
-        if (ShellPlayModeButton is null || ShellDesignModeButton is null)
-            return;
-
-        var selected = (Style)FindResource("ModeButtonSelectedStyle");
-        var normal = (Style)FindResource("ModeButtonStyle");
-        ShellPlayModeButton.Style = _appMode == AppMode.Play ? selected : normal;
-        ShellDesignModeButton.Style = _appMode == AppMode.Design ? selected : normal;
-
-        var bundle = _activeAdventureId is { } id ? AdventureStore.Load(id) : null;
-        var canDesign = AdventureSessionModePolicy.CanSwitchToDesign(bundle);
-        ShellDesignModeButton.IsEnabled = canDesign && !_adventureSessionSwitchInProgress;
-        ShellDesignModeButton.ToolTip = canDesign
-            ? "Switch to Design mode"
-            : "Design unavailable while play is in progress without local sources";
-        ShellPlayModeButton.IsEnabled = !_adventureSessionSwitchInProgress;
-        ShellPlayModeButton.ToolTip = "Switch to Play mode";
-    }
+    private void UpdateAdventureSessionToggleStyles() => RefreshShellSessionModeSegmentItems();
 
     public async Task SwitchToPlaySessionAsync()
     {
@@ -158,6 +140,7 @@ public partial class MainWindow
             try
             {
                 await PrepareDesignBrowserAsync(adventureId);
+                await SyncActiveThreadLogAsync(adventureId, AdventureThreadKind.Design, ThreadConversationLogCaptureSource.Api);
             }
             catch (Exception ex)
             {
@@ -220,10 +203,13 @@ public partial class MainWindow
         _playView.SynthesizeSourceAsync = (targetPath, parsed) =>
             SynthesizeSourceContentAsync(adventureId, targetPath, parsed);
         _playView.RefreshSourcesStatusAsync = () => RefreshPlaySourcesStatusAsync(adventureId);
+        _playView.ConfigurePlayChrome(_chrome.PlaySurface);
         _playView.GetPhraseHighlightRules = () => _chrome.PhraseHighlightRules;
         _playView.CommitPhraseHighlightRules = CommitPhraseHighlightRules;
         _playView.ReconcileDuplicatesAsync = () => ReconcilePlaySourcesAsync(adventureId);
         _playView.SuggestEntitiesAsync = () => RunEntityExtractionForActiveAdventureAsync();
+        _playView.SuggestEntitiesWithAttachmentsAsync = () => RunEntityExtractionWithAttachmentsAsync();
+        _playView.RunUtilityJobWithAttachmentsAsync = jobId => RunUtilityJobWithAttachmentsPromptAsync(jobId);
         _playView.SuggestMemoriesAsync = () => RunProposeMemoriesAsync();
         _playView.RefreshSummaryAsync = () => RunUpdateSummaryAsync();
         _playView.GenerateCardsAsync = () =>
@@ -261,9 +247,11 @@ public partial class MainWindow
         _playView.StartNewPlayThreadAsync = request => StartNewPlayThreadAsync(adventureId, request);
         _playView.DraftNewProjectChatAsync = () => DraftNewProjectChatAsync(adventureId);
         _playView.CancelProjectChatDraft = () => CancelProjectChatDraft(adventureId);
-        _playView.RunSourceEditJobAsync = prompt => RunSourceEditJobAsync(prompt);
+        _playView.RunSourceEditJobAsync = (prompt, attachments, referenceNote) =>
+            RunSourceEditJobAsync(prompt, attachments, referenceNote);
         _playView.ContinueDesignAsync = () => SwitchToDesignSessionAsync();
         _playView.PromptThreadLogSyncAsync = () => PromptThreadLogSyncFromMenuAsync(adventureId);
+        _playView.PromptThreadLogDumpAsync = () => PromptThreadLogDumpFromMenuAsync(adventureId);
         _playView.ListThreadFilesAsync = () => ListPlayThreadFilesAsync(adventureId);
         _playView.DownloadThreadFileAsync = file => DownloadPlayThreadFileAsync(adventureId, file);
         _playView.OpenProjectSettingsAsync = () => OpenProjectSettingsAsync();

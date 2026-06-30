@@ -40,6 +40,7 @@ public sealed class ThemeSettingsTests
         var temp = Path.Combine(Path.GetTempPath(), "cgw-theme-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
         var prior = AppDirectories.TestRootOverride;
+        AppDirectories.ResetStoresForTests();
         AppDirectories.TestRootOverride = temp;
 
         try
@@ -58,6 +59,7 @@ public sealed class ThemeSettingsTests
         }
         finally
         {
+            AppDirectories.ResetStoresForTests();
             AppDirectories.TestRootOverride = prior;
             if (Directory.Exists(temp))
                 Directory.Delete(temp, recursive: true);
@@ -70,6 +72,7 @@ public sealed class ThemeSettingsTests
         var temp = Path.Combine(Path.GetTempPath(), "cgw-theme-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
         var prior = AppDirectories.TestRootOverride;
+        AppDirectories.ResetStoresForTests();
         AppDirectories.TestRootOverride = temp;
 
         try
@@ -97,6 +100,7 @@ public sealed class ThemeSettingsTests
         }
         finally
         {
+            AppDirectories.ResetStoresForTests();
             AppDirectories.TestRootOverride = prior;
             if (Directory.Exists(temp))
                 Directory.Delete(temp, recursive: true);

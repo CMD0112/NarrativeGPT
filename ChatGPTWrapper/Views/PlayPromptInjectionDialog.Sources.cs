@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using ChatGPTWrapper;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Services.Canon;
@@ -218,8 +219,50 @@ public partial class PlayPromptInjectionDialog
 
     private async void ApiSyncDiagnostics_Click(object sender, RoutedEventArgs e)
     {
+        var open = ResolveApiSyncDiagnosticsAction();
+        if (open is null)
+        {
+            MessageBox.Show(
+                this,
+                "API sync diagnostics is not available from this window. Open Source Manager from the play or design surface instead.",
+                "API sync diagnostics",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        await open();
+    }
+
+    private void RefreshApiSyncDiagnosticsAvailability()
+    {
+        var canOpen = ResolveApiSyncDiagnosticsAction() is not null;
+        ApiSyncDiagnosticsButton.IsEnabled = canOpen;
+        ApiSyncDiagnosticsButton.ToolTip = canOpen
+            ? "Upload test files, inspect sync plan, and apply API sync (diagnostics)."
+            : "Open from the main play or design window (Source Manager).";
+    }
+
+    private Func<Task>? ResolveApiSyncDiagnosticsAction()
+    {
         if (OpenApiSyncDiagnosticsAsync is not null)
-            await OpenApiSyncDiagnosticsAsync();
+            return OpenApiSyncDiagnosticsAsync;
+
+        if (FindMainWindow() is MainWindow main)
+            return () => main.OpenSourceSyncDialogAsync(_bundle.Metadata.Id);
+
+        return null;
+    }
+
+    private MainWindow? FindMainWindow()
+    {
+        for (Window? w = this; w is not null; w = w.Owner)
+        {
+            if (w is MainWindow main)
+                return main;
+        }
+
+        return Window.GetWindow(this) as MainWindow;
     }
 
     private async void SynthesizeSource_Click(object sender, RoutedEventArgs e)

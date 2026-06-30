@@ -6,8 +6,8 @@ namespace ChatGPTWrapper.Adventure.Services;
 
 internal static class PlaySendDeliveryPolicy
 {
-    public static bool PreferDom(AdventureBundle bundle) =>
-        bundle.Metadata.Settings.PreferDomPlaySend;
+    /// <summary>Retired (CMD-379): play text send is API-canonical; setting ignored.</summary>
+    public static bool PreferDom(AdventureBundle bundle) => false;
 
     public static bool ShouldPrefetchApiWarmup(
         AdventureBundle bundle,

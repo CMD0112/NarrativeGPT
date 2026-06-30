@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.ChatGptApi.ProjectSource;
 using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
 
@@ -15,7 +16,15 @@ public sealed class ChatGptProjectApiService
     public ChatGptProjectApiService(ChatGptApiBridgeInjection bridge)
     {
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
+        SourcePublication = new ProjectSourcePublicationPipeline(this);
+        DomPublication = new ProjectDomPublicationService(this);
     }
+
+    public ProjectSourcePublicationPipeline SourcePublication { get; }
+
+    internal ChatGptApiBridgeInjection Bridge => _bridge;
+
+    internal ProjectDomPublicationService DomPublication { get; }
 
     public async Task<ChatGptSessionInfo> GetSessionAsync(
         CoreWebView2 core,
@@ -1115,6 +1124,40 @@ public sealed class ChatGptProjectApiService
         return result.ConversationId;
     }
 
+    public async Task<CreateProjectConversationResult> RegisterClientProjectConversationAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string? conversationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(gizmoId))
+            return new CreateProjectConversationResult { Error = "missing_gizmo_id" };
+
+        gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
+        await EnsureProjectPageAsync(core, gizmoId, cancellationToken);
+
+        conversationId = string.IsNullOrWhiteSpace(conversationId)
+            ? Guid.NewGuid().ToString()
+            : conversationId.Trim();
+
+        if (!await TryRegisterClientConversationAsync(core, gizmoId, conversationId, cancellationToken))
+        {
+            return new CreateProjectConversationResult
+            {
+                Error = "conversation_init_register_failed",
+                ConversationId = conversationId,
+            };
+        }
+
+        ProjectLinkDiagnostics.Log(
+            $"Registered ephemeral client conversation {conversationId} for project {gizmoId}");
+        return new CreateProjectConversationResult
+        {
+            ConversationId = conversationId,
+            InitRegistered = true,
+        };
+    }
+
     public async Task<CreateProjectConversationResult> CreateProjectConversationDetailedAsync(
         CoreWebView2 core,
         string gizmoId,
@@ -1235,6 +1278,7 @@ public sealed class ChatGptProjectApiService
             {
                 ConversationId = clientId,
                 ClientBootstrapped = true,
+                InitRegistered = true,
                 Error = initError,
             };
         }
@@ -2201,7 +2245,8 @@ public sealed class ChatGptProjectApiService
         string fileName,
         byte[] content,
         string mimeType = "text/markdown",
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int timeoutMs = 180_000)
     {
         var useCase = ResolveProjectSourceUploadUseCase(mimeType);
         var msg = await _bridge.SendAsync(
@@ -2214,10 +2259,11 @@ public sealed class ChatGptProjectApiService
                 mimeType,
                 base64 = Convert.ToBase64String(content),
                 useCase,
-                useProjectLibrary = IsSnorlaxProjectId(gizmoId),
+                // Library upload can list on the project before the blob is finalized (ghost refs).
+                useProjectLibrary = false,
                 skipProjectAttach = true,
             },
-            timeoutMs: 180000,
+            timeoutMs: timeoutMs,
             cancellationToken: cancellationToken);
 
         if (!msg.Ok)
@@ -2254,6 +2300,237 @@ public sealed class ChatGptProjectApiService
             Location = location,
             FromLibraryUpload = fromLibraryUpload,
         };
+    }
+
+    /// <summary>
+    /// One cohesive publish step for a project source file: upload bytes, bind to the
+    /// linked project, then verify the file is downloadable.
+    /// </summary>
+    public async Task<ProjectSourcePublishResult> PublishProjectSourceFileAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string fileName,
+        byte[] content,
+        string mimeType,
+        Guid? adventureId = null,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await SourcePublication.PublishAsync(
+            core,
+            new ProjectSourcePublicationRequest
+            {
+                GizmoId = gizmoId,
+                RemoteFileName = fileName,
+                Content = content,
+                MimeType = mimeType,
+                AdventureId = adventureId,
+            },
+            progress,
+            cancellationToken);
+
+        return new ProjectSourcePublishResult
+        {
+            File = result.File,
+            UsedAttachFallback = result.BindingStrategy.UsedUpsertFallback(),
+        };
+    }
+
+    /// <summary>
+    /// Publication bind entry point. Snorlax projects use project-files attach only —
+    /// detail upsert rewrites the full project graph and can fork duplicate sidebar projects.
+    /// </summary>
+    internal async Task<ProjectSourceBindingStrategy> BindSourceFileForPublicationAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef file,
+        Guid? adventureId,
+        CancellationToken cancellationToken)
+    {
+        if (IsSnorlaxProjectId(gizmoId))
+        {
+            await BindSnorlaxSourceFileViaProjectFilesApiAsync(
+                core,
+                gizmoId,
+                file,
+                cancellationToken);
+            return ProjectSourceBindingStrategy.SnorlaxProjectFilesApi;
+        }
+
+        await AttachProjectFilesViaUpsertAsync(
+            core,
+            gizmoId,
+            [file],
+            adventureId: adventureId,
+            caller: "SourcePublication",
+            skipPreflight: true,
+            cancellationToken: cancellationToken);
+
+        return ProjectSourceBindingStrategy.LegacyUpsert;
+    }
+
+    private async Task BindSnorlaxSourceFileViaProjectFilesApiAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef file,
+        CancellationToken cancellationToken)
+    {
+        var attachBaseline = await SnapshotSnorlaxProjectIdsAsync(core, cancellationToken);
+
+        ProjectLinkDiagnostics.Log(
+            $"Source publication project-files bind file={file.Name} file_id={file.FileId} for {gizmoId}");
+
+        var attached = await TryAttachSnorlaxFileViaProjectFilesApiAsync(
+            core,
+            gizmoId,
+            file,
+            attachBaseline,
+            strictSyncAttach: false,
+            skipSecondSidebarPoll: true,
+            SnorlaxAttachOptions.Publication,
+            cancellationToken);
+
+        if (!attached)
+        {
+            throw new ChatGptApiException(
+                $"publication_attach_failed: project-files attach exhausted file={file.Name} file_id={file.FileId}",
+                ChatGptApiEndpoints.ProjectFilesAttach(gizmoId));
+        }
+    }
+
+    /// <summary>
+    /// Browser-native library upload for Snorlax projects (auto-attaches to project knowledge).
+    /// Used as publication escalation when register+upsert verify fails.
+    /// </summary>
+    internal async Task<GizmoFileRef?> UploadProjectFileBytesViaLibraryAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string fileName,
+        byte[] content,
+        string mimeType = "text/markdown",
+        CancellationToken cancellationToken = default,
+        int timeoutMs = 180_000)
+    {
+        var useCase = ResolveProjectSourceUploadUseCase(mimeType);
+        var msg = await _bridge.SendAsync(
+            core,
+            new
+            {
+                action = "uploadFile",
+                gizmoId,
+                fileName,
+                mimeType,
+                base64 = Convert.ToBase64String(content),
+                useCase,
+                useProjectLibrary = true,
+                waitForLibraryFinalize = true,
+                skipProjectAttach = true,
+            },
+            timeoutMs: timeoutMs,
+            cancellationToken: cancellationToken);
+
+        if (!msg.Ok)
+        {
+            ChatGptApiDiscovery.RecordFailure(ChatGptApiEndpoints.FilesUpload, "POST", msg.Status);
+            throw new ChatGptApiException(
+                FormatBridgeError(msg, "library_upload_failed"),
+                ChatGptApiEndpoints.FilesUpload,
+                msg.Status,
+                msg.BodyText);
+        }
+
+        ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.FilesUpload, "POST");
+
+        var fileId = ExtractUploadedFileId(msg);
+        if (string.IsNullOrWhiteSpace(fileId))
+            return null;
+
+        return new GizmoFileRef
+        {
+            FileId = fileId,
+            Name = fileName,
+            Location = ResolveUploadedProjectFileLocation(msg, useCase),
+            FromLibraryUpload = true,
+        };
+    }
+
+    internal async Task<GizmoFileRef> EnrichUploadedFileFromProjectDetailAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef uploaded,
+        CancellationToken cancellationToken)
+    {
+        var detailJson = await GetGizmoDetailJsonAsync(core, gizmoId, cancellationToken, ensureProjectPage: false);
+        if (detailJson is not { } json)
+            return uploaded;
+
+        var detailFiles = GizmoResponseParser.CollectFileRefsDeep(json);
+        var probes = new List<GizmoFileRef>
+        {
+            new()
+            {
+                FileId = uploaded.FileId,
+                Name = uploaded.Name,
+                Location = uploaded.Location,
+            },
+        };
+        EnrichFileRefsFromDetail(probes, detailFiles);
+
+        var enriched = probes[0];
+        if (!string.IsNullOrWhiteSpace(enriched.Location))
+            return enriched;
+
+        var inferred = InferAttachFileLocationFromDetail(detailFiles);
+        if (string.IsNullOrWhiteSpace(inferred))
+            return uploaded;
+
+        return new GizmoFileRef
+        {
+            FileId = uploaded.FileId,
+            Name = uploaded.Name,
+            Location = inferred,
+            FromLibraryUpload = uploaded.FromLibraryUpload,
+        };
+    }
+
+    internal async Task TryCleanupFailedSourcePublishAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef file,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(file.FileId))
+            return;
+
+        try
+        {
+            ProjectLinkDiagnostics.Log(
+                $"Source publish cleanup deleting ghost file={file.Name} file_id={file.FileId} for {gizmoId}");
+            await DeleteProjectFileAsync(core, gizmoId, file.FileId, cancellationToken);
+            ProjectRemoteListCache.Invalidate(gizmoId);
+        }
+        catch (Exception ex)
+        {
+            ProjectLinkDiagnostics.Log(
+                $"Source publish cleanup failed file_id={file.FileId}: {ex.Message}");
+        }
+    }
+
+    public async Task<bool> IsSourceFileVisibleOnProjectAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef file,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(file.FileId))
+            return false;
+
+        var remoteFiles = await GetProjectFilesDirectAsync(
+            core,
+            gizmoId,
+            cancellationToken,
+            ensureProjectPage: false);
+        return RemoteFilesContainById(remoteFiles, file.FileId);
     }
 
     public async Task<GizmoFileRef?> UploadChatAttachmentBytesAsync(
@@ -3600,6 +3877,55 @@ public sealed class ChatGptProjectApiService
         CancellationToken cancellationToken) =>
         VerifyFilesDownloadableAfterAttachAsync(core, gizmoId, files, cancellationToken);
 
+    internal async Task<byte[]> DownloadFileProjectScopedAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string fileId,
+        CancellationToken cancellationToken)
+    {
+        var paths = ChatGptApiEndpoints.BuildProjectScopedDownloadPathCandidates(fileId, gizmoId);
+        var msg = await _bridge.SendAsync(
+            core,
+            new
+            {
+                action = "downloadFile",
+                fileId,
+                gizmoId,
+                paths,
+                requireProjectPaths = true,
+            },
+            timeoutMs: 120_000,
+            cancellationToken: cancellationToken);
+
+        if (!msg.Ok)
+        {
+            var message = FormatDownloadFailureMessage(
+                msg.Message ?? msg.Error ?? "download_failed",
+                msg,
+                fileId,
+                paths,
+                allAttemptsNotFound: AreAllDownloadAttemptsNotFound(msg));
+            throw new ChatGptApiException(
+                message,
+                ResolveDownloadFailureEndpoint(message, msg, fileId, paths),
+                msg.Status,
+                ResolveDownloadFailureDetail(msg));
+        }
+
+        var payload = TryReadDownloadPayload(msg, fileId);
+        if (payload is null or { Length: 0 })
+        {
+            throw new ChatGptApiException(
+                "download_not_available: project-scoped download returned no payload",
+                ChatGptApiEndpoints.ProjectFileDownload(gizmoId, fileId));
+        }
+
+        return payload;
+    }
+
+    internal static bool IsLikelyApiErrorJsonPayload(byte[] bytes) =>
+        ProjectSourceIntegrityVerifier.IsLikelyApiErrorJsonPayload(bytes);
+
     private async Task VerifyFilesDownloadableAfterAttachAsync(
         CoreWebView2 core,
         string gizmoId,
@@ -3850,7 +4176,7 @@ public sealed class ChatGptProjectApiService
         return null;
     }
 
-    private async Task ConfirmAttachedFilesOnProjectAsync(
+    internal async Task ConfirmAttachedFilesOnProjectAsync(
         CoreWebView2 core,
         string gizmoId,
         IReadOnlyList<GizmoFileRef> expectedFiles,

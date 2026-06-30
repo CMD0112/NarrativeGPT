@@ -29,6 +29,10 @@ internal sealed class PromptPacketResult
     public PacketProfile Profile { get; init; } = PacketProfile.InlineFallback;
 
     public List<TrimmedSection> BudgetTrimmed { get; init; } = [];
+
+    public List<ContextPointer> BaselinePointers { get; init; } = [];
+
+    public List<ContextPointer> ThisTurnPointers { get; init; } = [];
 }
 
 internal sealed class PromptPacketContextResult
@@ -48,6 +52,10 @@ internal sealed class PromptPacketContextResult
     public bool UseContextTags { get; init; }
 
     public List<TrimmedSection> BudgetTrimmed { get; init; } = [];
+
+    public List<ContextPointer> BaselinePointers { get; init; } = [];
+
+    public List<ContextPointer> ThisTurnPointers { get; init; } = [];
 }
 
 internal static class PromptPacketBuilder
@@ -122,6 +130,8 @@ internal static class PromptPacketBuilder
             Mode = ctx.Mode,
             Profile = ctx.Profile,
             BudgetTrimmed = ctx.BudgetTrimmed,
+            BaselinePointers = ctx.BaselinePointers,
+            ThisTurnPointers = ctx.ThisTurnPointers,
         };
     }
 
@@ -175,7 +185,9 @@ internal static class PromptPacketBuilder
             packetTurnIndexOverride: packetTurnIndexOverride,
             handoff: handoff,
             freshNarrativeBootstrap: freshNarrativeBootstrap,
-            budgetTrimmed: budgetResult.Trimmed);
+            budgetTrimmed: budgetResult.Trimmed,
+            baselinePointers: resolved.Baseline,
+            thisTurnPointers: resolved.ThisTurn);
 #if DEBUG
         if (readiness.CanDelegateStaticContent)
             InjectionPolicyGuard.AssertThinDelegationPolicy(result.ContextText);
@@ -303,7 +315,9 @@ internal static class PromptPacketBuilder
             packetTurnIndexOverride: packetTurnIndexOverride,
             handoff: handoff,
             freshNarrativeBootstrap: freshNarrativeBootstrap,
-            budgetTrimmed: budgetResult.Trimmed);
+            budgetTrimmed: budgetResult.Trimmed,
+            baselinePointers: resolved.Baseline,
+            thisTurnPointers: resolved.ThisTurn);
     }
 
     private static void FilterTriggerPointers(ContextResolveResult resolved)
@@ -390,7 +404,9 @@ internal static class PromptPacketBuilder
         int? packetTurnIndexOverride = null,
         PlayHandoffContext? handoff = null,
         bool freshNarrativeBootstrap = false,
-        IReadOnlyList<TrimmedSection>? budgetTrimmed = null)
+        IReadOnlyList<TrimmedSection>? budgetTrimmed = null,
+        IReadOnlyList<ContextPointer>? baselinePointers = null,
+        IReadOnlyList<ContextPointer>? thisTurnPointers = null)
     {
         var contextText = AssembleContextText(bundle, sections, profile, packetTurnIndexOverride, handoff);
         var resolvedLabels = labels ?? triggered.Select(t => t.Split('\n')[0]).ToList();
@@ -404,6 +420,8 @@ internal static class PromptPacketBuilder
             MaxChars = maxChars,
             UseContextTags = settings.UseContextTags,
             BudgetTrimmed = budgetTrimmed?.ToList() ?? [],
+            BaselinePointers = baselinePointers?.ToList() ?? [],
+            ThisTurnPointers = thisTurnPointers?.ToList() ?? [],
         };
     }
 

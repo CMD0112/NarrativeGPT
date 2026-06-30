@@ -246,6 +246,27 @@ internal static class DesignTabPinService
     public static void PinDesignTab(AdventureBundle bundle, WebView2 webView, TabControl tabs)
     {
         AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)
+                      ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
+        PinDesignTabToEntry(bundle, entry.Id, webView, tabs, setActive: true);
+    }
+
+    public static void PinDesignTabToEntry(
+        AdventureBundle bundle,
+        Guid entryId,
+        WebView2 webView,
+        TabControl tabs,
+        bool setActive = true)
+    {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetEntry(bundle, entryId)
+                    ?? throw new InvalidOperationException("Thread entry not found.");
+
+        if (entry.Kind != AdventureThreadKind.Design)
+            throw new InvalidOperationException("Entry is not a design thread.");
+
+        if (entry.Status == AdventureThreadStatus.Archived)
+            throw new InvalidOperationException("Cannot pin an archived thread.");
 
         var source = webView.CoreWebView2?.Source;
         if (!TryResolveDesignConversationFromSource(bundle, source, out var conversationId, out var error))
@@ -260,17 +281,17 @@ internal static class DesignTabPinService
             });
         }
 
-        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)
-                      ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
-
         if (!string.IsNullOrWhiteSpace(conversationId))
             entry.ConversationId = conversationId;
 
         AdventureThreadRegistryService.UpdatePinFromWebView(bundle, entry.Id, webView, tabs, source);
-        AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
+        if (setActive)
+            AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
 
         if (ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id) == ProjectChatDraftKind.Design)
             ProjectChatDraftService.Complete(bundle);
+
+        AdventureThreadRegistryService.SyncActiveDesignUtilitySession(bundle);
         AdventureStore.Save(bundle);
     }
 
@@ -339,15 +360,9 @@ internal static class DesignTabPinService
     {
         AdventureThreadRegistryService.EnsureMigrated(bundle);
         if (AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design) is { } entry)
-        {
-            entry.PinnedTabKey = null;
-            entry.PinnedTabTitle = null;
-            entry.PinnedTabUrl = null;
-        }
+            AdventureThreadRegistryService.ClearEntryPin(bundle, entry.Id);
 
-        bundle.Metadata.PinnedDesignTabKey = null;
-        bundle.Metadata.PinnedDesignTabTitle = null;
-        bundle.Metadata.PinnedDesignTabUrl = null;
+        AdventureThreadRegistryService.ClearLegacyDesignBindingFields(bundle.Metadata);
         AdventureStore.Save(bundle);
     }
 

@@ -17,14 +17,18 @@
     <!-- Typography -->
     <FontFamily x:Key="WrapperFontFamily">Segoe UI Variable, Segoe UI</FontFamily>
     <sys:Double x:Key="FontSizeHint">11</sys:Double>
-    <sys:Double x:Key="FontSizeBody">13</sys:Double>
-    <sys:Double x:Key="FontSizeTitle">15</sys:Double>
+    <sys:Double x:Key="ControlMinHeight">36</sys:Double>
+    <sys:Double x:Key="CompanionDefaultWidth">320</sys:Double>
+    <sys:Double x:Key="FontSizeBody">14</sys:Double>
+    <sys:Double x:Key="FontSizeTitle">16</sys:Double>
+    <sys:Double x:Key="FontSizeShellTitle">15</sys:Double>
+    <sys:Double x:Key="FontSizeSection">12</sys:Double>
 
     <!-- Semantic palette -->
     <SolidColorBrush x:Key="BgBaseBrush" Color="#161618"/>
     <SolidColorBrush x:Key="BgSurfaceBrush" Color="#1E1E22"/>
     <SolidColorBrush x:Key="BgElevatedBrush" Color="#28282E"/>
-    <SolidColorBrush x:Key="BgChromeBrush" Color="#28282E"/>
+    <SolidColorBrush x:Key="BgChromeBrush" Color="#232328"/>
     <SolidColorBrush x:Key="BgWorkspaceBrush" Color="#1E1E22"/>
     <SolidColorBrush x:Key="BgInsetBrush" Color="#161618"/>
     <SolidColorBrush x:Key="BorderSubtleBrush" Color="#32323A"/>

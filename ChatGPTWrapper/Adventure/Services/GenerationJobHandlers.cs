@@ -45,6 +45,26 @@ internal sealed class GenerationJobContext
     public UtilityContextManifest? UtilityContextManifest { get; set; }
 
     public AdventureDesignStep? DesignStep { get; init; }
+
+    /// <summary>Utility lane that produced the current apply (e.g. local-llm, play-legacy-inline).</summary>
+    public string? InferenceSource { get; set; }
+
+    public Guid? UtilityRunId { get; set; }
+
+    /// <summary>Links paired runs when dual-run compare mode is active.</summary>
+    public Guid? DualRunGroupId { get; set; }
+
+    /// <summary>When true, duplicate suppression ignores proposals from other inference sources.</summary>
+    public bool AllowCrossSourceDuplicates { get; set; }
+
+    /// <summary>Local LLM leg — shorter prompts, wrapped JSON contracts, no canon-format reference block.</summary>
+    public bool ForLocalInference { get; set; }
+
+    /// <summary>Attachment metadata for utility worker jobs (manifest in packet; bytes staged separately).</summary>
+    public AttachmentContext? JobAttachments { get; init; }
+
+    /// <summary>Author instructions for staged reference files (appended to job packet, not the main job body).</summary>
+    public string? AttachmentReferenceNote { get; init; }
 }
 
 internal sealed class GenerationJobResult
@@ -79,6 +99,12 @@ internal sealed class GenerationJobResult
 
     /// <summary>True when the job ran on the utility worker lane (not play-thread inline/injection).</summary>
     public bool RanOnUtilityWorker { get; init; }
+
+    /// <summary>True when the job completed via local OpenAI-compatible inference (Ollama, etc.).</summary>
+    public bool RanOnLocalInference { get; init; }
+
+    /// <summary>True when both local inference and ChatGPT utility lanes ran for comparison.</summary>
+    public bool RanDualInference { get; init; }
 }
 
 internal static class GenerationJobHandlers
@@ -115,29 +141,25 @@ internal static class GenerationJobHandlers
             GenerationJobId.ExpandEntity when context.EntityId is { } entityId =>
                 EntityExtractionService.BuildExpandEntityPrompt(bundle, context.EntityKind ?? "Characters", entityId),
             GenerationJobId.ProposeMemories when context.Scope is { } memScope =>
-                BuildScopedMemoryProposalPrompt(bundle, memScope, context.OmitRedundantJobTurnSlices && context.StoryContextHasTranscript),
+                BuildScopedMemoryProposalPrompt(bundle, memScope, UtilityStoryContextDedup.ShouldOmitTurnSlices(context)),
             GenerationJobId.ProposeMemories when context.Turn is { } memTurn =>
-                BuildMemoryProposalPrompt(bundle, memTurn, context.OmitRedundantJobTurnSlices && context.StoryContextHasTranscript),
+                BuildMemoryProposalPrompt(bundle, memTurn, UtilityStoryContextDedup.ShouldOmitTurnSlices(context)),
             GenerationJobId.UpdateSummary =>
-                RecapService.BuildSummaryUpdatePrompt(bundle, context.OmitRedundantJobTurnSlices && context.StoryContextHasTranscript),
+                RecapService.BuildSummaryUpdatePrompt(bundle, UtilityStoryContextDedup.ShouldOmitTurnSlices(context)),
             GenerationJobId.BootstrapLore =>
                 BuildBootstrapLorePrompt(bundle),
             GenerationJobId.BootstrapSections =>
-                BuildBootstrapSectionsPrompt(bundle),
+                BuildBootstrapSectionsPrompt(bundle, context.ForLocalInference),
             GenerationJobId.ExpandStoryCard when context.CardId is { } cardId =>
                 BuildExpandCardPrompt(bundle, cardId),
             GenerationJobId.ExpandSection when context.EntityId is { } sectionEntityId =>
                 BuildExpandSectionPrompt(bundle, sectionEntityId),
             GenerationJobId.ContinuityCheck =>
-                BuildContinuityCheckPrompt(
-                    bundle,
-                    context.OmitRedundantJobTurnSlices && context.StoryContextHasTranscript,
-                    context.StoryContextIncludesSummary,
-                    context.StoryContextIncludesState),
+                BuildContinuityCheckPrompt(bundle, context),
             GenerationJobId.ProposeSourceEdits =>
-                SourceEditService.BuildSourceEditPrompt(bundle, context.UserPrompt ?? ""),
+                SourceEditService.BuildSourceEditPrompt(bundle, context.UserPrompt ?? "", context.ForLocalInference),
             GenerationJobId.ProposeJsonImport =>
-                SourceJsonImportService.BuildImportPrompt(bundle),
+                SourceJsonImportService.BuildImportPrompt(bundle, context.ForLocalInference),
             GenerationJobId.DraftFramework =>
                 """
                 === ADVENTURE DRAFTING ===
@@ -268,15 +290,15 @@ internal static class GenerationJobHandlers
 
         return jobId switch
         {
-            GenerationJobId.ProcessTurn => ApplyProcessTurn(bundle, responseText),
-            GenerationJobId.ExtractEntities or GenerationJobId.ExpandEntity => ApplyExtractEntities(bundle, responseText),
-            GenerationJobId.ProposeMemories => ApplyProposeMemories(bundle, responseText),
-            GenerationJobId.UpdateSummary => ApplyUpdateSummary(bundle, responseText),
-            GenerationJobId.BootstrapLore => ApplyBootstrapLore(bundle, responseText),
-            GenerationJobId.BootstrapSections => ApplySectionBootstrap(bundle, responseText),
-            GenerationJobId.ExpandStoryCard => ApplyExpandCard(bundle, responseText),
-            GenerationJobId.ExpandSection => ApplySectionBootstrap(bundle, responseText),
-            GenerationJobId.ContinuityCheck => ApplyContinuityCheck(bundle, responseText),
+            GenerationJobId.ProcessTurn => ApplyProcessTurn(bundle, responseText, context),
+            GenerationJobId.ExtractEntities or GenerationJobId.ExpandEntity => ApplyExtractEntities(bundle, responseText, context),
+            GenerationJobId.ProposeMemories => ApplyProposeMemories(bundle, responseText, context),
+            GenerationJobId.UpdateSummary => ApplyUpdateSummary(bundle, responseText, context),
+            GenerationJobId.BootstrapLore => ApplyBootstrapLore(bundle, responseText, context),
+            GenerationJobId.BootstrapSections => ApplySectionBootstrap(bundle, responseText, context),
+            GenerationJobId.ExpandStoryCard => ApplyExpandCard(bundle, responseText, context),
+            GenerationJobId.ExpandSection => ApplySectionBootstrap(bundle, responseText, context),
+            GenerationJobId.ContinuityCheck => ApplyContinuityCheck(bundle, responseText, context),
             GenerationJobId.ProposeSourceEdits => ApplyProposeSourceEdits(bundle, responseText),
             GenerationJobId.ProposeJsonImport => ApplyProposeJsonImport(bundle, responseText),
             GenerationJobId.DraftFramework =>
@@ -552,15 +574,24 @@ internal static class GenerationJobHandlers
             """;
     }
 
-    private static string BuildBootstrapSectionsPrompt(AdventureBundle bundle)
+    private static string BuildBootstrapSectionsPrompt(AdventureBundle bundle, bool forLocalInference = false)
     {
         var s = bundle.Scenario;
-        var formatReference = CanonFormatReferenceService.BuildPromptBlock(bundle);
+        var formatReference = forLocalInference
+            ? ""
+            : CanonFormatReferenceService.BuildPromptBlock(bundle);
+        var localHint = forLocalInference
+            ? """
+
+            Do not return labeled canon field sheets (Relationship, Secrets, Setting, etc.).
+            Return entity records only — each with name, entityType, description, aliases.
+            """
+            : "";
         return $"""
             === BOOTSTRAP SECTIONS JOB ===
             Generate 3-6 canon entity sections (NPCs, places, or concepts) from the scenario. JSON array only.
             Each object must include name, entityType (person|place|concept), description, and aliases array.
-            {formatReference}
+            {formatReference}{localHint}
 
             Title: {bundle.Metadata.Title}
             Genre: {s.Genre}
@@ -605,11 +636,7 @@ internal static class GenerationJobHandlers
             """;
     }
 
-    private static string BuildContinuityCheckPrompt(
-        AdventureBundle bundle,
-        bool omitRedundantSlices = false,
-        bool storyContextIncludesSummary = false,
-        bool storyContextIncludesState = false)
+    private static string BuildContinuityCheckPrompt(AdventureBundle bundle, GenerationJobContext context)
     {
         var sections = new List<string>
         {
@@ -619,7 +646,7 @@ internal static class GenerationJobHandlers
             """,
         };
 
-        if (!omitRedundantSlices || !storyContextIncludesSummary)
+        if (UtilityStoryContextDedup.ShouldIncludeSummary(context))
         {
             sections.Add($"""
                 === SUMMARY ===
@@ -627,7 +654,7 @@ internal static class GenerationJobHandlers
                 """);
         }
 
-        if (!omitRedundantSlices || !storyContextIncludesState)
+        if (UtilityStoryContextDedup.ShouldIncludeState(context))
         {
             sections.Add($"""
                 === STATE ===
@@ -636,12 +663,15 @@ internal static class GenerationJobHandlers
                 """);
         }
 
-        sections.Add($"""
-            === ENTITY INDEX ===
-            {EntityExtractionService.BuildEntityIndex(bundle.Entities)}
-            """);
+        if (UtilityStoryContextDedup.ShouldIncludeEntityIndex(context))
+        {
+            sections.Add($"""
+                === ENTITY INDEX ===
+                {EntityExtractionService.BuildEntityIndex(bundle.Entities)}
+                """);
+        }
 
-        if (!omitRedundantSlices)
+        if (!UtilityStoryContextDedup.ShouldOmitTurnSlices(context))
         {
             var recent = bundle.Log.Turns
                 .Where(t => t.Status == TurnStatus.Accepted)
@@ -690,9 +720,12 @@ internal static class GenerationJobHandlers
         };
     }
 
-    private static GenerationJobResult ApplyExtractEntities(AdventureBundle bundle, string responseText)
+    private static GenerationJobResult ApplyExtractEntities(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
         var proposals = EntityExtractionService.ParseExtractionResponse(responseText);
+        foreach (var proposal in proposals)
+            UtilityProposalInferenceTagging.TagEntity(proposal, context);
+
         if (proposals.Count > 0)
             EntityExtractionService.EnqueueProposals(bundle.Entities, proposals);
 
@@ -705,9 +738,9 @@ internal static class GenerationJobHandlers
         };
     }
 
-    private static GenerationJobResult ApplyProposeMemories(AdventureBundle bundle, string responseText)
+    private static GenerationJobResult ApplyProposeMemories(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
-        var count = ApplyMemoryArray(bundle, responseText);
+        var count = ApplyMemoryArray(bundle, responseText, context);
         return new GenerationJobResult
         {
             Success = true,
@@ -716,7 +749,7 @@ internal static class GenerationJobHandlers
         };
     }
 
-    private static int ApplyMemoryArray(AdventureBundle bundle, string responseText)
+    private static int ApplyMemoryArray(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
         var normalized = EntityExtractionService.TryNormalizeJsonArrayResponse(responseText);
         if (string.IsNullOrWhiteSpace(normalized))
@@ -735,9 +768,10 @@ internal static class GenerationJobHandlers
                 if (entry is null)
                     continue;
 
-                if (UtilityTranscriptScopeService.IsDuplicateMemory(bundle.Memory, entry))
+                if (UtilityTranscriptScopeService.IsDuplicateMemory(bundle.Memory, entry, context))
                     continue;
 
+                UtilityProposalInferenceTagging.TagMemory(entry, context);
                 bundle.Memory.ReviewQueue.Add(entry);
                 count++;
             }
@@ -783,7 +817,7 @@ internal static class GenerationJobHandlers
         };
     }
 
-    private static GenerationJobResult ApplyProcessTurn(AdventureBundle bundle, string responseText)
+    private static GenerationJobResult ApplyProcessTurn(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
         var normalized = EntityExtractionService.TryNormalizeJsonObjectResponse(responseText);
         if (string.IsNullOrWhiteSpace(normalized))
@@ -798,13 +832,15 @@ internal static class GenerationJobHandlers
             if (root.TryGetProperty("memories", out var memories))
             {
                 var memJson = memories.ValueKind == JsonValueKind.Array ? memories.GetRawText() : "[]";
-                total += ApplyMemoryArray(bundle, memJson);
+                total += ApplyMemoryArray(bundle, memJson, context);
             }
 
             if (root.TryGetProperty("entities", out var entities))
             {
                 var entJson = entities.ValueKind == JsonValueKind.Array ? entities.GetRawText() : "[]";
                 var proposals = EntityExtractionService.ParseExtractionResponse(entJson);
+                foreach (var proposal in proposals)
+                    UtilityProposalInferenceTagging.TagEntity(proposal, context);
                 if (proposals.Count > 0)
                     EntityExtractionService.EnqueueProposals(bundle.Entities, proposals);
                 total += proposals.Count;
@@ -816,7 +852,7 @@ internal static class GenerationJobHandlers
                 var summaryText = summaryEl.GetString()?.Trim() ?? "";
                 if (!string.IsNullOrWhiteSpace(summaryText))
                 {
-                    SummaryReviewService.QueueProposal(bundle, summaryText);
+                    SummaryReviewService.QueueProposal(bundle, summaryText, context);
                     total++;
                 }
             }
@@ -916,7 +952,7 @@ internal static class GenerationJobHandlers
         }
     }
 
-    private static GenerationJobResult ApplyUpdateSummary(AdventureBundle bundle, string responseText)
+    private static GenerationJobResult ApplyUpdateSummary(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
         if (!IsValidPlainTextJobResponse(responseText))
         {
@@ -934,17 +970,17 @@ internal static class GenerationJobHandlers
         if (string.IsNullOrWhiteSpace(text))
             return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "no_proposals_parsed" };
 
-        SummaryReviewService.QueueProposal(bundle, text);
+        SummaryReviewService.QueueProposal(bundle, text, context);
         return new GenerationJobResult { Success = true, ProposalCount = 1 };
     }
 
-    private static GenerationJobResult ApplyBootstrapLore(AdventureBundle bundle, string responseText) =>
-        ApplyCardArray(bundle, responseText);
+    private static GenerationJobResult ApplyBootstrapLore(AdventureBundle bundle, string responseText, GenerationJobContext? context = null) =>
+        ApplyCardArray(bundle, responseText, context);
 
-    private static GenerationJobResult ApplyExpandCard(AdventureBundle bundle, string responseText) =>
-        ApplyCardArray(bundle, responseText);
+    private static GenerationJobResult ApplyExpandCard(AdventureBundle bundle, string responseText, GenerationJobContext? context = null) =>
+        ApplyCardArray(bundle, responseText, context);
 
-    private static GenerationJobResult ApplySectionBootstrap(AdventureBundle bundle, string responseText)
+    private static GenerationJobResult ApplySectionBootstrap(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
         var normalized = EntityExtractionService.TryNormalizeJsonArrayResponse(responseText);
         if (string.IsNullOrWhiteSpace(normalized))
@@ -966,11 +1002,13 @@ internal static class GenerationJobHandlers
                 if (string.IsNullOrWhiteSpace(name))
                     continue;
 
-                bundle.Entities.ReviewQueue.Add(new EntityReviewItem
+                var item = new EntityReviewItem
                 {
                     EntityType = JsonElementParsing.GetStringProperty(element, "entityType") ?? "person",
                     ProposedChange = element.GetRawText(),
-                });
+                };
+                UtilityProposalInferenceTagging.TagEntity(item, context);
+                bundle.Entities.ReviewQueue.Add(item);
                 count++;
             }
 
@@ -987,7 +1025,7 @@ internal static class GenerationJobHandlers
         }
     }
 
-    private static GenerationJobResult ApplyCardArray(AdventureBundle bundle, string responseText)
+    private static GenerationJobResult ApplyCardArray(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
         var normalized = EntityExtractionService.TryNormalizeJsonArrayResponse(responseText);
         if (string.IsNullOrWhiteSpace(normalized))
@@ -1009,10 +1047,12 @@ internal static class GenerationJobHandlers
                 if (string.IsNullOrWhiteSpace(name))
                     continue;
 
-                bundle.Cards.ReviewQueue.Add(new CardReviewItem
+                var card = new CardReviewItem
                 {
                     ProposedChange = element.GetRawText(),
-                });
+                };
+                UtilityProposalInferenceTagging.TagCard(card, context);
+                bundle.Cards.ReviewQueue.Add(card);
                 count++;
             }
 
@@ -1110,7 +1150,7 @@ internal static class GenerationJobHandlers
         }
     }
 
-    private static GenerationJobResult ApplyContinuityCheck(AdventureBundle bundle, string responseText)
+    private static GenerationJobResult ApplyContinuityCheck(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
         bundle.Continuity.Warnings.Clear();
         foreach (var local in ContinuityService.Analyze(bundle))
@@ -1149,7 +1189,7 @@ internal static class GenerationJobHandlers
                         {
                             Message = message,
                             Severity = severity,
-                            Source = "ai",
+                            Source = context?.InferenceSource ?? "ai",
                         });
                     }
                 }

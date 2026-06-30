@@ -7,8 +7,96 @@ namespace ChatGPTWrapper.Adventure.Services;
 internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? storyBuilder = null)
 {
     public static bool IsEnabled(AdventureBundle bundle, UtilityExecutionChannel channel) =>
-        channel == UtilityExecutionChannel.WorkerBackground
-        && bundle.Metadata.Settings.UseUtilityJobContextAssembler;
+        bundle.Metadata.Settings.UseUtilityJobContextAssembler
+        && channel is UtilityExecutionChannel.WorkerBackground
+            or UtilityExecutionChannel.AutoBackground
+            or UtilityExecutionChannel.ManualBackground;
+
+    /// <summary>Play bundled send — flags from snapshot; no story block (delta-only vs play packet).</summary>
+    public static UtilityJobContextAssemblyResult AssemblePlayBundledSync(
+        AdventureBundle bundle,
+        string jobId,
+        UtilityExecutionChannel channel,
+        PlayPacketContextSnapshot snapshot)
+    {
+        var settings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
+        var emptyStory = new UtilityStoryContextBuildResult();
+        var laneFlags = ResolvePlayBundledFlags(bundle, emptyStory, settings, snapshot);
+        var manifest = BuildManifest(jobId, channel, emptyStory, laneFlags, snapshot);
+
+        return new UtilityJobContextAssemblyResult
+        {
+            StoryContextBlock = "",
+            StoryContextHasTranscript = laneFlags.StoryContextHasTranscript,
+            OmitRedundantJobTurnSlices = laneFlags.OmitRedundantJobTurnSlices,
+            StoryContextIncludesSummary = laneFlags.IncludesSummary,
+            StoryContextIncludesState = laneFlags.IncludesState,
+            SuppressInlineGuide = true,
+            Manifest = manifest,
+        };
+    }
+
+    /// <summary>Play utility-only send without narrator snapshot — thread visibility heuristic.</summary>
+    public static UtilityJobContextAssemblyResult AssemblePlayUtilityOnlySync(
+        AdventureBundle bundle,
+        string jobId,
+        UtilityExecutionChannel channel)
+    {
+        var settings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
+        var localStory = UtilityStoryContextBuilder.BuildPreviewFromLocal(bundle, jobId);
+        var laneFlags = ResolvePlayThreadFlags(bundle, localStory, settings);
+        var manifest = BuildManifest(jobId, channel, localStory, laneFlags);
+
+        return new UtilityJobContextAssemblyResult
+        {
+            StoryContextBlock = localStory.Text,
+            StoryContextHasTranscript = laneFlags.StoryContextHasTranscript,
+            OmitRedundantJobTurnSlices = laneFlags.OmitRedundantJobTurnSlices,
+            StoryContextIncludesSummary = laneFlags.IncludesSummary,
+            StoryContextIncludesState = laneFlags.IncludesState,
+            SuppressInlineGuide = true,
+            Manifest = manifest,
+            TranscriptSource = localStory.TranscriptSource,
+            TurnPairCount = localStory.TurnPairCount,
+        };
+    }
+
+    /// <summary>Local preview for worker lane without live DOM capture.</summary>
+    public static UtilityJobContextAssemblyResult AssembleWorkerSoloLocalSync(
+        AdventureBundle bundle,
+        string jobId,
+        GenerationJobContext? jobContext = null)
+    {
+        var settings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
+        var localStory = UtilityStoryContextBuilder.BuildPreviewFromLocal(bundle, jobId);
+        var (storyBuild, lore) = ApplyWorkerLoreIfNeeded(
+            bundle,
+            jobId,
+            UtilityExecutionChannel.WorkerBackground,
+            localStory,
+            jobContext);
+        var laneFlags = ResolveWorkerSoloFlags(bundle, localStory, settings);
+        var manifest = BuildManifest(
+            jobId,
+            UtilityExecutionChannel.WorkerBackground,
+            storyBuild,
+            laneFlags,
+            lore: lore,
+            jobContext: jobContext);
+
+        return new UtilityJobContextAssemblyResult
+        {
+            StoryContextBlock = storyBuild.Text,
+            StoryContextHasTranscript = laneFlags.StoryContextHasTranscript,
+            OmitRedundantJobTurnSlices = laneFlags.OmitRedundantJobTurnSlices,
+            StoryContextIncludesSummary = laneFlags.IncludesSummary,
+            StoryContextIncludesState = laneFlags.IncludesState,
+            SuppressInlineGuide = true,
+            Manifest = manifest,
+            TranscriptSource = localStory.TranscriptSource,
+            TurnPairCount = localStory.TurnPairCount,
+        };
+    }
 
     public async Task<UtilityJobContextAssemblyResult> AssembleAsync(
         AdventureBundle bundle,
@@ -17,13 +105,26 @@ internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? sto
         CancellationToken cancellationToken = default)
     {
         var storyBuild = await BuildStoryAsync(bundle, jobId, request, cancellationToken);
+        var (storyWithLore, lore) = ApplyWorkerLoreIfNeeded(
+            bundle,
+            jobId,
+            request.Channel,
+            storyBuild,
+            request.JobContext);
         var settings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
         var laneFlags = ResolveLaneFlags(bundle, request.Channel, storyBuild, settings, request.PlayPacketSnapshot);
-        var manifest = BuildManifest(jobId, request.Channel, storyBuild, laneFlags);
+        var manifest = BuildManifest(
+            jobId,
+            request.Channel,
+            storyWithLore,
+            laneFlags,
+            request.PlayPacketSnapshot,
+            lore,
+            request.JobContext);
 
         return new UtilityJobContextAssemblyResult
         {
-            StoryContextBlock = storyBuild.Text,
+            StoryContextBlock = storyWithLore.Text,
             StoryContextHasTranscript = storyBuild.HasTranscriptSection,
             OmitRedundantJobTurnSlices = laneFlags.OmitRedundantJobTurnSlices,
             StoryContextIncludesSummary = laneFlags.IncludesSummary,
@@ -109,10 +210,11 @@ internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? sto
         var omitSummary = playSnapshot.IncludesRollingSummary && includesSummary;
         var omitState = playSnapshot.IncludesState && includesState;
         var omitTranscript = playSnapshot.TranscriptTailChars > 0 && hasTranscript;
+        var omitAny = omitSummary || omitState || omitTranscript;
 
         return new LaneFlags(
-            OmitRedundantJobTurnSlices: omitSummary || omitState || omitTranscript,
-            StoryContextHasTranscript: hasTranscript,
+            OmitRedundantJobTurnSlices: omitAny,
+            StoryContextHasTranscript: hasTranscript || omitAny,
             IncludesSummary: includesSummary,
             IncludesState: includesState);
     }
@@ -135,29 +237,88 @@ internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? sto
             IncludesState: includesState);
     }
 
+    private static (UtilityStoryContextBuildResult Story, UtilityWorkerLoreChannelService.LoreBuildResult? Lore) ApplyWorkerLoreIfNeeded(
+        AdventureBundle bundle,
+        string jobId,
+        UtilityExecutionChannel channel,
+        UtilityStoryContextBuildResult storyBuild,
+        GenerationJobContext? jobContext)
+    {
+        if (channel != UtilityExecutionChannel.WorkerBackground)
+            return (storyBuild, null);
+
+        var lore = UtilityWorkerLoreChannelService.TryBuild(bundle, jobId, jobContext);
+        if (!lore.HasContent)
+            return (storyBuild, lore);
+
+        var text = string.IsNullOrWhiteSpace(storyBuild.Text)
+            ? lore.Text
+            : lore.Text + Environment.NewLine + Environment.NewLine + storyBuild.Text;
+
+        return (new UtilityStoryContextBuildResult
+        {
+            Text = text,
+            TranscriptSource = storyBuild.TranscriptSource,
+            TurnPairCount = storyBuild.TurnPairCount,
+            CaptureError = storyBuild.CaptureError,
+        }, lore);
+    }
+
     private static UtilityContextManifest BuildManifest(
         string jobId,
         UtilityExecutionChannel channel,
         UtilityStoryContextBuildResult storyBuild,
-        LaneFlags flags)
+        LaneFlags flags,
+        PlayPacketContextSnapshot? playSnapshot = null,
+        UtilityWorkerLoreChannelService.LoreBuildResult? lore = null,
+        GenerationJobContext? jobContext = null)
     {
         var included = new List<string>();
         var omitted = new List<string>();
+        string? attachmentLane = null;
+        List<string> attachmentFiles = [];
+
+        if (jobContext?.JobAttachments is { HasAttachments: true } ctxAttach)
+        {
+            included.Add("reference_attachments");
+            attachmentLane = UtilityAttachmentDeliveryClassifier.FormatLaneLabel(
+                UtilityAttachmentDeliveryClassifier.ResolveLaneFromMeta(ctxAttach));
+            attachmentFiles = ctxAttach.Attachments
+                .Select(a => a.Name)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .ToList();
+        }
+
+        if (storyBuild.Text.Contains("[[cgw:sources", StringComparison.Ordinal)
+            && storyBuild.Text.Contains("mode=\"utility-worker\"", StringComparison.Ordinal))
+            included.Add("lore_channel");
+        if (storyBuild.Text.Contains("INLINE EXCERPTS:", StringComparison.Ordinal))
+            included.Add("canon_slices");
 
         if (storyBuild.Text.Contains("=== STORY TRANSCRIPT ===", StringComparison.Ordinal))
             included.Add("transcript");
+        else if (flags.StoryContextHasTranscript && playSnapshot?.TranscriptTailChars > 0)
+            omitted.Add("transcript:bundled-play-packet");
         else if (flags.StoryContextHasTranscript)
             omitted.Add("transcript:play-thread-assumed");
 
         if (storyBuild.Text.Contains("=== ROLLING SUMMARY ===", StringComparison.Ordinal))
             included.Add("summary");
         else if (flags.IncludesSummary && flags.OmitRedundantJobTurnSlices)
-            omitted.Add("summary:deduped");
+        {
+            omitted.Add(playSnapshot?.IncludesRollingSummary == true
+                ? "summary:bundled-play-packet"
+                : "summary:deduped");
+        }
 
         if (storyBuild.Text.Contains("=== STATE ===", StringComparison.Ordinal))
             included.Add("state");
         else if (flags.IncludesState && flags.OmitRedundantJobTurnSlices)
-            omitted.Add("state:deduped");
+        {
+            omitted.Add(playSnapshot?.IncludesState == true
+                ? "state:bundled-play-packet"
+                : "state:deduped");
+        }
 
         if (storyBuild.Text.Contains("=== ENTITY INDEX ===", StringComparison.Ordinal))
             included.Add("entity_index");
@@ -170,9 +331,12 @@ internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? sto
             JobId = jobId,
             SectionsIncluded = included,
             SectionsOmitted = omitted,
+            CanonSliceIds = lore?.SliceIds.ToList() ?? [],
             TranscriptSource = storyBuild.TranscriptSource,
             TurnPairCount = storyBuild.TurnPairCount,
             TotalCharCount = storyBuild.Text.Length,
+            AttachmentDeliveryLane = attachmentLane,
+            AttachmentFileNames = attachmentFiles,
         };
     }
 

@@ -34,7 +34,8 @@ internal static class UtilityJobResultStore
                 ? UtilityLane.Worker
                 : UtilityLane.PlayInjection,
             streamComplete: true,
-            pushedAt: null);
+            pushedAt: null,
+            contextManifest: pending.ContextManifest);
 
     public static void SaveRun(
         AdventureBundle bundle,
@@ -48,7 +49,9 @@ internal static class UtilityJobResultStore
         string? assistantMessageId,
         string lane,
         bool streamComplete,
-        DateTimeOffset? pushedAt)
+        DateTimeOffset? pushedAt,
+        UtilityContextManifestRecord? contextManifest = null,
+        Guid? dualRunGroupId = null)
     {
         var record = new UtilityJobRunRecord
         {
@@ -70,17 +73,36 @@ internal static class UtilityJobResultStore
             StreamComplete = streamComplete,
             PushedAt = pushedAt,
             State = applyResult.Success ? UtilityJobRunState.Complete : UtilityJobRunState.Failed,
+            ContextManifest = contextManifest ?? pending.ContextManifest,
+            DualRunGroupId = dualRunGroupId,
         };
 
         WriteRecord(bundle.Metadata.Id, record);
+        TryLinkFlightRecordFromBundle(bundle, pending.RunId);
+    }
+
+    public static void TryLinkFlightRecord(Guid adventureId, Guid utilityRunId, Guid flightRecordId)
+    {
+        var record = LoadRun(adventureId, utilityRunId);
+        if (record is null || record.LinkedFlightRecordId == flightRecordId)
+            return;
+
+        record.LinkedFlightRecordId = flightRecordId;
+        WriteRecordFile(adventureId, record);
+    }
+
+    private static void TryLinkFlightRecordFromBundle(AdventureBundle bundle, Guid utilityRunId)
+    {
+        var flightRecordId = FlightRecordCorrelationService.FindFlightRecordIdForUtilityRun(bundle, utilityRunId);
+        if (flightRecordId is not Guid entryId)
+            return;
+
+        TryLinkFlightRecord(bundle.Metadata.Id, utilityRunId, entryId);
     }
 
     private static void WriteRecord(Guid adventureId, UtilityJobRunRecord record)
     {
-        var dir = ResultsDirectory(adventureId);
-        Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, $"{record.RunId}.json");
-        File.WriteAllText(path, JsonSerializer.Serialize(record, AdventureJson.Options));
+        WriteRecordFile(adventureId, record);
 
         var index = LoadIndex(adventureId);
         if (!index.RunsByJobId.TryGetValue(record.JobId, out var runs))
@@ -89,11 +111,21 @@ internal static class UtilityJobResultStore
             index.RunsByJobId[record.JobId] = runs;
         }
 
-        runs.Add(record.RunId);
+        if (!runs.Contains(record.RunId))
+            runs.Add(record.RunId);
+
         if (runs.Count > 50)
             runs.RemoveRange(0, runs.Count - 50);
 
         File.WriteAllText(IndexPath(adventureId), JsonSerializer.Serialize(index, AdventureJson.Options));
+    }
+
+    private static void WriteRecordFile(Guid adventureId, UtilityJobRunRecord record)
+    {
+        var dir = ResultsDirectory(adventureId);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, $"{record.RunId}.json");
+        File.WriteAllText(path, JsonSerializer.Serialize(record, AdventureJson.Options));
     }
 
     public static UtilityJobRunRecord? LoadRun(Guid adventureId, Guid runId)
@@ -126,6 +158,38 @@ internal static class UtilityJobResultStore
         catch
         {
             return new UtilityJobResultsIndex();
+        }
+    }
+
+    public static void MarkRunReviewResolved(Guid adventureId, Guid runId)
+    {
+        var run = LoadRun(adventureId, runId);
+        if (run is null || run.ReviewResolvedAt.HasValue)
+            return;
+
+        run.ReviewResolvedAt = DateTimeOffset.UtcNow;
+        WriteRecordFile(adventureId, run);
+    }
+
+    public static void MarkReviewResolved(Guid adventureId, string jobId)
+    {
+        var index = LoadIndex(adventureId);
+        if (!index.RunsByJobId.TryGetValue(jobId, out var runIds))
+            return;
+
+        foreach (var runId in runIds)
+        {
+            var run = LoadRun(adventureId, runId);
+            if (run is null
+                || run.ReviewResolvedAt.HasValue
+                || run.ProposalCount <= 0
+                || run.State != UtilityJobRunState.Complete)
+            {
+                continue;
+            }
+
+            run.ReviewResolvedAt = DateTimeOffset.UtcNow;
+            WriteRecordFile(adventureId, run);
         }
     }
 

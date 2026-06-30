@@ -63,6 +63,11 @@ internal static class ThemeResourceUpdater
         resources["SpaceMdPadding"] = new Thickness(theme.SpaceMd);
         resources["RadiusControl"] = new CornerRadius(theme.RadiusControl);
         resources["RadiusCard"] = new CornerRadius(theme.RadiusCard);
+        resources["ControlMinHeight"] = theme.ControlMinHeight;
+        resources["CompanionDefaultWidth"] = theme.CompanionDefaultWidth;
+        resources["ComposeFontSize"] = theme.ComposeFontSize;
+        resources["ComposeSendSize"] = theme.ComposeSendSize;
+        resources["DensityPreset"] = theme.DensityPreset.ToString();
 
         ApplySystemColor(resources, SystemColors.WindowColorKey, theme.GetHex("BgBase"));
         ApplySystemColor(resources, SystemColors.WindowTextColorKey, theme.GetHex("TextPrimary"));

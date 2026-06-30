@@ -76,14 +76,6 @@ internal static class PlayUtilityRetrievalService
                 ConversationId = conversationId,
             });
 
-            ThreadMetadataService.RecordUtilityExchange(
-                bundle,
-                pending.JobId,
-                "",
-                responseText,
-                conversationId,
-                pending.Channel);
-
             bundle.Metadata.UtilityJobLastErrors ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var utilityJobId = GenerationJobHandlers.GetUtilityJobId(pending.JobId);
             if (!applyResult.Success || (applyResult.ProposalCount == 0 && applyResult.Error is not null))

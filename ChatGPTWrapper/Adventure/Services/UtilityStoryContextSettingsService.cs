@@ -67,4 +67,16 @@ internal static class UtilityStoryContextSettingsService
         return bundle.Metadata.UtilityJobGuideOverrides?.TryGetValue(key, out var over) == true
                && over.Context is not null;
     }
+
+    public static UtilityStoryContextSettings? TryGetJobOverride(AdventureBundle bundle, string jobId)
+    {
+        var key = GenerationJobHandlers.GetUtilityJobId(jobId);
+        if (bundle.Metadata.UtilityJobGuideOverrides?.TryGetValue(key, out var over) == true
+            && over.Context is not null)
+        {
+            return over.Context.Clone();
+        }
+
+        return null;
+    }
 }

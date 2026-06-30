@@ -2,7 +2,7 @@ using ChatGPTWrapper.Adventure.Models;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
-internal static class UtilityStoryContextProfiles
+public static class UtilityStoryContextProfiles
 {
     public static UtilityStoryContextSettings ApplyJobProfile(UtilityStoryContextSettings baseSettings, string jobId)
     {

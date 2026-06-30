@@ -184,7 +184,7 @@ public sealed class PlayComposeInjectionPolicyTests
 }
 
 [CollectionDefinition("PlayTabHarness", DisableParallelization = true)]
-public sealed class PlayTabHarnessCollection : ICollectionFixture<IsolatedAppRootFixture>;
+public sealed class PlayTabHarnessCollection : ICollectionFixture<FileLockAwareFixture>;
 
 [Collection("PlayTabHarness")]
 [Trait("Category", "Unit")]

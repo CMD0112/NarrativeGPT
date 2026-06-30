@@ -7,8 +7,8 @@ using ChatGPTWrapper.ChatGptApi;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class AdventureSourceFileServiceTests : IDisposable
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class AdventureSourceFileServiceTests : IClassFixture<FileLockAwareFixture>, IDisposable
 {
     private readonly string _tempRoot;
 

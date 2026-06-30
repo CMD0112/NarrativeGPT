@@ -19,6 +19,8 @@ public partial class MainWindow : IUtilityWorkerHost
         _conversationSendService
         ?? throw new InvalidOperationException("Conversation send service not ready.");
 
+    ChatGptProjectApiService? IUtilityWorkerHost.ProjectApi => _projectApiService;
+
     AdventureTurnService IUtilityWorkerHost.GetTurnService(WebView2 webView) =>
         GetOrCreateTurnService(webView);
 
@@ -288,8 +290,52 @@ public partial class MainWindow : IUtilityWorkerHost
         CoreWebView2 core,
         string gizmoId)
     {
-        if (_projectApiService is null)
+        if (_projectApiService is null || _conversationSendService is null)
             return null;
+
+        if (UtilityEphemeralWorkerPolicy.IsEnabled(bundle))
+        {
+            var workerWebView = FindWebViewForCore(core);
+            if (workerWebView is null)
+                return null;
+
+            var ephemeral = GetOrCreateEphemeralProjectChatService(workerWebView);
+            var turnService = GetOrCreateTurnService(workerWebView);
+
+            var provision = await ephemeral.ProvisionComposerAsync(
+                new EphemeralProjectChatRequest
+                {
+                    Core = core,
+                    GizmoId = gizmoId,
+                    MessageText = " ",
+                    WarmSession = true,
+                    TurnService = turnService,
+                    DeleteAfterCapture = false,
+                    TryUiCreate = (c, ct) => TryCreateWorkerConversationViaUiAsync(adventureId, c, ct),
+                });
+
+            if (!provision.Success)
+                return null;
+
+            var ephemeralConversationId = provision.ConversationId?.Trim();
+            if (string.IsNullOrWhiteSpace(ephemeralConversationId) && provision.DomComposerReady)
+                ephemeralConversationId = await turnService.GetConversationIdAsync(core);
+
+            if (string.IsNullOrWhiteSpace(ephemeralConversationId))
+                return null;
+
+            if (!PlayTabPinService.IsAcceptableUtilityConversationId(bundle, ephemeralConversationId))
+                return null;
+
+            var ephemeralTargetUrl = ChatGptUrls.ResolveProjectConversationUrl(ephemeralConversationId, gizmoId, core.Source);
+            if (!AdventurePlayContextService.IsOnPlayConversationPage(core.Source, ephemeralConversationId, gizmoId))
+            {
+                core.Navigate(ephemeralTargetUrl);
+                await WaitForChatGptNavigationAsync(core, expectedDestination: ephemeralTargetUrl);
+            }
+
+            return ephemeralConversationId;
+        }
 
         var created = await _projectApiService.CreateProjectConversationDetailedAsync(
             core,
@@ -428,14 +474,8 @@ public partial class MainWindow : IUtilityWorkerHost
         CancellationToken cancellationToken)
     {
         var bundle = AdventureStore.Load(adventureId);
-        if (bundle is null)
+        if (bundle is null || _projectApiService is null)
             return null;
-
-        var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
-        if (string.IsNullOrWhiteSpace(gizmoId))
-            return null;
-
-        gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
 
         var wv = FindWebViewForCore(core) ?? _utilityWorkerWebView;
         if (wv is null)
@@ -444,71 +484,45 @@ public partial class MainWindow : IUtilityWorkerHost
         await Dispatcher.InvokeAsync(() => SelectTabForWebView(wv));
         var turnService = GetOrCreateTurnService(wv);
 
-        await _projectApiService!.EnsureProjectPageAsync(core, gizmoId, cancellationToken);
-        if (!AdventureNavigationService.IsOnLinkedProjectPage(core.Source, bundle))
-        {
-            var projectUrl = ChatGptUrls.BuildProjectUrl(gizmoId);
-            core.Navigate(projectUrl);
-            await WaitForChatGptNavigationAsync(core, expectedDestination: projectUrl);
-        }
+        var conversationId = await UtilityEphemeralUiCreateService.TryOpenComposerAsync(
+            bundle,
+            core,
+            _projectApiService,
+            turnService,
+            cancellationToken,
+            async (url, ct) => await WaitForChatGptNavigationAsync(core, expectedDestination: url));
 
-        if (!await turnService.EnsureUtilityBridgeReadyAsync(core, cancellationToken))
+        if (string.IsNullOrWhiteSpace(conversationId))
             return null;
 
-        for (var warmup = 0; warmup < 12; warmup++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        return IsAcceptableUtilityUiConversation(bundle, core.Source, conversationId)
+            ? conversationId
+            : null;
+    }
 
-            var health = await turnService.GetAdventureComposerHealthAsync(core, cancellationToken);
-            if (health.ComposerFound)
-                break;
+    async Task<string?> IUtilityWorkerHost.TryCreateEphemeralConversationViaUiAsync(
+        AdventureBundle bundle,
+        CoreWebView2 core,
+        CancellationToken cancellationToken)
+    {
+        if (_projectApiService is null)
+            return null;
 
-            await Task.Delay(500, cancellationToken);
-        }
+        var wv = FindWebViewForCore(core) ?? _utilityWorkerWebView;
+        if (wv is null)
+            return null;
 
-        const int maxUiAttempts = 2;
-        for (var attempt = 0; attempt < maxUiAttempts; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var ui = await turnService.StartProjectChatAsync(core, cancellationToken);
-            var conversationId = ui.ConversationId ?? await turnService.GetConversationIdAsync(core);
-
-            if (!string.IsNullOrWhiteSpace(conversationId)
-                && PlayTabPinService.IsAcceptableUtilityConversationId(bundle, conversationId))
-            {
-                var targetUrl = ChatGptUrls.ResolveProjectConversationUrl(conversationId, gizmoId, core.Source);
-                if (!AdventurePlayContextService.IsOnPlayConversationPage(core.Source, conversationId, gizmoId))
-                {
-                    core.Navigate(targetUrl);
-                    await WaitForChatGptNavigationAsync(core, expectedDestination: targetUrl);
-                }
-
-                if (IsAcceptableUtilityUiConversation(bundle, core.Source, conversationId))
-                {
-                    ProjectLinkDiagnostics.Log($"Utility worker UI create succeeded: {conversationId}");
-                    return conversationId;
-                }
-            }
-
-            if (string.Equals(ui.Error, "project_new_chat_not_found", StringComparison.OrdinalIgnoreCase))
-            {
-                ProjectLinkDiagnostics.Log("Utility worker UI New chat button not found; deferring to manual");
-                break;
-            }
-
-            if (attempt + 1 >= maxUiAttempts
-                || string.Equals(ui.Error, "project_chat_not_ready", StringComparison.OrdinalIgnoreCase))
-            {
-                ProjectLinkDiagnostics.Log(
-                    $"Utility worker UI create gave up ({ui.Error ?? "no_conversation_id"}); deferring to manual");
-                break;
-            }
-
-            await Task.Delay(1000, cancellationToken);
-        }
-
-        return null;
+        var turnService = GetOrCreateTurnService(wv);
+        return await ((IUtilityWorkerHost)this).WithUtilityWebViewActivatedAsync(
+            core,
+            () => UtilityEphemeralUiCreateService.TryOpenComposerAsync(
+                bundle,
+                core,
+                _projectApiService,
+                turnService,
+                cancellationToken,
+                async (url, ct) => await WaitForChatGptNavigationAsync(core, expectedDestination: url)),
+            cancellationToken);
     }
 
     private WebView2? FindWebViewForCore(CoreWebView2 core)
@@ -520,6 +534,13 @@ public partial class MainWindow : IUtilityWorkerHost
             {
                 return wv;
             }
+        }
+
+        if (UtilityWorkerBackgroundHost.Children.Count > 0
+            && UtilityWorkerBackgroundHost.Children[0] is WebView2 background
+            && ReferenceEquals(background.CoreWebView2, core))
+        {
+            return background;
         }
 
         return null;
@@ -625,6 +646,8 @@ public partial class MainWindow : IUtilityWorkerHost
 
     private async Task<WebView2?> EnsureUtilityWorkerTabReadyAsync(AdventureBundle bundle)
     {
+        UtilityWorkerPinService.TryReconcilePinFromCapabilities(bundle);
+
         var existing = await ResolveUtilityWorkerWebViewAsync(bundle);
         if (existing?.CoreWebView2 is not null)
         {
@@ -632,23 +655,35 @@ public partial class MainWindow : IUtilityWorkerHost
             return existing;
         }
 
-        var conversationId = UtilityWorkerSessionService.GetWorkerConversationId(bundle);
         AdventureProjectBindingService.SyncLinkedProjectFields(bundle.Metadata);
         var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
-        if (string.IsNullOrWhiteSpace(conversationId) || string.IsNullOrWhiteSpace(gizmoId))
+        if (string.IsNullOrWhiteSpace(gizmoId))
             return null;
 
         gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
-        var url = ChatGptUrls.BuildProjectConversationUrl(conversationId, gizmoId);
+        var ephemeral = UtilityEphemeralWorkerPolicy.IsEnabled(bundle);
+        var conversationId = UtilityWorkerPinService.GetWorkerConversationId(bundle);
+        if (!ephemeral && string.IsNullOrWhiteSpace(conversationId))
+            return null;
 
-        ProjectLinkDiagnostics.Log($"Utility worker tab missing; opening {url}");
-        SetPlayComposeStatus("Utility worker: opening background tab…");
+        var url = ephemeral || string.IsNullOrWhiteSpace(conversationId)
+            ? new Uri(ChatGptUrls.BuildProjectUrl(gizmoId))
+            : new Uri(ChatGptUrls.BuildProjectConversationUrl(conversationId, gizmoId));
+
+        ProjectLinkDiagnostics.Log(
+            ephemeral
+                ? $"Utility worker tab missing; opening project {gizmoId} for ephemeral jobs"
+                : $"Utility worker tab missing; opening {url}");
+        SetPlayComposeStatus(
+            ephemeral
+                ? "Utility worker: opening project tab for ephemeral jobs…"
+                : "Utility worker: opening background tab…");
 
         WebView2? wv;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-            wv = await CreateUtilityWorkerWebViewInBackgroundHostAsync(new Uri(url))
+            wv = await CreateUtilityWorkerWebViewInBackgroundHostAsync(url)
                 .WaitAsync(timeout.Token);
         }
         catch (OperationCanceledException)
@@ -665,11 +700,20 @@ public partial class MainWindow : IUtilityWorkerHost
 
         ((IUtilityWorkerHost)this).RegisterWorkerTab(wv);
 
-        if (!UtilityConversationPageService.MatchesTargetConversation(core.Source, conversationId, gizmoId))
+        if (ephemeral || string.IsNullOrWhiteSpace(conversationId))
+        {
+            if (!AdventureNavigationService.IsOnLinkedProjectPage(core.Source, bundle))
+            {
+                SetPlayComposeStatus("Utility worker: loading linked project…");
+                core.Navigate(url.ToString());
+                await WaitForChatGptNavigationAsync(core, expectedDestination: url.ToString());
+            }
+        }
+        else if (!UtilityConversationPageService.MatchesTargetConversation(core.Source, conversationId, gizmoId))
         {
             SetPlayComposeStatus("Utility worker: loading conversation…");
-            core.Navigate(url);
-            await WaitForChatGptNavigationAsync(core, expectedDestination: url);
+            core.Navigate(url.ToString());
+            await WaitForChatGptNavigationAsync(core, expectedDestination: url.ToString());
         }
 
         await ChatGptAdventureBridgeInjection.ApplyUtilityWorkerTabVisibilityAsync(core);
@@ -681,32 +725,53 @@ public partial class MainWindow : IUtilityWorkerHost
         Guid adventureId,
         AdventureBundle bundle,
         string jobId,
-        GenerationJobContext context)
+        GenerationJobContext context,
+        IReadOnlyList<DomAttachmentPayload>? domAttachments = null)
     {
-        if (UtilityWorkerPinService.TryReconcilePinFromCapabilities(bundle))
-            AdventureStore.Save(bundle, AdventureSaveScope.Metadata);
-
-        if (!UtilityWorkerPinService.HasWorkerPin(bundle))
+        if (UtilityEphemeralWorkerPolicy.IsEnabled(bundle))
         {
-            await Dispatcher.InvokeAsync(() =>
-                SetPlayComposeStatus($"{jobId}: set up utility worker in Threads first."));
-            return new GenerationJobResult
+            if (string.IsNullOrWhiteSpace(AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata)))
             {
-                Success = false,
-                Error = UtilityWorkerPinService.WorkerPinRequiredError,
-            };
+                await Dispatcher.InvokeAsync(() =>
+                    SetPlayComposeStatus($"{jobId}: link a ChatGPT Project first."));
+                return new GenerationJobResult
+                {
+                    Success = false,
+                    Error = "no_linked_project",
+                };
+            }
+        }
+        else
+        {
+            if (UtilityWorkerPinService.TryReconcilePinFromCapabilities(bundle))
+                AdventureStore.Save(bundle, AdventureSaveScope.Metadata);
+
+            if (UtilityEphemeralWorkerPolicy.RequiresWorkerPin(bundle))
+            {
+                await Dispatcher.InvokeAsync(() =>
+                    SetPlayComposeStatus($"{jobId}: set up utility worker in Threads first."));
+                return new GenerationJobResult
+                {
+                    Success = false,
+                    Error = UtilityWorkerPinService.WorkerPinRequiredError,
+                };
+            }
         }
 
         UtilityOutboxService.Enqueue(
             bundle,
             jobId,
             UtilityExecutionChannel.WorkerBackground,
-            context);
+            context,
+            domAttachments);
         AdventureStore.Save(bundle);
 
+        var attachNote = domAttachments is { Count: > 0 }
+            ? $" with {domAttachments.Count} attachment(s)"
+            : "";
         await Dispatcher.InvokeAsync(() =>
             SetPlayComposeStatus(
-                $"{jobId}: queued on utility worker ({UtilityOutboxService.PendingCount(adventureId)} pending)."));
+                $"{jobId}: queued on utility worker{attachNote} ({UtilityOutboxService.PendingCount(adventureId)} pending)."));
 
         WorkerCoordinator(adventureId).RequestOutboxPump(this);
         return new GenerationJobResult

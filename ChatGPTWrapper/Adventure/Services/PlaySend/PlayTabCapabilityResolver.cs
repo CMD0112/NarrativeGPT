@@ -3,7 +3,7 @@ using ChatGPTWrapper.Adventure.Models;
 namespace ChatGPTWrapper.Adventure.Services.PlaySend;
 
 /// <summary>
-/// Normative play-tab capability matrix. See docs/play-send-orchestration-adr.md.
+/// Normative play-tab capability matrix. See docs/adr/play-send-orchestration-adr.md.
 /// </summary>
 internal static class PlayTabCapabilityResolver
 {

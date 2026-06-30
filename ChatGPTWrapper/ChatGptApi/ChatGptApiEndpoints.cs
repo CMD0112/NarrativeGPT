@@ -79,6 +79,19 @@ internal static class ChatGptApiEndpoints
         return paths;
     }
 
+    /// <summary>
+    /// Project-scoped download paths only (matches ChatGPT project UI).
+    /// </summary>
+    internal static IReadOnlyList<string> BuildProjectScopedDownloadPathCandidates(
+        string fileId,
+        string gizmoId) =>
+    [
+        ProjectFileDownloadWithQuery(gizmoId, fileId),
+        ProjectFileDownload(gizmoId, fileId),
+        GizmoFileDownloadWithQuery(gizmoId, fileId),
+        GizmoFileDownload(gizmoId, fileId),
+    ];
+
     public static string FileDelete(string fileId) =>
         $"/backend-api/files/{Uri.EscapeDataString(fileId)}";
 
@@ -102,6 +115,9 @@ internal static class ChatGptApiEndpoints
 
     public static string ConversationGet(string conversationId) =>
         $"/backend-api/conversation/{Uri.EscapeDataString(conversationId.Trim())}";
+
+    /// <summary>Soft-delete (hide) a conversation — same path as GET, PATCH with is_visible: false.</summary>
+    public static string ConversationHide(string conversationId) => ConversationGet(conversationId);
 
     public const string ConversationPrepare = "/backend-api/f/conversation/prepare";
 

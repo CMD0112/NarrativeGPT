@@ -299,6 +299,10 @@ internal static class AdventureThreadRegistryService
                 PlayTurnScopeService.OnPlayThreadChanged(bundle, previousPlayConversation, newConversation);
             }
         }
+        else if (entry.Kind == AdventureThreadKind.Design)
+        {
+            SyncActiveDesignUtilitySession(bundle);
+        }
     }
 
     public static void UpdatePinFromWebView(
@@ -371,6 +375,91 @@ internal static class AdventureThreadRegistryService
         _ = reason;
     }
 
+    public static void RemoveEntry(AdventureBundle bundle, Guid entryId)
+    {
+        EnsureMigrated(bundle);
+        var metadata = bundle.Metadata;
+        metadata.ThreadRegistry ??= [];
+
+        if (IsActiveEntry(bundle, entryId))
+            throw new InvalidOperationException("Cannot remove the active thread. Set another thread active first.");
+
+        var entry = GetEntry(bundle, entryId)
+                    ?? throw new InvalidOperationException("Thread entry not found.");
+
+        if (entry.Kind == AdventureThreadKind.Design)
+        {
+            PurgeDesignUtilitySessionForConversation(bundle, entry.ConversationId);
+            SyncActiveDesignUtilitySession(bundle);
+        }
+
+        metadata.ThreadRegistry.Remove(entry);
+    }
+
+    public static void ClearEntryPin(AdventureBundle bundle, Guid entryId)
+    {
+        EnsureMigrated(bundle);
+        var entry = GetEntry(bundle, entryId)
+                    ?? throw new InvalidOperationException("Thread entry not found.");
+
+        entry.PinnedTabKey = null;
+        entry.PinnedTabTitle = null;
+        entry.PinnedTabUrl = null;
+    }
+
+    public static bool EntryHasPin(AdventureThreadEntry entry) =>
+        !string.IsNullOrWhiteSpace(entry.PinnedTabKey)
+        || !string.IsNullOrWhiteSpace(entry.PinnedTabUrl);
+
+    public static void ClearLegacyDesignBindingFields(AdventureMetadata metadata)
+    {
+        metadata.PinnedDesignTabKey = null;
+        metadata.PinnedDesignTabTitle = null;
+        metadata.PinnedDesignTabUrl = null;
+    }
+
+    /// <summary>
+    /// Keeps <c>UtilitySessions[design_adventure]</c> aligned with the active design registry row.
+    /// </summary>
+    public static void SyncActiveDesignUtilitySession(AdventureBundle bundle)
+    {
+        EnsureMigrated(bundle);
+        var metadata = bundle.Metadata;
+        var jobId = GenerationJobId.DesignAdventure;
+        metadata.UtilitySessions ??= new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase);
+
+        var entry = GetActiveEntry(bundle, AdventureThreadKind.Design);
+        if (entry is null || string.IsNullOrWhiteSpace(entry.ConversationId))
+        {
+            metadata.UtilitySessions.Remove(jobId);
+            return;
+        }
+
+        GenerationUtilitySession session;
+        if (entry.DesignJobState is { } jobState)
+        {
+            session = jobState.ToUtilitySession(entry.ConversationId);
+        }
+        else if (metadata.UtilitySessions.TryGetValue(jobId, out var existing)
+                 && string.Equals(existing.ConversationId, entry.ConversationId, StringComparison.OrdinalIgnoreCase))
+        {
+            session = existing;
+        }
+        else
+        {
+            session = new GenerationUtilitySession
+            {
+                ConversationId = entry.ConversationId,
+                Sequence = GenerationUtilitySessionService.GetNextSequence(metadata, jobId),
+                SeedVersion = GenerationUtilitySessionService.GetSeedVersion(bundle, jobId),
+                CreatedAt = DateTimeOffset.UtcNow,
+                LastUsedAt = DateTimeOffset.UtcNow,
+            };
+        }
+
+        metadata.UtilitySessions[jobId] = session;
+    }
+
     public static void ReleaseActiveThread(AdventureBundle bundle, AdventureThreadKind kind)
     {
         EnsureMigrated(bundle);
@@ -405,9 +494,7 @@ internal static class AdventureThreadRegistryService
                     metadata.ProjectLink.PlayConversationId = null;
                 break;
             case AdventureThreadKind.Design:
-                metadata.PinnedDesignTabKey = null;
-                metadata.PinnedDesignTabTitle = null;
-                metadata.PinnedDesignTabUrl = null;
+                ClearLegacyDesignBindingFields(metadata);
                 metadata.UtilitySessions?.Remove(GenerationJobId.DesignAdventure);
                 break;
         }
@@ -581,5 +668,28 @@ internal static class AdventureThreadRegistryService
 
         foreach (var entry in metadata.ThreadRegistry.Where(e => e.Kind == AdventureThreadKind.Design))
             MigrateDesignJobStateOnEntry(entry, metadata);
+    }
+
+    private static void PurgeDesignUtilitySessionForConversation(AdventureBundle bundle, string conversationId)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId))
+            return;
+
+        var jobId = GenerationJobId.DesignAdventure;
+        if (bundle.Metadata.UtilitySessions is not { } sessions
+            || !sessions.TryGetValue(jobId, out var session)
+            || !string.Equals(session.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var activeConversation = GetActiveConversationId(bundle, AdventureThreadKind.Design);
+        if (!string.IsNullOrWhiteSpace(activeConversation)
+            && string.Equals(activeConversation, conversationId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        sessions.Remove(jobId);
     }
 }

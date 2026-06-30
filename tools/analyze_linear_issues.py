@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analyze Linear issues against docs/linear-issue-reference.md canon."""
+"""Analyze Linear issues against docs/linear/linear-issue-reference.md canon."""
 import json
 import re
 import sys

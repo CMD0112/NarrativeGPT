@@ -4,40 +4,18 @@ using ChatGPTWrapper.Adventure.Stores;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-[Collection(DiagnosticsTestCollection.Name)]
-public sealed class AppDirectoriesTests : IDisposable
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class AppDirectoriesTests : IClassFixture<FileLockAwareFixture>
 {
-    private readonly string _tempRoot;
+    private readonly FileLockAwareFixture _fixture;
 
-    public AppDirectoriesTests()
-    {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "ChatGPTWrapper-AppDirs-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_tempRoot);
-        AppDirectories.TestRootOverride = _tempRoot;
-        AppDirectories.ResetStoresForTests();
-        AppDirectories.EnsureCreated();
-    }
-
-    public void Dispose()
-    {
-        AppDirectories.TestRootOverride = null;
-        AppDirectories.ResetStoresForTests();
-        try
-        {
-            if (Directory.Exists(_tempRoot))
-                Directory.Delete(_tempRoot, recursive: true);
-        }
-        catch
-        {
-            /* ignore */
-        }
-    }
+    public AppDirectoriesTests(FileLockAwareFixture fixture) => _fixture = fixture;
 
     [Fact]
     public void EnsureCreated_does_not_clear_locations_while_enumerating()
     {
         var adventureId = Guid.NewGuid();
-        var externalDir = Path.Combine(_tempRoot, "external-adventure");
+        var externalDir = Path.Combine(_fixture.Root, "external-adventure");
         Directory.CreateDirectory(externalDir);
         AdventureLocationStore.Set(adventureId, externalDir);
 
@@ -51,7 +29,7 @@ public sealed class AppDirectoriesTests : IDisposable
     public void ListIndex_survives_reentrant_EnsureCreated()
     {
         var adventureId = Guid.NewGuid();
-        var externalDir = Path.Combine(_tempRoot, "listed-adventure");
+        var externalDir = Path.Combine(_fixture.Root, "listed-adventure");
         Directory.CreateDirectory(externalDir);
         File.WriteAllText(
             Path.Combine(externalDir, "adventure.json"),

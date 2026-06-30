@@ -23,7 +23,7 @@
                    TextWrapping="Wrap"
                    Foreground="{StaticResource TextMutedBrush}"
                    Margin="0,0,0,8"
-                   Text="Review AI job results in one place — accept to apply, dismiss to discard. Each item stays linked to its review queue until you decide."/>
+                   Text="Review AI job results in one place — accept to apply, dismiss to discard. Dual-run jobs tag proposals by source (Local LLM vs ChatGPT) and appear under Dual-run compare for side-by-side raw output."/>
 
         <TextBlock x:Name="StatusLine"
                    Grid.Row="1"
@@ -66,10 +66,16 @@
                     BorderThickness="1"
                     Background="{StaticResource BgSurfaceBrush}"
                     Padding="4">
-                <ListBox x:Name="ItemList"
-                         BorderThickness="0"
-                         Background="Transparent"
-                         SelectionChanged="ItemList_SelectionChanged">
+                <DockPanel>
+                    <StackPanel x:Name="SourceFilterPanel" DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,4,4,8">
+                        <TextBlock Text="Source:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox x:Name="SourceFilterCombo" MinWidth="160"
+                                  SelectionChanged="SourceFilterCombo_SelectionChanged"/>
+                    </StackPanel>
+                    <ListBox x:Name="ItemList"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             SelectionChanged="ItemList_SelectionChanged">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel Margin="0,4">
@@ -86,6 +92,7 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+                </DockPanel>
             </Border>
 
             <Border Grid.Column="2"

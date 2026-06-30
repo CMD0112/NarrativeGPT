@@ -73,6 +73,16 @@ public partial class PlayPromptInjectionDialog
         var s = _bundle.Metadata.Settings;
         HideInlineUtilityCheck.IsChecked = s.HideInlineUtilityDuringPlay;
         ShowInlineUtilityTrafficCheck.IsChecked = s.ShowInlineUtilityTraffic;
+        LocalUtilityInferenceCheck.IsChecked = s.LocalUtilityInference.Enabled;
+        LocalUtilityInferenceDualRunCheck.IsChecked = s.LocalUtilityInference.DualRun;
+        LocalUtilityInferenceDualRunCheck.IsEnabled = s.LocalUtilityInference.Enabled;
+        var localDefaults = ChatGPTWrapper.Core.LocalInference.LocalInferenceOptions.FromEnvironment();
+        LocalInferenceBaseUrlBox.Text = string.IsNullOrWhiteSpace(s.LocalUtilityInference.BaseUrl)
+            ? localDefaults.BaseUrl
+            : s.LocalUtilityInference.BaseUrl;
+        LocalInferenceModelBox.Text = string.IsNullOrWhiteSpace(s.LocalUtilityInference.Model)
+            ? localDefaults.Model
+            : s.LocalUtilityInference.Model;
 
         if (UtilityInjectionModeCombo.Items.Count == 0)
         {
@@ -107,6 +117,9 @@ public partial class PlayPromptInjectionDialog
 
         MaxUtilitySectionsBox.Text = s.MaxUtilitySectionsPerSend.ToString();
         AutoSpillToWorkerCheck.IsChecked = s.AutoSpillToWorker;
+        UseEphemeralUtilityWorkerChatCheck.IsChecked = s.UseEphemeralUtilityWorkerChat;
+        ForceUtilityWorkerDomAttachCheck.IsChecked = s.ForceUtilityWorkerDomAttach;
+        ForceUtilityWorkerDomAttachCheck.IsEnabled = s.UseEphemeralUtilityWorkerChat;
         UpdateUtilityWorkerStatusLine();
     }
 
@@ -114,6 +127,14 @@ public partial class PlayPromptInjectionDialog
     {
         if (UtilityWorkerStatusLine is null)
             return;
+
+        if (UtilityEphemeralWorkerPolicy.IsEnabled(_bundle))
+        {
+            UtilityWorkerStatusLine.Text =
+                "Ephemeral utility worker: enabled — jobs use short-lived hidden chats; linked Project required. Worker tab still recommended.";
+            UtilityWorkerStatusLine.Foreground = (System.Windows.Media.Brush)FindResource("TextMutedBrush");
+            return;
+        }
 
         if (UtilityWorkerCapabilityGate.IsGreen(_bundle))
         {
@@ -150,12 +171,50 @@ public partial class PlayPromptInjectionDialog
             settings.MaxUtilitySectionsPerSend = Math.Clamp(maxSections, 0, 8);
 
         settings.AutoSpillToWorker = AutoSpillToWorkerCheck.IsChecked == true;
+        settings.UseEphemeralUtilityWorkerChat = UseEphemeralUtilityWorkerChatCheck.IsChecked == true;
+        settings.ForceUtilityWorkerDomAttach = settings.UseEphemeralUtilityWorkerChat
+            && ForceUtilityWorkerDomAttachCheck.IsChecked == true;
+
+        var localEnabled = LocalUtilityInferenceCheck.IsChecked == true;
+        settings.LocalUtilityInference.Enabled = localEnabled;
+        settings.LocalUtilityInference.DualRun = localEnabled
+            && LocalUtilityInferenceDualRunCheck.IsChecked == true;
+        var baseUrl = LocalInferenceBaseUrlBox.Text?.Trim() ?? "";
+        var model = LocalInferenceModelBox.Text?.Trim() ?? "";
+        var envDefaults = ChatGPTWrapper.Core.LocalInference.LocalInferenceOptions.FromEnvironment();
+        settings.LocalUtilityInference.BaseUrl = string.Equals(baseUrl, envDefaults.BaseUrl, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl;
+        settings.LocalUtilityInference.Model = string.Equals(model, envDefaults.Model, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : string.IsNullOrWhiteSpace(model) ? null : model;
     }
 
     private void SaveUtilityDeliverySettings() =>
         SaveUtilityDeliverySettingsTo(_bundle.Metadata.Settings);
 
-    private bool HasUtilityDeliveryChanges() => false;
+    private bool HasUtilityDeliveryChanges()
+    {
+        if (!IsLoaded)
+            return false;
+
+        var staging = new AdventureSettings();
+        SaveUtilityDeliverySettingsTo(staging);
+        var s = _bundle.Metadata.Settings;
+
+        return staging.HideInlineUtilityDuringPlay != s.HideInlineUtilityDuringPlay
+               || staging.ShowInlineUtilityTraffic != s.ShowInlineUtilityTraffic
+               || staging.PlayUtilityInjectionMode != s.PlayUtilityInjectionMode
+               || staging.UtilityExecutionPolicy != s.UtilityExecutionPolicy
+               || staging.MaxUtilitySectionsPerSend != s.MaxUtilitySectionsPerSend
+               || staging.AutoSpillToWorker != s.AutoSpillToWorker
+               || staging.UseEphemeralUtilityWorkerChat != s.UseEphemeralUtilityWorkerChat
+               || staging.ForceUtilityWorkerDomAttach != s.ForceUtilityWorkerDomAttach
+               || staging.LocalUtilityInference.Enabled != s.LocalUtilityInference.Enabled
+               || staging.LocalUtilityInference.DualRun != s.LocalUtilityInference.DualRun
+               || !string.Equals(staging.LocalUtilityInference.BaseUrl, s.LocalUtilityInference.BaseUrl, StringComparison.OrdinalIgnoreCase)
+               || !string.Equals(staging.LocalUtilityInference.Model, s.LocalUtilityInference.Model, StringComparison.OrdinalIgnoreCase);
+    }
 
     private void BindAutomationPanel()
     {
@@ -167,6 +226,7 @@ public partial class PlayPromptInjectionDialog
         SummaryIntervalBox.Text = s.SummaryUpdateIntervalTurns.ToString();
         AutoContinuityCheckCheck.IsChecked = s.AutoContinuityCheck;
         AutoSyncInstructionsCheck.IsChecked = s.AutoSyncProjectInstructions;
+        BindAutomationContextGrid();
 
         var hasProject = !string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId);
         AutoExtractEntitiesCheck.IsEnabled = hasProject;
@@ -202,7 +262,8 @@ public partial class PlayPromptInjectionDialog
             || AutoUpdateSummaryCheck.IsChecked != s.AutoUpdateSummary
             || AutoContinuityCheckCheck.IsChecked != s.AutoContinuityCheck
             || AutoSyncInstructionsCheck.IsChecked != s.AutoSyncProjectInstructions
-            || ReadSummaryIntervalTurns() != s.SummaryUpdateIntervalTurns;
+            || ReadSummaryIntervalTurns() != s.SummaryUpdateIntervalTurns
+            || HasAutomationContextChanges();
     }
 
     /// <summary>Writes the selected AI tool's in-progress edits into the working bundle.</summary>

@@ -24,7 +24,7 @@ internal static class InjectionPolicyGuard
         {
             if (packetText.Contains(marker, StringComparison.Ordinal))
                 throw new InvalidOperationException(
-                    $"Thin delegated packet must not inline '{marker}'. See docs/injection-policy-adr.md.");
+                    $"Thin delegated packet must not inline '{marker}'. See docs/adr/injection-policy-adr.md.");
         }
     }
 

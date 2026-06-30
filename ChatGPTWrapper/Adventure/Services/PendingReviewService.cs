@@ -36,7 +36,7 @@ internal static class PendingReviewService
 {
     public static PendingReviewCounts GetCounts(AdventureBundle bundle)
     {
-        var summary = SummaryReviewService.IsPending(bundle.Summary) ? 1 : 0;
+        var summary = SummaryReviewService.GetPendingCount(bundle.Summary);
 
         return new PendingReviewCounts
         {
@@ -100,7 +100,7 @@ internal static class PendingReviewService
         if (string.Equals(jobId, GenerationJobId.ProcessTurn, StringComparison.OrdinalIgnoreCase))
             return $"{jobId}: {proposalCount} {noun} queued — open Review all to accept or dismiss by category.";
 
-        return $"{jobId}: {proposalCount} {noun} queued — Review all opened.";
+        return $"{jobId}: {proposalCount} {noun} queued — use Review all… when ready.";
     }
 
     public static string FormatReviewHintForCategories(IReadOnlyList<ProposalReviewCategorySummary> categories)

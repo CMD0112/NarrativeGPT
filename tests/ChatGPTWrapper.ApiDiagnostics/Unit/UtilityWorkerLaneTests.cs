@@ -45,6 +45,51 @@ public sealed class UtilityOutboxServiceTests
 public sealed class UtilityJobRouterTests
 {
     [Fact]
+    public void Manual_routes_to_worker_when_ephemeral_enabled_without_green_caps()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle();
+        bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat = true;
+        bundle.Metadata.UtilityWorkerCapabilities = null;
+
+        var decision = UtilityJobRouter.Resolve(
+            bundle,
+            GenerationJobId.ProposeMemories,
+            UtilityJobTrigger.ManualCompanion);
+
+        Assert.Equal(UtilityRouteLane.WorkerOutbox, decision.Lane);
+    }
+
+    [Fact]
+    public void Manual_blocks_when_dual_run_and_ephemeral_without_linked_project()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
+        bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat = true;
+        bundle.Metadata.Settings.LocalUtilityInference = new LocalUtilityInferenceSettings
+        {
+            Enabled = true,
+            DualRun = true,
+        };
+
+        var decision = UtilityJobRouter.Resolve(
+            bundle,
+            GenerationJobId.ProposeMemories,
+            UtilityJobTrigger.ManualCompanion);
+
+        Assert.Equal(UtilityRouteLane.Blocked, decision.Lane);
+        Assert.Equal("dual_run_requires_utility_worker", decision.Reason);
+    }
+
+    [Fact]
+    public void ShouldSpillAutoToWorker_uses_ephemeral_lane_when_enabled()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle();
+        bundle.Metadata.Settings.AutoSpillToWorker = true;
+        bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat = true;
+
+        Assert.True(UtilityJobRouter.ShouldSpillAutoToWorker(bundle));
+    }
+
+    [Fact]
     public void Manual_routes_to_worker_when_capabilities_green()
     {
         var bundle = AdventureTestData.CreateLinkedBundle();
@@ -92,6 +137,26 @@ public sealed class UtilityJobRouterTests
 
         Assert.Equal(UtilityRouteLane.Blocked, decision.Lane);
         Assert.Equal("utility_worker_not_ready", decision.Reason);
+    }
+
+    [Fact]
+    public void Manual_blocks_when_dual_run_and_worker_red()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle();
+        bundle.Metadata.Settings.LocalUtilityInference = new LocalUtilityInferenceSettings
+        {
+            Enabled = true,
+            DualRun = true,
+        };
+        bundle.Metadata.Settings.PlayUtilityInjectionMode = PlayUtilityInjectionMode.InjectionFirst;
+
+        var decision = UtilityJobRouter.Resolve(
+            bundle,
+            GenerationJobId.ProposeMemories,
+            UtilityJobTrigger.ManualCompanion);
+
+        Assert.Equal(UtilityRouteLane.Blocked, decision.Lane);
+        Assert.Equal("dual_run_requires_utility_worker", decision.Reason);
     }
 
     [Fact]
@@ -156,9 +221,9 @@ public sealed class UtilityWorkerPingTests
     }
 
     [Fact]
-    public void IsGreen_accepts_dom_registration_without_api_push()
+    public void IsGreen_requires_full_api_transport()
     {
-        var caps = new UtilityWorkerCapabilities
+        var domOnly = new UtilityWorkerCapabilities
         {
             HostReady = true,
             ApiPullOk = true,
@@ -167,6 +232,16 @@ public sealed class UtilityWorkerPingTests
             DomRegistrationVerified = true,
         };
 
-        Assert.True(caps.IsGreen);
+        Assert.False(domOnly.IsGreen);
+
+        var apiReady = new UtilityWorkerCapabilities
+        {
+            HostReady = true,
+            ApiFetchOk = true,
+            ApiPushOk = true,
+            ApiPullOk = true,
+        };
+
+        Assert.True(apiReady.IsGreen);
     }
 }

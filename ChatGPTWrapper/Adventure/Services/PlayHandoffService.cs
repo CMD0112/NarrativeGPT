@@ -144,7 +144,10 @@ public static class PlayHandoffService
             PriorPlayThreadEntryId = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)?.Id,
             AcceptedTurnCount = transcriptTurns.Count,
             AdventureTurnOrdinal = adventureTurnOrdinal,
-            ThreadMessageCount = ThreadMetadataService.ActiveMessages(bundle).Count,
+            ThreadMessageCount = ThreadConversationLogReader.HasActivePlayLog(bundle)
+                ? ThreadConversationLogService.GetActiveBranch(bundle.Metadata.Id,
+                    ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play)!.Id).Count
+                : bundle.ThreadMetadata.Messages.Count(m => !m.SupersededByEdit),
             EntityFingerprint = ComputeEntityFingerprint(bundle),
             ManifestFingerprint = ComputeManifestFingerprint(bundle),
             RollingSummary = bundle.Summary.RollingSummary ?? "",

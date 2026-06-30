@@ -432,6 +432,61 @@ public sealed class ChatGptConversationSendService
         };
     }
 
+    public async Task<ConversationHideResult> HideConversationAsync(
+        CoreWebView2 core,
+        string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId))
+            return new ConversationHideResult { Success = false, Error = "missing_conversation_id" };
+
+        conversationId = conversationId.Trim();
+        var skipReadyWait = _bridge.IsWarm(core);
+
+        ApiBridgeMessage msg;
+        try
+        {
+            msg = await _bridge.SendAsync(
+                core,
+                new
+                {
+                    action = "apiRequest",
+                    method = "PATCH",
+                    path = ChatGptApiEndpoints.ConversationHide(conversationId),
+                    body = BuildHideConversationBody(),
+                },
+                timeoutMs: 15_000,
+                cancellationToken: cancellationToken,
+                skipReadyWait: skipReadyWait);
+        }
+        catch (Exception ex)
+        {
+            return new ConversationHideResult
+            {
+                Success = false,
+                Error = ex.Message,
+                ConversationId = conversationId,
+            };
+        }
+
+        if (!msg.Ok || msg.Status is < 200 or >= 300)
+        {
+            return new ConversationHideResult
+            {
+                Success = false,
+                Error = msg.Error ?? $"http_{msg.Status}",
+                ConversationId = conversationId,
+            };
+        }
+
+        ConversationParentCache.Invalidate(conversationId);
+        ConversationConduitCache.Invalidate(conversationId);
+        return new ConversationHideResult { Success = true, ConversationId = conversationId };
+    }
+
+    internal static object BuildHideConversationBody() =>
+        new Dictionary<string, object?> { ["is_visible"] = false };
+
     public async Task<AssistantCaptureResult> CaptureAssistantViaApiAsync(
         CoreWebView2 core,
         string conversationId,
@@ -1143,6 +1198,15 @@ public sealed class ChatGptConversationSendService
 
     private static ConversationSendResult Fail(string error) =>
         new() { Success = false, Error = error };
+}
+
+public sealed class ConversationHideResult
+{
+    public bool Success { get; init; }
+
+    public string? Error { get; init; }
+
+    public string? ConversationId { get; init; }
 }
 
 public sealed class AssistantCaptureResult

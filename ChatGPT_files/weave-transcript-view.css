@@ -37,12 +37,13 @@ html[data-cgw-transcript-mode="weave"] .cgw-weave-body .cgw-continuous-prose {
 
 html[data-cgw-transcript-mode="weave"] .cgw-weave-embed {
   max-width: var(--cgw-weave-content-max-width, var(--cgw-cv-content-max-width, 42rem));
-  margin: 0 auto;
-  margin-block: var(--cgw-weave-embed-margin-block, 0);
   width: 100%;
+  margin-inline: auto;
+  margin-block: var(--cgw-weave-embed-margin-block, 0.75rem);
   box-sizing: border-box;
   padding: 0.65rem 1rem;
   border: none;
+  text-align: left;
   font-size: var(--cgw-weave-embed-font-size, var(--cgw-cv-user-font-size, 0.98rem));
   line-height: var(--cgw-weave-embed-line-height, var(--cgw-cv-user-line-height, 1.55));
   letter-spacing: var(
@@ -59,6 +60,13 @@ html[data-cgw-transcript-mode="weave"] .cgw-weave-embed--blockquote {
   border-left: var(--cgw-weave-embed-accent-width, 3px) solid
     var(--cgw-weave-embed-accent, var(--cgw-cv-user-accent, #6b8afd));
   padding-left: calc(1rem + var(--cgw-weave-embed-accent-center-adjust, 0px));
+  background: color-mix(
+    in srgb,
+    var(--cgw-weave-embed-bg, var(--cgw-cv-user-bg, transparent))
+      calc(max(var(--cgw-cv-user-bg-opacity, 0), 8) * 1%),
+    transparent
+  );
+  border-radius: 0 6px 6px 0;
 }
 
 html[data-cgw-transcript-mode="weave"] .cgw-weave-embed--aside {

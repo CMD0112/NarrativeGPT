@@ -117,7 +117,7 @@
   },
   {
     "id": "CMD-117",
-    "description": "## Parent\n\n[CMD-111](<https://linear.app/cmd0112/issue/CMD-111>) \u2014 step **6 of 6**\n\n## Acceptance criteria\n\n- [X] Export \u2192 import reproduces theme settings (JSON round-trip in dialog)\n- [X] Invalid JSON shows friendly error; does not partially apply\n- [X] User guide section updated (`docs/user-guide.md` Appearance & theme + CSS layering)\n- [X] `docs/ui-components.md` Themes section documents runtime vs static tokens\n- [X] Open styles folder / `u\u2026 (truncated, use `get_issue` for full description)\n\n## Test plan\n1. Open Preferences \u2192 Appearance & Themes.\n2. Apply built-in and custom theme; verify WPF chrome and WebView CV styling.\n3. Restart app; confirm theme persists and contrast remains readable.\n"
+    "description": "## Parent\n\n[CMD-111](<https://linear.app/cmd0112/issue/CMD-111>) \u2014 step **6 of 6**\n\n## Acceptance criteria\n\n- [X] Export \u2192 import reproduces theme settings (JSON round-trip in dialog)\n- [X] Invalid JSON shows friendly error; does not partially apply\n- [X] User guide section updated (`docs/user/user-guide.md` Appearance & theme + CSS layering)\n- [X] `docs/reference/ui-components.md` Themes section documents runtime vs static tokens\n- [X] Open styles folder / `u\u2026 (truncated, use `get_issue` for full description)\n\n## Test plan\n1. Open Preferences \u2192 Appearance & Themes.\n2. Apply built-in and custom theme; verify WPF chrome and WebView CV styling.\n3. Restart app; confirm theme persists and contrast remains readable.\n"
   },
   {
     "id": "CMD-118",
@@ -326,7 +326,7 @@
   },
   {
     "id": "CMD-22",
-    "description": "## Context\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n## Acceptance criteria\n- [ ] Deliverables in description below are complete and verified\n\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n**Parent:** <issue id=\"b6ef647e-59bc-4f8e-a8ec-537ac66dc5db\" href=\"https://linear.app/cmd0112/issue/CMD-13/adventure-design-instructions-customizability\">CMD-13</issue> (instruction contract model)\n\n**Docs:** `docs/instruction-contract-guide.md`"
+    "description": "## Context\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n## Acceptance criteria\n- [ ] Deliverables in description below are complete and verified\n\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n**Parent:** <issue id=\"b6ef647e-59bc-4f8e-a8ec-537ac66dc5db\" href=\"https://linear.app/cmd0112/issue/CMD-13/adventure-design-instructions-customizability\">CMD-13</issue> (instruction contract model)\n\n**Docs:** `docs/user/instruction-contract-guide.md`"
   },
   {
     "id": "CMD-29",

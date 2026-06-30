@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Input;
 using ChatGPTWrapper.Shell;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.Theme;
@@ -39,6 +40,7 @@ public partial class PreferencesHubDialog : ShellDialogWindow
     private void BindContext()
     {
         TranscriptModeLine.Text = DescribeTranscriptMode(_chrome.TranscriptViewMode);
+        WrapperSettingsRow.RunCommand = new RelayCommand(_ => WrapperSettings_Click(this, new RoutedEventArgs()));
 
         var inDesign = _getIsDesignMode();
 
@@ -138,6 +140,24 @@ public partial class PreferencesHubDialog : ShellDialogWindow
         };
         dialog.OpenThreadsHub = _openThreadsHub;
         dialog.ResolveThreadUserTurnCountAsync = _resolveThreadUserTurnCountAsync;
+        if (Owner is MainWindow main)
+            main.WireStandalonePlaySettingsDialog(dialog, id);
         dialog.ShowDialog();
+    }
+
+    private void LocalInferenceLab_Click(object sender, RoutedEventArgs e) =>
+        LocalInferenceLabDialog.ShowForOwner(this);
+
+    private sealed class RelayCommand(Action<object?> execute) : ICommand
+    {
+        public event EventHandler? CanExecuteChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public bool CanExecute(object? parameter) => true;
+
+        public void Execute(object? parameter) => execute(parameter);
     }
 }

@@ -21,6 +21,8 @@ public partial class ProposalReviewHubDialog : ShellDialogWindow
 
     private bool _refreshing;
 
+    private string _inferenceSourceFilter = "all";
+
     public ProposalReviewHubDialog(AdventureBundle bundle, ProposalReviewCategory? initialCategory = null)
     {
         _adventureId = bundle.Metadata.Id;
@@ -45,6 +47,7 @@ public partial class ProposalReviewHubDialog : ShellDialogWindow
 
             var categories = ProposalReviewService.ListCategories(_bundle);
             CategoryList.ItemsSource = categories;
+            BindSourceFilterCombo();
             UpdateStatusLine(categories);
 
             if (categories.Count == 0)
@@ -67,6 +70,73 @@ public partial class ProposalReviewHubDialog : ShellDialogWindow
         {
             _refreshing = false;
         }
+
+        if (CategoryList.SelectedItem is ProposalReviewCategorySummary selected)
+            ShowCategoryItems(selected);
+    }
+
+    private void BindSourceFilterCombo()
+    {
+        if (SourceFilterCombo.Items.Count == 0)
+        {
+            SourceFilterCombo.ItemsSource = ProposalReviewService.ListInferenceSourceFilters()
+                .Select(f => new SourceFilterItem(f, ProposalReviewService.FormatInferenceSourceFilterLabel(f)))
+                .ToList();
+            SourceFilterCombo.DisplayMemberPath = nameof(SourceFilterItem.Label);
+            SourceFilterCombo.SelectedValuePath = nameof(SourceFilterItem.Id);
+        }
+
+        SourceFilterCombo.SelectedValue = _inferenceSourceFilter;
+        SourceFilterPanel.Visibility = GetSelectedCategory() == ProposalReviewCategory.DualRunCompare
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
+    private void SourceFilterCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_refreshing)
+            return;
+
+        var filter = ReadSourceFilterFromCombo();
+        if (string.IsNullOrWhiteSpace(filter))
+            return;
+
+        _inferenceSourceFilter = filter;
+        if (CategoryList.SelectedItem is ProposalReviewCategorySummary category)
+            ShowCategoryItems(category);
+    }
+
+    private string? ReadSourceFilterFromCombo()
+    {
+        if (SourceFilterCombo.SelectedValue is string value)
+            return value;
+
+        if (SourceFilterCombo.SelectedItem is SourceFilterItem item)
+            return item.Id;
+
+        return _inferenceSourceFilter;
+    }
+
+    private void ShowCategoryItems(ProposalReviewCategorySummary category)
+    {
+        if (_bundle is null)
+            return;
+
+        SourceFilterPanel.Visibility = category.Category == ProposalReviewCategory.DualRunCompare
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
+        var items = category.Category == ProposalReviewCategory.DualRunCompare
+            ? ProposalReviewService.ListItems(_bundle, category.Category)
+            : ProposalReviewService.ListItems(_bundle, category.Category, ReadSourceFilterFromCombo() ?? _inferenceSourceFilter);
+        ItemList.ItemsSource = items;
+        if (items.Count > 0)
+            ItemList.SelectedIndex = 0;
+        else
+        {
+            ClearDetail();
+            UpdateActionButtons(category.Category, null);
+        }
     }
 
     private void UpdateStatusLine(IReadOnlyList<ProposalReviewCategorySummary> categories)
@@ -88,15 +158,7 @@ public partial class ProposalReviewHubDialog : ShellDialogWindow
         if (_refreshing || _bundle is null || CategoryList.SelectedItem is not ProposalReviewCategorySummary category)
             return;
 
-        var items = ProposalReviewService.ListItems(_bundle, category.Category);
-        ItemList.ItemsSource = items;
-        if (items.Count > 0)
-            ItemList.SelectedIndex = 0;
-        else
-        {
-            ClearDetail();
-            UpdateActionButtons(category.Category, null);
-        }
+        ShowCategoryItems(category);
     }
 
     private void ItemList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -126,18 +188,18 @@ public partial class ProposalReviewHubDialog : ShellDialogWindow
             AcceptButton.IsEnabled = false;
             DismissButton.IsEnabled = false;
             AcceptAllButton.IsEnabled = category is not null
-                                        && ProposalReviewService.ListItems(_bundle!, category.Value).Any(i => i.CanAccept);
+                                        && ListItemsForCategory(category.Value).Any(i => i.CanAccept);
             DismissAllButton.IsEnabled = category is not null
-                                         && ProposalReviewService.ListItems(_bundle!, category.Value).Any(i => i.CanDismiss);
+                                         && ListItemsForCategory(category.Value).Any(i => i.CanDismiss);
         }
         else
         {
             AcceptButton.IsEnabled = item.CanAccept;
             DismissButton.IsEnabled = item.CanDismiss;
             AcceptAllButton.IsEnabled = category is not null
-                                        && ProposalReviewService.ListItems(_bundle!, category.Value).Any(i => i.CanAccept);
+                                        && ListItemsForCategory(category.Value).Any(i => i.CanAccept);
             DismissAllButton.IsEnabled = category is not null
-                                         && ProposalReviewService.ListItems(_bundle!, category.Value).Any(i => i.CanDismiss);
+                                         && ListItemsForCategory(category.Value).Any(i => i.CanDismiss);
         }
 
         DetailedReviewButton.Visibility = category == ProposalReviewCategory.JsonImport
@@ -259,5 +321,22 @@ public partial class ProposalReviewHubDialog : ShellDialogWindow
 
     private void NotifyChanged() => ItemsChanged?.Invoke(this, EventArgs.Empty);
 
+    private IReadOnlyList<ProposalReviewListItem> ListItemsForCategory(ProposalReviewCategory category)
+    {
+        var filter = ReadSourceFilterFromCombo() ?? _inferenceSourceFilter;
+        return _bundle is null
+            ? []
+            : category == ProposalReviewCategory.DualRunCompare
+                ? ProposalReviewService.ListItems(_bundle, category)
+                : ProposalReviewService.ListItems(_bundle, category, filter);
+    }
+
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
+
+    private sealed class SourceFilterItem(string id, string label)
+    {
+        public string Id { get; } = id;
+
+        public string Label { get; } = label;
+    }
 }

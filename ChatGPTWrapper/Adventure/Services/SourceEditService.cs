@@ -6,7 +6,7 @@ namespace ChatGPTWrapper.Adventure.Services;
 
 internal static class SourceEditService
 {
-    public static string BuildSourceEditPrompt(AdventureBundle bundle, string userPrompt)
+    public static string BuildSourceEditPrompt(AdventureBundle bundle, string userPrompt, bool forLocalInference = false)
     {
         var sourcesDir = ProjectSourceExportService.SourcesDirectory(bundle);
         var excerpts = new List<string>();
@@ -30,7 +30,9 @@ internal static class SourceEditService
         }
 
         var instructions = InstructionSourcesPolicy.BuildStaticInstructionsBody(bundle);
-        var formatReference = CanonFormatReferenceService.BuildPromptBlock(bundle);
+        var formatReference = forLocalInference
+            ? ""
+            : CanonFormatReferenceService.BuildPromptBlock(bundle);
         var formatHints = ProjectSourceFileTemplates.BuildInlineFormatsSection(excerptPaths);
         var formatsBlock = string.IsNullOrWhiteSpace(formatHints)
             ? ""

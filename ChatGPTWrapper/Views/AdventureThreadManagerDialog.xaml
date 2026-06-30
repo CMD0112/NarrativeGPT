@@ -21,7 +21,7 @@
             <TextBlock TextWrapping="Wrap"
                        Margin="0,0,0,12"
                        Foreground="{StaticResource TextMutedBrush}"
-                       Text="One active pin per thread kind. Switch active to change which conversation jobs and navigation use. Archive retires a slot without deleting local log data."/>
+                       Text="One active pin per thread kind. Create thread slots, pin browser tabs to a selected row, and switch active to change which conversation jobs and navigation use. Archive retires a slot without deleting local log data; Remove deletes archived rows from this list."/>
             <Border Style="{StaticResource ShellCardStyle}" Padding="12" Margin="0,0,0,10">
                 <DockPanel LastChildFill="True">
                     <Button x:Name="ChangeProjectButton"

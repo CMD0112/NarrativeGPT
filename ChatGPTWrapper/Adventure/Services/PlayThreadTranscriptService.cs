@@ -196,20 +196,24 @@ internal sealed class PlayThreadTranscriptService(
     {
         var normalized = UtilityStoryContextSettingsNormalizer.Normalize(settings);
 
-        var metadataPairs = ThreadMetadataService.ToTranscriptPairs(bundle);
-        if (metadataPairs.Count > 0)
+        if (ThreadConversationLogReader.HasActivePlayLog(bundle))
         {
-            var filteredMeta = TranscriptFilterService.ApplyLookbackAndFilter(
-                metadataPairs,
-                normalized,
-                bundle,
-                isLiveSource: false);
-
-            return new StoryContextCaptureResult
+            var entry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play)!;
+            var threadPairs = ThreadConversationLogService.ToTranscriptPairs(bundle.Metadata.Id, entry.Id);
+            if (threadPairs.Count > 0)
             {
-                SourceUsed = StoryContextSourceUsed.LocalLog,
-                TurnPairs = filteredMeta,
-            };
+                var filteredThread = TranscriptFilterService.ApplyLookbackAndFilter(
+                    threadPairs,
+                    normalized,
+                    bundle,
+                    isLiveSource: false);
+
+                return new StoryContextCaptureResult
+                {
+                    SourceUsed = StoryContextSourceUsed.LocalLog,
+                    TurnPairs = filteredThread,
+                };
+            }
         }
 
         var turns = bundle.Log.Turns

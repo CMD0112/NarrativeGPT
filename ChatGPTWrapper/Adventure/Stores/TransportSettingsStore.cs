@@ -18,10 +18,31 @@ internal static class TransportSettingsStore
         target.MaxUtilitySectionsPerSend = source.MaxUtilitySectionsPerSend;
         target.UtilityExecutionPolicy = source.UtilityExecutionPolicy;
         target.AutoSpillToWorker = source.AutoSpillToWorker;
+        target.UseEphemeralUtilityWorkerChat = source.UseEphemeralUtilityWorkerChat;
+        target.ForceUtilityWorkerDomAttach = source.ForceUtilityWorkerDomAttach;
+
+        target.LocalUtilityInference ??= new LocalUtilityInferenceSettings();
+        var sourceLocal = source.LocalUtilityInference ?? new LocalUtilityInferenceSettings();
+        target.LocalUtilityInference.Enabled = sourceLocal.Enabled;
+        target.LocalUtilityInference.DualRun = sourceLocal.DualRun;
+        target.LocalUtilityInference.BaseUrl = sourceLocal.BaseUrl;
+        target.LocalUtilityInference.Model = sourceLocal.Model;
     }
 
     public static void ApplyToBundle(AdventureBundle target, AdventureSettings source) =>
         ApplyToSettings(target.Metadata.Settings, source);
+
+    /// <summary>Refreshes transport / local-inference fields from disk onto a live bundle.</summary>
+    public static void SyncFromDisk(AdventureBundle bundle)
+    {
+        ArgumentNullException.ThrowIfNull(bundle);
+
+        var meta = AdventureStore.ReadMetadataFromDisk(bundle.Metadata.Id);
+        if (meta?.Settings is null)
+            return;
+
+        ApplyToBundle(bundle, meta.Settings);
+    }
 
     /// <summary>Persists transport fields from the working bundle to disk.</summary>
     public static void Commit(AdventureBundle workingCopy, string caller = nameof(TransportSettingsStore))

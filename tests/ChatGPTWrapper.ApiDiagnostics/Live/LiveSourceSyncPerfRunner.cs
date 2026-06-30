@@ -400,15 +400,15 @@ public sealed class LiveSourceSyncPerfRunner
                 await RunStep(report, "upload", "live_upload_probe_file", async () =>
                 {
                     var content = System.Text.Encoding.UTF8.GetBytes("# CGW source sync perf probe\n");
-                    var uploaded = await api.UploadProjectFileBytesAsync(
+                    var uploaded = await api.PublishProjectSourceFileAsync(
                         core,
                         gizmoId,
                         probeName,
                         content,
                         "text/markdown",
                         cancellationToken: cancellationToken);
-                    probeFileId = uploaded?.FileId;
-                    return $"fileId={probeFileId ?? "(none)"} name={probeName}";
+                    probeFileId = uploaded.File.FileId;
+                    return $"fileId={probeFileId ?? "(none)"} name={probeName} attachFallback={uploaded.UsedAttachFallback}";
                 });
 
                 if (!string.IsNullOrWhiteSpace(probeFileId))

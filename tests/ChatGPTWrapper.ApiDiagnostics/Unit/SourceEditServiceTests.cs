@@ -4,8 +4,8 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class SourceEditServiceTests
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class SourceEditServiceTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void TryParseImportRemovalContent_parses_npc_removal_line()

@@ -404,6 +404,7 @@
     if (pendingAttachments.length) {
       return allAttachmentsReady() && (!!text || pendingAttachments.length > 0);
     }
+    if (!text && playSurfaceAllowsEmptySend()) return true;
     return !!text;
   }
 
@@ -1152,6 +1153,7 @@
       '<div class="cgw-compose-wrap">' +
       '<div class="cgw-compose-shell" data-composer-surface="true">' +
       '<div class="cgw-compose-attachments" hidden></div>' +
+      '<div class="cgw-compose-quick-actions" hidden></div>' +
       '<div class="cgw-compose-main">' +
       '<button type="button" class="cgw-compose-attach" aria-label="Attach files" title="Attach files">' +
       attachIconSvg() +
@@ -1456,33 +1458,119 @@
   globalThis.__cgwSetWrapperComposer = localSetWrapperComposer;
   globalThis.__cgwSetNativeComposePassthrough = localSetNativeComposePassthrough;
 
+  function playSurfaceMode(actionKey) {
+    var settings = globalThis.__cgwPlaySurfaceActions;
+    if (!settings || typeof settings !== "object") return "";
+    return String(settings[actionKey] || "").toLowerCase();
+  }
+
+  function playSurfaceAllowsEmptySend() {
+    var settings = globalThis.__cgwPlaySurfaceActions;
+    if (!settings || typeof settings !== "object") return false;
+    return Object.keys(settings).some(function (key) {
+      return playSurfaceMode(key) === "injectedonly";
+    });
+  }
+
+  function collectPlaySurfaceSearchRoots() {
+    var roots = [];
+    var wrapper = document.getElementById("cgw-play-composer-root");
+    var offscreen = document.getElementById("cgw-native-composer-offscreen");
+    var composer = document.querySelector('[data-testid="composer"]');
+    if (wrapper) roots.push(wrapper);
+    if (offscreen) roots.push(offscreen);
+    if (composer && roots.indexOf(composer) < 0) roots.push(composer);
+    if (!roots.length && composer) roots.push(composer);
+    return roots;
+  }
+
+  function matchPlaySurfaceButton(btn, needle) {
+    if (!btn || (btn.classList && btn.classList.contains("cgw-compose-send"))) return false;
+    if (btn.classList && btn.classList.contains("cgw-compose-quick-action")) return false;
+    var label = (
+      (btn.getAttribute("aria-label") || "") +
+      " " +
+      (btn.textContent || "")
+    )
+      .trim()
+      .toLowerCase();
+    return label.indexOf(needle) >= 0;
+  }
+
+  function triggerQuickAction(actionKey) {
+    var root = getMounted();
+    if (!root) return;
+    var input = root.querySelector(".cgw-compose-input");
+    var sendBtn = root.querySelector(".cgw-compose-send");
+    if (!input || !sendBtn) return;
+    var state = globalThis.__cgwPlayComposeState || {};
+    if (state.busy || sendInFlight || sendBtn.disabled) return;
+    if (actionKey === "continue") {
+      input.value = "";
+      resizeInput(input);
+      postToHost({ type: "cgwComposeInput", text: "" });
+      updateSendEnabled(input, sendBtn);
+      if (!canSendNow(input)) return;
+      triggerSend(input, sendBtn);
+    }
+  }
+
+  function syncWrapperQuickActions() {
+    var root = document.getElementById("cgw-play-composer-root");
+    if (!root || !globalThis.__cgwWrapperComposer) return;
+    var bar = root.querySelector(".cgw-compose-quick-actions");
+    if (!bar) return;
+    bar.innerHTML = "";
+
+    var continueMode = playSurfaceMode("continue");
+    if (continueMode === "hidden" || continueMode === "injectedonly") {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cgw-compose-quick-action";
+      btn.setAttribute("data-cgw-quick-action", "continue");
+      btn.setAttribute("aria-label", "Continue scene");
+      btn.textContent = "Continue";
+      btn.title =
+        continueMode === "injectedonly"
+          ? "Advance the scene (injects continue action on send)"
+          : "Continue scene";
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        triggerQuickAction("continue");
+      });
+      bar.appendChild(btn);
+      bar.hidden = false;
+    } else {
+      bar.hidden = true;
+    }
+
+    var input = root.querySelector(".cgw-compose-input");
+    var sendBtn = root.querySelector(".cgw-compose-send");
+    if (input && sendBtn) updateSendEnabled(input, sendBtn);
+  }
+
   function applyPlaySurfaceActions() {
     var settings = globalThis.__cgwPlaySurfaceActions;
     if (!settings || typeof settings !== "object") return;
-    var root =
-      document.getElementById("cgw-play-composer-root") ||
-      document.querySelector('[data-testid="composer"]');
-    if (!root) return;
+    var roots = collectPlaySurfaceSearchRoots();
+    if (!roots.length) return;
+
     Object.keys(settings).forEach(function (actionKey) {
-      var mode = String(settings[actionKey] || "").toLowerCase();
+      var mode = playSurfaceMode(actionKey);
       if (mode !== "hidden" && mode !== "injectedonly") return;
       var needle = actionKey.toLowerCase();
-      root.querySelectorAll("button, [role='button']").forEach(function (btn) {
-        if (btn.classList && btn.classList.contains("cgw-compose-send")) return;
-        var label = (
-          (btn.getAttribute("aria-label") || "") +
-          " " +
-          (btn.textContent || "")
-        )
-          .trim()
-          .toLowerCase();
-        if (label.indexOf(needle) >= 0) {
-          btn.style.display = "none";
-          btn.setAttribute("data-cgw-play-action-hidden", mode);
-        }
+      roots.forEach(function (root) {
+        root.querySelectorAll("button, [role='button']").forEach(function (btn) {
+          if (matchPlaySurfaceButton(btn, needle)) {
+            btn.style.display = "none";
+            btn.setAttribute("data-cgw-play-action-hidden", mode);
+          }
+        });
       });
     });
-    root.querySelectorAll("[data-cgw-play-action-hidden]").forEach(function (btn) {
+
+    document.querySelectorAll("[data-cgw-play-action-hidden]").forEach(function (btn) {
+      if (btn.classList && btn.classList.contains("cgw-compose-quick-action")) return;
       var label = (
         (btn.getAttribute("aria-label") || "") +
         " " +
@@ -1491,7 +1579,7 @@
         .trim()
         .toLowerCase();
       var stillHidden = Object.keys(settings).some(function (actionKey) {
-        var mode = String(settings[actionKey] || "").toLowerCase();
+        var mode = playSurfaceMode(actionKey);
         if (mode !== "hidden" && mode !== "injectedonly") return false;
         return label.indexOf(actionKey.toLowerCase()) >= 0;
       });
@@ -1500,6 +1588,8 @@
         btn.removeAttribute("data-cgw-play-action-hidden");
       }
     });
+
+    syncWrapperQuickActions();
   }
 
   function wrapperInputConsumesWheel(target, e) {

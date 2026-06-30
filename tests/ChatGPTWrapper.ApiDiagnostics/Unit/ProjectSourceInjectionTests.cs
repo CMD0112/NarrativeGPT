@@ -5,8 +5,8 @@ using ChatGPTWrapper.Adventure.Services;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class ProjectSourceInjectionTests
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class ProjectSourceInjectionTests : IClassFixture<FileLockAwareFixture>
 {
     private static AdventureBundle CreateLinkedBundle(
         bool published = true,

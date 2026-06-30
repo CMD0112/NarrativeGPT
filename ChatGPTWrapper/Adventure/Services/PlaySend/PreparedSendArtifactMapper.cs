@@ -9,6 +9,15 @@ internal static class PreparedSendArtifactMapper
             Hash = artifact.Hash,
             WasTrimmed = artifact.WasTrimmed,
             UserText = artifact.PlayerLine,
-            ContextText = "",
+            ContextText = artifact.ContextText,
+            Profile = artifact.Profile,
+            DelegationMode = artifact.DelegationMode,
+            AttachmentSendMode = artifact.AttachmentSendMode,
+            Sections = artifact.Sections.ToList(),
+            Trimmed = artifact.Trimmed.ToList(),
+            HasUtilityInjection = artifact.HasUtilityInjection,
+            UtilitySectionCount = artifact.UtilitySectionCount,
+            BaselinePointers = artifact.BaselinePointers.ToList(),
+            ThisTurnPointers = artifact.ThisTurnPointers.ToList(),
         };
 }

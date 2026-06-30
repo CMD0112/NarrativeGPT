@@ -311,4 +311,8 @@ public sealed class EntityReviewItem
     public string ProposedChange { get; set; } = "";
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public string? InferenceSource { get; set; }
+
+    public Guid? UtilityRunId { get; set; }
 }

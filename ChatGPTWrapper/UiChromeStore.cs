@@ -133,6 +133,8 @@ public sealed class UiChromeSettings
     public List<string> RecentPickerColors { get; set; } = [];
 
     public Dictionary<string, ShellShortcutBinding> ShellShortcutOverrides { get; set; } = new();
+
+    public PlaySurfaceChromeDefaults PlaySurface { get; set; } = new();
 }
 
 internal static class UiChromeStore
@@ -171,6 +173,7 @@ internal static class UiChromeStore
             settings.Theme = ThemeApplicationService.NormalizeSettings(settings.Theme);
             settings.ShellShortcutOverrides ??= new Dictionary<string, ShellShortcutBinding>();
             ShellShortcutCatalog.NormalizeOverrides(settings.ShellShortcutOverrides);
+            settings.PlaySurface ??= new PlaySurfaceChromeDefaults();
             return settings;
         }
         catch

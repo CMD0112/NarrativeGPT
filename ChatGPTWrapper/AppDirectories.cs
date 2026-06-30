@@ -27,6 +27,8 @@ internal static class AppDirectories
 
     public static string WebView2UserDataDirectory => Path.Combine(Root, "WebView2UserData");
 
+    public static string WebView2AttachWorkerUserDataDirectory => Path.Combine(Root, "WebView2UserData-AttachWorker");
+
     public static string DefaultAdventuresDirectory => Path.Combine(Root, "adventures");
 
     public static string AdventuresDirectory =>
@@ -68,6 +70,7 @@ internal static class AppDirectories
         Directory.CreateDirectory(Root);
         Directory.CreateDirectory(StylesDirectory);
         Directory.CreateDirectory(WebView2UserDataDirectory);
+        Directory.CreateDirectory(WebView2AttachWorkerUserDataDirectory);
         Directory.CreateDirectory(AdventuresDirectory);
         Directory.CreateDirectory(LibrariesDirectory);
         Directory.CreateDirectory(BackupsDirectory);

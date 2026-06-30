@@ -5,9 +5,9 @@ using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
+[Collection(FileLockAwareCollectionNames.Name)]
 [Trait("Category", "Unit")]
-public sealed class ThreadTabRestoreServiceTests
+public sealed class ThreadTabRestoreServiceTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void PlayAndDesignTargetsConflict_true_when_conversation_ids_differ()

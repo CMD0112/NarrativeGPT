@@ -7,7 +7,7 @@ namespace ChatGPTWrapper.Adventure.Services;
 
 /// <summary>
 /// Delegation rules for Project custom instructions vs source files.
-/// See docs/instruction-sources-paradigm.md.
+/// See docs/user/instruction-sources-paradigm.md.
 /// </summary>
 internal static class InstructionSourcesPolicy
 {
