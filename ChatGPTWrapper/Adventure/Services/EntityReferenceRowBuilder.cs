@@ -34,7 +34,10 @@ public static class EntityReferenceRowBuilder
     {
         var rows = BuildRowsCore(bundle, filter, layout);
         foreach (var row in rows)
+        {
             ApplySyncBadge(bundle, row, filter);
+            ApplyStateDivergenceBadge(bundle, row, filter);
+        }
         return rows;
     }
 
@@ -261,5 +264,17 @@ public static class EntityReferenceRowBuilder
         row.SyncBadgeText = EntitySyncStatusService.BadgeText(status);
         row.SyncBadgeTooltip = EntitySyncStatusService.BadgeTooltip(status);
         row.SyncBadgeVisibility = Visibility.Visible;
+    }
+
+    private static void ApplyStateDivergenceBadge(AdventureBundle bundle, EntityReferenceRow row, string filter)
+    {
+        var kindId = EntityInternalStateService.ResolveKindId(row.Kind, filter);
+        var divergences = EntityCanonStateOverlapService.DetectDivergences(bundle, kindId, row.Id);
+        if (divergences.Count == 0)
+            return;
+
+        row.StateDivergenceBadgeText = "Δ canon";
+        row.StateDivergenceBadgeTooltip = string.Join(Environment.NewLine, divergences.Select(d => d.Message));
+        row.StateDivergenceBadgeVisibility = Visibility.Visible;
     }
 }

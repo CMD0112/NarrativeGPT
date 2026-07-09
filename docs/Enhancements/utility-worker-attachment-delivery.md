@@ -1,6 +1,8 @@
 # Utility worker attachment delivery
 
-Companion to [CMD-411](https://linear.app/cmd0112/issue/CMD-411) — dual-lane reference file delivery for manual utility worker jobs.
+Companion to [CMD-411](https://linear.app/cmd0112/issue/CMD-411) — reference file delivery for **manual** utility worker jobs (user-selected files, binary refs).
+
+> **Programmatic utility file loops** (publish → pointer → scrape → delete) use [utility-source-file-io.md](utility-source-file-io.md) — not DOM attach. This doc covers manual QA / reference-panel flows only.
 
 ## Problem
 
@@ -51,3 +53,4 @@ Auto post-turn scheduler jobs remain **attachment-free**.
 - [CMD-414](https://linear.app/cmd0112/issue/CMD-414) attach-worker spike (in-process host shipped; OOP exe optional)
 - [CMD-428](https://linear.app/cmd0112/issue/CMD-428) publication lab — shared browser-file delivery kernel ([plan](project-source-publication-redesign.md))
 - `docs/Enhancements/chat-file-io-feasibility.md`
+- [utility-source-file-io.md](utility-source-file-io.md) — preferred utility file loop (sources + scrape; [CMD-441](https://linear.app/cmd0112/issue/CMD-441))

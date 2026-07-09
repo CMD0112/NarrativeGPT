@@ -1,0 +1,101 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.AdventureDesignPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views">
+
+    <Grid Padding="{ThemeResource SpaceMdPadding}" RowSpacing="{ThemeResource SpaceSm}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" ColumnSpacing="{ThemeResource SpaceSm}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="120" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="TitleBlock"
+                       Style="{ThemeResource ShellSectionHeaderStyle}"
+                       TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center" />
+            <Button Grid.Column="1"
+                    x:Name="ThreadsButton"
+                    Content="Threads"
+                    Style="{ThemeResource ShellGhostButtonStyle}"
+                    Click="ManageThreads_Click" />
+            <Button Grid.Column="2"
+                    x:Name="MoreButton"
+                    Content="More"
+                    Style="{ThemeResource ShellGhostButtonStyle}"
+                    Click="MoreButton_Click" />
+        </Grid>
+
+        <local:DesignSessionCockpit x:Name="Cockpit"
+                                    Grid.Row="1"
+                                    ManageThreadsRequested="OnManageThreadsRequested"
+                                    LinkProjectRequested="OnLinkProjectRequested"
+                                    StatusChanged="OnCockpitStatusChanged" />
+
+        <Grid Grid.Row="2" ColumnSpacing="{ThemeResource SpaceSm}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="120" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Step"
+                       Style="{ThemeResource ShellSectionHintStyle}"
+                       VerticalAlignment="Center" />
+            <ComboBox x:Name="StepCombo"
+                      Grid.Column="1"
+                      HorizontalAlignment="Stretch"
+                      SelectionChanged="StepCombo_SelectionChanged" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="3"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="DraftPanel" Spacing="{ThemeResource SpaceSm}" Padding="0,0,4,0" />
+        </ScrollViewer>
+
+        <Border Grid.Row="4"
+                Style="{ThemeResource ShellCardStyle}"
+                Padding="8,6">
+            <Grid ColumnSpacing="{ThemeResource SpaceSm}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="80" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusLine"
+                           Style="{ThemeResource ShellSectionHintStyle}"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="{ThemeResource SpaceSm}">
+                    <Button x:Name="AcceptProposalsButton"
+                            Content="Accept proposals"
+                            Style="{ThemeResource ShellGhostButtonStyle}"
+                            Visibility="Collapsed"
+                            Click="AcceptProposals_Click" />
+                    <Button x:Name="BackStepButton"
+                            Content="Back"
+                            Style="{ThemeResource ShellGhostButtonStyle}"
+                            Click="BackStep_Click" />
+                    <Button x:Name="ContinueButton"
+                            Content="Continue"
+                            Style="{ThemeResource ShellPrimaryButtonStyle}"
+                            Click="Continue_Click" />
+                    <Button x:Name="LaunchButton"
+                            Content="Launch"
+                            Style="{ThemeResource ShellPrimaryButtonStyle}"
+                            Visibility="Collapsed"
+                            Click="Launch_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

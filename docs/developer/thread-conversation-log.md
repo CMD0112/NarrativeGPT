@@ -3,7 +3,9 @@
 How the wrapper records ChatGPT thread transcripts locally — storage layout, sync behavior, indexing, and how other subsystems consume the log.
 
 **Normative ADR:** [thread-conversation-log-adr.md](../adr/thread-conversation-log-adr.md)  
-**Related:** [play-thread-canonical-adr.md](../adr/play-thread-canonical-adr.md), [adventure-thread-registry.md](../reference/adventure-thread-registry.md), [data-model-reference.md](../reference/data-model-reference.md)
+**Ingest refactor ADR:** [thread-log-ingest-refactor-adr.md](../adr/thread-log-ingest-refactor-adr.md)  
+**Related:** [play-thread-canonical-adr.md](../adr/play-thread-canonical-adr.md), [adventure-thread-registry.md](../reference/adventure-thread-registry.md), [data-model-reference.md](../reference/data-model-reference.md)  
+**Explicit snapshots:** [thread-explicit-snapshot-logging.md](../Enhancements/thread-explicit-snapshot-logging.md)
 
 ---
 
@@ -13,13 +15,16 @@ The wrapper maintains several **distinct** persistence layers. Do not conflate t
 
 | Layer | Location | Purpose |
 |-------|----------|---------|
-| **Thread conversation log** | `thread-logs/{threadEntryId}/` | Canonical local transcript per registry thread (Play, Design, UtilityWorker) |
-| **Flight recorder** | `prompt-history.json` | Per-send merged packet audit (what the model received) |
-| **Legacy play cache** | `log.json`, `thread-metadata.json` | Retired — migrated into thread log on adventure load; no longer written on send |
+| **Thread ingest (canonical raw)** | `thread-logs/{threadEntryId}/raw/`, `events.jsonl` | Append-only ingest facts + full API JSON (or synthetic reconstruction) |
+| **Thread projections** | `thread-logs/{threadEntryId}/projections/` | Branch JSON when API raw unavailable (DOM / branch-only sync) |
+| **Thread conversation log** | `thread-logs/{threadEntryId}/rolling.jsonl` | Branch reconciliation + supersession audit (dual-written during transition) |
+| **Thread branch snapshots** | `thread-logs/{threadEntryId}/snapshots/` | Immutable active-branch captures at send/invalidation/load |
+| **Flight recorder** | `prompt-history.json` | Per-send merged packet audit + thread ingest correlation (schema v3) |
+| **Legacy play cache** | `log.json`, `thread-metadata.json` | Migrated into thread log on load; no longer written on send |
 | **Utility diagnostics** | `utility-parse-log.jsonl` | Job parse/apply diagnostics (not a transcript) |
 | **Wrapper diagnostics** | `wrapper-diagnostics.jsonl`, `play-send-runs/` | Send orchestration traces |
 
-**Source of truth for narrative text:** the live ChatGPT thread. The thread conversation log is a **local append-only mirror** of the active mapping branch, reconciled via API fetch (DOM fallback when API is unavailable).
+**Source of truth for narrative text:** the live ChatGPT thread. **Local read path:** `ThreadProjectionService` resolves latest ingest → rolling → snapshot. Every API sync also appends an ingest event (see [thread-log-ingest-refactor-adr.md](../adr/thread-log-ingest-refactor-adr.md)).
 
 ---
 
@@ -32,10 +37,13 @@ Each [`AdventureThreadEntry`](../reference/adventure-thread-registry.md) with a 
   thread-logs\
     {threadEntryId-Guid}\
       manifest.json
+      events.jsonl
+      raw/
+      projections/
       rolling.jsonl
+      snapshots/
       dumps\
         2026-06-29T18-30-00Z-conversation.json
-        2026-06-29T18-30-00Z-manifest.json
 ```
 
 The active play thread’s log drives packet transcript depth, story export, and overlay turn-index maps. Design and UtilityWorker logs are synced on the same pipeline but are not mixed into play packet assembly.
@@ -58,6 +66,36 @@ Small index rewritten after each sync. Tracks cursor state for append and quick 
 | `activeBranchLength` | Message count on active branch |
 | `lastRollingSyncAt` | Last successful rolling reconcile |
 | `lastDumpAt`, `dumpCount` | Manual dump audit |
+| `snapshotCount`, `lastSnapshotAt`, `lastSnapshotTrigger` | Branch snapshot index |
+| `latestSnapshotPath`, `latestSendSnapshotPath` | Quick open paths (relative to thread log dir) |
+| `ingestEventCount`, `lastIngestAt`, `lastIngestTrigger` | Ingest layer index |
+| `latestIngestEventId`, `latestRawPath`, `latestProjectionPath` | Latest ingest fact pointers |
+
+### `events.jsonl`
+
+Append-only ingest facts. Each line is a `ThreadIngestEvent`:
+
+| Field | Meaning |
+|-------|---------|
+| `eventId` | Stable ingest fact id (links flight recorder) |
+| `captureTrigger` | `send`, `invalidation`, `session_load`, `worker_send`, `migration`, `manual`, `sync` |
+| `captureSource` | `api`, `dom`, `send`, `migration`, etc. |
+| `rawPath` | Relative path under thread log dir when API JSON captured |
+| `projectionPath` | Branch projection when raw unavailable |
+| `synthetic` / `syntheticSource` | Reconstruction markers (`rolling-reconstruction`, `snapshot-reconstruction:…`) |
+| `correlation` | Optional `turnId`, `flightRecordId`, `playSendTraceRunId` |
+| `branchMessageCount`, `contentHash` | Branch tip audit |
+
+Retention: last 3 `session_load` ingest events; `migration` ingest older than 7 days pruned (files + index lines remain until rewrite — best-effort delete).
+
+### `raw/` and `projections/`
+
+| Directory | Written when |
+|-----------|--------------|
+| `raw/` | API fetch succeeded, or synthetic reconstruction (branch JSON with `synthetic: true`) |
+| `projections/` | Branch-only sync (DOM pairs, migration branch without API tree) |
+
+API raw files are passed to `ConversationBranchExtractor`. Synthetic raw uses `SyntheticConversationDocument` schema (branch array + `source` label).
 
 ### `rolling.jsonl`
 
@@ -75,6 +113,16 @@ Readers build the **current active branch** by:
 1. Scanning all `message` lines with `status: active`
 2. Taking the latest active entry per `branchIndex`
 3. Treating `superseded` audit lines as historical record only
+
+### `snapshots/`
+
+Immutable **explicit branch captures** at named lifecycle moments (send, invalidation, session load, worker send, manual, migration). Each file is self-contained — no rolling-log reconstruction required.
+
+- `{timestamp}Z-{trigger}-branch.json` — active branch messages + denormalized `transcriptPairs`
+- Indexed in `manifest.json` (`latestSnapshotPath`, `latestSendSnapshotPath`, `snapshotCount`)
+- Retention: keep all `send` + `invalidation`; last **3** `session_load`; prune `migration` after **7 days**
+
+See [thread-explicit-snapshot-logging.md](../Enhancements/thread-explicit-snapshot-logging.md).
 
 ### `dumps/`
 
@@ -124,6 +172,7 @@ Dump also runs rolling sync with `captureSource: manual_dump`.
 ## How rolling sync works
 
 ```mermaid
+%%{init: {"sequence":{"actorMargin":58,"boxMargin":12,"messageMargin":42,"mirrorActors":false,"useMaxWidth":true,"wrap":true},"themeVariables":{"fontSize":"13px"}} }%%
 sequenceDiagram
     participant Trigger as Send / Load / Edit / Dump
     participant MW as MainWindow.ThreadConversationLog
@@ -177,6 +226,8 @@ When API fetch fails on the **play** thread, [`MainWindow.ThreadConversationLog.
 | Design session browser ready | Design | `api` |
 | Utility worker job completes | UtilityWorker | `send` |
 | **More → Sync thread log** (menu) | Play | `api` |
+| **More → Save thread snapshot** (menu) | Play | `manual` |
+| **Play settings → Session → Thread snapshots** | Play | toggles + manual buttons |
 | **More → Dump thread log** (menu) | Play | `manual_dump` |
 
 Sync is **never silent auto-rebuild of legacy `log.json`** — it only updates `rolling.jsonl`.
@@ -191,7 +242,17 @@ On adventure load, [`ThreadConversationLogMigrationService`](../../ChatGPTWrappe
 2. Otherwise synthesize from accepted turns in `log.json`
 3. Write initial branch via `SyncRollingFromBranch` with `captureSource: migration`
 
-After migration, new sends and syncs maintain the JSONL log. Legacy files are not deleted automatically (they may still appear in JSON archive exports).
+After migration, new sends and syncs maintain the JSONL log and ingest layer. Legacy files are not deleted automatically (they may still appear in JSON archive exports).
+
+### Reconstructing in-flight adventures
+
+Adventures created before the ingest layer may have `rolling.jsonl` and `snapshots/` but no `events.jsonl` / `raw/`. Run:
+
+```powershell
+.\scripts\reconstruct-thread-logs.ps1 -AdventureDir "E:\Documents\ChatGPT Wrapper\Adventures\{adventureId}"
+```
+
+This backfills synthetic raw from rolling, snapshot-derived ingest events, and links `prompt-history.json` thread fields. Report: `%LocalAppData%\ChatGPTWrapper\thread-log-reconstruction-report.txt`.
 
 ---
 
@@ -199,10 +260,12 @@ After migration, new sends and syncs maintain the JSONL log. Legacy files are no
 
 | Consumer | Reader | Notes |
 |----------|--------|-------|
-| Packet transcript / turn index | [`PlayTurnScopeService`](../../ChatGPTWrapper/Adventure/Services/PlayTurnScopeService.cs) via [`ThreadConversationLogReader`](../../ChatGPTWrapper/Adventure/Services/ThreadConversationLogReader.cs) | Synthesizes `TurnRecord` list from active branch when play log exists |
-| Story export | [`ExportService`](../../ChatGPTWrapper/Adventure/Services/ExportService.cs) | `ToTranscriptPairs` excluding utility/injected context |
-| Utility job context (local) | [`PlayThreadTranscriptService`](../../ChatGPTWrapper/Adventure/Services/PlayThreadTranscriptService.cs) | Prefers thread log over `log.json` |
+| Unified transcript read | [`ThreadProjectionService`](../../ChatGPTWrapper/Adventure/Services/ThreadProjectionService.cs) | Ingest → rolling → snapshot |
+| Packet transcript / turn index | [`PlayTurnScopeService`](../../ChatGPTWrapper/Adventure/Services/PlayTurnScopeService.cs) via [`ThreadConversationLogReader`](../../ChatGPTWrapper/Adventure/Services/ThreadConversationLogReader.cs) | Synthesizes `TurnRecord` list from projection pairs when play log exists |
+| Story export | [`ExportService`](../../ChatGPTWrapper/Adventure/Services/ExportService.cs) | `GetTranscriptPairs` via projection |
+| Utility job context (local / worker SOT) | [`ThreadTranscriptResolver`](../../ChatGPTWrapper/Adventure/Services/ThreadTranscriptResolver.cs) → [`PlayThreadTranscriptService`](../../ChatGPTWrapper/Adventure/Services/PlayThreadTranscriptService.cs) | Worker lane uses play thread projection, not rolling alone |
 | Overlay turn maps | [`MainWindow.TurnInvalidation`](../../ChatGPTWrapper/MainWindow.TurnInvalidation.cs) | `BuildOrdinalMap`, `BuildLogTurnLinkMap` from thread log |
+| Flight recorder ↔ thread | [`FlightRecordCaptureService.TryLinkThreadIngest`](../../ChatGPTWrapper/Adventure/Services/FlightRecordCaptureService.cs) | After sync: `threadIngestEventId`, paths on `PromptHistoryEntry` |
 | Flight record correlation | [`FlightRecordCorrelationService`](../../ChatGPTWrapper/Adventure/Services/FlightRecordCorrelationService.cs) | Turn link map from thread log |
 
 `ThreadConversationLogReader.HasActivePlayLog` requires both a non-empty log **and** a manifest `conversationId` matching the active registry entry — stale logs from a prior conversation on the same thread entry slot are ignored.
@@ -218,6 +281,8 @@ After migration, new sends and syncs maintain the JSONL log. Legacy files are no
 In **Play → More actions**:
 
 - **Sync thread log** — force API rolling reconcile for the active play thread
+- **Save thread snapshot** — write explicit active-branch snapshot to `snapshots/` (API sync first, no full API dump)
+- **Play settings → Session** — per-trigger automatic snapshot toggles and the same manual actions
 - **Dump thread log** — save full conversation JSON to `dumps/` and reconcile rolling log
 
 Design thread sync runs automatically when the design browser is prepared. Utility worker sync runs after ephemeral worker jobs complete.
@@ -229,13 +294,21 @@ Design thread sync runs automatically when the design browser is prepared. Utili
 | Component | Path |
 |-----------|------|
 | Branch extraction (Core) | `ChatGPTWrapper.Core/ChatGptApi/ConversationBranchExtractor.cs` |
-| Entry / manifest models | `ChatGPTWrapper/Adventure/Models/ThreadConversationLog*.cs` |
+| Entry / manifest models | `ChatGPTWrapper/Adventure/Models/ThreadConversationLog*.cs`, `ThreadIngestEvent.cs` |
 | Store (paths, JSONL I/O) | `ChatGPTWrapper/Adventure/Stores/ThreadConversationLogStore.cs` |
+| Ingest store | `ChatGPTWrapper/Adventure/Stores/ThreadConversationLogStore.Ingest.cs` |
+| Ingest service | `ChatGPTWrapper/Adventure/Services/ThreadIngestService.cs` |
+| Projection resolver | `ChatGPTWrapper/Adventure/Services/ThreadProjectionService.cs` |
+| Utility transcript SOT | `ChatGPTWrapper/Adventure/Services/ThreadTranscriptResolver.cs` |
+| Reconstruction | `ChatGPTWrapper/Adventure/Services/ThreadLogReconstructionService.cs` |
 | Rolling sync + dump | `ChatGPTWrapper/Adventure/Services/ThreadConversationLogService.cs` |
 | Consumer adapter | `ChatGPTWrapper/Adventure/Services/ThreadConversationLogReader.cs` |
+| Snapshot models | `ChatGPTWrapper/Adventure/Models/ThreadBranchSnapshot.cs` |
+| Snapshot store I/O | `ChatGPTWrapper/Adventure/Stores/ThreadConversationLogStore.Snapshots.cs` |
 | Legacy bootstrap | `ChatGPTWrapper/Adventure/Services/ThreadConversationLogMigrationService.cs` |
 | UI integration | `ChatGPTWrapper/MainWindow.ThreadConversationLog.cs` |
-| Unit tests | `tests/ChatGPTWrapper.ApiDiagnostics/Unit/ConversationBranchExtractorTests.cs`, `ThreadConversationLogServiceTests.cs` |
+| Reconstruction script | `scripts/reconstruct-thread-logs.ps1` |
+| Unit tests | `ThreadConversationLogServiceTests.cs`, `ThreadIngestProjectionTests.cs` |
 
 ---
 

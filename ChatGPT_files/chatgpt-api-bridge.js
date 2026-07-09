@@ -269,6 +269,603 @@
     return h;
   }
 
+  var SENTINEL_HEADER_PREFIX = "openai-sentinel";
+  var SENTINEL_TTL_MS = 120000;
+
+  function recordSentinelDiagnostic(patch) {
+    try {
+      var prev = globalThis.__CGW_LAST_SENTINEL_DIAGNOSTIC__ || {};
+      globalThis.__CGW_LAST_SENTINEL_DIAGNOSTIC__ = Object.assign(
+        { at: Date.now() },
+        prev,
+        patch || {}
+      );
+    } catch (_e) {
+      /* ignore */
+    }
+  }
+
+  function readSentinelDiagnostic() {
+    try {
+      return globalThis.__CGW_LAST_SENTINEL_DIAGNOSTIC__ || null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function installSentinelFetchTap() {
+    if (globalThis.__cgwSentinelTapInstalled) return;
+    globalThis.__cgwSentinelTapInstalled = true;
+    var original = globalThis.fetch;
+    if (typeof original !== "function") return;
+
+    globalThis.fetch = function cgwSentinelTapFetch(input, init) {
+      try {
+        var url = typeof input === "string" ? input : input && input.url ? input.url : "";
+        var method = (init && init.method) || (input && input.method) || "GET";
+        var upperMethod = method.toUpperCase();
+        if (upperMethod === "POST" && url.indexOf("/backend-api/sentinel/chat-requirements/") >= 0) {
+          recordSentinelDiagnostic({
+            stage: "wire:chat-requirements",
+            wireUrl: url,
+          });
+        }
+        if (
+          upperMethod === "POST" &&
+          url.indexOf("/backend-api/f/conversation") >= 0 &&
+          url.indexOf("/prepare") < 0
+        ) {
+          var hdrs = init && init.headers ? init.headers : null;
+          var captured = extractSentinelHeaders(hdrs);
+          if (captured && Object.keys(captured).length > 0) {
+            globalThis.__CGW_SENTINEL_CAPTURE__ = {
+              capturedAt: Date.now(),
+              headers: captured,
+              source: "page-fetch-tap",
+            };
+            recordSentinelDiagnostic({
+              stage: "tap:captured",
+              source: "page-fetch-tap",
+            });
+          }
+        }
+      } catch (_e) {
+        /* ignore */
+      }
+      return original.apply(this, arguments);
+    };
+    globalThis.__CGW_NATIVE_FETCH__ = original;
+  }
+
+  function headerBagToObject(headers) {
+    var out = {};
+    if (!headers) return out;
+    if (typeof Headers !== "undefined" && headers instanceof Headers) {
+      headers.forEach(function (v, k) {
+        out[k] = v;
+      });
+      return out;
+    }
+    if (Array.isArray(headers)) {
+      headers.forEach(function (pair) {
+        if (pair && pair.length >= 2) out[pair[0]] = pair[1];
+      });
+      return out;
+    }
+    if (typeof headers === "object") {
+      Object.keys(headers).forEach(function (k) {
+        out[k] = headers[k];
+      });
+    }
+    return out;
+  }
+
+  function extractSentinelHeaders(headers) {
+    var bag = headerBagToObject(headers);
+    var out = {};
+    Object.keys(bag).forEach(function (k) {
+      var lower = k.toLowerCase();
+      if (
+        lower.indexOf("sentinel") >= 0 ||
+        lower === "oai-echo-logs" ||
+        lower === "oai-telemetry"
+      ) {
+        out[k] = bag[k];
+      }
+    });
+    return out;
+  }
+
+  function hasSentinelHeader(headers) {
+    if (!headers) return false;
+    return Object.keys(headers).some(function (k) {
+      return k.toLowerCase().indexOf("sentinel") >= 0;
+    });
+  }
+
+  function readSentinelCapture() {
+    try {
+      var cap = globalThis.__CGW_SENTINEL_CAPTURE__;
+      if (!cap || !cap.headers) return null;
+      if (Date.now() - (cap.capturedAt || 0) > SENTINEL_TTL_MS) return null;
+      return cap;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function clearSentinelCapture() {
+    try {
+      delete globalThis.__CGW_SENTINEL_CAPTURE__;
+    } catch (_e) {
+      globalThis.__CGW_SENTINEL_CAPTURE__ = null;
+    }
+  }
+
+  function discoverSentinelSdkSrc() {
+    try {
+      var scripts = Array.prototype.slice.call(document.scripts || []);
+      for (var i = 0; i < scripts.length; i++) {
+        var src = scripts[i].src || "";
+        if (/\/sentinel\/[^/]+\/sdk\.js/i.test(src)) return src;
+      }
+    } catch (_e) {
+      /* ignore */
+    }
+    return BASE + "/sentinel/20260423af3c/sdk.js";
+  }
+
+  function resolvePageSentinelSdk() {
+    if (globalThis.SentinelSDK && typeof globalThis.SentinelSDK.token === "function") {
+      return { sdk: globalThis.SentinelSDK, source: "global:SentinelSDK" };
+    }
+
+    var fromWebpack = webpackFind(function (mod) {
+      if (!mod) return false;
+      var candidates = [mod, mod.default, mod.SentinelSDK, mod.sentinel];
+      for (var i = 0; i < candidates.length; i++) {
+        var e = candidates[i];
+        if (e && typeof e.token === "function") return true;
+      }
+      return false;
+    });
+    if (fromWebpack) {
+      var sdk =
+        fromWebpack.token
+          ? fromWebpack
+          : fromWebpack.default && fromWebpack.default.token
+            ? fromWebpack.default
+            : fromWebpack.SentinelSDK || fromWebpack.sentinel;
+      if (sdk && typeof sdk.token === "function") {
+        return { sdk: sdk, source: "webpack:SentinelSDK" };
+      }
+    }
+
+    return null;
+  }
+
+  async function ensureSentinelSdkInitialized(sdk) {
+    if (!sdk) return false;
+    if (typeof sdk.init === "function") {
+      try {
+        await sdk.init("__default__");
+      } catch (_e) {
+        try {
+          await sdk.init();
+        } catch (_e2) {
+          recordSentinelDiagnostic({ stage: "sdk:init_failed", error: String(_e2 && _e2.message ? _e2.message : _e2) });
+        }
+      }
+    }
+    return typeof sdk.token === "function";
+  }
+
+  async function loadSentinelSdkAsync() {
+    var resolved = resolvePageSentinelSdk();
+    if (resolved) {
+      recordSentinelDiagnostic({ stage: "sdk:resolved", source: resolved.source });
+      await ensureSentinelSdkInitialized(resolved.sdk);
+      return resolved.sdk;
+    }
+
+    if (globalThis.__CGW_SENTINEL_SDK_LOADING__) {
+      try {
+        await globalThis.__CGW_SENTINEL_SDK_LOADING__;
+      } catch (_e) {
+        return null;
+      }
+      resolved = resolvePageSentinelSdk();
+      if (resolved) {
+        await ensureSentinelSdkInitialized(resolved.sdk);
+        return resolved.sdk;
+      }
+      return null;
+    }
+
+    var src = discoverSentinelSdkSrc();
+    globalThis.__CGW_SENTINEL_SDK_LOADING__ = new Promise(function (resolve, reject) {
+      var script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      script.onload = function () {
+        resolve();
+      };
+      script.onerror = function () {
+        reject(new Error("sentinel_sdk_load_failed"));
+      };
+      document.head.appendChild(script);
+    });
+
+    try {
+      await globalThis.__CGW_SENTINEL_SDK_LOADING__;
+    } catch (_e) {
+      globalThis.__CGW_SENTINEL_SDK_LOADING__ = null;
+      recordSentinelDiagnostic({
+        stage: "sdk:load_failed",
+        error: _e && _e.message ? String(_e.message) : "sentinel_sdk_load_failed",
+      });
+      return null;
+    }
+
+    resolved = resolvePageSentinelSdk();
+    if (resolved) {
+      recordSentinelDiagnostic({ stage: "sdk:loaded", source: resolved.source });
+      await ensureSentinelSdkInitialized(resolved.sdk);
+      return resolved.sdk;
+    }
+
+    recordSentinelDiagnostic({ stage: "sdk:missing_after_load", error: "sentinel_sdk_token_missing" });
+    return null;
+  }
+
+  function mapFinalizeResponseToHeaders(json) {
+    if (!json || typeof json !== "object") return {};
+    var out = {};
+    if (json.headers && typeof json.headers === "object") {
+      Object.keys(json.headers).forEach(function (k) {
+        out[k] = json.headers[k];
+      });
+    }
+
+    var aliases = [
+      ["openai-sentinel-chat-requirements-token", [
+        "openai-sentinel-chat-requirements-token",
+        "chat_requirements_token",
+        "chat-requirements-token",
+        "requirements_token",
+      ]],
+      ["openai-sentinel-proof-token", [
+        "openai-sentinel-proof-token",
+        "proof_token",
+        "proofofwork_token",
+      ]],
+      ["openai-sentinel-turnstile-token", [
+        "openai-sentinel-turnstile-token",
+        "turnstile_token",
+        "turnstile",
+      ]],
+    ];
+
+    aliases.forEach(function (pair) {
+      var headerName = pair[0];
+      if (out[headerName]) return;
+      for (var j = 0; j < pair[1].length; j++) {
+        var key = pair[1][j];
+        if (json[key]) {
+          out[headerName] = json[key];
+          break;
+        }
+      }
+    });
+
+    return extractSentinelHeaders(out);
+  }
+
+  function headersFromSdkTokenPayload(payload) {
+    if (!payload) return null;
+    if (typeof payload === "string") {
+      if (payload.indexOf("gAAAAAB") === 0) {
+        return {
+          "openai-sentinel-chat-requirements-token": payload,
+        };
+      }
+      var parsed = parseJsonSafe(payload);
+      if (parsed) return headersFromSdkTokenPayload(parsed);
+      return null;
+    }
+    if (typeof payload !== "object") return null;
+
+    var direct = extractSentinelHeaders(payload);
+    if (Object.keys(direct).length > 0) return direct;
+
+    if (payload.headers) {
+      direct = extractSentinelHeaders(payload.headers);
+      if (Object.keys(direct).length > 0) return direct;
+    }
+
+    return null;
+  }
+
+  async function postSentinelChatRequirementsFinalize(session, body) {
+    var url = BASE + "/backend-api/sentinel/chat-requirements/finalize";
+    var res = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: mergeHeaders(session.token, {
+        accept: "*/*",
+        "content-type": "application/json",
+      }),
+      body: JSON.stringify(body),
+    });
+    var text = await res.text();
+    var json = parseJsonSafe(text);
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        error: "sentinel_finalize_failed",
+        json: json,
+        text: text,
+      };
+    }
+    return {
+      ok: true,
+      status: res.status,
+      json: json,
+      headers: mapFinalizeResponseToHeaders(json),
+    };
+  }
+
+  async function tryAcquireFreshSentinelViaSdk(session) {
+    recordSentinelDiagnostic({ stage: "sdk:start" });
+    var sdk = await loadSentinelSdkAsync();
+    if (!sdk) {
+      recordSentinelDiagnostic({ stage: "sdk:unavailable", error: "sdk_load_null" });
+      return null;
+    }
+
+    var flow = "__default__";
+    try {
+      var tokenPayload = await sdk.token(flow);
+      var direct = headersFromSdkTokenPayload(tokenPayload);
+      if (direct && Object.keys(direct).length > 0) {
+        recordSentinelDiagnostic({ stage: "sdk:token-direct", source: "sdk:token-direct" });
+        return { headers: direct, source: "sdk:token-direct" };
+      }
+
+      var body = typeof tokenPayload === "string" ? parseJsonSafe(tokenPayload) : tokenPayload;
+      if (!body || typeof body !== "object") {
+        recordSentinelDiagnostic({ stage: "sdk:token_parse_failed", error: "token_payload_invalid" });
+        return null;
+      }
+
+      var finalizeBody = {
+        prepare_token: body.c || body.prepare_token || body.token,
+        proofofwork: body.p || body.proofofwork,
+        turnstile: body.t || body.turnstile,
+      };
+      if (!finalizeBody.prepare_token) {
+        recordSentinelDiagnostic({ stage: "sdk:token_missing_prepare", error: "prepare_token_missing" });
+        return null;
+      }
+
+      var finalized = await postSentinelChatRequirementsFinalize(session, finalizeBody);
+      if (!finalized.ok || !finalized.headers || Object.keys(finalized.headers).length === 0) {
+        recordSentinelDiagnostic({
+          stage: "sdk:finalize_failed",
+          error: finalized.error || "sentinel_finalize_failed",
+          finalizeStatus: finalized.status,
+        });
+        return null;
+      }
+
+      recordSentinelDiagnostic({
+        stage: "sdk:finalize_ok",
+        source: "sdk:chat-requirements-finalize",
+        finalizeStatus: finalized.status,
+      });
+      return { headers: finalized.headers, source: "sdk:chat-requirements-finalize" };
+    } catch (_e) {
+      recordSentinelDiagnostic({
+        stage: "sdk:token_threw",
+        error: _e && _e.message ? String(_e.message) : "sdk_token_failed",
+      });
+      return null;
+    }
+  }
+
+  async function refreshConversationSentinelHeaders(session) {
+    clearSentinelCapture();
+    recordSentinelDiagnostic({ stage: "refresh:start" });
+
+    var fromSdk = await tryAcquireFreshSentinelViaSdk(session);
+    if (fromSdk && fromSdk.headers && Object.keys(fromSdk.headers).length > 0) {
+      return fromSdk;
+    }
+
+    var fromPage = await tryAcquireSentinelFromPage();
+    if (fromPage && fromPage.headers && Object.keys(fromPage.headers).length > 0) {
+      recordSentinelDiagnostic({ stage: "page-module", source: fromPage.source });
+      return fromPage;
+    }
+
+    recordSentinelDiagnostic({ stage: "page-module", error: "webpack_probe_miss" });
+
+    var cached = readSentinelCapture();
+    if (cached && cached.headers && Object.keys(cached.headers).length > 0) {
+      recordSentinelDiagnostic({ stage: "tap-cache", source: cached.source || "fetch-tap-cache" });
+      return { headers: cached.headers, source: cached.source || "fetch-tap-cache" };
+    }
+
+    recordSentinelDiagnostic({ stage: "exhausted", error: "sentinel_unavailable" });
+    return null;
+  }
+
+  function webpackFind(predicate) {
+    var found = null;
+    var chunkNames = ["webpackChunk_N_E", "webpackChunkchatgpt"];
+    for (var c = 0; c < chunkNames.length && !found; c++) {
+      var chunk = globalThis[chunkNames[c]];
+      if (!chunk || typeof chunk.push !== "function") continue;
+      try {
+        chunk.push([
+          ["cgw-sentinel-probe-" + Date.now()],
+          {},
+          function (__webpack_require__) {
+            for (var moduleId in __webpack_require__.m) {
+              if (found) break;
+              try {
+                var exp = __webpack_require__(moduleId);
+                if (predicate(exp, moduleId)) found = exp;
+              } catch (_e) {
+                /* ignore */
+              }
+            }
+          },
+        ]);
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+    return found;
+  }
+
+  function pickSentinelRunner(exp) {
+    if (!exp) return null;
+    var candidates = [exp, exp.default, exp.SentinelSDK, exp.sentinel];
+    var methodNames = [
+      "token",
+      "init",
+      "getConversationHeaders",
+      "getSentinelHeaders",
+      "buildSentinelHeaders",
+      "prepareConversationHeaders",
+      "getChatRequirementsHeaders",
+      "fetchConversationSentinelHeaders",
+      "buildChatRequirementsHeaders",
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      var e = candidates[i];
+      if (!e || typeof e !== "object") continue;
+      for (var m = 0; m < methodNames.length; m++) {
+        var name = methodNames[m];
+        if (typeof e[name] === "function") {
+          return { fn: e[name].bind(e), kind: name };
+        }
+      }
+    }
+    return null;
+  }
+
+  async function tryAcquireSentinelFromPage() {
+    var exp = webpackFind(function (mod) {
+      return !!pickSentinelRunner(mod);
+    });
+    var runner = pickSentinelRunner(exp);
+    if (!runner) return null;
+    try {
+      var result = await runner.fn();
+      var headers = extractSentinelHeaders(result);
+      if (Object.keys(headers).length > 0) {
+        return { headers: headers, source: "page-module:" + runner.kind };
+      }
+      if (result && typeof result === "object") {
+        headers = extractSentinelHeaders(result.headers || result);
+        if (Object.keys(headers).length > 0) {
+          return { headers: headers, source: "page-module:" + runner.kind };
+        }
+      }
+    } catch (_e) {
+      /* ignore */
+    }
+    return null;
+  }
+
+  async function acquireConversationSentinelHeaders(cmd) {
+    installSentinelFetchTap();
+
+    var session = await getAccessToken();
+    if (!session.ok) {
+      return {
+        type: "apiError",
+        ok: false,
+        error: session.error || "session_expired",
+        status: session.status || 401,
+      };
+    }
+
+    var allowCache = cmd && cmd.fresh === false;
+    if (allowCache) {
+      var cached = readSentinelCapture();
+      if (cached && cached.headers && Object.keys(cached.headers).length > 0) {
+        var tapDiag = readSentinelDiagnostic();
+        return {
+          type: "apiResult",
+          ok: true,
+          status: 200,
+          json: {
+            headers: cached.headers,
+            source: cached.source || "fetch-tap-cache",
+            ageMs: Date.now() - (cached.capturedAt || 0),
+            diagnostic: tapDiag,
+          },
+        };
+      }
+    }
+
+    var fresh = await refreshConversationSentinelHeaders(session);
+    var diagnostic = readSentinelDiagnostic();
+    if (fresh && fresh.headers && Object.keys(fresh.headers).length > 0) {
+      return {
+        type: "apiResult",
+        ok: true,
+        status: 200,
+        json: {
+          headers: fresh.headers,
+          source: fresh.source,
+          diagnostic: diagnostic,
+        },
+      };
+    }
+
+    return {
+      type: "apiError",
+      ok: false,
+      status: 0,
+      error: "sentinel_unavailable",
+      message:
+        "No fresh sentinel from SentinelSDK chat-requirements finalize, page module, or fetch tap.",
+      json: {
+        diagnostic: diagnostic,
+      },
+    };
+  }
+
+  async function ensureConversationSentinelHeaders(existing, session) {
+    var merged = Object.assign({}, existing || {});
+    Object.keys(merged).forEach(function (k) {
+      if (k.toLowerCase().indexOf("sentinel") >= 0) {
+        delete merged[k];
+      }
+    });
+
+    if (!session || !session.ok) {
+      session = await getAccessToken();
+      if (!session.ok) return merged;
+    }
+
+    var fresh = await refreshConversationSentinelHeaders(session);
+    if (fresh && fresh.headers) {
+      Object.keys(fresh.headers).forEach(function (k) {
+        merged[k] = fresh.headers[k];
+      });
+    }
+    return merged;
+  }
+
+  installSentinelFetchTap();
+
   async function apiRequest(cmd) {
     var session = await getAccessToken();
     if (!session.ok) {
@@ -297,11 +894,21 @@
     }
 
     var url = buildUrl(path, cmd.query);
+    var isConversationPost =
+      method === "POST" &&
+      path.indexOf("/f/conversation") >= 0 &&
+      path.indexOf("/prepare") < 0;
+
+    var extraHeaders = cmd.headers;
+    if (isConversationPost) {
+      extraHeaders = await ensureConversationSentinelHeaders(cmd.headers, session);
+    }
+
     var init = {
       method: method,
       credentials: "include",
       cache: "no-store",
-      headers: mergeHeaders(session.token, cmd.headers),
+      headers: mergeHeaders(session.token, extraHeaders),
     };
 
     if (cmd.body !== undefined && cmd.body !== null && method !== "GET" && method !== "HEAD") {
@@ -316,12 +923,15 @@
       }
     }
 
-    var res = await fetch(url, init);
+    var res;
+    try {
+      res = await fetch(url, init);
+    } finally {
+      if (isConversationPost) {
+        clearSentinelCapture();
+      }
+    }
     var contentType = (res.headers && res.headers.get("content-type")) || "";
-    var isConversationPost =
-      method === "POST" &&
-      path.indexOf("/f/conversation") >= 0 &&
-      path.indexOf("/prepare") < 0;
 
     if (res.ok && isConversationPost && res.body && typeof res.body.getReader === "function") {
       try {
@@ -442,17 +1052,103 @@
     );
   }
 
-  async function processUploadStream(session, fileId, fileName, useCase) {
+  function isProjectSourcesUpload(cmd) {
+    return (
+      cmd.pureApiProjectSources === true ||
+      String(cmd.entrySurface || "").toLowerCase() === "project_sources"
+    );
+  }
+
+  function buildChatComposerRegisterBody(cmd, fileName, fileSize, mimeType, useCase) {
+    return {
+      file_name: fileName,
+      file_size: fileSize,
+      use_case: useCase,
+      timezone_offset_min: timezoneOffsetMin(),
+      reset_rate_limits: false,
+      supports_direct_azure_multipart: true,
+      mime_type: mimeType,
+      entry_surface: (cmd && cmd.entrySurface) || "chat_composer",
+      selection_method: (cmd && cmd.selectionMethod) || "api",
+      client_resolved_mime_type: mimeType,
+      mime_resolution_source: "filename_extension",
+    };
+  }
+
+  function buildProjectSourcesRegisterBody(cmd, fileName, fileSize, mimeType) {
+    return {
+      file_name: fileName,
+      file_size: fileSize,
+      use_case: cmd.useCase || "agent",
+      gizmo_id: cmd.gizmoId,
+      timezone_offset_min: timezoneOffsetMin(),
+      reset_rate_limits: false,
+      supports_direct_azure_multipart: true,
+      mime_type: mimeType,
+      entry_surface: "project_sources",
+      selection_method: cmd.selectionMethod || "api",
+      client_resolved_mime_type: mimeType,
+      mime_resolution_source: "filename_extension",
+      store_in_library: false,
+    };
+  }
+
+  function buildProjectSourcesProcessStreamBody(cmd, fileId, fileName, useCase) {
+    return {
+      file_id: fileId,
+      use_case: useCase || "agent",
+      gizmo_id: cmd.gizmoId,
+      index_for_retrieval: true,
+      file_name: fileName || "upload.bin",
+      entry_surface: "project_sources",
+      metadata: {
+        store_in_library: false,
+        is_temporary_chat: false,
+        is_project_thread: true,
+      },
+    };
+  }
+
+  function buildProjectSourcesAttachRef(cmd, fileId, fileName, fileSize, mimeType) {
+    return {
+      file_id: fileId,
+      name: fileName || fileId,
+      size: fileSize,
+      type: mimeType || "application/octet-stream",
+      last_modified: Date.now(),
+      location: "fs",
+    };
+  }
+
+  async function processUploadStream(session, fileId, fileName, useCase, cmd) {
+    var body = {
+      file_id: fileId,
+      use_case: useCase || "my_files",
+      index_for_retrieval: true,
+      file_name: fileName || "upload.bin",
+    };
+    if (cmd && isProjectSourcesUpload(cmd)) {
+      body = buildProjectSourcesProcessStreamBody(cmd, fileId, fileName, useCase);
+    } else {
+      body.entry_surface = (cmd && cmd.entrySurface) || "chat_composer";
+      if (cmd && cmd.conversationId) {
+        body.metadata = {
+          is_temporary_chat: false,
+          library_eligibility_reason: "project_recall_gate_disabled",
+          is_project_thread: true,
+          library_file_info: {
+            origination_message_id: cmd.parentMessageId || null,
+            origination_thread_id: cmd.conversationId,
+          },
+        };
+      }
+    }
+
     var res = await fetch(BASE + "/backend-api/files/process_upload_stream", {
       method: "POST",
       credentials: "include",
       headers: mergeHeaders(session.token, { "content-type": "application/json" }),
-      body: JSON.stringify({
-        file_id: fileId,
-        use_case: useCase || "my_files",
-        index_for_retrieval: true,
-        file_name: fileName || "upload.bin",
-      }),
+      body: JSON.stringify(body),
     });
 
     var text = await res.text();
@@ -463,17 +1159,18 @@
     return { ok: false, status: res.status, bodyText: text };
   }
 
-  async function waitForUploadProcessing(session, fileId, fileName, useCase, timeoutMs) {
+  async function waitForUploadProcessing(session, fileId, fileName, useCase, timeoutMs, cmd) {
     var deadline = Date.now() + (timeoutMs || 30000);
     var lastText = "";
+    var pollMs = isProjectSourcesUpload(cmd) ? 350 : 800;
 
     while (Date.now() < deadline) {
-      var result = await processUploadStream(session, fileId, fileName, useCase);
+      var result = await processUploadStream(session, fileId, fileName, useCase, cmd);
       lastText = result.bodyText || "";
       if (result.ok || uploadStreamLooksReady(lastText)) {
         return { ok: true, bodyText: lastText };
       }
-      await sleep(800);
+      await sleep(pollMs);
     }
 
     return { ok: false, bodyText: lastText };
@@ -734,12 +1431,59 @@
     };
   }
 
+  async function attachProjectSourcesFile(session, cmd, fileId, fileSize, mimeType) {
+    var path =
+      "/backend-api/projects/" + encodeURIComponent(cmd.gizmoId) + "/files";
+    var body = {
+      files: [
+        buildProjectSourcesAttachRef(cmd, fileId, cmd.fileName, fileSize, mimeType),
+      ],
+    };
+    var result = await tryAttachAttempts(session, [{ path: path, body: body }]);
+    if (result.ok && result.winner) {
+      return {
+        type: "apiResult",
+        ok: true,
+        status: result.winner.status,
+        json: result.winner.json,
+        fileId: fileId,
+        attachPath: result.winner.path,
+        attachAttempts: result.log,
+        location: "fs",
+        entrySurface: "project_sources",
+      };
+    }
+
+    var last = result.last;
+    return {
+      type: "apiError",
+      ok: false,
+      status: last ? last.status : 0,
+      error: "attach_failed",
+      json: last ? last.json : null,
+      fileId: fileId,
+      attachPath: last ? last.path : null,
+      attachAttempts: result.log,
+      bodyText: last && last.text && last.text.length < 2000 ? last.text : null,
+    };
+  }
+
   async function attachFileToProject(session, cmd, fileId) {
     if (!cmd.gizmoId || !fileId) {
       return { type: "apiResult", ok: true, fileId: fileId };
     }
 
     resolveAccountIdFromSession(session);
+
+    if (isProjectSourcesUpload(cmd)) {
+      return await attachProjectSourcesFile(
+        session,
+        cmd,
+        fileId,
+        cmd.fileSize || 0,
+        cmd.mimeType || "application/octet-stream"
+      );
+    }
 
     if (cmd.attachViaUpsertOnly === true || isSnorlaxProjectId(cmd.gizmoId)) {
       return await attachViaUpsert(session, cmd, fileId, []);
@@ -920,16 +1664,15 @@
         }
       }
 
+      var registerBody = isProjectSourcesUpload(cmd)
+        ? buildProjectSourcesRegisterBody(cmd, fileName, fileSize, mimeType)
+        : buildChatComposerRegisterBody(cmd, fileName, fileSize, mimeType, useCase);
+
       var registerRes = await fetch(BASE + "/backend-api/files", {
         method: "POST",
         credentials: "include",
         headers: mergeHeaders(session.token, { "content-type": "application/json" }),
-        body: JSON.stringify({
-          file_name: fileName,
-          file_size: fileSize,
-          use_case: useCase,
-          timezone_offset_min: timezoneOffsetMin(),
-        }),
+        body: JSON.stringify(registerBody),
       });
 
       var registerText = await registerRes.text();
@@ -983,35 +1726,71 @@
         };
       }
 
-      await waitForUploadProcessing(session, fileId, fileName, useCase, 30000);
+      var streamUseCase = isProjectSourcesUpload(cmd) ? cmd.useCase || "agent" : useCase;
+      var streamTimeoutMs = isProjectSourcesUpload(cmd) ? 90000 : 30000;
+      await waitForUploadProcessing(
+        session,
+        fileId,
+        fileName,
+        streamUseCase,
+        streamTimeoutMs,
+        cmd
+      );
 
-      var finalized = await waitForFileFinalize(session, fileId, 45000);
-      if (!finalized.ok) {
-        return {
-          type: "apiError",
-          ok: false,
-          status: finalized.status || 0,
-          error: "upload_failed",
-          message: finalized.error || "finalize_failed",
-          fileId: fileId,
-          bodyText:
-            finalized.bodyText && finalized.bodyText.length < 2000
-              ? finalized.bodyText
-              : null,
-        };
+      if (!isProjectSourcesUpload(cmd)) {
+        var finalized = await waitForFileFinalize(session, fileId, 45000);
+        if (!finalized.ok) {
+          return {
+            type: "apiError",
+            ok: false,
+            status: finalized.status || 0,
+            error: "upload_failed",
+            message: finalized.error || "finalize_failed",
+            fileId: fileId,
+            bodyText:
+              finalized.bodyText && finalized.bodyText.length < 2000
+                ? finalized.bodyText
+                : null,
+          };
+        }
+
+        if (!cmd.gizmoId || cmd.skipProjectAttach === true) {
+          return {
+            type: "apiResult",
+            ok: true,
+            status: finalized.status || 200,
+            json: finalized.json || registerJson,
+            fileId: fileId,
+          };
+        }
+
+        return await attachFileToProject(session, cmd, fileId);
       }
 
       if (!cmd.gizmoId || cmd.skipProjectAttach === true) {
         return {
           type: "apiResult",
           ok: true,
-          status: finalized.status || 200,
-          json: finalized.json || registerJson,
+          status: registerRes.status,
+          json: registerJson,
           fileId: fileId,
+          location: "fs",
+          entrySurface: "project_sources",
         };
       }
 
-      return await attachFileToProject(session, cmd, fileId);
+      // Stream processing includes gizmo_id + entry_surface and often binds the file.
+      // C# verifies via project list and calls attachProjectFile only when still unlisted.
+      return {
+        type: "apiResult",
+        ok: true,
+        status: registerRes.status,
+        json: registerJson,
+        fileId: fileId,
+        location: "fs",
+        entrySurface: "project_sources",
+        streamBound: true,
+      };
     } catch (e) {
       return {
         type: "apiError",
@@ -1195,7 +1974,7 @@
     return score;
   }
 
-  function findBestProjectFileInput() {
+  function findBestProjectFileInput(requireDialog) {
     clearProjectFileInputMarks();
     var nodes = document.querySelectorAll('input[type="file"]');
     var best = null;
@@ -1203,13 +1982,15 @@
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
       if (isInsideComposer(el)) continue;
+      if (requireDialog && !el.closest('[role="dialog"]')) continue;
       var score = scoreProjectFileInput(el);
       if (score > bestScore) {
         bestScore = score;
         best = el;
       }
     }
-    if (!best) return null;
+    var minScore = requireDialog ? 12 : 2;
+    if (!best || bestScore < minScore) return { found: false, score: bestScore };
     best.setAttribute(CGW_PROJECT_FILE_INPUT_MARK, "1");
     return {
       found: true,
@@ -1217,7 +1998,17 @@
       accept: best.getAttribute("accept") || "",
       testId: best.getAttribute("data-testid") || "",
       multiple: !!best.multiple,
+      inDialog: !!best.closest('[role="dialog"]'),
     };
+  }
+
+  async function waitForSourcesDialog(maxMs) {
+    var deadline = Date.now() + (maxMs || 3000);
+    while (Date.now() < deadline) {
+      if (document.querySelector('[role="dialog"]')) return true;
+      await sleep(200);
+    }
+    return !!document.querySelector('[role="dialog"]');
   }
 
   function listProjectFileUi() {
@@ -1245,40 +2036,102 @@
     };
   }
 
-  async function prepareProjectKnowledgeUpload(cmd) {
-    var clicked = [];
-    var settingSelectors = [
-      'button[aria-label*="Project settings"]',
-      'button[aria-label*="project settings"]',
-      'button[aria-label*="Customize"]',
-      'button[data-testid*="project-settings"]',
-      'button[data-testid*="project-modal"]',
-      '[data-testid="project-modal-trigger"]',
-    ];
-    for (var s = 0; s < settingSelectors.length; s++) {
-      if (clickFirstVisible(settingSelectors[s], clicked, settingSelectors[s])) break;
+  function clickSourcesTab(clicked) {
+    var nodes = document.querySelectorAll('[role="tab"], button, [role="button"]');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (isInsideComposer(el)) continue;
+      var text =
+        (el.textContent && el.textContent.trim()) ||
+        el.getAttribute("aria-label") ||
+        "";
+      if (!/^sources$/i.test(text)) continue;
+      var style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      if (el.disabled) continue;
+      try {
+        el.click();
+        clicked.push("tab:sources");
+        return true;
+      } catch (_e) {
+        /* ignore */
+      }
     }
+    if (clickFirstVisible('[role="tab"][aria-label*="Sources"]', clicked, "tab:sources-role")) return true;
+    if (clickFirstVisible('button[aria-label*="Sources"]', clicked, "tab:sources-aria")) return true;
+    return clickButtonsByText(/^sources$/i, clicked, "tab:sources-fallback");
+  }
 
-    await sleep(400);
-
-    clickButtonsByText(/^(files|knowledge|sources)$/i, clicked, "tab:files");
-    await sleep(300);
-    clickButtonsByText(/add files|upload file|add file|upload files/i, clicked, "add-files");
-    await sleep(300);
-
+  function clickAddSources(clicked) {
+    var nodes = document.querySelectorAll("button, [role='button']");
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (isInsideComposer(el)) continue;
+      var text =
+        (el.textContent && el.textContent.trim()) ||
+        el.getAttribute("aria-label") ||
+        "";
+      if (!/^add sources$/i.test(text)) continue;
+      var style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      if (el.disabled) continue;
+      try {
+        el.click();
+        clicked.push("add-sources");
+        return true;
+      } catch (_e2) {
+        /* ignore */
+      }
+    }
     var addSelectors = [
-      'button[aria-label*="Add files"]',
-      'button[aria-label*="Upload file"]',
-      'button[aria-label*="Upload files"]',
-      'button[data-testid*="file-upload"]',
-      'button[data-testid*="add-file"]',
+      'button[aria-label*="Add sources"]',
+      'button[aria-label*="Add Sources"]',
+      '[data-testid*="add-sources"]',
+      '[data-testid*="add-source"]',
     ];
     for (var a = 0; a < addSelectors.length; a++) {
-      clickFirstVisible(addSelectors[a], clicked, addSelectors[a]);
+      if (clickFirstVisible(addSelectors[a], clicked, addSelectors[a])) return true;
+    }
+    return clickButtonsByText(/add sources/i, clicked, "add-sources-phrase");
+  }
+
+  async function prepareProjectKnowledgeUpload(cmd) {
+    var clicked = [];
+
+    if (!clickSourcesTab(clicked)) {
+      return {
+        type: "apiResult",
+        ok: false,
+        json: {
+          href: location.href,
+          clicked: clicked,
+          ui: listProjectFileUi(),
+        },
+        error: "sources_tab_not_found",
+      };
     }
 
+    await sleep(500);
+
+    if (!clickAddSources(clicked)) {
+      return {
+        type: "apiResult",
+        ok: false,
+        json: {
+          href: location.href,
+          clicked: clicked,
+          ui: listProjectFileUi(),
+        },
+        error: "add_sources_not_found",
+      };
+    }
+
+    await waitForSourcesDialog(4000);
     await sleep(300);
-    var fileInput = findBestProjectFileInput();
+    var fileInput = findBestProjectFileInput(true);
+    if (!fileInput || !fileInput.found) {
+      fileInput = findBestProjectFileInput(false);
+    }
     return {
       type: "apiResult",
       ok: !!(fileInput && fileInput.found),
@@ -1286,9 +2139,37 @@
         href: location.href,
         clicked: clicked,
         fileInput: fileInput,
+        strategy: "sources_tab_add_sources",
         ui: listProjectFileUi(),
       },
       error: fileInput && fileInput.found ? null : "project_file_input_not_found",
+    };
+  }
+
+  async function confirmProjectKnowledgeUpload(cmd) {
+    var clicked = [];
+    clickButtonsByText(/^(save|done|upload|add|confirm)$/i, clicked, "confirm");
+    clickButtonsByText(/save changes|upload file|add to project|add files|add sources/i, clicked, "confirm-phrase");
+    var confirmSelectors = [
+      'button[type="submit"]',
+      'button[data-testid*="save"]',
+      'button[data-testid*="confirm"]',
+      'button[data-testid*="upload"]',
+      'button[aria-label*="Save"]',
+      'button[aria-label*="Upload"]',
+    ];
+    for (var c = 0; c < confirmSelectors.length; c++) {
+      clickFirstVisible(confirmSelectors[c], clicked, confirmSelectors[c]);
+    }
+    await sleep(400);
+    return {
+      type: "apiResult",
+      ok: true,
+      json: {
+        href: location.href,
+        clicked: clicked,
+        ui: listProjectFileUi(),
+      },
     };
   }
 
@@ -1326,6 +2207,7 @@
       pending: busy,
       fileName: base,
       href: location.href,
+      fileInputCount: listProjectFileUi().fileInputs.length,
     };
   }
 
@@ -1413,6 +2295,134 @@
     }
   }
 
+  function normalizeSameOriginBackendPath(url) {
+    if (!url) return null;
+    if (String(url).indexOf("/backend-api/") === 0) return String(url);
+    try {
+      var u = new URL(String(url), BASE);
+      if (
+        u.hostname === "chatgpt.com" &&
+        u.pathname.indexOf("/backend-api/") === 0
+      ) {
+        return u.pathname + u.search;
+      }
+    } catch (_e) {
+      /* ignore */
+    }
+    return null;
+  }
+
+  function isLikelyDownloadRedirectEnvelopeText(text) {
+    if (!text || text.length === 0 || text.length > 4096) return false;
+    var t = text.trim();
+    if (t.charAt(0) !== "{") return false;
+    if (t.indexOf('"download_url"') === -1) return false;
+    return t.indexOf('"status"') !== -1 && t.toLowerCase().indexOf("success") !== -1;
+  }
+
+  function tryParseDownloadRedirectPath(text) {
+    if (!isLikelyDownloadRedirectEnvelopeText(text)) return null;
+    var j = parseJsonSafe(text);
+    if (!j || !j.download_url) return null;
+    return normalizeSameOriginBackendPath(String(j.download_url));
+  }
+
+  function bytesToDownloadPayload(bytes) {
+    var binary = "";
+    var chunk = 0x8000;
+    for (var j = 0; j < bytes.length; j += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(j, j + chunk));
+    }
+    var text = null;
+    try {
+      text = new TextDecoder("utf-8").decode(bytes);
+    } catch (_e) {
+      /* ignore */
+    }
+    return {
+      base64: btoa(binary),
+      text: text,
+      byteLength: bytes.length,
+    };
+  }
+
+  async function fetchAuthorizedDownloadBytes(session, path) {
+    var res = await fetch(BASE + path, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: { authorization: "Bearer " + session.token },
+    });
+    if (!res.ok) {
+      return { ok: false, status: res.status, path: path };
+    }
+    var buf = await res.arrayBuffer();
+    var bytes = new Uint8Array(buf);
+    var payload = bytesToDownloadPayload(bytes);
+    return {
+      ok: true,
+      status: res.status,
+      path: path,
+      bytes: bytes,
+      base64: payload.base64,
+      text: payload.text,
+      byteLength: payload.byteLength,
+    };
+  }
+
+  function decodeUtf8Prefix(bytes, maxLen) {
+    var n = Math.min(bytes.length, maxLen || 16);
+    if (n <= 0) return "";
+    try {
+      return new TextDecoder("utf-8").decode(bytes.subarray(0, n)).trimStart();
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function decodeUtf8Text(bytes) {
+    if (!bytes || bytes.length === 0) return "";
+    try {
+      return new TextDecoder("utf-8").decode(bytes).trim();
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  function isLikelyApiErrorJsonText(text) {
+    if (!text || text.length === 0 || text.length > 4096) return false;
+    var t = text.trim();
+    if (t.charAt(0) !== "{") return false;
+    return (
+      t.indexOf('"detail"') !== -1 ||
+      t.indexOf('"error"') !== -1 ||
+      t.toLowerCase().indexOf("not found") !== -1
+    );
+  }
+
+  function isLikelyDownloadMetadataJsonStubText(text) {
+    if (!text || text.length === 0 || text.length > 4096) return false;
+    if (isLikelyDownloadRedirectEnvelopeText(text)) return false;
+    var t = text.trim();
+    if (t.charAt(0) !== "{") return false;
+    if (isLikelyApiErrorJsonText(t)) return false;
+    return (
+      t.indexOf('"file_id"') !== -1 ||
+      (t.indexOf('"name"') !== -1 && t.indexOf('"size"') !== -1)
+    );
+  }
+
+  function isLikelyDownloadStubPayload(bytes, expectedMinBytes) {
+    if (!bytes || bytes.length === 0) return true;
+    if (expectedMinBytes > 0 && bytes.length < expectedMinBytes) {
+      var prefix = decodeUtf8Prefix(bytes, 16);
+      if (prefix.charAt(0) === "{" || prefix.charAt(0) === "[") return true;
+    }
+    var text = decodeUtf8Text(bytes);
+    if (isLikelyDownloadMetadataJsonStubText(text)) return true;
+    return isLikelyApiErrorJsonText(text);
+  }
+
   async function downloadFile(cmd) {
     var session = await getAccessToken();
     if (!session.ok) {
@@ -1440,6 +2450,26 @@
             var built = [];
             if (preferProject && gizmoId) {
               built.push(
+                "/backend-api/files/download/" +
+                  encodeURIComponent(fileId) +
+                  "?gizmo_id=" +
+                  encodeURIComponent(gizmoId) +
+                  "&download_intent=true",
+                "/backend-api/files/download/" +
+                  encodeURIComponent(fileId) +
+                  "?gizmo_id=" +
+                  encodeURIComponent(gizmoId) +
+                  "&inline=false&download_intent=false",
+                "/backend-api/files/download/" +
+                  encodeURIComponent(fileId) +
+                  "?gizmo_id=" +
+                  encodeURIComponent(gizmoId) +
+                  "&inline=false&download_intent=true",
+                "/backend-api/files/download/" +
+                  encodeURIComponent(fileId) +
+                  "?gizmo_id=" +
+                  encodeURIComponent(gizmoId) +
+                  "&inline=true&download_intent=false",
                 "/backend-api/projects/" +
                   encodeURIComponent(gizmoId) +
                   "/files/" +
@@ -1470,6 +2500,11 @@
           })();
 
     var attempts = [];
+    var lastStub = null;
+    var expectedMinBytes =
+      typeof cmd.expectedMinBytes === "number" && cmd.expectedMinBytes > 0
+        ? cmd.expectedMinBytes
+        : 0;
     var failFast =
       !!cmd.failFast && String(cmd.location || "").toLowerCase() === "fs";
     var requireProjectPaths = !!cmd.requireProjectPaths && !!cmd.gizmoId;
@@ -1513,28 +2548,75 @@
         }
         var buf = await res.arrayBuffer();
         var bytes = new Uint8Array(buf);
-        var binary = "";
-        var chunk = 0x8000;
-        for (var j = 0; j < bytes.length; j += chunk) {
-          binary += String.fromCharCode.apply(
-            null,
-            bytes.subarray(j, j + chunk)
-          );
+        var payload = bytesToDownloadPayload(bytes);
+        var text = payload.text;
+        var redirectPath = text ? tryParseDownloadRedirectPath(text) : null;
+        if (redirectPath) {
+          attempts.push({
+            status: res.status,
+            path: paths[i],
+            redirect: redirectPath,
+          });
+          var redirected = await fetchAuthorizedDownloadBytes(session, redirectPath);
+          if (!redirected.ok) {
+            attempts.push({
+              status: redirected.status,
+              path: redirectPath,
+            });
+            lastErr = {
+              status: redirected.status,
+              path: redirectPath,
+              attempts: attempts,
+            };
+            continue;
+          }
+          if (isLikelyDownloadStubPayload(redirected.bytes, expectedMinBytes)) {
+            attempts.push({
+              status: redirected.status,
+              path: redirectPath,
+              stub: true,
+              byteLength: redirected.byteLength,
+            });
+            lastStub = {
+              status: redirected.status,
+              path: redirectPath,
+              byteLength: redirected.byteLength,
+            };
+            continue;
+          }
+          return {
+            type: "apiResult",
+            ok: true,
+            status: redirected.status,
+            path: redirectPath,
+            redirectFrom: paths[i],
+            base64: redirected.base64,
+            text: redirected.text,
+            byteLength: redirected.byteLength,
+          };
         }
-        var base64 = btoa(binary);
-        var text = null;
-        try {
-          text = new TextDecoder("utf-8").decode(bytes);
-        } catch (_e) {
-          /* ignore */
+        if (isLikelyDownloadStubPayload(bytes, expectedMinBytes)) {
+          attempts.push({
+            status: res.status,
+            path: paths[i],
+            stub: true,
+            byteLength: bytes.length,
+          });
+          lastStub = {
+            status: res.status,
+            path: paths[i],
+            byteLength: bytes.length,
+          };
+          continue;
         }
         return {
           type: "apiResult",
           ok: true,
           status: res.status,
-          base64: base64,
-          text: text,
-          byteLength: bytes.length,
+          path: paths[i],
+          base64: payload.base64,
+          text: payload.text,
+          byteLength: payload.byteLength,
         };
       } catch (e) {
         lastErr = {
@@ -1542,6 +2624,23 @@
           attempts: attempts,
         };
       }
+    }
+
+    if (lastStub) {
+      return {
+        type: "apiError",
+        ok: false,
+        error: "download_stub",
+        status: lastStub.status,
+        message:
+          "download_stub " + lastStub.byteLength + " " + lastStub.path,
+        detail: {
+          status: lastStub.status,
+          path: lastStub.path,
+          stubByteLength: lastStub.byteLength,
+          attempts: attempts,
+        },
+      };
     }
 
     return {
@@ -1561,6 +2660,117 @@
         attempts: attempts,
       },
     };
+  }
+
+  async function downloadInterpreterFile(cmd) {
+    var session = await getAccessToken();
+    if (!session.ok) {
+      return {
+        type: "apiError",
+        ok: false,
+        error: session.error || "session_expired",
+        status: session.status || 401,
+      };
+    }
+
+    var conversationId = cmd.conversationId;
+    var messageId = cmd.messageId;
+    var sandboxPath = cmd.sandboxPath;
+    if (!conversationId || !messageId || !sandboxPath) {
+      return { type: "apiError", ok: false, error: "missing_interpreter_download_params" };
+    }
+
+    var path =
+      cmd.path ||
+      "/backend-api/conversation/" +
+        encodeURIComponent(conversationId) +
+        "/interpreter/download?message_id=" +
+        encodeURIComponent(messageId) +
+        "&sandbox_path=" +
+        encodeURIComponent(sandboxPath);
+
+    try {
+      var res = await fetch(BASE + path, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: { authorization: "Bearer " + session.token },
+      });
+      if (!res.ok) {
+        return {
+          type: "apiError",
+          ok: false,
+          error: "interpreter_download_failed",
+          status: res.status,
+          message: "interpreter_download_failed " + res.status + " " + path,
+          detail: { status: res.status, path: path },
+        };
+      }
+
+      var buf = await res.arrayBuffer();
+      var bytes = new Uint8Array(buf);
+      var payload = bytesToDownloadPayload(bytes);
+      var redirectPath = payload.text ? tryParseDownloadRedirectPath(payload.text) : null;
+      if (redirectPath) {
+        var redirected = await fetchAuthorizedDownloadBytes(session, redirectPath);
+        if (!redirected.ok) {
+          return {
+            type: "apiError",
+            ok: false,
+            error: "interpreter_download_failed",
+            status: redirected.status,
+            message:
+              "interpreter_download_failed " +
+              redirected.status +
+              " " +
+              redirectPath,
+            detail: {
+              status: redirected.status,
+              path: redirectPath,
+              redirectFrom: path,
+            },
+          };
+        }
+        return {
+          type: "apiResult",
+          ok: true,
+          status: redirected.status,
+          path: redirectPath,
+          redirectFrom: path,
+          base64: redirected.base64,
+          text: redirected.text,
+          byteLength: redirected.byteLength,
+        };
+      }
+
+      if (isLikelyDownloadStubPayload(bytes, 0)) {
+        return {
+          type: "apiError",
+          ok: false,
+          error: "download_stub",
+          status: res.status,
+          message: "download_stub " + bytes.length + " " + path,
+          detail: { status: res.status, path: path, stubByteLength: bytes.length },
+        };
+      }
+
+      return {
+        type: "apiResult",
+        ok: true,
+        status: res.status,
+        path: path,
+        base64: payload.base64,
+        text: payload.text,
+        byteLength: payload.byteLength,
+      };
+    } catch (e) {
+      return {
+        type: "apiError",
+        ok: false,
+        error: "interpreter_download_exception",
+        message: e && e.message ? String(e.message) : "unknown",
+      };
+    }
   }
 
   function normalizeSidebarProject(item) {
@@ -1818,6 +3028,8 @@
       }
       case "apiRequest":
         return await apiRequest(cmd);
+      case "acquireConversationSentinelHeaders":
+        return await acquireConversationSentinelHeaders(cmd);
       case "listProjects":
         return await listProjects();
       case "getApiContext":
@@ -1845,6 +3057,8 @@
         return await deleteProjectFile(cmd);
       case "downloadFile":
         return await downloadFile(cmd);
+      case "downloadInterpreterFile":
+        return await downloadInterpreterFile(cmd);
       case "listComposerFileUi":
         return {
           type: "apiResult",
@@ -1859,6 +3073,8 @@
         };
       case "prepareProjectKnowledgeUpload":
         return await prepareProjectKnowledgeUpload(cmd);
+      case "confirmProjectKnowledgeUpload":
+        return await confirmProjectKnowledgeUpload(cmd);
       case "pollProjectKnowledgeUpload":
         return {
           type: "apiResult",

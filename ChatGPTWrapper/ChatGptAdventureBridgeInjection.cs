@@ -15,7 +15,8 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
     private static string? _cachedScript;
     private static long _cachedStamp;
 
-    private readonly WebView2 _webView;
+    private readonly WebView2? _webView;
+    private readonly CoreWebView2? _coreOnly;
     private ChatGptPageHost? _pageHost;
     private bool _standaloneRegistered;
 
@@ -30,11 +31,23 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
     }
 
+    /// <summary>WinUI / host-neutral bridge when only CoreWebView2 is available.</summary>
+    public static ChatGptAdventureBridgeInjection CreateForCore(object coreWebView2)
+    {
+        var core = WinUiBridge.WinUiWebView2CoreRuntime.RequireTypedCore(coreWebView2);
+        return new ChatGptAdventureBridgeInjection(core);
+    }
+
+    private ChatGptAdventureBridgeInjection(CoreWebView2 core)
+    {
+        _coreOnly = core ?? throw new ArgumentNullException(nameof(core));
+    }
+
     public void Register(ChatGptPageHost pageHost)
     {
         _pageHost = pageHost ?? throw new ArgumentNullException(nameof(pageHost));
         pageHost.RegisterFeature(this);
-        if (_webView.CoreWebView2 is { } core)
+        if (_webView?.CoreWebView2 is { } core)
             _ = InjectAsync(core);
     }
 
@@ -66,7 +79,7 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         if (_pageHost is not null)
             return;
 
-        var core = _webView.CoreWebView2
+        var core = _coreOnly ?? _webView?.CoreWebView2
                    ?? throw new InvalidOperationException("Call after CoreWebView2 is ready.");
 
         if (!_standaloneRegistered)
@@ -113,7 +126,7 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
 
     public async Task InjectAsync(CoreWebView2? core = null)
     {
-        core ??= _webView.CoreWebView2;
+        core ??= _coreOnly ?? _webView?.CoreWebView2;
         if (core is null || !ChatGptPageGate.IsInjectable(core.Source))
             return;
 
@@ -150,6 +163,7 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         string? packetHash = null,
         bool attachmentsPreStaged = false,
         bool hostCdpStaged = false,
+        bool useWrapperAttachmentStash = false,
         bool allowKeyboardSubmitOnProjectHome = false)
     {
         var textJson = JsonSerializer.Serialize(text);
@@ -158,6 +172,7 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         var hashJson = JsonSerializer.Serialize(packetHash ?? "");
         var preStagedJson = attachmentsPreStaged ? "true" : "false";
         var cdpJson = hostCdpStaged ? "true" : "false";
+        var stashJson = useWrapperAttachmentStash ? "true" : "false";
         var keyboardJson = allowKeyboardSubmitOnProjectHome ? "true" : "false";
         var script =
             "(function(){var fn=globalThis.__cgwAdventureSubmitPrompt;"
@@ -165,7 +180,7 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
             + "globalThis.__cgwSubmitPromptOptions={allowKeyboardSubmitOnProjectHome:"
             + keyboardJson
             + "};"
-            + $"fn({textJson},{req},{playerJson},{hashJson},[],false,{cdpJson},{preStagedJson});return true;}})()";
+            + $"fn({textJson},{req},{playerJson},{hashJson},[],{stashJson},{cdpJson},{preStagedJson});return true;}})()";
 
         var raw = await core.ExecuteScriptAsync(script);
         return raw.Contains("true", StringComparison.OrdinalIgnoreCase);
@@ -395,6 +410,48 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         _cachedScript = sb.ToString();
         _cachedStamp = stamp;
         return _cachedScript;
+    }
+
+    /// <summary>WinUI / CoreWebView2-only bridge feature for <see cref="ChatGPTWrapper.WebView.ChatGptPageHost"/>.</summary>
+    public static ChatGPTWrapper.WebView.IPageFeature CreateWebViewFeature(
+        object coreWebView2,
+        EventHandler<AdventureBridgeMessage>? onMessage = null)
+    {
+        var core = WinUiBridge.WinUiWebView2CoreRuntime.RequireTypedCore(coreWebView2);
+        return new WebViewBridgeFeature(core, onMessage);
+    }
+
+    private sealed class WebViewBridgeFeature : ChatGPTWrapper.WebView.IPageFeature
+    {
+        private readonly CoreWebView2 _core;
+        private readonly EventHandler<AdventureBridgeMessage>? _onMessage;
+
+        public WebViewBridgeFeature(CoreWebView2 core, EventHandler<AdventureBridgeMessage>? onMessage)
+        {
+            _core = core;
+            _onMessage = onMessage;
+        }
+
+        string ChatGPTWrapper.WebView.IPageFeature.FeatureId => ChatGPTWrapper.WebView.PageFeatureIds.AdventureBridge;
+
+        Task ChatGPTWrapper.WebView.IPageFeature.ApplyAsync(CoreWebView2 core, CancellationToken cancellationToken) =>
+            new ChatGptAdventureBridgeInjection(core).InjectAsync(core);
+
+        void ChatGPTWrapper.WebView.IPageFeature.RegisterMessageHandlers(ChatGPTWrapper.WebView.PageMessageRouter router)
+        {
+            router.RegisterLegacy((type, root) =>
+            {
+                if (string.IsNullOrEmpty(type) || type.StartsWith("cgwCompose", StringComparison.Ordinal))
+                    return;
+
+                if (string.Equals(type, "cgwPlaySendLog", StringComparison.Ordinal)
+                    || string.Equals(type, "cgwDiagnosticsLog", StringComparison.Ordinal))
+                    return;
+
+                var message = AdventureBridgeMessage.FromJson(type, root.GetRawText(), root);
+                _onMessage?.Invoke(null, message);
+            });
+        }
     }
 }
 

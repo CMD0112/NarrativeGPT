@@ -31,6 +31,12 @@ internal static class ChatGptApiSendSampleCapture
 
     internal static void ClearCacheForTests() => SampleCache.Clear();
 
+    internal static string ResolveSampleKeyForTests(string method, string path, string? requestBody = null) =>
+        BuildSampleKey(method, path, requestBody);
+
+    internal static bool ShouldPersistSampleForTests(string method, string path, int status, string? requestBody = null) =>
+        ShouldPersistSample(method, path, status, requestBody);
+
     public static bool TryLoadSample(string sampleKey, out JsonElement root)
     {
         root = default;
@@ -63,6 +69,88 @@ internal static class ChatGptApiSendSampleCapture
 
         return root.TryGetProperty("requestBody", out requestBody)
                && requestBody.ValueKind == JsonValueKind.Object;
+    }
+
+    /// <summary>Loads sample regardless of HTTP status (for header gap diagnostics).</summary>
+    internal static bool TryLoadSampleAnyStatus(string sampleKey, out JsonElement root) =>
+        TryLoadSampleCore(sampleKey, out root);
+
+    internal static bool TryReadRequestHeaders(JsonElement root, out Dictionary<string, string> headers)
+    {
+        headers = [];
+        if (!root.TryGetProperty("requestHeaders", out var el) || el.ValueKind != JsonValueKind.Object)
+            return false;
+
+        foreach (var prop in el.EnumerateObject())
+        {
+            headers[prop.Name] = prop.Value.ValueKind == JsonValueKind.String
+                ? prop.Value.GetString() ?? ""
+                : prop.Value.GetRawText();
+        }
+
+        return headers.Count > 0;
+    }
+
+    internal static bool TryReadBridgeDeclaredHeaders(JsonElement root, out Dictionary<string, string> headers)
+    {
+        headers = [];
+        if (!root.TryGetProperty("bridgeDeclaredHeaders", out var el) || el.ValueKind != JsonValueKind.Object)
+            return false;
+
+        foreach (var prop in el.EnumerateObject())
+        {
+            headers[prop.Name] = prop.Value.ValueKind == JsonValueKind.String
+                ? prop.Value.GetString() ?? ""
+                : prop.Value.GetRawText();
+        }
+
+        return headers.Count > 0;
+    }
+
+    internal static void AnnotateBridgeDeclaredHeaders(
+        string method,
+        string path,
+        int? status,
+        string? requestBody,
+        IReadOnlyDictionary<string, string>? declaredHeaders)
+    {
+        if (declaredHeaders is null || declaredHeaders.Count == 0)
+            return;
+
+        if (!ShouldCapture(method, path))
+            return;
+
+        var sampleKey = BuildSampleKey(method, path, requestBody);
+        try
+        {
+            var filePath = Path.Combine(SamplesDirectory, SanitizeFileName(sampleKey) + ".json");
+            Dictionary<string, object?> doc;
+            if (File.Exists(filePath))
+            {
+                using var existing = JsonDocument.Parse(File.ReadAllText(filePath));
+                doc = JsonSerializer.Deserialize<Dictionary<string, object?>>(existing.RootElement.GetRawText())
+                      ?? new Dictionary<string, object?>();
+            }
+            else
+            {
+                doc = new Dictionary<string, object?>
+                {
+                    ["capturedAt"] = DateTimeOffset.UtcNow,
+                    ["method"] = method,
+                    ["path"] = path,
+                    ["status"] = status,
+                };
+            }
+
+            doc["bridgeDeclaredHeaders"] = ChatGptApiSendHeaderCapture.SanitizeDeclared(declaredHeaders);
+            doc["transport"] = "bridge-apiRequest";
+
+            SaveSampleObject(sampleKey, doc);
+        }
+        catch
+        {
+            /* ignore */
+        }
     }
 
     private static bool TryLoadSampleCore(string sampleKey, out JsonElement root)
@@ -167,14 +255,17 @@ internal static class ChatGptApiSendSampleCapture
             TrySeedParentCache(method, path, statusCode, responsePreview);
             TrySeedConduitCache(method, path, statusCode, requestBody, responsePreview);
 
-            var sample = new
+            var requestHeaders = ChatGptApiSendHeaderCapture.ExtractFromRequest(e.Request);
+            var sample = new Dictionary<string, object?>
             {
-                capturedAt = DateTimeOffset.UtcNow,
-                method,
-                path,
-                status = statusCode,
-                requestBody = ParseJsonOrText(SanitizeText(requestBody)),
-                responseBodyPreview = responsePreview,
+                ["capturedAt"] = DateTimeOffset.UtcNow,
+                ["method"] = method,
+                ["path"] = path,
+                ["status"] = statusCode,
+                ["transport"] = "page-fetch",
+                ["requestHeaders"] = requestHeaders,
+                ["requestBody"] = ParseJsonOrText(SanitizeText(requestBody)),
+                ["responseBodyPreview"] = responsePreview,
             };
 
             SaveSample(sampleKey, sample);
@@ -201,7 +292,8 @@ internal static class ChatGptApiSendSampleCapture
 
         if (!path.StartsWith("/backend-api/conversation/", StringComparison.OrdinalIgnoreCase)
             || path.Contains("/stream_status", StringComparison.OrdinalIgnoreCase)
-            || path.Contains("/textdocs", StringComparison.OrdinalIgnoreCase))
+            || path.Contains("/textdocs", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/interpreter/download", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -278,11 +370,33 @@ internal static class ChatGptApiSendSampleCapture
         if (path.Equals(ChatGptApiEndpoints.ConversationSend, StringComparison.OrdinalIgnoreCase)
             && ContainsAttachmentPayload(requestBody))
         {
+            if (status is >= 400 && HasSuccessfulSampleOnDisk("POST_backend-api_f_conversation_attachments"))
+                return false;
+
             return true;
         }
 
         return !path.Equals(ChatGptApiEndpoints.ConversationSend, StringComparison.OrdinalIgnoreCase)
                && !path.Equals(ChatGptApiEndpoints.ConversationPrepare, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasSuccessfulSampleOnDisk(string sampleKey)
+    {
+        try
+        {
+            var path = Path.Combine(SamplesDirectory, SanitizeFileName(sampleKey) + ".json");
+            if (!File.Exists(path))
+                return false;
+
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            return doc.RootElement.TryGetProperty("status", out var statusEl)
+                   && statusEl.TryGetInt32(out var status)
+                   && status is >= 200 and < 300;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool HasFailedSampleOnDisk(string sampleKey)
@@ -331,6 +445,12 @@ internal static class ChatGptApiSendSampleCapture
             return true;
         }
 
+        if (method.Equals("POST", StringComparison.OrdinalIgnoreCase)
+            && path.StartsWith("/backend-api/sentinel/chat-requirements/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         return false;
     }
 
@@ -339,7 +459,22 @@ internal static class ChatGptApiSendSampleCapture
         if (method.Equals("GET", StringComparison.OrdinalIgnoreCase)
             && path.StartsWith("/backend-api/conversation/", StringComparison.OrdinalIgnoreCase))
         {
-            return "GET_conversation";
+            if (path.Contains("/interpreter/download", StringComparison.OrdinalIgnoreCase))
+                return "GET_conversation_interpreter_download";
+
+            var barePath = path.Split('?')[0];
+            if (barePath.Count(c => c == '/') == 3)
+                return "GET_conversation_mapping";
+
+            return "GET_" + barePath.TrimStart('/').Replace('/', '_');
+        }
+
+        if (method.Equals("POST", StringComparison.OrdinalIgnoreCase)
+            && path.StartsWith("/backend-api/sentinel/chat-requirements/", StringComparison.OrdinalIgnoreCase))
+        {
+            var segment = path.Split('?')[0].TrimEnd('/');
+            var leaf = segment[(segment.LastIndexOf('/') + 1)..];
+            return "POST_backend-api_sentinel_chat-requirements_" + leaf;
         }
 
         if (method.Equals("POST", StringComparison.OrdinalIgnoreCase)
@@ -362,20 +497,56 @@ internal static class ChatGptApiSendSampleCapture
                || requestBody.Contains("multimodal_text", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void SaveSample(string sampleKey, object sample)
+    private static void SaveSample(string sampleKey, object sample) =>
+        SaveSampleObject(sampleKey, sample);
+
+    private static void SaveSampleObject(string sampleKey, object sample)
     {
         try
         {
             AppDirectories.EnsureCreated();
             Directory.CreateDirectory(SamplesDirectory);
             var path = Path.Combine(SamplesDirectory, SanitizeFileName(sampleKey) + ".json");
-            File.WriteAllText(
-                path,
-                JsonSerializer.Serialize(sample, new JsonSerializerOptions { WriteIndented = true }));
+
+            if (sample is Dictionary<string, object?> dict)
+            {
+                MergePreservedFields(path, dict);
+                File.WriteAllText(
+                    path,
+                    JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            else
+            {
+                File.WriteAllText(
+                    path,
+                    JsonSerializer.Serialize(sample, new JsonSerializerOptions { WriteIndented = true }));
+            }
 
             lock (Gate)
             {
                 SampleCache.Remove(sampleKey);
+            }
+        }
+        catch
+        {
+            /* ignore */
+        }
+    }
+
+    private static void MergePreservedFields(string path, Dictionary<string, object?> doc)
+    {
+        if (!File.Exists(path))
+            return;
+
+        try
+        {
+            using var existing = JsonDocument.Parse(File.ReadAllText(path));
+            var root = existing.RootElement;
+            if (root.TryGetProperty("bridgeDeclaredHeaders", out var bridge)
+                && bridge.ValueKind == JsonValueKind.Object
+                && !doc.ContainsKey("bridgeDeclaredHeaders"))
+            {
+                doc["bridgeDeclaredHeaders"] = JsonSerializer.Deserialize<object>(bridge.GetRawText());
             }
         }
         catch

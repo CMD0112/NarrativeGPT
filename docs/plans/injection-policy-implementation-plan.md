@@ -63,6 +63,7 @@ Comprehensive execution plan for **[CMD-292](https://linear.app/cmd0112/issue/CM
 ### Assembly pipeline (play send)
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
     subgraph inputs [Inputs]
         PI[Project instructions - external]

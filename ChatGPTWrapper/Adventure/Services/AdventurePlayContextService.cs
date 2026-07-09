@@ -346,23 +346,8 @@ internal static class AdventurePlayContextService
     internal static bool IsOnProjectConversationPage(CoreWebView2 core, string conversationId, string gizmoId) =>
         IsOnProjectConversationPage(core.Source, conversationId, gizmoId);
 
-    internal static bool IsOnProjectConversationPage(string? source, string conversationId, string gizmoId)
-    {
-        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri))
-            return false;
-
-        if (!ChatGptUrls.IsTrustedChatGptTopLevelUri(uri))
-            return false;
-
-        if (!ChatGptUrls.TryParseConversationId(uri, out var parsedConv)
-            || !string.Equals(parsedConv, conversationId, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return ChatGptUrls.TryParseGizmoId(uri, out var parsedGizmo)
-               && ChatGptUrls.GizmoIdsEqual(parsedGizmo, gizmoId);
-    }
+    internal static bool IsOnProjectConversationPage(string? source, string conversationId, string gizmoId) =>
+        ChatGptUrls.IsOnProjectConversationPage(source, conversationId, gizmoId);
 
     internal static bool IsOnConversationPage(string? source, string conversationId)
     {
@@ -395,7 +380,7 @@ internal static class AdventurePlayContextService
             return false;
 
         return !ChatGptUrls.TryParseGizmoId(uri, out var parsedGizmo)
-               || ChatGptUrls.GizmoIdsEqual(parsedGizmo, gizmoId);
+               || ChatGptUrls.GizmoIdsMatch(parsedGizmo, gizmoId);
     }
 
     private static async Task<bool> WaitForComposerAsync(

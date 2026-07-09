@@ -15,19 +15,17 @@ public sealed class PlayTabSessionResolverTests
             Metadata = new AdventureMetadata
             {
                 LinkedProjectId = "g-p-resolver",
-                LinkedConversationId = "conv-1",
             },
         };
         AdventureThreadRegistryService.EnsureMigrated(bundle);
+        PlayThreadBindingService.MarkVerified(bundle, "conv-1");
         var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play);
         entry.PinnedTabKey = "tab-pin";
 
         var source = ChatGptUrls.BuildProjectConversationUrl("conv-1", "g-p-resolver");
-        var caps = PlayTabSessionResolver.ResolveCapabilities(
-            bundle,
-            webView: null,
-            tabs: null,
-            source);
+        var ctx = PlayTabCapabilityContext.FromUrl(bundle, source, candidateTabKey: "tab-pin");
+        var session = PlayTabSessionFactory.FromBundle(bundle);
+        var caps = PlayTabCapabilityResolver.Resolve(ctx, session);
 
         Assert.Equal(PlayDeliveryChannel.Api, caps.DeliveryChannel);
     }

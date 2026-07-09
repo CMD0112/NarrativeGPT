@@ -26,6 +26,16 @@ internal sealed class UtilityContextManifest
 
     public IReadOnlyList<string> AttachmentFileNames { get; init; } = [];
 
+    public ThreadProjectionSource? ThreadProjectionSource { get; init; }
+
+    public Guid? ThreadEntryId { get; init; }
+
+    public Guid? ThreadIngestEventId { get; init; }
+
+    public string? ThreadRawPath { get; init; }
+
+    public string? ThreadProjectionPath { get; init; }
+
     public UtilityContextManifestRecord ToRecord() => new()
     {
         Lane = Lane.ToString(),
@@ -38,6 +48,11 @@ internal sealed class UtilityContextManifest
         TotalCharCount = TotalCharCount,
         AttachmentDeliveryLane = AttachmentDeliveryLane,
         AttachmentFileNames = AttachmentFileNames.ToList(),
+        ThreadProjectionSource = ThreadProjectionSource?.ToString(),
+        ThreadEntryId = ThreadEntryId,
+        ThreadIngestEventId = ThreadIngestEventId,
+        ThreadRawPath = ThreadRawPath,
+        ThreadProjectionPath = ThreadProjectionPath,
     };
 
     public UtilityContextManifest WithAttachmentDeliveryLane(string? lane) =>
@@ -53,6 +68,31 @@ internal sealed class UtilityContextManifest
             TotalCharCount = TotalCharCount,
             AttachmentDeliveryLane = lane,
             AttachmentFileNames = AttachmentFileNames,
+            ThreadProjectionSource = ThreadProjectionSource,
+            ThreadEntryId = ThreadEntryId,
+            ThreadIngestEventId = ThreadIngestEventId,
+            ThreadRawPath = ThreadRawPath,
+            ThreadProjectionPath = ThreadProjectionPath,
+        };
+
+    public UtilityContextManifest WithThreadProjection(ThreadProjectionResult projection, Guid? threadEntryId) =>
+        new()
+        {
+            Lane = Lane,
+            JobId = JobId,
+            SectionsIncluded = SectionsIncluded,
+            SectionsOmitted = SectionsOmitted,
+            CanonSliceIds = CanonSliceIds,
+            TranscriptSource = TranscriptSource,
+            TurnPairCount = TurnPairCount,
+            TotalCharCount = TotalCharCount,
+            AttachmentDeliveryLane = AttachmentDeliveryLane,
+            AttachmentFileNames = AttachmentFileNames,
+            ThreadProjectionSource = projection.Source,
+            ThreadEntryId = threadEntryId,
+            ThreadIngestEventId = projection.IngestEventId,
+            ThreadRawPath = projection.RawPath,
+            ThreadProjectionPath = projection.ProjectionPath,
         };
 }
 

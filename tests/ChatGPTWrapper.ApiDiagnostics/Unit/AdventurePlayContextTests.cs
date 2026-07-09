@@ -9,6 +9,29 @@ namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 public sealed class AdventurePlayContextTests
 {
     [Fact]
+    public void ResolveProjectConversationUrl_uses_slug_segment_from_project_home_hint()
+    {
+        var hint = "https://chatgpt.com/g/g-p-abc-the-king-in-red-black/project";
+        var url = ChatGptUrls.ResolveProjectConversationUrl("conv-1", "g-p-abc", hint);
+
+        Assert.Equal("https://chatgpt.com/g/g-p-abc-the-king-in-red-black/c/conv-1", url);
+    }
+
+    [Fact]
+    public void GizmoIdsMatch_accepts_slug_suffix()
+    {
+        Assert.True(ChatGptUrls.GizmoIdsMatch("g-p-abc-the-king-in-red-black", "g-p-abc"));
+        Assert.False(ChatGptUrls.GizmoIdsMatch("g-p-other", "g-p-abc"));
+    }
+
+    [Fact]
+    public void IsOnProjectConversationPage_matches_slugged_project_path()
+    {
+        var source = "https://chatgpt.com/g/g-p-abc-the-king-in-red-black/c/conv-1";
+        Assert.True(ChatGptUrls.IsOnProjectConversationPage(source, "conv-1", "g-p-abc"));
+    }
+
+    [Fact]
     public void BuildProjectConversationUrl_uses_path_style_for_gizmo_ids()
     {
         var url = ChatGptUrls.BuildProjectConversationUrl("conv-abc", "g-p-test");

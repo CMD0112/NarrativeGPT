@@ -121,40 +121,25 @@ internal static class UtilityWorkerOrchestrator
         UtilityTranscriptScope? scope = null;
 
         if (entry.JobId is GenerationJobId.ExtractEntities
-
             or GenerationJobId.ProposeMemories
-
-            or GenerationJobId.ProcessTurn)
-
+            or GenerationJobId.ProcessTurn
+            or GenerationJobId.ProposeEntitiesFile)
         {
-
             scope = UtilityTranscriptScopeService.ResolveFromLocalLog(bundle)
-
                     ?? UtilityTranscriptScopeService.ResolveFallbackTurn(bundle);
-
         }
 
-
-
         return new GenerationJobContext
-
         {
-
             Turn = turn,
-
             Scope = scope,
-
             EntityId = entry.EntityId,
-
             EntityKind = entry.EntityKind,
-
             CardId = entry.CardId,
-
             UserPrompt = entry.UserPrompt,
-
             AttachmentReferenceNote = entry.AttachmentReferenceNote,
-
             SuppressInlineGuide = true,
+            UtilityRunId = entry.RunId,
 
             JobAttachments = entry.Attachments is { Count: > 0 }
                 ? UtilityJobAttachmentStaging.ToAttachmentContext(bundle.Metadata.Id, entry.Attachments)

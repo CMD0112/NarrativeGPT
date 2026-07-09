@@ -55,6 +55,27 @@ public sealed class UtilityJobRunRecord
 
     /// <summary>Pairs local-llm and ChatGPT utility runs from the same dual-run job.</summary>
     public Guid? DualRunGroupId { get; set; }
+
+    /// <summary>Play-thread ingest event frozen at utility job dispatch.</summary>
+    public Guid? PlayThreadIngestEventId { get; set; }
+
+    public Guid? PlayThreadEntryId { get; set; }
+
+    public string? PlayThreadRawPath { get; set; }
+
+    public string? PlayThreadProjectionPath { get; set; }
+
+    /// <summary>Relative path under <c>utility-results/{runId}/</c> for assembled context snapshot.</summary>
+    public string? ContextProjectionPath { get; set; }
+
+    /// <summary>Canonical Project sources input path when source file I/O catalog applies.</summary>
+    public string? SourceIoInputPath { get; set; }
+
+    /// <summary>Ephemeral utility chat id (captured before thread delete).</summary>
+    public string? EphemeralConversationId { get; set; }
+
+    /// <summary>Relative path under <c>utility-results/{runId}/</c> for ephemeral job capture metadata.</summary>
+    public string? EphemeralCapturePath { get; set; }
 }
 
 /// <summary>Index of latest utility runs per job id.</summary>

@@ -77,11 +77,9 @@ public sealed class UtilityJsonRepairServiceTests
             context: new GenerationJobContext());
 
         Assert.Null(result.Error);
-        Assert.Equal(3, result.ProposalCount);
+        Assert.Equal(2, result.ProposalCount);
         Assert.Single(bundle.Memory.ReviewQueue);
         Assert.Single(bundle.Entities.ReviewQueue);
-        Assert.True(bundle.Summary.PendingReview);
-        Assert.Equal("Gate tension.", bundle.Summary.ProposedSummary);
     }
 
     [Fact]

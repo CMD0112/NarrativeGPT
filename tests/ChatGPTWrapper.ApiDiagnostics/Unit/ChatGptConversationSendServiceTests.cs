@@ -99,6 +99,22 @@ public sealed class ChatGptConversationSendServiceTests
         Assert.Equal(expected, ChatGptConversationSendService.IsRetryableSendError(error));
 
     [Fact]
+    public void BuildSendBody_omits_conversation_id_for_client_created_root_first_send()
+    {
+        var body = ChatGptConversationSendService.BuildSendBody(
+            "client-uuid",
+            ChatGptConversationSendService.ClientCreatedRootParentId,
+            "g-p-test",
+            "hello");
+
+        var dict = Assert.IsType<Dictionary<string, object?>>(body);
+        Assert.False(dict.ContainsKey("conversation_id"));
+        Assert.False(dict.ContainsKey("gizmo_id"));
+        Assert.Equal("none", dict["client_prepare_state"]);
+        Assert.Equal(ChatGptConversationSendService.ClientCreatedRootParentId, dict["parent_message_id"]);
+    }
+
+    [Fact]
     public void BuildPrepareBody_includes_conversation_and_parent()
     {
         var body = ChatGptConversationSendService.BuildPrepareBody(
@@ -145,9 +161,9 @@ public sealed class ChatGptConversationSendServiceTests
 
         var parent = ChatGptConversationSendService.BootstrapNewConversationParent("conv-new");
 
-        Assert.False(string.IsNullOrWhiteSpace(parent));
+        Assert.Equal(ChatGptConversationSendService.ClientCreatedRootParentId, parent);
         Assert.True(ConversationParentCache.TryGet("conv-new", out var cached));
-        Assert.Equal(parent, cached);
+        Assert.Equal(ChatGptConversationSendService.ClientCreatedRootParentId, cached);
     }
 
     [Fact]

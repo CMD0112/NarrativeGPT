@@ -289,6 +289,15 @@ public sealed class ChatGptContinuousViewInjection : IPageFeature
         }
     }
 
+    internal static string BuildFullInjectionScript(UiChromeSettings settings)
+    {
+        var lib = GetCachedScriptPayload();
+        if (string.IsNullOrEmpty(lib))
+            return ChromePreferencesApplier.BuildApplyScript(settings);
+
+        return lib + "\n" + ChromePreferencesApplier.BuildApplyScript(settings);
+    }
+
     public static string BuildPreferenceUpdateScript(
         TranscriptViewMode transcriptViewMode,
         bool hideAssistantEditArtifacts,

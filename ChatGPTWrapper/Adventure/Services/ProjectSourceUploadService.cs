@@ -3,6 +3,7 @@ using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
 using ChatGPTWrapper.ChatGptApi.ProjectSource;
+using ChatGPTWrapper.ChatGptApi.ProjectSource.Publication;
 using Microsoft.Web.WebView2.Core;
 
 namespace ChatGPTWrapper.Adventure.Services;
@@ -74,7 +75,8 @@ public sealed class ProjectSourceUploadService
         AdventureBundle? bundle = null,
         SourceManifestEntry? manifestEntry = null,
         IProgress<string>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ProjectSourceUploadMethod? uploadMethodOverride = null)
     {
         if (string.IsNullOrWhiteSpace(gizmoId))
             throw new InvalidOperationException("No linked ChatGPT project.");
@@ -83,7 +85,14 @@ public sealed class ProjectSourceUploadService
             throw new FileNotFoundException("Local file not found.", localFilePath);
 
         remoteFileName = NormalizeRemoteFileName(remoteFileName);
-        progress?.Report($"Publishing {remoteFileName}…");
+        var uploadMethod = ProjectSourceUploadMethodResolver.Resolve(bundle, uploadMethodOverride);
+        ProjectLinkDiagnostics.Log(
+            $"PublishLocalFile uploadMethod={uploadMethod} file={remoteFileName}");
+        progress?.Report(uploadMethod switch
+        {
+            ProjectSourceUploadMethod.PureApi => $"Publishing {remoteFileName} via pure API…",
+            _ => $"Publishing {remoteFileName} via headless Chrome…",
+        });
 
         var bytes = await File.ReadAllBytesAsync(localFilePath, cancellationToken);
         var publish = await _publication.PublishAsync(
@@ -95,12 +104,15 @@ public sealed class ProjectSourceUploadService
                 Content = bytes,
                 MimeType = ResolveMimeType(remoteFileName),
                 AdventureId = bundle?.Metadata.Id,
+                UploadMethod = uploadMethod,
             },
             progress,
             cancellationToken);
 
         var updatedManifest = false;
-        if (manifestEntry is not null && bundle is not null)
+        if (manifestEntry is not null
+            && bundle is not null
+            && publish.Run?.Outcome == ProjectPublicationOutcome.Verified)
         {
             manifestEntry.RemoteFileId = publish.File.FileId;
             manifestEntry.RemoteFileName = remoteFileName;
@@ -123,6 +135,8 @@ public sealed class ProjectSourceUploadService
             File = publish.File,
             UsedAttachFallback = publish.BindingStrategy.UsedUpsertFallback(),
             UpdatedManifest = updatedManifest,
+            Run = publish.Run,
+            Outcome = publish.Run?.Outcome ?? ProjectPublicationOutcome.Verified,
         };
     }
 
@@ -199,7 +213,8 @@ public sealed class ProjectSourceUploadService
                     replaced++;
                 }
 
-                var publish = await _publication.PublishAsync(
+                var uploadMethod = ProjectSourceUploadMethodResolver.Resolve(bundle);
+                var publish = await _publication.PublishBatchAsync(
                     core,
                     new ProjectSourcePublicationRequest
                     {
@@ -208,6 +223,7 @@ public sealed class ProjectSourceUploadService
                         Content = bytes,
                         MimeType = mime,
                         AdventureId = bundle.Metadata.Id,
+                        UploadMethod = uploadMethod,
                     },
                     progress,
                     cancellationToken);

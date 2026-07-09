@@ -74,18 +74,21 @@ Preview refreshes when narrator or injection policy controls change, or when the
 | **Narration** | Length, Detail, Tone, Pacing — delivery overrides |
 | **Combat & stakes** | Combat difficulty, Violence, Consequence weight — all editable with scope |
 | **Reset scope** | Clears overrides for the selected scope only |
-| **Advanced…** | Opens `NarratorAdvancedDialog` |
+| **Full narrator settings** | Opens Play settings → **Injection** tab (minimal cockpit mode) |
 
 Changes save immediately to `adventure.json` via `AdventureStore.Save`.
 
-### Narrow panel — Narrator flyout
+### Narrator cockpit density
 
-When the play side panel content width is below **280px** (`PlayResponsiveTiers.ShellHeaderFullChrome`), inline narrator combos hide and an **Injection…** menu appears instead:
+Play settings → **Play surface** tab sets global narrator panel density:
 
-- **Expand injection panel** — expands the Injection expander
-- **Advanced…** — same dialog as the inline button
+| Mode | Companion shows |
+|------|-----------------|
+| **Minimal** (default) | Scene profile, scope radios, override chips, **Full narrator settings** button |
+| **Full** | Minimal controls plus inline combo grid for all seven scale dimensions |
+| **Remember last** | Per-adventure last choice stored in `PlayCompanionLastNarratorDensity` |
 
-Implementation: `PlayLayoutCapabilities.UseShellHeaderFlyouts` toggles visibility in `AdventurePlayView.ApplyLayout`.
+The legacy `NarratorAdvancedDialog` was removed — turn directive, session addendum, and emphasis toggles live on Play settings → **Injection** tab (`NarratorBehaviorPanel`).
 
 ### Play settings — Injection tab
 
@@ -112,19 +115,6 @@ The **Play packet** tab focuses on send inputs (not duplicate narrator combos):
 - Continuation queue and fallback player line
 - Hint linking narrator overrides to the **Injection** tab
 - Live merged packet preview (shows override blocks when present)
-
-### Advanced dialog
-
-**File:** `ChatGPTWrapper/Views/NarratorAdvancedDialog.xaml`
-
-| Field | Scope | Packet effect |
-|-------|-------|---------------|
-| **Turn directive** | Turn (next send only) | Appended as `=== TURN DIRECTIVE ===` block |
-| **Session addendum** | Session | Line in `=== TURN OVERRIDES ===`: `Session note: …` |
-| **Emphasize content boundaries** | Turn or session (per cockpit scope) | Line in overrides block |
-| **Emphasize portrayal rules** | Turn or session (per cockpit scope) | Line in overrides block |
-
-Turn directive and session addendum are always stored in their respective scopes regardless of which scope radio is selected in the cockpit; emphasis checkboxes follow the cockpit scope when the dialog opens.
 
 ---
 
@@ -350,12 +340,13 @@ Session keys are `PlaySession.Id` GUID strings. When a session ends, its entry i
 ## UI state flow
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TD
     subgraph ui [Play side panel]
         Scope[Scope radio: Turn / Session / Adventure]
         Combo[Parameter combos]
         Profile[Scene profile]
-        Adv[Advanced dialog]
+        Settings[Play settings Injection tab]
     end
 
     subgraph services [Services]
@@ -402,7 +393,7 @@ Shows **"No active overrides."** when empty.
 | Piece | File |
 |-------|------|
 | Side panel UI | `Views/AdventurePlayView.xaml(.cs)` |
-| Advanced dialog | `Views/NarratorAdvancedDialog.xaml(.cs)` |
+| Full narrator + injection editor | `Views/PlayPromptInjectionDialog.xaml` → **Injection** tab, `NarratorBehaviorPanel` |
 | Next-send overrides UI | `Views/PlayPromptInjectionDialog.xaml(.cs)` |
 | Combo bind/read/save | `Adventure/Services/NarratorControlsService.cs` |
 | Scope resolution + packet blocks | `Adventure/Services/NarratorOverrideResolver.cs` |
@@ -429,7 +420,7 @@ Shows **"No active overrides."** when empty.
 
 1. Select **Session** scope.
 2. Choose scene profile **Action** (or set length/detail/tone manually).
-3. Optionally open **Advanced…** and add a session addendum.
+3. Optionally open **Full narrator settings** (Play settings → Injection) and add a session addendum.
 4. Send as normal — session overrides apply to every send until you **Reset scope** (Session) or the play session ends.
 
 ### Preview before sending

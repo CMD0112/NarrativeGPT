@@ -55,7 +55,7 @@ public sealed class PlaySendDeliveryPolicyTests
     }
 
     [Fact]
-    public void Api_attachment_refs_still_use_api_when_dom_first_and_no_dom_bytes()
+    public void Api_attachment_refs_do_not_use_api_send()
     {
         var bundle = Bundle(preferDom: true);
         var refs = new List<ChatAttachmentRef>
@@ -63,7 +63,7 @@ public sealed class PlaySendDeliveryPolicyTests
             new() { FileId = "file-1", FileName = "a.png", MimeType = "image/png" },
         };
 
-        Assert.True(PlaySendDeliveryPolicy.ShouldUseApiPlaySend(bundle, refs, domAttachments: null));
+        Assert.False(PlaySendDeliveryPolicy.ShouldUseApiPlaySend(bundle, refs, domAttachments: null));
         Assert.False(PlaySendDeliveryPolicy.ShouldUseApiPlaySend(
             bundle,
             refs,
@@ -71,18 +71,16 @@ public sealed class PlaySendDeliveryPolicyTests
     }
 
     [Fact]
-    public void Dom_attachment_bytes_never_use_api_attachment_send_even_when_api_first()
+    public void Play_attachments_require_dom_composer_staging()
     {
-        var bundle = Bundle(preferDom: false);
         var refs = new List<ChatAttachmentRef>
         {
             new() { FileId = "file-1", FileName = "a.png", MimeType = "image/png" },
         };
-        var dom = new List<DomAttachmentPayload>
-        {
-            new() { Name = "a.png", MimeType = "image/png", Content = [1] },
-        };
 
-        Assert.False(PlaySendDeliveryPolicy.ShouldUseApiPlaySend(bundle, refs, dom));
+        Assert.True(PlaySendDeliveryPolicy.RequiresDomComposerForAttachments(
+            refs,
+            domAttachments: null,
+            attachmentsPreStaged: false));
     }
 }

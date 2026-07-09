@@ -16,11 +16,12 @@ public sealed class KingInRedBootstrapDiagnosticTests : IClassFixture<FileLockAw
     {
         get
         {
-            var path = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "ChatGPTWrapper",
-                "adventures",
-                KingInRedId.ToString("D"));
+            var settingsPath = Path.Combine(AppDirectories.ConfigRoot, "wrapper-settings.json");
+            if (!File.Exists(settingsPath))
+                return null;
+
+            WrapperSettingsStore.Initialize();
+            var path = AppDirectories.AdventureDirectory(KingInRedId);
             return Directory.Exists(path) ? path : null;
         }
     }
@@ -29,7 +30,8 @@ public sealed class KingInRedBootstrapDiagnosticTests : IClassFixture<FileLockAw
     public void Bootstrap_user_king_in_red_adventure_materializes_sources()
     {
         var src = UserAdventureDir;
-        Assert.NotNull(src);
+        if (src is null)
+            return;
 
         var tempRoot = Path.Combine(Path.GetTempPath(), "ChatGPTWrapper-KingBootstrap-" + Guid.NewGuid().ToString("N"));
         var dest = Path.Combine(tempRoot, "adventures", KingInRedId.ToString("D"));

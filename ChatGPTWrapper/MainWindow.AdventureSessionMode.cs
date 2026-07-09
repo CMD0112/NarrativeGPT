@@ -140,7 +140,11 @@ public partial class MainWindow
             try
             {
                 await PrepareDesignBrowserAsync(adventureId);
-                await SyncActiveThreadLogAsync(adventureId, AdventureThreadKind.Design, ThreadConversationLogCaptureSource.Api);
+                await SyncActiveThreadLogAsync(
+                    adventureId,
+                    AdventureThreadKind.Design,
+                    ThreadConversationLogCaptureSource.Api,
+                    snapshotTrigger: ThreadConversationLogSnapshotTrigger.SessionLoad);
             }
             catch (Exception ex)
             {
@@ -209,8 +213,10 @@ public partial class MainWindow
         _playView.ReconcileDuplicatesAsync = () => ReconcilePlaySourcesAsync(adventureId);
         _playView.SuggestEntitiesAsync = () => RunEntityExtractionForActiveAdventureAsync();
         _playView.SuggestEntitiesWithAttachmentsAsync = () => RunEntityExtractionWithAttachmentsAsync();
+        _playView.ProposeEntitiesFileAsync = () => RunProposeEntitiesFileForActiveAdventureAsync();
         _playView.RunUtilityJobWithAttachmentsAsync = jobId => RunUtilityJobWithAttachmentsPromptAsync(jobId);
         _playView.SuggestMemoriesAsync = () => RunProposeMemoriesAsync();
+        _playView.UpdateStateAsync = () => RunUpdateStateAsync();
         _playView.RefreshSummaryAsync = () => RunUpdateSummaryAsync();
         _playView.GenerateCardsAsync = () =>
         {
@@ -236,8 +242,12 @@ public partial class MainWindow
             return RunExpandStoryCardAsync(cardId);
         };
         _playView.RunContinuityCheckAsync = () => RunContinuityCheckAsync();
+        _playView.ResolveContinuityWarningAsync = warning => RunResolveContinuityWarningAsync(warning);
+        _playView.RunSelectedAiToolJobsAsync = keys => RunSelectedAiToolJobsAsync(keys);
         _playView.ProcessLastExchangeAsync = includeSummary => RunProcessLastExchangeAsync(includeSummary);
         _playView.ExpandEntityAsync = (kind, id) => RunExpandEntityAsync(kind, id);
+        _playView.ProposeEntityStateAsync = (rows, filter) => RunProposeEntityStateAsync(rows, filter);
+        _playView.ProposeCanonEvolutionAsync = (rows, filter) => RunProposeCanonEvolutionAsync(rows, filter);
         _playView.SyncInstructionsAsync = async () =>
         {
             var b = AdventureStore.Load(adventureId);
@@ -252,6 +262,7 @@ public partial class MainWindow
         _playView.ContinueDesignAsync = () => SwitchToDesignSessionAsync();
         _playView.PromptThreadLogSyncAsync = () => PromptThreadLogSyncFromMenuAsync(adventureId);
         _playView.PromptThreadLogDumpAsync = () => PromptThreadLogDumpFromMenuAsync(adventureId);
+        _playView.PromptThreadLogSnapshotAsync = () => PromptThreadLogSnapshotFromMenuAsync(adventureId);
         _playView.ListThreadFilesAsync = () => ListPlayThreadFilesAsync(adventureId);
         _playView.DownloadThreadFileAsync = file => DownloadPlayThreadFileAsync(adventureId, file);
         _playView.OpenProjectSettingsAsync = () => OpenProjectSettingsAsync();

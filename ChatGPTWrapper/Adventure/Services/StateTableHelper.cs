@@ -2,14 +2,14 @@ using ChatGPTWrapper.Adventure.Models;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
-internal sealed class StateTableRow
+public sealed class StateTableRow
 {
     public required string Field { get; init; }
 
     public required string Value { get; init; }
 }
 
-internal static class StateTableHelper
+public static class StateTableHelper
 {
     public static IReadOnlyList<StateTableRow> BuildRows(AdventureBundle bundle)
     {
@@ -23,6 +23,7 @@ internal static class StateTableHelper
         Add(rows, "Mysteries", s.UnresolvedMysteries);
         Add(rows, "Consequences", s.RecentConsequences);
         Add(rows, "Map notes", s.MapNotes);
+        Add(rows, "Flags", FormatFlags(s.Flags));
 
         var scene = s.Scene;
         Add(rows, "Scene location", scene.Location);
@@ -49,5 +50,13 @@ internal static class StateTableHelper
             return;
 
         rows.Add(new StateTableRow { Field = field, Value = value.Trim() });
+    }
+
+    private static string FormatFlags(IReadOnlyDictionary<string, bool> flags)
+    {
+        if (flags.Count == 0)
+            return "";
+
+        return string.Join(", ", flags.Select(kv => $"{kv.Key}={kv.Value.ToString().ToLowerInvariant()}"));
     }
 }

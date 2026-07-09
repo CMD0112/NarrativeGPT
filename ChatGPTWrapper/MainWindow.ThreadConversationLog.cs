@@ -3,6 +3,7 @@ using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
+using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
 
 namespace ChatGPTWrapper;
@@ -13,7 +14,9 @@ public partial class MainWindow
         Guid adventureId,
         AdventureThreadKind kind,
         string captureSource,
-        CoreWebView2? core = null)
+        CoreWebView2? core = null,
+        string? snapshotTrigger = null,
+        ThreadSnapshotCorrelation? snapshotCorrelation = null)
     {
         var bundle = AdventureStore.Load(adventureId);
         if (bundle is null)
@@ -30,12 +33,17 @@ public partial class MainWindow
         if (core is null || sendService is null)
             return;
 
+        var snapshotRequest = snapshotTrigger is not null
+            ? ThreadSnapshotPolicyService.TryCreateRequest(bundle, snapshotTrigger, snapshotCorrelation)
+            : null;
+
         var result = await ThreadConversationLogService.SyncRollingFromApiAsync(
             bundle,
             entry,
             core,
             sendService,
-            captureSource);
+            captureSource,
+            snapshotRequest);
 
         if (!result.Success && kind == AdventureThreadKind.Play)
         {
@@ -49,15 +57,24 @@ public partial class MainWindow
             var capture = await transcriptService.CaptureAsync(bundle, settings, core, domOnlyCapture: true);
             if (capture.TurnPairs.Count > 0)
             {
-                ThreadConversationLogService.SyncRollingFromDomPairs(
+                result = ThreadConversationLogService.SyncRollingFromDomPairs(
                     bundle,
                     entry,
                     capture.TurnPairs,
-                    ThreadConversationLogCaptureSource.Dom);
+                    ThreadConversationLogCaptureSource.Dom,
+                    snapshotRequest);
             }
         }
 
-        AdventureStore.Save(bundle, AdventureSaveScope.Metadata);
+        if (result.IngestEventId is not null)
+        {
+            FlightRecordCaptureService.TryLinkThreadIngest(bundle, snapshotCorrelation, result, entry);
+        }
+
+        var saveScope = result.IngestEventId is not null
+            ? AdventureSaveScope.Metadata | AdventureSaveScope.PromptHistory
+            : AdventureSaveScope.Metadata;
+        AdventureStore.Save(bundle, saveScope);
         if (kind == AdventureThreadKind.Play)
             await ApplyThreadOrdinalMapToPlayTabAsync();
     }
@@ -111,6 +128,69 @@ public partial class MainWindow
 
         if (kind == AdventureThreadKind.Play)
             await ApplyThreadOrdinalMapToPlayTabAsync();
+    }
+
+    private async Task SaveActiveThreadSnapshotAsync(Guid adventureId, AdventureThreadKind kind)
+    {
+        var bundle = AdventureStore.Load(adventureId);
+        if (bundle is null)
+            return;
+
+        ThreadConversationLogMigrationService.MigrateIfNeeded(bundle);
+
+        var entry = ThreadConversationLogReader.GetActiveEntry(bundle, kind);
+        if (entry is null || string.IsNullOrWhiteSpace(entry.ConversationId))
+        {
+            await Dispatcher.InvokeAsync(() =>
+                MessageBox.Show(this, "No linked thread to snapshot.", "Save thread snapshot", MessageBoxButton.OK,
+                    MessageBoxImage.Information));
+            return;
+        }
+
+        var core = ResolveCoreForThreadKind(kind);
+        var sendService = _conversationSendService;
+        if (core is not null && sendService is not null)
+        {
+            await ThreadConversationLogService.SyncRollingFromApiAsync(
+                bundle,
+                entry,
+                core,
+                sendService,
+                ThreadConversationLogCaptureSource.Api);
+        }
+
+        var result = ThreadConversationLogService.CaptureManualBranchSnapshot(bundle, entry);
+        if (!result.Success)
+        {
+            await Dispatcher.InvokeAsync(() =>
+                MessageBox.Show(this, result.Error ?? "Snapshot failed.", "Save thread snapshot", MessageBoxButton.OK,
+                    MessageBoxImage.Warning));
+            return;
+        }
+
+        AdventureStore.Save(bundle, AdventureSaveScope.Metadata);
+
+        await Dispatcher.InvokeAsync(() =>
+            MessageBox.Show(
+                this,
+                $"Thread snapshot saved to:\n{result.SnapshotPath}",
+                "Save thread snapshot",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information));
+
+        if (kind == AdventureThreadKind.Play)
+            await ApplyThreadOrdinalMapToPlayTabAsync();
+    }
+
+    private static ThreadSnapshotCorrelation BuildSendSnapshotCorrelation(AdventureBundle bundle, TurnRecord turn)
+    {
+        var flightRecord = bundle.PromptHistory.Entries.LastOrDefault(e => e.TurnId == turn.Id);
+        return new ThreadSnapshotCorrelation
+        {
+            TurnId = turn.Id,
+            FlightRecordId = flightRecord?.Id,
+            PlaySendTraceRunId = PlaySendTrace.ActiveRunId,
+        };
     }
 
     private CoreWebView2? ResolveCoreForThreadKind(AdventureThreadKind kind) =>

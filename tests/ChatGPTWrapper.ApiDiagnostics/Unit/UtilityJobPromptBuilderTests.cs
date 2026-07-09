@@ -73,8 +73,8 @@ public sealed class UtilityJobPromptBuilderTests
     [Theory]
     [InlineData(GenerationJobId.ExtractEntities)]
     [InlineData(GenerationJobId.ExpandEntity)]
-    [InlineData(GenerationJobId.BootstrapLore)]
-    [InlineData(GenerationJobId.ExpandStoryCard)]
+    [InlineData(GenerationJobId.UpdateState)]
+    [InlineData(GenerationJobId.ContinuityCheck)]
     public void Expand_and_bootstrap_jobs_use_shared_guides(string jobId)
     {
         var bundle = CreateBundle();
@@ -90,12 +90,13 @@ public sealed class UtilityJobPromptBuilderTests
 public sealed class LocalUtilityInferencePolicyComparableJobsTests
 {
     [Theory]
-    [InlineData(GenerationJobId.BootstrapLore, true)]
-    [InlineData(GenerationJobId.ExpandStoryCard, true)]
-    [InlineData(GenerationJobId.BootstrapSections, true)]
-    [InlineData(GenerationJobId.ExpandSection, true)]
+    [InlineData(GenerationJobId.BootstrapLore, false)]
+    [InlineData(GenerationJobId.ExpandStoryCard, false)]
+    [InlineData(GenerationJobId.BootstrapSections, false)]
+    [InlineData(GenerationJobId.ExpandSection, false)]
     [InlineData(GenerationJobId.ExpandEntity, true)]
-    [InlineData(GenerationJobId.ProposeSourceEdits, true)]
+    [InlineData(GenerationJobId.ProposeSourceEdits, false)]
+    [InlineData(GenerationJobId.UpdateState, true)]
     [InlineData(GenerationJobId.DesignAdventure, false)]
     [InlineData(GenerationJobId.UtilityWorkerPing, false)]
     public void SupportsJob_covers_play_ai_tools(string jobId, bool expected)

@@ -14,6 +14,10 @@ public sealed class CanonFormatGeneratorTests
         Assert.Contains("## Critical patterns", output, StringComparison.Ordinal);
         Assert.Contains("ChatGPT Project → Files", output, StringComparison.Ordinal);
         Assert.Contains("Do not edit by hand", output, StringComparison.Ordinal);
+        Assert.Contains("### Entity field definitions (cast)", output, StringComparison.Ordinal);
+        Assert.Contains("| Personality | `personality` |", output, StringComparison.Ordinal);
+        Assert.Contains("| Author guidance | `useInPlay` |", output, StringComparison.Ordinal);
+        Assert.Contains("### Custom and extended fields", output, StringComparison.Ordinal);
     }
 
     [Fact]

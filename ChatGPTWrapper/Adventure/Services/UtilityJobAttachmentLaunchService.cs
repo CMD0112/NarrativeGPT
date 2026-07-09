@@ -16,6 +16,10 @@ internal static class UtilityJobAttachmentLaunchService
                 Path.Combine(adventureDir, "entities.json"),
                 Path.Combine(adventureDir, "scenario.json"),
             ],
+        GenerationJobId.ProposeEntitiesFile =>
+        [
+            Path.Combine(adventureDir, "entities.json"),
+        ],
             GenerationJobId.ProposeJsonImport =>
             [
                 Path.Combine(adventureDir, "scenario.json"),
@@ -40,11 +44,14 @@ internal static class UtilityJobAttachmentLaunchService
     {
         GenerationJobId.ExtractEntities =>
             """
-            Use the embedded entities.json sections as the canonical schema and id reference.
+            Reference files are published to Project sources under the canonical cgw-utility-io path; retrieve via TASK-SCOPED pointer — do not rely on composer attachments for entities.json or scenario.json.
+            Use the published entities.json as the canonical schema and id reference.
             Propose only new entities or updates not already present; preserve existing ids and names where they match.
             """,
         GenerationJobId.ExpandEntity =>
-            "Use the attached entities.json for naming, aliases, and field conventions when expanding the selected entity.",
+            "Reference files are published to Project sources under the canonical cgw-utility-io path; retrieve via TASK-SCOPED pointer — do not rely on composer attachments for entities.json.",
+        GenerationJobId.ProposeEntitiesFile =>
+            "Input is published to Project sources under the canonical cgw-utility-io path; retrieve via TASK-SCOPED pointer — do not rely on composer attachments for entities.json.",
         GenerationJobId.ProposeJsonImport =>
             "Use attached scenario.json / entities.json as the current canon baseline when proposing import changes.",
         GenerationJobId.ProposeSourceEdits =>

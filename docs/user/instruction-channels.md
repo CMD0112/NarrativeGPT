@@ -32,15 +32,16 @@ Canonical terminology for the five instruction-bearing surfaces in ChatGPT Wrapp
 ## Decision tree
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":42,"rankSpacing":48,"padding":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart TD
     Q1{Defines how the model should narrate voice and boundaries?}
-    Q1 -->|Yes, long-lived contract| Proj[Project instructions + snippet mirror]
-    Q1 -->|No| Q2{Defines world/plot/cast facts?}
+    Q1 -->|Yes, long-lived contract| Proj[Project instructions +<br/>snippet mirror]
+    Q1 -->|No| Q2{Defines world/plot/cast<br/>facts?}
     Q2 -->|Yes| Src[Source files]
-    Q2 -->|No| Q3{One-off or session play behavior?}
-    Q3 -->|Yes| Pkt[Play packet overrides / turn directive]
-    Q3 -->|No| Q4{Structured utility task schema?}
-    Q4 -->|Yes| Job[Utility job guide — AI Actions]
+    Q2 -->|No| Q3{One-off or session<br/>play behavior?}
+    Q3 -->|Yes| Pkt[Play packet overrides<br/>/ turn directive]
+    Q3 -->|No| Q4{Structured utility task<br/>schema?}
+    Q4 -->|Yes| Job[Utility job guide<br/>— AI Actions]
     Q4 -->|No| Q5{Ephemeral session facts?}
     Q5 -->|State, memory, transcript| Pkt
 ```

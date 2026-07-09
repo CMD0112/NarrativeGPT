@@ -25,6 +25,7 @@ Follow-up to [CMD-190](https://linear.app/cmd0112/issue/CMD-190) (shipped hybrid
 ## Target architecture
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":42,"rankSpacing":48,"padding":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart TB
   SchemaJson[canon-schema.json repo canonical]
   Loader[CanonSchemaLoader]

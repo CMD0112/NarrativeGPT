@@ -360,6 +360,7 @@ internal static class UtilityWorkerTransportService
                 messageText,
                 domAttachments,
                 jobId,
+                skipPageEnsure: true,
                 cancellationToken: cancellationToken);
 
         if (workerHost is not null)

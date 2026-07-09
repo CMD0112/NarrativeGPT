@@ -16,6 +16,8 @@ public enum ProposalReviewCategory
     ContinuityWarning,
 
     DualRunCompare,
+    EntityState,
+    CanonEvolution,
 }
 
 public sealed class ProposalReviewCategorySummary
@@ -80,6 +82,8 @@ public static class ProposalReviewService
         Add(ProposalReviewCategory.SourceEdit, "Source edits", counts.SourceEdits);
         Add(ProposalReviewCategory.JsonImport, "JSON import", counts.JsonImports);
         Add(ProposalReviewCategory.ContinuityWarning, "Continuity warnings", counts.ContinuityWarnings);
+        Add(ProposalReviewCategory.EntityState, "Entity state", counts.EntityState);
+        Add(ProposalReviewCategory.CanonEvolution, "Canon evolution", counts.CanonEvolution);
 
         var dualCount = UtilityDualRunReviewService.ListPendingCompares(bundle.Metadata.Id).Count;
         Add(ProposalReviewCategory.DualRunCompare, "Dual-run compare", dualCount);
@@ -194,6 +198,28 @@ public static class ProposalReviewService
                     CanAccept = false,
                 })
                 .ToList(),
+            ProposalReviewCategory.EntityState => bundle.EntityInternalState.ReviewQueue
+                .Where(p => MatchesInferenceFilter(p.InferenceSource, inferenceSourceFilter))
+                .Select(p => new ProposalReviewListItem
+                {
+                    Key = new ProposalReviewItemKey { Category = category, Id = p.Id },
+                    Title = $"{EntityCanonStateOverlapService.ResolveEntityName(bundle, p.KindId, p.EntityId)} · {p.KindId}",
+                    Preview = Truncate(string.IsNullOrWhiteSpace(p.Rationale) ? "State patch" : p.Rationale, 120),
+                    Subtitle = BuildSourceSubtitle(p.InferenceSource, p.CreatedAt.ToString("g")),
+                    SourceLabel = UtilityProposalInferenceTagging.FormatSourceLabel(p.InferenceSource),
+                })
+                .ToList(),
+            ProposalReviewCategory.CanonEvolution => bundle.Entities.CanonEvolutionReviewQueue
+                .Where(p => MatchesInferenceFilter(p.InferenceSource, inferenceSourceFilter))
+                .Select(p => new ProposalReviewListItem
+                {
+                    Key = new ProposalReviewItemKey { Category = category, Id = p.Id },
+                    Title = $"{p.EntityName} · {p.CanonFieldKey}",
+                    Preview = Truncate(p.ProposedCanonValue, 120),
+                    Subtitle = BuildSourceSubtitle(p.InferenceSource, p.CreatedAt.ToString("g")),
+                    SourceLabel = UtilityProposalInferenceTagging.FormatSourceLabel(p.InferenceSource),
+                })
+                .ToList(),
             ProposalReviewCategory.DualRunCompare => UtilityDualRunReviewService
                 .ListPendingCompares(bundle.Metadata.Id)
                 .Select(c => new ProposalReviewListItem
@@ -298,6 +324,26 @@ public static class ProposalReviewService
 
                 {warning.Message}
                 """,
+            ProposalReviewCategory.EntityState when FindEntityStateProposal(bundle, key.Id) is { } stateProposal =>
+                $"""
+                Entity: {EntityCanonStateOverlapService.ResolveEntityName(bundle, stateProposal.KindId, stateProposal.EntityId)}
+                Kind: {stateProposal.KindId}
+                Created: {stateProposal.CreatedAt:g}
+
+                {(string.IsNullOrWhiteSpace(stateProposal.Rationale) ? "" : $"Rationale:{Environment.NewLine}{stateProposal.Rationale}{Environment.NewLine}")}
+                """,
+            ProposalReviewCategory.CanonEvolution when FindCanonEvolution(bundle, key.Id) is { } evolution =>
+                $"""
+                Entity: {evolution.EntityName}
+                Field: {evolution.CanonFieldKey}
+                Source state: {evolution.SourceStatePath}
+                Created: {evolution.CreatedAt:g}
+
+                {(string.IsNullOrWhiteSpace(evolution.Rationale) ? "" : $"Rationale:{Environment.NewLine}{evolution.Rationale}{Environment.NewLine}")}
+
+                Proposed canon value:
+                {evolution.ProposedCanonValue}
+                """,
             _ => "",
         };
     }
@@ -316,6 +362,7 @@ public static class ProposalReviewService
                     return ProposalReviewResult.Failed;
 
                 bundle.Entities.ReviewQueue.Remove(item);
+                ContextIndexRefreshService.RefreshFromEntities(bundle);
                 AdventureStore.Save(bundle, AdventureSaveScope.Entities);
                 return CompleteReviewAction(bundle, key.Category, requiresCanonReconcile: true);
             }
@@ -399,6 +446,31 @@ public static class ProposalReviewService
                 AdventureDesignService.HydrateFromScenario(bundle);
                 AdventureStore.Save(bundle);
                 return CompleteReviewAction(bundle, key.Category);
+            }
+            case ProposalReviewCategory.EntityState:
+            {
+                var item = FindEntityStateProposal(bundle, key.Id);
+                if (item is null)
+                    return ProposalReviewResult.NotFound;
+
+                EntityInternalStateProposalService.ApplyAcceptedProposal(bundle, item);
+                bundle.EntityInternalState.ReviewQueue.Remove(item);
+                AdventureStore.Save(bundle, AdventureSaveScope.EntityInternalState);
+                return CompleteReviewAction(bundle, key.Category);
+            }
+            case ProposalReviewCategory.CanonEvolution:
+            {
+                var item = FindCanonEvolution(bundle, key.Id);
+                if (item is null)
+                    return ProposalReviewResult.NotFound;
+
+                if (!EntityCanonEvolutionProposalService.ApplyAccepted(bundle, item))
+                    return ProposalReviewResult.Failed;
+
+                bundle.Entities.CanonEvolutionReviewQueue.Remove(item);
+                ContextIndexRefreshService.RefreshFromEntities(bundle);
+                AdventureStore.Save(bundle, AdventureSaveScope.Entities);
+                return CompleteReviewAction(bundle, key.Category, requiresCanonReconcile: true);
             }
             default:
                 return ProposalReviewResult.NotFound;
@@ -492,6 +564,26 @@ public static class ProposalReviewService
                 AdventureStore.Save(bundle, AdventureSaveScope.Continuity);
                 return CompleteReviewAction(bundle, key.Category);
             }
+            case ProposalReviewCategory.EntityState:
+            {
+                var item = FindEntityStateProposal(bundle, key.Id);
+                if (item is null)
+                    return ProposalReviewResult.NotFound;
+
+                bundle.EntityInternalState.ReviewQueue.Remove(item);
+                AdventureStore.Save(bundle, AdventureSaveScope.EntityInternalState);
+                return CompleteReviewAction(bundle, key.Category);
+            }
+            case ProposalReviewCategory.CanonEvolution:
+            {
+                var item = FindCanonEvolution(bundle, key.Id);
+                if (item is null)
+                    return ProposalReviewResult.NotFound;
+
+                bundle.Entities.CanonEvolutionReviewQueue.Remove(item);
+                AdventureStore.Save(bundle, AdventureSaveScope.Entities);
+                return CompleteReviewAction(bundle, key.Category);
+            }
             case ProposalReviewCategory.DualRunCompare:
             {
                 UtilityDualRunReviewService.MarkGroupReviewResolved(bundle.Metadata.Id, key.Id);
@@ -537,7 +629,8 @@ public static class ProposalReviewService
     public static ProposalReviewCategory? ResolveCategoryForJob(string jobId) => jobId switch
     {
         GenerationJobId.ProcessTurn => null,
-        GenerationJobId.ExtractEntities or GenerationJobId.ExpandEntity => ProposalReviewCategory.Entity,
+        GenerationJobId.ExtractEntities or GenerationJobId.ExpandEntity
+            or GenerationJobId.ProposeEntitiesFile => ProposalReviewCategory.Entity,
         GenerationJobId.ProposeMemories => ProposalReviewCategory.Memory,
         GenerationJobId.UpdateSummary => ProposalReviewCategory.Summary,
         GenerationJobId.BootstrapLore or GenerationJobId.ExpandStoryCard => ProposalReviewCategory.Card,
@@ -575,6 +668,12 @@ public static class ProposalReviewService
 
     private static ContinuityWarningEntry? FindContinuityWarning(AdventureBundle bundle, Guid id) =>
         ActiveContinuityWarnings(bundle).FirstOrDefault(w => w.Id == id);
+
+    private static EntityStateProposalEntry? FindEntityStateProposal(AdventureBundle bundle, Guid id) =>
+        bundle.EntityInternalState.ReviewQueue.FirstOrDefault(p => p.Id == id);
+
+    private static CanonEvolutionProposalEntry? FindCanonEvolution(AdventureBundle bundle, Guid id) =>
+        bundle.Entities.CanonEvolutionReviewQueue.FirstOrDefault(p => p.Id == id);
 
     private static List<ContinuityWarningEntry> ActiveContinuityWarnings(AdventureBundle bundle) =>
         ContinuityWarningDismissalService.FilterActive(bundle.Continuity);

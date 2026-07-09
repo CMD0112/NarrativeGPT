@@ -8,7 +8,8 @@ Developer-oriented overview of ChatGPT Wrapper's structure, runtime behavior, an
 
 ```
 chatgpt-wrapper.sln
-├── ChatGPTWrapper                    net9.0-windows WPF (main app)
+├── ChatGPTWrapper                    net9.0-windows WPF (dialog library + shared domain)
+├── ChatGPTWrapper.WinUI              net9.0-windows WinUI (primary host via run.ps1)
 ├── ChatGPTWrapper.Core               net9.0 class library (shared)
 ├── ChatGPTWrapper.SessionHost        net9.0 console stub (future OOP host)
 └── tests/
@@ -25,7 +26,8 @@ ChatGPTWrapper.SessionHost ──► ChatGPTWrapper.Core   (not referenced by ma
 
 | Project | Entry | Role |
 |---------|-------|------|
-| `ChatGPTWrapper` | `App.xaml` → `MainWindow.xaml` | WPF shell, adventures, WebView2 tabs |
+| `ChatGPTWrapper.WinUI` | `App.xaml` → `MainWindow.xaml` | **Primary shell** — play/design/browse, WebView2 tabs |
+| `ChatGPTWrapper` | WPF views/dialogs | Dialog library + domain partials; STA bridge for WinUI |
 | `ChatGPTWrapper.Core` | — | `BridgeProtocol`, stream parser, `SessionHostRpc` |
 | `ChatGPTWrapper.SessionHost` | `Program.cs` | Named-pipe RPC stub (`oop_host_not_configured`) |
 | `ChatGPTWrapper.ApiDiagnostics` | xUnit | Unit/integration/live/perf tests |
@@ -35,6 +37,7 @@ ChatGPTWrapper.SessionHost ──► ChatGPTWrapper.Core   (not referenced by ma
 ## High-level runtime
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart LR
     subgraph wpf [WPF Application]
         MW[MainWindow partials]
@@ -46,7 +49,7 @@ flowchart LR
         KERNEL[cgw-page-kernel.js]
         API[chatgpt-api-bridge.js]
         PLAY[adventure-bridge.js]
-        DISPLAY[continuous / weave / context-tags / play-compose]
+        DISPLAY[continuous<br/>/ weave / context-tags / play-compose]
     end
 
     subgraph remote [chatgpt.com]
@@ -156,6 +159,8 @@ Malformed JSON in messages is silently ignored.
 - `ChatGptProjectHost` — API bridge readiness
 - `ChatGptProjectApiService` — Projects/files API
 - `ChatGptConversationSendService` — conversation send
+- `ChatGptChatFileService` — chat file upload/list/download + transport orchestration
+- `ChatFileTransportRegistry` — `Api` / `Dom` / `Hybrid` send transports, warmup, scoped context ([design doc](../Enhancements/chat-file-io-transport-redesign.md))
 - `AdventureTurnService` — DOM play automation
 
 All run in the WPF process sharing WebView2 controls.
@@ -187,6 +192,7 @@ Utility jobs use `Task` + `SemaphoreSlim`; there is no external job queue (Hangf
 ### Utility job pipeline (Phase 2c)
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":42,"rankSpacing":48,"padding":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
     GJS[GenerationJobService]
     EUC[EnsureUtilityConversation]

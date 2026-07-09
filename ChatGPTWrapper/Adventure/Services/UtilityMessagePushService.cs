@@ -41,11 +41,6 @@ internal static class UtilityMessagePushService
         IUtilityWorkerHost? workerHost = null,
         CancellationToken cancellationToken = default)
     {
-        if (!UtilityWorkerCapabilityGate.IsProductionReady(bundle))
-        {
-            return new UtilityPushResult { Success = false, Error = "worker_api_not_ready" };
-        }
-
         var conversationId = UtilityWorkerSession.GetConversationId(bundle);
         var gizmoId = bundle.Metadata.LinkedProjectId;
         if (string.IsNullOrWhiteSpace(conversationId) || string.IsNullOrWhiteSpace(gizmoId))
@@ -64,6 +59,33 @@ internal static class UtilityMessagePushService
         var deliveryLane = UtilityAttachmentDeliveryClassifier.ResolveLane(domAttachments);
         var useDomLane = deliveryLane is UtilityAttachmentDeliveryLane.DomComposer
             or UtilityAttachmentDeliveryLane.Mixed;
+
+        if (useDomLane)
+        {
+            if (!UtilityWorkerCapabilityGate.IsDomAttachReady(bundle))
+            {
+                return new UtilityPushResult
+                {
+                    Success = false,
+                    Error = "worker_host_not_ready",
+                    DeliveryLane = deliveryLane,
+                };
+            }
+
+            if (workerHost is null)
+            {
+                return new UtilityPushResult
+                {
+                    Success = false,
+                    Error = "worker_host_required_for_dom_attach",
+                    DeliveryLane = deliveryLane,
+                };
+            }
+        }
+        else if (!UtilityWorkerCapabilityGate.IsProductionReady(bundle))
+        {
+            return new UtilityPushResult { Success = false, Error = "worker_api_not_ready" };
+        }
 
         var jobBody = UtilityJobPromptBuilder.BuildCoreJobBody(bundle, entry.JobId, context);
         jobBody = UtilityJobPacketAttachmentEnricher.Append(
@@ -89,6 +111,7 @@ internal static class UtilityMessagePushService
         }
         else if (useDomLane)
         {
+            var domWorkerHost = workerHost!;
             UtilityAttachmentDeliveryClassifier.Partition(domAttachments, out var embeddable, out var domRequired);
             if (embeddable.Count > 0)
                 jobBody = UtilityReferenceAttachmentPolicy.EmbedInPacket(jobBody, embeddable);
@@ -99,16 +122,6 @@ internal static class UtilityMessagePushService
                 {
                     Success = false,
                     Error = "utility_dom_attach_missing_files",
-                    DeliveryLane = deliveryLane,
-                };
-            }
-
-            if (workerHost is null)
-            {
-                return new UtilityPushResult
-                {
-                    Success = false,
-                    Error = "worker_host_required_for_dom_attach",
                     DeliveryLane = deliveryLane,
                 };
             }
@@ -126,7 +139,7 @@ internal static class UtilityMessagePushService
                 entry.JobId,
                 domRequired,
                 turnService,
-                workerHost,
+                domWorkerHost,
                 cancellationToken);
 
             if (!domPush.Success && embeddable.Count > 0)

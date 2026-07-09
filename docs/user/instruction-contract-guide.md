@@ -22,6 +22,7 @@ The contract is pushed to:
 4. **Fat play packets** (when source delegation is unavailable)
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart LR
     subgraph author [You define]
         Design[Design → Instructions]

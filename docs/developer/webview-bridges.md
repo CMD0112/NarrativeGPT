@@ -125,6 +125,7 @@ Play turns may use `submitPrompt` + separate capture, or `sendPrompt` for atomic
 **Utility jobs (DomOnly path)** always use atomic `sendPrompt`:
 
 ```mermaid
+%%{init: {"sequence":{"actorMargin":58,"boxMargin":12,"messageMargin":42,"mirrorActors":false,"useMaxWidth":true,"wrap":true},"themeVariables":{"fontSize":"13px"}} }%%
 sequenceDiagram
     participant ATS as AdventureTurnService
     participant Bridge as adventure-bridge.js

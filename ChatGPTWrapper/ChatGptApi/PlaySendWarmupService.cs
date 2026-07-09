@@ -1,5 +1,6 @@
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.ChatGptApi.ChatFileTransport;
 using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
 
@@ -11,15 +12,22 @@ namespace ChatGPTWrapper.ChatGptApi;
 public sealed class PlaySendWarmupService
 {
     private readonly ChatGptApiBridgeInjection _bridge;
-    private readonly ChatGptConversationSendService _send;
+    private readonly SendWarmupPipeline _pipeline;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public PlaySendWarmupService(
         ChatGptApiBridgeInjection bridge,
         ChatGptConversationSendService send)
+        : this(bridge, new SendWarmupPipeline(bridge, send, new ConversationSendContextStore()))
+    {
+    }
+
+    public PlaySendWarmupService(
+        ChatGptApiBridgeInjection bridge,
+        SendWarmupPipeline pipeline)
     {
         _bridge = bridge;
-        _send = send;
+        _pipeline = pipeline;
     }
 
     public void PrefetchFireAndForget(CoreWebView2 core, AdventureBundle bundle) =>
@@ -43,37 +51,17 @@ public sealed class PlaySendWarmupService
         if (string.IsNullOrWhiteSpace(conversationId))
             return;
 
-        var gizmoId = string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId)
-            ? null
-            : ChatGptUrls.NormalizeGizmoId(bundle.Metadata.LinkedProjectId);
-
-        var parentReady = ConversationParentCache.IsCached(conversationId);
-        var conduitReady = ConversationConduitCache.IsCached(conversationId);
-        if (parentReady && conduitReady && _bridge.IsWarm(core))
+        if (ConversationParentCache.IsCached(conversationId)
+            && ConversationConduitCache.IsCached(conversationId)
+            && _bridge.IsWarm(core))
+        {
             return;
+        }
 
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            conversationId = PlayConversationIdResolver.Resolve(bundle, core);
-            if (string.IsNullOrWhiteSpace(conversationId))
-                return;
-
-            gizmoId = string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId)
-                ? null
-                : ChatGptUrls.NormalizeGizmoId(bundle.Metadata.LinkedProjectId);
-
-            parentReady = ConversationParentCache.IsCached(conversationId);
-            conduitReady = ConversationConduitCache.IsCached(conversationId);
-
-            await _bridge.EnsureWarmAsync(core, cancellationToken);
-
-            if (!parentReady)
-                await _send.PrefetchParentAsync(core, conversationId, cancellationToken);
-
-            if (!ConversationConduitCache.IsCached(conversationId))
-                await _send.PrefetchConduitAsync(core, conversationId, gizmoId, cancellationToken);
-
+            var warmup = await _pipeline.RunForPlayAsync(core, bundle, cancellationToken);
             PlaySendTrace.Event(
                 PlaySendTraceEvents.ApiSendPrefetch,
                 PlaySendCategory.Bridge,
@@ -81,10 +69,10 @@ public sealed class PlaySendWarmupService
                 "Play send warmup completed",
                 data: new
                 {
-                    conversationId,
-                    parentCached = ConversationParentCache.IsCached(conversationId),
-                    conduitCached = ConversationConduitCache.IsCached(conversationId),
-                    bridgeWarm = _bridge.IsWarm(core),
+                    conversationId = PlayConversationIdResolver.Resolve(bundle, core),
+                    parentCached = warmup.ParentReady,
+                    conduitCached = warmup.ConduitReady,
+                    bridgeWarm = warmup.BridgeWarm,
                 });
         }
         catch

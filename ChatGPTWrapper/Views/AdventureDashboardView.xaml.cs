@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -30,6 +32,8 @@ public partial class AdventureDashboardView : UserControl
     private List<AdventureMetadata> _all = [];
     private bool _showArchived;
     private bool _refreshInFlight;
+    private int _filterGeneration;
+    private CancellationTokenSource? _filterDebounceCts;
     private AdventureSort _sort = AdventureSort.LastPlayed;
 
     public event EventHandler? PreferencesRequested;
@@ -72,7 +76,7 @@ public partial class AdventureDashboardView : UserControl
     public void RefreshList()
     {
         _all = AdventureStore.ListIndex();
-        ApplyFilter();
+        _ = ApplyFilterAsync();
     }
 
     public async Task RefreshOnEnterAsync()
@@ -90,7 +94,7 @@ public partial class AdventureDashboardView : UserControl
         {
             var all = await Task.Run(AdventureStore.ListIndex);
             _all = all;
-            ApplyFilter();
+            await ApplyFilterAsync();
         }
         finally
         {
@@ -101,9 +105,31 @@ public partial class AdventureDashboardView : UserControl
         }
     }
 
-    private void ApplyFilter()
+    private void DebouncedApplyFilter()
     {
-        var q = SearchBox.Text.Trim().ToLowerInvariant();
+        _filterDebounceCts?.Cancel();
+        _filterDebounceCts = new CancellationTokenSource();
+        var token = _filterDebounceCts.Token;
+        _ = DebouncedApplyFilterCoreAsync(token);
+    }
+
+    private async Task DebouncedApplyFilterCoreAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(300, token);
+            await ApplyFilterAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            /* superseded by newer input */
+        }
+    }
+
+    private async Task ApplyFilterAsync()
+    {
+        var generation = Interlocked.Increment(ref _filterGeneration);
+        var q = SearchBox.Text.Trim();
         IEnumerable<AdventureMetadata> filtered = _all;
 
         if (!_showArchived)
@@ -117,8 +143,24 @@ public partial class AdventureDashboardView : UserControl
                 a.Tags.Any(t => t.Contains(q, StringComparison.OrdinalIgnoreCase)));
         }
 
-        filtered = SortAdventures(filtered);
-        var rows = filtered.Select(CreateLibraryRow).ToList();
+        var sorted = SortAdventures(filtered).ToList();
+        var summaries = await Task.Run(() => AdventureStore.BuildLibrarySummaries(sorted));
+
+        if (generation != Volatile.Read(ref _filterGeneration))
+            return;
+
+        var rows = sorted
+            .Select(meta =>
+            {
+                var summary = summaries[meta.Id];
+                return new AdventureLibraryRow(
+                    this,
+                    meta,
+                    summary.AcceptedTurnCount,
+                    summary.HasDesignThread);
+            })
+            .ToList();
+
         AdventureList.ItemsSource = rows;
         UpdateEmptyState(rows.Count);
         UpdateSelectionActions();
@@ -135,17 +177,6 @@ public partial class AdventureDashboardView : UserControl
                 .ThenBy(a => a.Title, StringComparer.OrdinalIgnoreCase),
             _ => items.OrderByDescending(a => a.LastPlayedAt == default ? DateTimeOffset.MinValue : a.LastPlayedAt),
         };
-
-    private AdventureLibraryRow CreateLibraryRow(AdventureMetadata meta)
-    {
-        var bundle = AdventureStore.Load(meta.Id);
-        var turnCount = bundle?.Log.Turns.Count(t => t.Status == TurnStatus.Accepted) ?? 0;
-        var hasDesignThread = meta.Status == AdventureStatus.Designing
-            && bundle is not null
-            && AdventureDesignContextService.GetDesignConversationId(bundle) is { Length: > 0 };
-
-        return new AdventureLibraryRow(this, meta, turnCount, hasDesignThread);
-    }
 
     private void UpdateEmptyState(int visibleCount)
     {
@@ -206,6 +237,7 @@ public partial class AdventureDashboardView : UserControl
         LinkProjectContextMenuItem.IsEnabled = count == 1;
         RenameButton.IsEnabled = count == 1;
         RenameContextMenuItem.IsEnabled = count == 1;
+        OpenAdventureFolderContextMenuItem.IsEnabled = count == 1;
         var projectLabel = count == 1
                            && single is not null
                            && AdventureProjectBindingService.HasLinkedProject(
@@ -325,7 +357,7 @@ public partial class AdventureDashboardView : UserControl
         if (SortCombo.SelectedItem is ComboBoxItem { Tag: AdventureSort sort })
             _sort = sort;
 
-        ApplyFilter();
+        _ = ApplyFilterAsync();
     }
 
     private void Rename_Click(object sender, RoutedEventArgs e) => RenameSelectedAdventure();
@@ -381,12 +413,12 @@ public partial class AdventureDashboardView : UserControl
         DraftFrameworkRequested?.Invoke(this, PrimarySelectedMeta.Id);
     }
 
-    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => DebouncedApplyFilter();
 
     private void ShowArchived_Changed(object sender, RoutedEventArgs e)
     {
         _showArchived = ShowArchivedCheck.IsChecked == true;
-        ApplyFilter();
+        _ = ApplyFilterAsync();
     }
 
     private void DesignWithAi_Click(object sender, RoutedEventArgs e) =>
@@ -597,7 +629,22 @@ public partial class AdventureDashboardView : UserControl
         if (!ConfirmDelete(deletable))
             return;
 
-        AdventureStore.DeleteMany(deletable.Select(m => m.Id));
+        try
+        {
+            AdventureStore.DeleteMany(deletable.Select(m => m.Id));
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                Window.GetWindow(this),
+                $"Could not delete one or more adventures:\n\n{ex.Message}",
+                "Delete adventures",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            RefreshList();
+            return;
+        }
+
         RefreshList();
     }
 
@@ -695,6 +742,24 @@ public partial class AdventureDashboardView : UserControl
             $"Adventure folder ready:\n{path}",
             "Create folder on disk",
             MessageBoxButton.OK);
+    }
+
+    private void OpenAdventureFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (PrimarySelectedMeta is not { } meta)
+            return;
+
+        if (AdventureDirectoryService.TryOpenInShell(meta.Id, out var error))
+            return;
+
+        MessageBox.Show(
+            Window.GetWindow(this),
+            error ?? "Could not open the adventure folder.",
+            "Open adventure folder",
+            MessageBoxButton.OK,
+            error?.StartsWith("Folder not found", StringComparison.Ordinal) == true
+                ? MessageBoxImage.Warning
+                : MessageBoxImage.Information);
     }
 
     private void ImportFolder_Click(object sender, RoutedEventArgs e)

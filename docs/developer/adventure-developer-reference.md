@@ -172,6 +172,7 @@ libraries\
 ### Flow diagram
 
 ```mermaid
+%%{init: {"sequence":{"actorMargin":58,"boxMargin":12,"messageMargin":42,"mirrorActors":false,"useMaxWidth":true,"wrap":true},"themeVariables":{"fontSize":"13px"}} }%%
 sequenceDiagram
     participant User
     participant Composer as cgw-play-compose

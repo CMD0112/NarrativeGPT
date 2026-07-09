@@ -40,6 +40,7 @@ Treat every entity edit as a **canon change operation** with explicit **intent**
 ## Canon change operation pipeline
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
   subgraph author [Author actions]
     Edit[Edit entity profile]

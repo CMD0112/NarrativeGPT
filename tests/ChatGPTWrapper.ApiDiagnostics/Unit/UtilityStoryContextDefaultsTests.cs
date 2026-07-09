@@ -6,15 +6,31 @@ namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 public sealed class UtilityStoryContextDefaultsTests
 {
     [Theory]
-    [InlineData(GenerationJobId.ExtractEntities, 2)]
-    [InlineData(GenerationJobId.ProposeMemories, 2)]
+    [InlineData(GenerationJobId.ExtractEntities, 1)]
+    [InlineData(GenerationJobId.ProposeMemories, 1)]
+    [InlineData(GenerationJobId.UpdateState, 2)]
     [InlineData(GenerationJobId.UpdateSummary, 8)]
     [InlineData(GenerationJobId.ContinuityCheck, 8)]
+    [InlineData(GenerationJobId.ProposeEntityState, 2)]
+    [InlineData(GenerationJobId.ProposeCanonEvolution, 3)]
     public void GetJobProfileDefaults_returns_documented_turn_pair_defaults(string jobId, int expectedTurnPairs)
     {
         var defaults = UtilityStoryContextDefaults.GetJobProfileDefaults(jobId);
         Assert.Equal(expectedTurnPairs, defaults.MaxTurnPairs);
         Assert.Equal(UtilityLookbackAnchor.FromEnd, defaults.LookbackAnchor);
+    }
+
+    [Theory]
+    [InlineData(GenerationJobId.ProposeEntityState, true, false)]
+    [InlineData(GenerationJobId.ProposeCanonEvolution, true, true)]
+    public void GetJobProfileDefaults_entity_layer_jobs_include_entity_index(
+        string jobId,
+        bool expectEntityIndex,
+        bool expectSummary)
+    {
+        var defaults = UtilityStoryContextDefaults.GetJobProfileDefaults(jobId);
+        Assert.Equal(expectEntityIndex, defaults.IncludeEntityIndex);
+        Assert.Equal(expectSummary, defaults.IncludeRollingSummary);
     }
 
     [Fact]
@@ -63,13 +79,28 @@ public sealed class UtilityStoryContextDefaultsTests
     }
 
     [Fact]
-    public void AutomationJobs_lists_each_turn_automation()
+    public void AutomationJobs_lists_each_turn_automation_by_layer()
     {
-        var jobIds = UtilityStoryContextDefaults.AutomationJobs.Select(j => j.JobId).ToList();
+        var jobs = UtilityStoryContextDefaults.AutomationJobs;
+        var jobIds = jobs.Select(j => j.JobId).ToList();
+        Assert.Contains(GenerationJobId.UpdateState, jobIds);
         Assert.Contains(GenerationJobId.ExtractEntities, jobIds);
+        Assert.Contains(GenerationJobId.ProposeEntityState, jobIds);
+        Assert.Contains(GenerationJobId.ProposeCanonEvolution, jobIds);
         Assert.Contains(GenerationJobId.ProposeMemories, jobIds);
         Assert.Contains(GenerationJobId.UpdateSummary, jobIds);
         Assert.Contains(GenerationJobId.ContinuityCheck, jobIds);
-        Assert.Single(UtilityStoryContextDefaults.AutomationJobs, j => j.HasInterval);
+        Assert.Single(jobs, j => j.HasInterval);
+        Assert.Equal("Session", UtilityStoryContextDefaults.GetAutomationLayer(jobIds[0]));
+        Assert.Equal("Canon evolution", UtilityStoryContextDefaults.GetAutomationLayer(jobIds[^1]));
+    }
+
+    [Fact]
+    public void DescribeTranscriptScopeForLayer_uses_narrow_scope_copy_for_post_turn_layers()
+    {
+        var label = UtilityStoryContextDefaults.DescribeTranscriptScopeForLayer(
+            "Play state",
+            UtilityLookbackAnchor.FromEnd);
+        Assert.Contains("latest exchange", label, StringComparison.OrdinalIgnoreCase);
     }
 }

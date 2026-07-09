@@ -9,12 +9,29 @@ internal static class WebViewCookieSync
         CoreWebView2 target,
         CancellationToken cancellationToken = default)
     {
+        var cookies = await GetChatGptCookiesAsync(source, cancellationToken);
+        await ApplyChatGptCookiesAsync(target, cookies, cancellationToken);
+    }
+
+    public static async Task<IReadOnlyList<CoreWebView2Cookie>> GetChatGptCookiesAsync(
+        CoreWebView2 source,
+        CancellationToken cancellationToken = default)
+    {
         cancellationToken.ThrowIfCancellationRequested();
-        var cookies = await source.CookieManager.GetCookiesAsync("https://chatgpt.com");
+        return await source.CookieManager.GetCookiesAsync("https://chatgpt.com");
+    }
+
+    public static Task ApplyChatGptCookiesAsync(
+        CoreWebView2 target,
+        IReadOnlyList<CoreWebView2Cookie> cookies,
+        CancellationToken cancellationToken = default)
+    {
         foreach (var cookie in cookies)
         {
             cancellationToken.ThrowIfCancellationRequested();
             target.CookieManager.AddOrUpdateCookie(cookie);
         }
+
+        return Task.CompletedTask;
     }
 }

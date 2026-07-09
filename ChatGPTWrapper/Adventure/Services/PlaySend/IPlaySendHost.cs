@@ -7,14 +7,14 @@ using Microsoft.Web.WebView2.Wpf;
 
 namespace ChatGPTWrapper.Adventure.Services.PlaySend;
 
-using ChatGPTWrapper;
-
 /// <summary>
-/// UI/runtime surface the play send orchestrator needs from <see cref="MainWindow"/>.
+/// UI/runtime surface the play send orchestrator needs from the application shell.
 /// </summary>
 internal interface IPlaySendHost
 {
     Guid? ActiveAdventureId { get; }
+
+    IPlayTabRegistry TabRegistry { get; }
 
     PreparedSendArtifactStore ArtifactStore { get; }
 
@@ -30,7 +30,7 @@ internal interface IPlaySendHost
 
     ChatGptPlayComposeInjection? GetActiveComposeInjection();
 
-    PlayTabCapabilities ResolveCapabilities(AdventureBundle bundle, WebView2 webView);
+    PlayTabCapabilities ResolveCapabilities(AdventureBundle bundle, object tabHost);
 
     string ResolvePlayerInput(AdventureBundle bundle, bool consumeQueue, string? composeText);
 
@@ -58,15 +58,15 @@ internal interface IPlaySendHost
         bool prepareContext,
         bool navigateToBrowseTarget);
 
-    WebView2? PlayWebView { get; set; }
+    object? ActivePlayTabHost { get; set; }
 
-    AdventureTurnService? GetOrCreateTurnService(WebView2 webView);
+    AdventureTurnService? GetOrCreateTurnService(object tabHost);
 
     Task<PlayContextResult?> RequireLinkedPlayThreadForSendAsync(
         AdventureBundle bundle,
-        CoreWebView2 core);
+        object core);
 
-    Task PrefetchSendWarmupAsync(CoreWebView2 core, AdventureBundle bundle);
+    Task PrefetchSendWarmupAsync(object core, AdventureBundle bundle);
 
     PlaySendSourcesPromptResult PromptSourcesInlineFallback(string warnMessage);
 
@@ -76,6 +76,8 @@ internal interface IPlaySendHost
 
     void OnSendSucceeded(PlaySendSuccessRequest request);
 
+    void SchedulePostTurnJobs(AdventureBundle bundle, TurnRecord turn);
+
     void ShowSendError(string message, bool isWarning = true);
 
     void CopyToClipboard(string text);
@@ -83,6 +85,8 @@ internal interface IPlaySendHost
     void InvalidatePlayContext(Guid adventureId);
 
     string FormatMergedPreview(AdventureBundle bundle, string mergedText);
+
+    void FocusPlayTab(object tabHost);
 }
 
 internal enum PlaySendSourcesPromptResult
@@ -92,7 +96,7 @@ internal enum PlaySendSourcesPromptResult
 }
 
 internal sealed record PlaySendDeliveryRequest(
-    CoreWebView2 Core,
+    object Core,
     AdventureBundle Bundle,
     PlayTabCapabilities Capabilities,
     AdventureTurnService TurnService,
@@ -106,7 +110,7 @@ internal sealed record PlaySendTurnCompletionRequest(
     AdventureBundle Bundle,
     TurnRecord Turn,
     AdventureTurnResult SendResult,
-    CoreWebView2 Core,
+    object Core,
     AdventureTurnService TurnService,
     ChatGptPlayComposeInjection? ComposeInjection,
     int AssistantBaselineCount);
@@ -114,7 +118,7 @@ internal sealed record PlaySendTurnCompletionRequest(
 internal sealed record PlaySendSuccessRequest(
     Guid AdventureId,
     AdventureBundle Bundle,
-    WebView2 PlayWebView,
+    object PlayTabHost,
     ChatGptPlayComposeInjection? ComposeInjection,
     string SuccessStatus,
     int MergedLength);

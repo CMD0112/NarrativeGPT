@@ -4,7 +4,7 @@ using ChatGPTWrapper.Adventure.Models;
 
 namespace ChatGPTWrapper.Adventure.Stores;
 
-internal static class ThreadConversationLogStore
+internal static partial class ThreadConversationLogStore
 {
     private static readonly JsonSerializerOptions JsonlOptions = new()
     {

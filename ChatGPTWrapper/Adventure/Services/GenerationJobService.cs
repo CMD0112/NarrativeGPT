@@ -630,7 +630,8 @@ internal sealed class GenerationJobService
             if (!string.IsNullOrWhiteSpace(responseText))
             {
                 if (GenerationJobHandlers.ExpectsPlainTextResponse(jobId)
-                    || string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
+                    || string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal)
+                    || string.Equals(jobId, GenerationJobId.ProposeEntitiesFile, StringComparison.Ordinal))
                 {
                     if (GenerationJobHandlers.IsSettledJobResponse(jobId, responseText, streamComplete: attempt >= 1))
                         return new UtilityCaptureResult { Text = responseText };
@@ -1320,18 +1321,34 @@ internal sealed class GenerationJobService
         sendResult.StreamComplete
         && (IsUtilitySendError(sendResult.Error, "capture_premature")
             || AdventureTurnService.IsUtilityCapturePremature(jobId, responseText ?? "")
-            || ShouldRetryJsonImportCapture(jobId, responseText, sendResult));
+            || ShouldRetryFileDeliveryCapture(jobId, responseText, sendResult));
+
+    private static bool ShouldRetryFileDeliveryCapture(
+        string jobId,
+        string? responseText,
+        ConversationSendResult sendResult)
+    {
+        if (string.IsNullOrWhiteSpace(responseText))
+            return false;
+
+        if (string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
+            return !SourceJsonImportService.HasCompleteJsonImportDelivery(responseText);
+
+        if (string.Equals(jobId, GenerationJobId.ProposeEntitiesFile, StringComparison.Ordinal))
+            return !EntitiesFileRevisionService.HasCompleteEntitiesFileDelivery(responseText);
+
+        return false;
+    }
 
     private static bool ShouldRetryJsonImportCapture(
         string jobId,
         string? responseText,
         ConversationSendResult sendResult) =>
-        string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal)
-        && !string.IsNullOrWhiteSpace(responseText)
-        && !SourceJsonImportService.HasCompleteJsonImportDelivery(responseText);
+        ShouldRetryFileDeliveryCapture(jobId, responseText, sendResult);
 
     private static int GetDomRecaptureTimeoutMs(string jobId) =>
         string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal)
+            || string.Equals(jobId, GenerationJobId.ProposeEntitiesFile, StringComparison.Ordinal)
             ? 120_000
             : 30_000;
 

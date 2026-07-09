@@ -7,21 +7,18 @@ namespace ChatGPTWrapper.Adventure.Services;
 /// </summary>
 internal static class UtilityJobPromptBuilder
 {
-    /// <summary>Play-tab AI Tools jobs that support dual-run prompt parity (ChatGPT vs Ollama).</summary>
+    /// <summary>Play-tab utility jobs that support dual-run prompt parity (ChatGPT vs Ollama).</summary>
     public static IReadOnlyList<string> ComparablePlayAiToolJobIds { get; } =
     [
         GenerationJobId.ProcessTurn,
         GenerationJobId.ExtractEntities,
         GenerationJobId.ExpandEntity,
         GenerationJobId.ProposeMemories,
+        GenerationJobId.UpdateState,
         GenerationJobId.UpdateSummary,
-        GenerationJobId.BootstrapLore,
-        GenerationJobId.ExpandStoryCard,
-        GenerationJobId.BootstrapSections,
-        GenerationJobId.ExpandSection,
         GenerationJobId.ContinuityCheck,
-        GenerationJobId.ProposeSourceEdits,
-        GenerationJobId.ProposeJsonImport,
+        GenerationJobId.ProposeEntityState,
+        GenerationJobId.ProposeCanonEvolution,
     ];
 
     public static bool IsComparablePlayAiTool(string jobId) =>
@@ -115,8 +112,18 @@ internal static class UtilityJobPromptBuilder
                 GenerationJobId.ProcessTurn =>
                     """
                     Reply with one JSON object only — no markdown fences.
-                    Example: {"memories":[{"text":"…","tags":[],"pinned":false}],"entities":[{"name":"…","entityType":"person","description":"…"}],"summary":"…"}
+                    Example: {"memories":[{"text":"…","tags":[],"pinned":false}],"entities":{"extractions":[{"name":"…","entityType":"person","description":"…"}],"updates":[]}}
                     Include only the keys requested in the job packet.
+                    """,
+                GenerationJobId.ExtractEntities =>
+                    """
+                    Reply with one JSON object only — no markdown fences.
+                    Example: {"extractions":[{"name":"Greyford Gate","entityType":"place","description":"…"}],"updates":[{"id":"<entity-id>","entityType":"person","name":"Warden Greta","roleOrStatus":"missing"}]}
+                    """,
+                GenerationJobId.ProposeMemories =>
+                    """
+                    Reply with one JSON object only — no markdown fences.
+                    Example: {"events":[{"text":"…","tags":[],"pinned":false,"anchor":{"pairOffset":0,"playerHint":"…"}}],"links":[]}
                     """,
                 GenerationJobId.ContinuityCheck =>
                     """

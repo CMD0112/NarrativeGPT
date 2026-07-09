@@ -19,6 +19,9 @@ internal static class UtilityEphemeralAttachmentSendService
         UtilityOutboxEntry entry,
         GenerationJobContext context)
     {
+        if (UtilitySourceFileIoCatalog.UsesSourceFileIo(entry.JobId))
+            return null;
+
         if (!LocalUtilityInferencePolicy.HasStagedWorkerAttachments(context, entry))
             return null;
 
@@ -45,12 +48,15 @@ internal static class UtilityEphemeralAttachmentSendService
         }
 
         var jobBody = UtilityJobPromptBuilder.BuildCoreJobBody(bundle, entry.JobId, context);
-        jobBody = UtilityJobPacketAttachmentEnricher.Append(
-            bundle,
-            jobBody,
-            context.JobAttachments,
-            context.AttachmentReferenceNote,
-            deliveryLane);
+        if (!forceDomAttach || domAttachments is not { Count: > 0 })
+        {
+            jobBody = UtilityJobPacketAttachmentEnricher.Append(
+                bundle,
+                jobBody,
+                context.JobAttachments,
+                context.AttachmentReferenceNote,
+                deliveryLane);
+        }
 
         IReadOnlyList<DomAttachmentPayload>? domRequired = null;
 

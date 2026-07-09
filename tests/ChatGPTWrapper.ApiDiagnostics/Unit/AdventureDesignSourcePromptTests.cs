@@ -283,7 +283,7 @@ public sealed class AdventureDesignSourcePromptTests
 
         var rows = AdventureDesignSourcePromptService.BuildPipelineChecklist(bundle);
 
-        Assert.Equal(7, rows.Count);
+        Assert.Equal(8, rows.Count);
         var canonFormat = rows.Single(r => r.RelativePath == SectionSchema.CanonFormatFile);
         Assert.True(canonFormat.IsReferenceFile);
         var cast = rows.Single(r => r.RelativePath == SectionSchema.CastFile);

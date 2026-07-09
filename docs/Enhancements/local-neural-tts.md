@@ -40,6 +40,7 @@ Original [Piper](https://github.com/rhasspy/piper) is archived (Oct 2025); use S
 Synthesis should run in the **WPF host**, not inside WebView2 injected JS. The app already routes display features through `cgw-display` and turn text through adventure services.
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
     subgraph triggers [Speak triggers]
         UI[WPF Play panel / hotkeys]

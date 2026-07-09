@@ -20,11 +20,12 @@ public partial class MainWindow : Window
         _chrome = UiChromeStore.Load();
         ApplyThemeOnStartup();
         _suppressChromeEvents = true;
-        UpdateTranscriptViewModeButtonStyles();
+        SyncTranscriptModeSegmentSelection();
         _suppressChromeEvents = false;
         ConfigureChatTabsChrome();
         WireShellStatusBarHandlers();
         InitializeShellSegments();
+        SyncTranscriptModeSegmentSelection();
         UpdateModeButtonStyles();
         InitializeShellShortcuts();
 
@@ -43,7 +44,7 @@ public partial class MainWindow : Window
             ApplyStyleToActiveTab();
             ApplyContinuousViewToActiveTab();
             UpdateModeButtonStyles();
-            UpdateTranscriptViewModeButtonStyles();
+            SyncTranscriptModeSegmentSelection();
             if (_appMode == AppMode.Play && GetActiveWebView() is { } active)
             {
                 GetOrRegisterAdventureBridge(active);
@@ -89,38 +90,40 @@ public partial class MainWindow : Window
         ChromePreferencesApplier.ApplyChromeToTrustedTabs(this, _chrome, persist: true);
 
         _suppressChromeEvents = true;
-        UpdateTranscriptViewModeButtonStyles();
+        SyncTranscriptModeSegmentSelection();
         ContinuousViewCheckBox.IsChecked = mode == TranscriptViewMode.Continuous;
         _suppressChromeEvents = false;
     }
 
-    private void NativeTranscriptModeButton_Click(object sender, RoutedEventArgs e) =>
-        SetTranscriptViewMode(TranscriptViewMode.Native);
-
-    private void ContinuousTranscriptModeButton_Click(object sender, RoutedEventArgs e) =>
-        SetTranscriptViewMode(TranscriptViewMode.Continuous);
-
-    private void WeaveTranscriptModeButton_Click(object sender, RoutedEventArgs e) =>
-        SetTranscriptViewMode(TranscriptViewMode.Weave);
-
-    private void UpdateTranscriptViewModeButtonStyles()
+    private void TranscriptModeSegment_SelectionChanged(object sender, RoutedEventArgs e)
     {
-        if (NativeTranscriptModeButton is null
-            || ContinuousTranscriptModeButton is null
-            || WeaveTranscriptModeButton is null)
-        {
+        if (_suppressChromeEvents || TranscriptModeSegment.SelectedTag is not TranscriptViewMode mode)
             return;
-        }
 
-        var selected = (Style)FindResource("ModeButtonSelectedStyle");
-        var normal = (Style)FindResource("ModeButtonStyle");
+        if (mode == _chrome.TranscriptViewMode)
+            return;
 
-        NativeTranscriptModeButton.Style =
-            _chrome.TranscriptViewMode == TranscriptViewMode.Native ? selected : normal;
-        ContinuousTranscriptModeButton.Style =
-            _chrome.TranscriptViewMode == TranscriptViewMode.Continuous ? selected : normal;
-        WeaveTranscriptModeButton.Style =
-            _chrome.TranscriptViewMode == TranscriptViewMode.Weave ? selected : normal;
+        _chrome.TranscriptViewMode = mode;
+        UiChromeStore.Save(_chrome);
+        ChromePreferencesApplier.ApplyChromeToTrustedTabs(this, _chrome, persist: true);
+
+        _suppressChromeEvents = true;
+        ContinuousViewCheckBox.IsChecked = mode == TranscriptViewMode.Continuous;
+        _suppressChromeEvents = false;
+    }
+
+    private void SyncTranscriptModeSegmentSelection()
+    {
+        if (TranscriptModeSegment is null)
+            return;
+
+        TranscriptModeSegment.SelectedIndex = _chrome.TranscriptViewMode switch
+        {
+            TranscriptViewMode.Native => 0,
+            TranscriptViewMode.Continuous => 1,
+            TranscriptViewMode.Weave => 2,
+            _ => 0,
+        };
     }
 
     private void ContinuousViewCheckBox_Changed(object sender, RoutedEventArgs e)
@@ -204,7 +207,7 @@ public partial class MainWindow : Window
             _suppressChromeEvents = true;
             _chrome.TranscriptViewMode = settings.TranscriptViewMode;
             ContinuousViewCheckBox.IsChecked = settings.TranscriptViewMode == TranscriptViewMode.Continuous;
-            UpdateTranscriptViewModeButtonStyles();
+            SyncTranscriptModeSegmentSelection();
             _suppressChromeEvents = false;
         }
 

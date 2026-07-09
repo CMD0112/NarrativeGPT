@@ -257,6 +257,7 @@ Update `docs/user/user-guide.md` and `docs/settings/settings-interactables-inven
 ## Dependency graph
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":42,"rankSpacing":48,"padding":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart TD
     P0[CMD-334 Phase 0 ColorSpaceConverter]
     P1[CMD-335 Phase 1 HSL + formats]

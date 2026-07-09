@@ -82,6 +82,8 @@ internal static class CanonFormatGenerator
         sb.AppendLine("Relationship: Old friend");
         sb.AppendLine("Attitude: Wary but loyal");
         sb.AppendLine("Goals: Find her brother");
+        sb.AppendLine("Personality: Dry humor under stress");
+        sb.AppendLine("Abilities: Reads terrain and tracks");
         sb.AppendLine("```");
         sb.AppendLine();
         sb.AppendLine("### Party entry (wrong — name repeated as first body line)");
@@ -149,7 +151,9 @@ internal static class CanonFormatGenerator
         sb.AppendLine("- Long-tail attributes: extendedFields map on each entry (entities.json schema v2).");
         sb.AppendLine("- Import writes typed properties first; unknown labels may land in extendedFields.");
         sb.AppendLine();
-        sb.AppendLine("### Known field labels");
+        sb.AppendLine(CanonFieldReferenceService.BuildEntityFieldDefinitionsAppendix());
+        sb.AppendLine();
+        sb.AppendLine("### All known field labels (quick index)");
         sb.AppendLine();
         foreach (var label in CanonSchemaRegistry.EntryFieldPrefixes.OrderBy(l => l, StringComparer.OrdinalIgnoreCase))
             sb.AppendLine($"- {label}");

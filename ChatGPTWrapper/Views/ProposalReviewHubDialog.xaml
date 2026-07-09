@@ -9,6 +9,7 @@
         MinWidth="720"
         ResizeMode="CanResizeWithGrip"
         WindowStartupLocation="CenterOwner"
+        PreviewKeyDown="Window_PreviewKeyDown"
         Background="{StaticResource BgBaseBrush}"
         Foreground="{StaticResource TextPrimaryBrush}">
     <Grid Margin="16">
@@ -104,25 +105,29 @@
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
                         <Button x:Name="AcceptButton"
-                                Content="Accept"
+                                Content="Accept (Y)"
                                 Padding="12,6"
                                 Margin="0,0,8,0"
                                 Style="{StaticResource PrimaryButtonStyle}"
+                                ToolTip="Accept selected proposal (Y or Enter)"
                                 Click="Accept_Click"/>
                         <Button x:Name="DismissButton"
-                                Content="Dismiss"
+                                Content="Dismiss (N)"
                                 Padding="12,6"
                                 Margin="0,0,8,0"
+                                ToolTip="Dismiss selected proposal (N)"
                                 Click="Dismiss_Click"/>
                         <Button x:Name="AcceptAllButton"
                                 Content="Accept all in category"
                                 Padding="12,6"
                                 Margin="0,0,8,0"
+                                ToolTip="Accept every proposal in this category (Ctrl+Shift+Y)"
                                 Click="AcceptAll_Click"/>
                         <Button x:Name="DismissAllButton"
                                 Content="Dismiss all in category"
                                 Padding="12,6"
                                 Margin="0,0,8,0"
+                                ToolTip="Dismiss every proposal in this category (Ctrl+Shift+N)"
                                 Click="DismissAll_Click"/>
                         <Button x:Name="DetailedReviewButton"
                                 Content="Detailed JSON review…"
@@ -154,9 +159,13 @@
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Margin="0,12,0,0">
+            <TextBlock Text="{x:Static shell:ProposalReviewKeyBindings.HintText}"
+                       VerticalAlignment="Center"
+                       Foreground="{StaticResource TextMutedBrush}"
+                       FontSize="11"
+                       Margin="0,0,12,0"/>
             <Button Content="Close"
                     Padding="12,6"
-                    IsDefault="True"
                     Click="Close_Click"/>
         </StackPanel>
     </Grid>

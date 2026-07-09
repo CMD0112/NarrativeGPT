@@ -159,7 +159,8 @@ internal static class PlayTabPinService
 
         if (webView.CoreWebView2?.Source is { } source
             && TryResolveConversationFromUrl(source, out var fromUrl)
-            && !string.IsNullOrWhiteSpace(fromUrl))
+            && !string.IsNullOrWhiteSpace(fromUrl)
+            && IsAcceptablePlayConversationId(bundle, fromUrl))
         {
             entry.ConversationId = fromUrl;
         }
@@ -250,6 +251,9 @@ internal static class PlayTabPinService
         if (string.Equals(PlayThreadBindingService.GetActiveConversationId(bundle), conversationId, StringComparison.OrdinalIgnoreCase))
             return changed;
 
+        if (!IsAcceptablePlayConversationId(bundle, conversationId))
+            return changed;
+
         var previous = PlayThreadBindingService.GetActiveConversationId(bundle);
         PlayTurnScopeService.OnPlayThreadChanged(bundle, previous, conversationId);
         PlayThreadBindingService.MarkPendingPin(bundle, conversationId);
@@ -303,6 +307,9 @@ internal static class PlayTabPinService
             return false;
 
         if (IsSameTabAsPlayPin(bundle, webView, tabs))
+            return false;
+
+        if (!TryResolvePlayConversationFromSource(bundle, source, out _, out _))
             return false;
 
         if (!IsOnPlayTarget(source, bundle))
@@ -377,6 +384,76 @@ internal static class PlayTabPinService
             && string.Equals(conversationId, designConversation, StringComparison.OrdinalIgnoreCase))
             return false;
 
+        return true;
+    }
+
+    public static bool IsAcceptablePlayConversationId(AdventureBundle bundle, string? conversationId)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId))
+            return false;
+
+        var designConversation = AdventureDesignContextService.GetDesignConversationId(bundle);
+        return string.IsNullOrWhiteSpace(designConversation)
+               || !string.Equals(conversationId, designConversation, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool TryResolvePlayConversationFromSource(
+        AdventureBundle bundle,
+        string? source,
+        out string? conversationId,
+        out string? error)
+    {
+        conversationId = null;
+        error = null;
+
+        AdventureProjectBindingService.SyncLinkedProjectFields(bundle.Metadata);
+        var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
+        if (string.IsNullOrWhiteSpace(gizmoId))
+        {
+            if (!TryResolveConversationFromUrl(source, out var plainConversation))
+            {
+                error = "play_no_project";
+                return false;
+            }
+
+            conversationId = plainConversation;
+            if (!IsAcceptablePlayConversationId(bundle, conversationId))
+            {
+                error = "play_same_as_design_thread";
+                conversationId = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
+        string? resolved = null;
+        if (AdventurePlayContextService.TryGetLinkedProjectConversationFromUrl(
+                source,
+                gizmoId,
+                out var fromProject))
+        {
+            resolved = fromProject;
+        }
+        else if (TryResolveConversationFromUrl(source, out var fromUri))
+        {
+            resolved = fromUri;
+        }
+
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            error = "play_tab_not_on_conversation";
+            return false;
+        }
+
+        if (!IsAcceptablePlayConversationId(bundle, resolved))
+        {
+            error = "play_same_as_design_thread";
+            return false;
+        }
+
+        conversationId = resolved;
         return true;
     }
 

@@ -14,13 +14,21 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <StackPanel Grid.Column="0" Grid.Row="0" Margin="0,0,8,0">
-                <TextBlock Text="{Binding Title, ElementName=Root}"
-                           FontWeight="SemiBold"
-                           TextWrapping="Wrap"/>
-                <TextBlock Text="{Binding Hint, ElementName=Root}"
-                           Style="{StaticResource ShellSectionHintStyle}"
-                           TextWrapping="Wrap"
-                           Margin="0,2,0,0"/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding LeadingIcon, ElementName=Root}"
+                               Style="{StaticResource ShellIconGlyphStyle}"
+                               Margin="0,0,6,0"
+                               VerticalAlignment="Top"/>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Title, ElementName=Root}"
+                                   FontWeight="SemiBold"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding Hint, ElementName=Root}"
+                                   Style="{StaticResource ShellSectionHintStyle}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,2,0,0"/>
+                    </StackPanel>
+                </StackPanel>
             </StackPanel>
             <Button Grid.Column="1"
                     Grid.Row="0"

@@ -149,6 +149,9 @@ internal static class PlayThreadBindingService
         if (string.IsNullOrWhiteSpace(conversationId))
             return;
 
+        if (!PlayTabPinService.IsAcceptablePlayConversationId(bundle, conversationId))
+            return;
+
         var entry = GetOrCreatePlayEntry(bundle);
         if (string.Equals(entry.RejectedConversationId, conversationId, StringComparison.OrdinalIgnoreCase))
             return;
@@ -167,6 +170,9 @@ internal static class PlayThreadBindingService
         var entry = GetOrCreatePlayEntry(bundle);
         if (!string.IsNullOrWhiteSpace(conversationId))
         {
+            if (!PlayTabPinService.IsAcceptablePlayConversationId(bundle, conversationId))
+                return;
+
             var previous = entry.ConversationId;
             entry.ConversationId = conversationId;
             if (!string.Equals(previous, conversationId, StringComparison.OrdinalIgnoreCase))
@@ -174,6 +180,9 @@ internal static class PlayThreadBindingService
         }
 
         if (string.IsNullOrWhiteSpace(entry.ConversationId))
+            return;
+
+        if (!PlayTabPinService.IsAcceptablePlayConversationId(bundle, entry.ConversationId))
             return;
 
         entry.BindingTrust = PlayThreadBindingTrust.Verified;
@@ -216,6 +225,9 @@ internal static class PlayThreadBindingService
     /// </summary>
     public static bool SanitizeOnPlayOpen(AdventureBundle bundle)
     {
+        if (SanitizeDesignCollision(bundle))
+            return true;
+
         if (!AdventureProjectBindingService.HasLinkedProject(bundle))
             return false;
 
@@ -243,44 +255,115 @@ internal static class PlayThreadBindingService
         return true;
     }
 
-    public static async Task<bool> TryPromoteVerifiedFromPageAsync(
+    /// <summary>
+    /// When play and design share a conversation id, prefer a pinned play URL that points elsewhere;
+    /// otherwise clear the verified play binding so navigation cannot hijack the design thread.
+    /// </summary>
+    public static bool SanitizeDesignCollision(AdventureBundle bundle)
+    {
+        var playConversationId = GetActiveConversationId(bundle);
+        var designConversationId = AdventureDesignContextService.GetDesignConversationId(bundle);
+        if (string.IsNullOrWhiteSpace(playConversationId)
+            || string.IsNullOrWhiteSpace(designConversationId)
+            || !string.Equals(playConversationId, designConversationId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var entry = GetActivePlayEntry(bundle);
+        if (entry is not null
+            && HasConversationInUrl(entry.PinnedTabUrl)
+            && Uri.TryCreate(entry.PinnedTabUrl, UriKind.Absolute, out var pinnedUri)
+            && ChatGptUrls.TryParseConversationId(pinnedUri, out var pinnedConversationId)
+            && !string.Equals(pinnedConversationId, designConversationId, StringComparison.OrdinalIgnoreCase))
+        {
+            ProjectLinkDiagnostics.Log(
+                $"SanitizeDesignCollision: restoring play thread from pin conv={pinnedConversationId} "
+                + $"for adventure {bundle.Metadata.Id}");
+            MarkVerified(bundle, pinnedConversationId);
+            AdventureStore.Save(bundle);
+            PlayContextSessionCache.Invalidate(bundle.Metadata.Id);
+            return true;
+        }
+
+        ProjectLinkDiagnostics.Log(
+            $"SanitizeDesignCollision: clearing play binding that matched design thread "
+            + $"{designConversationId} for adventure {bundle.Metadata.Id}");
+        MarkUnbound(bundle);
+        AdventureStore.Save(bundle);
+        PlayContextSessionCache.Invalidate(bundle.Metadata.Id);
+        return true;
+    }
+
+    public static Task<bool> TryPromoteVerifiedFromPageAsync(
         AdventureBundle bundle,
         CoreWebView2 core,
         AdventureTurnService? turnService,
         CancellationToken cancellationToken = default)
     {
+        if (turnService is null)
+            return Task.FromResult(TryPromoteVerifiedFromSource(bundle, core.Source));
+
+        return TryPromoteVerifiedFromPageWithHealthAsync(bundle, core, turnService, cancellationToken);
+    }
+
+    /// <summary>Host-neutral promote (WinUI passes URL only — no CoreWebView2 type load).</summary>
+    public static bool TryPromoteVerifiedFromSource(AdventureBundle bundle, string? source)
+    {
+        if (!TryResolvePromoteConversationId(bundle, source, out var conversationId))
+            return false;
+
+        MarkVerified(bundle, conversationId);
+        return true;
+    }
+
+    private static async Task<bool> TryPromoteVerifiedFromPageWithHealthAsync(
+        AdventureBundle bundle,
+        CoreWebView2 core,
+        AdventureTurnService turnService,
+        CancellationToken cancellationToken)
+    {
+        if (!TryResolvePromoteConversationId(bundle, core.Source, out var conversationId))
+            return false;
+
+        var health = await turnService.GetHealthAsync(core);
+        if (!health.ComposerFound)
+            return false;
+
+        MarkVerified(bundle, conversationId);
+        return true;
+    }
+
+    private static bool TryResolvePromoteConversationId(
+        AdventureBundle bundle,
+        string? source,
+        out string conversationId)
+    {
+        conversationId = string.Empty;
         var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
         if (string.IsNullOrWhiteSpace(gizmoId))
             return false;
 
         gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
-        var conversationId = GetActiveConversationId(bundle);
+        conversationId = GetActiveConversationId(bundle) ?? string.Empty;
         if (string.IsNullOrWhiteSpace(conversationId))
         {
             if (!AdventurePlayContextService.TryGetLinkedProjectConversationFromUrl(
-                    core.Source,
+                    source,
                     gizmoId,
                     out conversationId)
-                && !TryParseConversationFromSource(core.Source, out conversationId))
+                && !TryParseConversationFromSource(source, out conversationId))
             {
                 return false;
             }
 
+            if (!PlayTabPinService.IsAcceptablePlayConversationId(bundle, conversationId))
+                return false;
+
             MarkPendingPin(bundle, conversationId);
         }
 
-        if (!AdventurePlayContextService.IsOnPlayConversationPage(core, conversationId, gizmoId))
-            return false;
-
-        if (turnService is not null)
-        {
-            var health = await turnService.GetHealthAsync(core);
-            if (!health.ComposerFound)
-                return false;
-        }
-
-        MarkVerified(bundle, conversationId);
-        return true;
+        return AdventurePlayContextService.IsOnPlayConversationPage(source, conversationId, gizmoId);
     }
 
     private static bool TryParseConversationFromSource(string? source, out string conversationId)

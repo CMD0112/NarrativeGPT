@@ -29,6 +29,33 @@ public sealed class ProjectKnowledgeFileStagingTests
     }
 
     [Theory]
+    [InlineData("cgw-auto-0123456789abcdef0123456789abcdef-test.md", "test.md", true)]
+    [InlineData("cgw-proj-0123456789abcdef0123456789abcdef-test.md", "test.md", true)]
+    [InlineData("cgw-ext-0123456789abcdef0123456789abcdef-test.md", "test.md", true)]
+    [InlineData("notes-test.md", "test.md", true)]
+    [InlineData("other.md", "test.md", false)]
+    public void RemoteFileMatchesUploadAlias_recognizes_staging_patterns(
+        string fileName,
+        string remoteName,
+        bool expected)
+    {
+        var file = new GizmoFileRef { FileId = "f1", Name = fileName };
+        Assert.Equal(expected, ProjectKnowledgeFileStaging.RemoteFileMatchesUploadAlias(file, remoteName));
+    }
+
+    [Theory]
+    [InlineData("test.md", "test.md", true)]
+    [InlineData("cgw-auto-0123456789abcdef0123456789abcdef-test.md", "test.md", true)]
+    public void RemoteFileMatchesPublicationTarget_includes_alias(
+        string fileName,
+        string remoteName,
+        bool expected)
+    {
+        var file = new GizmoFileRef { FileId = "f1", Name = fileName };
+        Assert.Equal(expected, ProjectKnowledgeFileStaging.RemoteFileMatchesPublicationTarget(file, remoteName));
+    }
+
+    [Theory]
     [InlineData(ProjectSourceBindingStrategy.SnorlaxDomEscalation, false)]
     public void BindingStrategy_dom_escalation_is_not_upsert_fallback(
         ProjectSourceBindingStrategy strategy,

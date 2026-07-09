@@ -5,6 +5,10 @@ ChatGPT Wrapper does **not** use the OpenAI SDK or API keys. It calls ChatGPT's 
 **Source:** `ChatGPTWrapper/ChatGptApi/ChatGptApiEndpoints.cs`  
 **Primary services:** `ChatGptProjectApiService`, `ChatGptConversationSendService`
 
+> **Full endpoint catalog:** [chatgpt-api-endpoints-reference.md](../reference/chatgpt-api-endpoints-reference.md)  
+> **Gizmo JSON shapes:** [gizmo-api-response-shapes.md](../reference/gizmo-api-response-shapes.md)  
+> **Reference hub:** [api-and-data-models-index.md](../reference/api-and-data-models-index.md)
+
 ---
 
 ## Auth and session
@@ -35,6 +39,7 @@ Paths may change without notice. Listed as implemented in code.
 | `GizmosBootstrap` | `/backend-api/gizmos/bootstrap` | Bootstrap project list |
 | `ProjectUpsert` | `/backend-api/gizmos/snorlax/upsert` | Create/update project, attach files |
 | `GizmoDetail(id)` | `/backend-api/gizmos/{id}` | Project detail |
+| `ProjectDetail(id)` | `/backend-api/projects/{id}` | Project settings (GET / PATCH) — name, instructions, emoji, theme |
 | `ProjectConversations(id)` | `/backend-api/gizmos/{id}/conversations` | List conversations |
 | `ProjectFiles(id)` | `/backend-api/gizmos/{id}/files` | List files (gizmo path) |
 | `ProjectFilesList(id)` | `/backend-api/projects/{id}/files` | List files (project path) |
@@ -70,7 +75,43 @@ Paths may change without notice. Listed as implemented in code.
 | `ConversationGet(id)` | `/backend-api/conversation/{id}` | Fetch conversation tree |
 | `ConversationPrepare` | `/backend-api/f/conversation/prepare` | Prepare send (parent/conduit) |
 | `ConversationSend` | `/backend-api/f/conversation` | **Send message (SSE stream)** |
-| `ConversationHide(id)` | PATCH `/backend-api/conversation/{id}` | Soft-hide conversation (`is_visible: false`) — ephemeral chat cleanup |
+| `ConversationHide(id)` | PATCH `/backend-api/conversation/{id}` | Soft-hide (`is_visible: false`) — ephemeral chat cleanup |
+| *(same path)* | PATCH `/backend-api/conversation/{id}` | Rename chat (`title`) — `RenameConversationAsync` |
+
+---
+
+## Conversation lifecycle (PATCH)
+
+The ChatGPT web UI soft-deletes and renames chats via **PATCH** on `/backend-api/conversation/{id}` — not HTTP `DELETE`.
+
+| Operation | Body | Service |
+|-----------|------|---------|
+| Soft-delete | `{ "is_visible": false }` | `HideConversationAsync`, `DeleteConversationAsync` |
+| Rename | `{ "title": "New title" }` | `RenameConversationAsync` |
+
+Both invalidate `ConversationParentCache` / `ConversationConduitCache` on hide only (rename does not today).
+
+Observed rename response: `{ "success": true }`. Hide returns HTTP 200 with no required body shape.
+
+---
+
+## Project settings (UI API)
+
+ChatGPT's project **settings panel** uses a different surface than Snorlax file upsert:
+
+| API | Method | Wrapper methods |
+|-----|--------|-----------------|
+| `/backend-api/projects/{gizmoId}` | GET | `GetProjectSettingsAsync` → `ProjectSettingsDetail` |
+| `/backend-api/projects/{gizmoId}` | PATCH | `UpdateProjectSettingsAsync` |
+
+PATCH fields (observed from browser captures): `name`, `instructions`, optional `emoji`, `theme` (hex color). Display name is **`name`**, not `display.name` in the request body.
+
+**When to use which:**
+
+- **Settings PATCH** — instructions-only or metadata sync (name, emoji, theme) without touching file attachments.
+- **Snorlax upsert** (`UpsertProjectAsync`, `AttachProjectFilesViaUpsertAsync`) — create project, attach/detach files, full gizmo payload.
+
+`AutoSyncProjectInstructions` still uses upsert today; switching it to PATCH is optional follow-up when file lists must not be re-sent.
 
 ---
 
@@ -79,6 +120,7 @@ Paths may change without notice. Listed as implemented in code.
 Used by utility jobs and optionally inline delivery (`ChatGptConversationSendService`).
 
 ```mermaid
+%%{init: {"sequence":{"actorMargin":58,"boxMargin":12,"messageMargin":42,"mirrorActors":false,"useMaxWidth":true,"wrap":true},"themeVariables":{"fontSize":"13px"}} }%%
 sequenceDiagram
     participant SVC as ConversationSendService
     participant Bridge as api-bridge.js

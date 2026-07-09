@@ -1268,8 +1268,12 @@ public sealed class ApiProbeParsingTests
     {
         var paths = ChatGptApiEndpoints.BuildFileDownloadPathCandidates("file-abc", "g-p-test", "fs");
 
-        Assert.True(paths.Count >= 6);
-        Assert.Contains("/backend-api/projects/g-p-test/files/file-abc?download=1", paths[0]);
+        Assert.True(paths.Count >= 9);
+        Assert.Equal(
+            "/backend-api/files/download/file-abc?gizmo_id=g-p-test&download_intent=true",
+            paths[0]);
+        Assert.Contains("gizmo_id=g-p-test", paths[0], StringComparison.Ordinal);
+        Assert.Contains("/backend-api/projects/g-p-test/files/file-abc?download=1", paths);
         Assert.Contains("/backend-api/files/file-abc?download=1", paths[^2]);
         Assert.Contains("/backend-api/files/file-abc", paths[^1]);
         Assert.True(paths.ToList().IndexOf(paths[0]) < paths.ToList().IndexOf(paths[^2]));
@@ -1370,7 +1374,35 @@ public sealed class ApiProbeParsingTests
 
         Assert.StartsWith("download_not_available", formatted, StringComparison.Ordinal);
         Assert.Contains("attempted=", formatted, StringComparison.Ordinal);
-        Assert.Contains("paths=6", formatted, StringComparison.Ordinal);
+        Assert.Contains("paths=10", formatted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FormatDownloadFailureMessage_preserves_download_stub_prefix()
+    {
+        var raw = """
+            {
+              "attempts": [
+                {"status":200,"path":"/backend-api/files/download/f1?gizmo_id=g-p&inline=false&download_intent=false","stub":true,"byteLength":388},
+                {"status":200,"path":"/backend-api/files/download/f1?gizmo_id=g-p&inline=false&download_intent=true","stub":true,"byteLength":388}
+              ],
+              "path":"/backend-api/files/download/f1?gizmo_id=g-p&inline=false&download_intent=true",
+              "stubByteLength":388,
+              "status":200
+            }
+            """;
+        var msg = new ApiBridgeMessage(
+            $$"""{"type":"apiError","ok":false,"error":"download_stub","status":200,"message":"download_stub 388 /backend-api/files/download/f1","detail":{{raw}}}""");
+
+        var formatted = ChatGptProjectApiService.FormatDownloadFailureMessage(
+            "download_stub 388 /backend-api/files/download/f1",
+            msg,
+            "f1",
+            ChatGptApiEndpoints.BuildProjectScopedDownloadPathCandidates("f1", "g-p-test"),
+            allAttemptsNotFound: false);
+
+        Assert.StartsWith("download_stub", formatted, StringComparison.Ordinal);
+        Assert.Contains("download_intent=true", formatted, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1803,11 +1835,58 @@ public sealed class ApiProbeParsingTests
     }
 
     [Fact]
-    public void BuildProjectScopedDownloadPathCandidates_omits_generic_files_path()
+    public void BuildProjectScopedDownloadPathCandidates_prefers_ui_download_path_first()
     {
         var paths = ChatGptApiEndpoints.BuildProjectScopedDownloadPathCandidates("file-1", "g-p-test");
-        Assert.Equal(4, paths.Count);
-        Assert.DoesNotContain(paths, p => p.StartsWith("/backend-api/files/", StringComparison.Ordinal));
+        Assert.Equal(8, paths.Count);
+        Assert.Equal(
+            "/backend-api/files/download/file-1?gizmo_id=g-p-test&download_intent=true",
+            paths[0]);
+        Assert.StartsWith("/backend-api/files/download/file-1", paths[1]);
+        Assert.Contains("inline=false", paths[1], StringComparison.Ordinal);
+        Assert.Contains("download_intent=true", paths[1], StringComparison.Ordinal);
+        Assert.Contains("gizmo_id=g-p-test", paths[0], StringComparison.Ordinal);
         Assert.All(paths, p => Assert.Contains("g-p-test", p, StringComparison.Ordinal));
+        Assert.DoesNotContain(paths, p => p == "/backend-api/files/file-1");
+    }
+
+    [Fact]
+    public void IsLikelyDownloadRedirectEnvelope_distinguishes_estuary_success_json()
+    {
+        var envelope = System.Text.Encoding.UTF8.GetBytes(
+            """
+            {"status":"success","download_url":"https://chatgpt.com/backend-api/estuary/content?id=file_x&gizmo_id=g-p-test&ts=1&p=gpp&cid=1&sig=abc&v=0","metadata":null}
+            """);
+        Assert.True(ProjectSourceIntegrityVerifier.IsLikelyDownloadRedirectEnvelope(envelope));
+        Assert.False(ProjectSourceIntegrityVerifier.IsLikelyDownloadMetadataJsonStub(envelope));
+        Assert.False(ProjectSourceIntegrityVerifier.IsLikelyDownloadStubPayload(envelope));
+        Assert.Equal(
+            "/backend-api/estuary/content?id=file_x&gizmo_id=g-p-test&ts=1&p=gpp&cid=1&sig=abc&v=0",
+            ProjectSourceIntegrityVerifier.TryExtractDownloadRedirectPath(envelope));
+    }
+
+    [Fact]
+    public void IsLikelyDownloadStubPayload_detects_small_json_before_blob_ready()
+    {
+        var stub = System.Text.Encoding.UTF8.GetBytes("""{"file_id":"file_x","name":"test.md","size":16454}""");
+        Assert.True(ProjectSourceIntegrityVerifier.IsLikelyDownloadStubPayload(stub, 16454));
+        Assert.True(ProjectSourceIntegrityVerifier.IsLikelyDownloadStubPayload(stub, 100));
+        Assert.True(ProjectSourceIntegrityVerifier.IsLikelyDownloadStubPayload(stub));
+        Assert.True(ProjectSourceIntegrityVerifier.IsLikelyDownloadMetadataJsonStub(stub));
+    }
+
+    [Fact]
+    public void IsLikelyDownloadMetadataJsonStub_does_not_flag_real_markdown()
+    {
+        var markdown = System.Text.Encoding.UTF8.GetBytes("# Title\n\nBody text.");
+        Assert.False(ProjectSourceIntegrityVerifier.IsLikelyDownloadMetadataJsonStub(markdown));
+        Assert.False(ProjectSourceIntegrityVerifier.IsLikelyDownloadStubPayload(markdown));
+    }
+
+    [Fact]
+    public void ProjectSourceFileSimple_includes_gizmo_query()
+    {
+        var path = ChatGptApiEndpoints.ProjectSourceFileSimple("g-p-test", "file-abc");
+        Assert.Equal("/backend-api/files/file-abc/simple?gizmo_id=g-p-test", path);
     }
 }

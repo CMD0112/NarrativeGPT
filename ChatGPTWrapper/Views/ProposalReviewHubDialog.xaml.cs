@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Input;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
@@ -332,6 +333,22 @@ public partial class ProposalReviewHubDialog : ShellDialogWindow
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        var hasItem = ItemList.SelectedItem is ProposalReviewListItem;
+
+        ProposalReviewKeyBindings.TryHandlePreviewKeyDown(
+            e,
+            hasItem && AcceptButton.IsEnabled,
+            hasItem && DismissButton.IsEnabled,
+            () => Accept_Click(AcceptButton, new RoutedEventArgs()),
+            () => Dismiss_Click(DismissButton, new RoutedEventArgs()),
+            AcceptAllButton.IsEnabled ? () => AcceptAll_Click(AcceptAllButton, new RoutedEventArgs()) : null,
+            DismissAllButton.IsEnabled ? () => DismissAll_Click(DismissAllButton, new RoutedEventArgs()) : null,
+            canAcceptAll: AcceptAllButton.IsEnabled,
+            canDismissAll: DismissAllButton.IsEnabled);
+    }
 
     private sealed class SourceFilterItem(string id, string label)
     {

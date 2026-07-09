@@ -1,6 +1,7 @@
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
+using ChatGPTWrapper.ChatGptApi.ProjectSource;
 using Microsoft.Web.WebView2.Core;
 
 namespace ChatGPTWrapper.Adventure.Services;
@@ -84,6 +85,18 @@ internal static class PlaySessionNavigationService
         }
 
         gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
+
+        if (ProjectDomPublicationGuard.IsActive)
+        {
+            ProjectLinkDiagnostics.Log(
+                "Play navigation: deferred — project DOM publication in flight");
+            return new PlayNavigationResult
+            {
+                Success = true,
+                OnProjectPage = Uri.TryCreate(core.Source, UriKind.Absolute, out var uri)
+                                && ChatGptUrls.IsCanonicalProjectHome(uri, gizmoId),
+            };
+        }
 
         if (AdventureNavigationService.IsGenericHomepage(core.Source))
         {

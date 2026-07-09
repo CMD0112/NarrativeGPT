@@ -456,6 +456,11 @@ public sealed class DesignThreadPersistenceTests : IClassFixture<FileLockAwareFi
         var bundle = AdventureStore.CreateNew("No sources");
         try
         {
+            var sourcesDir = ProjectSourceExportService.SourcesDirectory(bundle);
+            if (Directory.Exists(sourcesDir))
+                Directory.Delete(sourcesDir, recursive: true);
+            bundle.SourceManifest.Entries.Clear();
+
             Assert.False(AdventureDesignContextService.CanOpenLocalSourcesEdit(bundle));
         }
         finally
@@ -488,7 +493,7 @@ public sealed class DesignThreadPersistenceTests : IClassFixture<FileLockAwareFi
         var bundle = AdventureStore.CreateNew("Lore probe");
         try
         {
-            Assert.False(AdventureSourceFileService.HasLocalLoreSourceFiles(bundle));
+            Assert.True(AdventureSourceFileService.HasLocalLoreSourceFiles(bundle));
 
             AdventureTestData.WriteLocalSources(bundle);
             Assert.True(AdventureSourceFileService.HasLocalLoreSourceFiles(bundle));

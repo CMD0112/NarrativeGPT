@@ -13,6 +13,7 @@ internal static class GenerationUtilitySessionService
     {
         GenerationJobId.ProcessTurn => "[CGW:process]",
         GenerationJobId.ExtractEntities or GenerationJobId.ExpandEntity => "[CGW:entity]",
+        GenerationJobId.ProposeEntitiesFile => EntitiesFileRevisionService.UtilityTitlePrefix,
         GenerationJobId.ProposeMemories => "[CGW:memory]",
         GenerationJobId.UpdateSummary => "[CGW:summary]",
         GenerationJobId.BootstrapLore or GenerationJobId.ExpandStoryCard

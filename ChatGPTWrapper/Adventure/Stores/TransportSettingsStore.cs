@@ -5,7 +5,7 @@ using ChatGPTWrapper.Diagnostics;
 namespace ChatGPTWrapper.Adventure.Stores;
 
 /// <summary>
-/// Owns utility transport / lane policy settings. Write-through from AI Tools;
+/// Owns utility transport / lane policy settings. Write-through from Utility jobs tab;
 /// read-merge-write on commit so stale bundles cannot clobber disk.
 /// </summary>
 internal static class TransportSettingsStore
@@ -19,6 +19,7 @@ internal static class TransportSettingsStore
         target.UtilityExecutionPolicy = source.UtilityExecutionPolicy;
         target.AutoSpillToWorker = source.AutoSpillToWorker;
         target.UseEphemeralUtilityWorkerChat = source.UseEphemeralUtilityWorkerChat;
+        target.MaxParallelUtilityWorkerJobs = source.MaxParallelUtilityWorkerJobs;
         target.ForceUtilityWorkerDomAttach = source.ForceUtilityWorkerDomAttach;
 
         target.LocalUtilityInference ??= new LocalUtilityInferenceSettings();

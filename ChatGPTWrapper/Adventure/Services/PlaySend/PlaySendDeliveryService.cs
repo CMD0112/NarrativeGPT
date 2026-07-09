@@ -18,12 +18,14 @@ internal static class PlaySendDeliveryService
         Func<AdventureBundle, Task<PlayContextResult?>> ensureLinkedContextAsync,
         CancellationToken cancellationToken = default)
     {
-        var core = request.Core;
+        var coreObj = request.Core;
+        var source = PlayWebViewCoreBridge.GetSource(coreObj);
+        var core = (CoreWebView2)coreObj;
         var bundle = request.Bundle;
         var linkedProject = !string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId);
 
-        if (PlayConversationPageService.TryAdoptBrowserConversation(bundle, core.Source)
-            || PlayContextSessionCache.TrySyncPlayThreadFromSource(bundle, core.Source))
+        if (PlayConversationPageService.TryAdoptBrowserConversation(bundle, source)
+            || PlayContextSessionCache.TrySyncPlayThreadFromSource(bundle, source))
         {
             AdventureStore.Save(bundle);
         }
@@ -31,7 +33,7 @@ internal static class PlaySendDeliveryService
         var activePlayConversationId = PlayThreadBindingService.GetActiveConversationId(bundle);
         if (linkedProject
             && !string.IsNullOrWhiteSpace(activePlayConversationId)
-            && Uri.TryCreate(core.Source, UriKind.Absolute, out var currentUri)
+            && Uri.TryCreate(source, UriKind.Absolute, out var currentUri)
             && ChatGptUrls.TryParseConversationId(currentUri, out var urlConversationId)
             && !string.Equals(urlConversationId, activePlayConversationId, StringComparison.OrdinalIgnoreCase))
         {
@@ -44,7 +46,7 @@ internal static class PlaySendDeliveryService
                 {
                     linkedConversationId = activePlayConversationId,
                     urlConversationId,
-                    source = core.Source,
+                    source,
                 });
         }
 
@@ -63,7 +65,7 @@ internal static class PlaySendDeliveryService
                 packetLength = request.PacketText.Length,
                 linkedProject,
                 channel = request.Capabilities.DeliveryChannel.ToString(),
-                source = core.Source,
+                source,
             });
 
         var result = await turnService.SubmitPromptAsync(
@@ -110,7 +112,7 @@ internal static class PlaySendDeliveryService
         {
             PlayContextSessionCache.Record(
                 bundle.Metadata.Id,
-                core.Source,
+                source,
                 result.ConversationId ?? PlayThreadBindingService.GetActiveConversationId(bundle),
                 composerFound: true);
         }

@@ -63,5 +63,6 @@ Code: `ChatGPTWrapper/Adventure/Services/Canon/`
 ## Related
 
 - [runtime-canon-schema-plan.md](../plans/runtime-canon-schema-plan.md) — CMD-196 follow-up epic (schema-as-data, validation, generic UI)
+- [canon-reference-paradigm.md](../Enhancements/canon-reference-paradigm.md) — reference document taxonomy, delivery matrix, change integration workflow
 - [data-model-audit-cmd86.md](data-model-audit-cmd86.md)
 - [data-model-reference.md](data-model-reference.md)

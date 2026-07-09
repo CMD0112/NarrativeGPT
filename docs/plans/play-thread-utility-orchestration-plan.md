@@ -82,6 +82,7 @@ Utility work on the play thread becomes **injection-first**:
 ### Execution modes
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
     subgraph author [Author intent]
         PT[Player turn send]
@@ -142,6 +143,7 @@ Per [injection-policy-adr.md](../adr/injection-policy-adr.md):
 ### Assembly pipeline (play send with utility)
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart LR
     subgraph phase1 [CMD-328 Auto policy]
         Q[Queued auto jobs from scheduler]

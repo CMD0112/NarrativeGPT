@@ -1,4 +1,5 @@
 using ChatGPTWrapper.Adventure.Models;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using System.Windows.Controls;
 
@@ -9,12 +10,25 @@ namespace ChatGPTWrapper.Adventure.Services.PlaySend;
 /// </summary>
 internal static class PlayTabSessionResolver
 {
-    public static WebView2? ResolvePinnedWebView(TabControl tabs, PlayTabSession session)
+    public static object? ResolvePinnedTabHost(IPlayTabRegistry registry, PlayTabSession session)
     {
         if (!session.HasPin || string.IsNullOrWhiteSpace(session.PinTabKey))
             return null;
 
-        return PlayTabPinService.FindWebViewByPinKey(tabs, session.PinTabKey);
+        return registry.FindTabHostByPinKey(session.PinTabKey);
+    }
+
+    public static object? ResolvePlayTabHost(
+        IPlayTabRegistry registry,
+        AdventureBundle bundle,
+        object? staleTabHost = null) =>
+        registry.ResolvePlayTabHost(bundle, staleTabHost);
+
+    public static WebView2? ResolvePinnedWebView(TabControl tabs, PlayTabSession session)
+    {
+        if (ResolvePinnedTabHost(new WpfPlayTabRegistry(tabs), session) is WebView2 wv)
+            return wv;
+        return null;
     }
 
     public static WebView2? ResolvePlayWebView(
@@ -22,20 +36,22 @@ internal static class PlayTabSessionResolver
         AdventureBundle bundle,
         WebView2? stalePlayWebView = null)
     {
-        var session = PlayTabSessionFactory.FromBundle(bundle);
-        if (ResolvePinnedWebView(tabs, session) is { } pinned)
-            return pinned;
-
-        if (PlayTabPinService.TryFindWebViewForPlaySession(tabs, bundle) is { } sessionTab)
-            return sessionTab;
-
-        if (stalePlayWebView is not null
-            && PlayTabPinService.GetTabKey(stalePlayWebView, tabs) is not null)
-        {
-            return stalePlayWebView;
-        }
-
+        var registry = new WpfPlayTabRegistry(tabs);
+        if (registry.ResolvePlayTabHost(bundle, stalePlayWebView) is WebView2 wv)
+            return wv;
         return null;
+    }
+
+    public static PlayTabCapabilities ResolveCapabilities(
+        AdventureBundle bundle,
+        object? tabHost,
+        IPlayTabRegistry registry,
+        string? source = null)
+    {
+        source ??= tabHost is not null ? PlayWebViewCoreBridge.GetSource(registry.GetCoreWebView(tabHost)) : null;
+        var ctx = PlayTabCapabilityContext.FromRegistry(bundle, tabHost, registry, source);
+        var session = PlayTabSessionFactory.FromBundle(bundle);
+        return PlayTabCapabilityResolver.Resolve(ctx, session);
     }
 
     public static PlayTabCapabilities ResolveCapabilities(
@@ -44,8 +60,20 @@ internal static class PlayTabSessionResolver
         TabControl? tabs,
         string? source = null)
     {
-        var ctx = PlayTabCapabilityContext.From(bundle, webView, tabs, source);
-        var session = PlayTabSessionFactory.FromBundle(bundle);
-        return PlayTabCapabilityResolver.Resolve(ctx, session);
+        if (tabs is null)
+        {
+            var ctx = PlayTabCapabilityContext.FromUrl(
+                bundle,
+                source ?? webView?.CoreWebView2?.Source,
+                candidateTabKey: null);
+            return PlayTabCapabilityResolver.Resolve(ctx, PlayTabSessionFactory.FromBundle(bundle));
+        }
+
+        var registry = new WpfPlayTabRegistry(tabs);
+        return ResolveCapabilities(
+            bundle,
+            webView,
+            registry,
+            source ?? webView?.CoreWebView2?.Source);
     }
 }

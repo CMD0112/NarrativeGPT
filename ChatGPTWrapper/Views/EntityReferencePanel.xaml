@@ -43,6 +43,18 @@
                                 Padding="4,1"
                                 Margin="4,0,0,0"
                                 CornerRadius="3"
+                                Background="{DynamicResource WarningSubtleBrush}"
+                                Visibility="{Binding StateDivergenceBadgeVisibility}"
+                                ToolTip="{Binding StateDivergenceBadgeTooltip}">
+                            <TextBlock Text="{Binding StateDivergenceBadgeText}"
+                                       FontSize="9"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource WarningBrush}"/>
+                        </Border>
+                        <Border DockPanel.Dock="Right"
+                                Padding="4,1"
+                                Margin="4,0,0,0"
+                                CornerRadius="3"
                                 Background="{DynamicResource BgElevatedBrush}"
                                 Visibility="{Binding SyncBadgeVisibility}">
                             <TextBlock Text="{Binding SyncBadgeText}"
@@ -110,6 +122,16 @@
                                 MouseLeftButtonUp="SyncBadge_Click">
                             <TextBlock Text="{Binding SyncBadgeText}"
                                        Style="{StaticResource EntitySyncBadgeTextStyle}"/>
+                        </Border>
+
+                        <Border DockPanel.Dock="Right"
+                                Style="{StaticResource EntityStateDivergenceBadgeStyle}"
+                                Margin="6,0,0,0"
+                                VerticalAlignment="Top"
+                                Visibility="{Binding StateDivergenceBadgeVisibility}"
+                                ToolTip="{Binding StateDivergenceBadgeTooltip}">
+                            <TextBlock Text="{Binding StateDivergenceBadgeText}"
+                                       Style="{StaticResource EntityStateDivergenceBadgeTextStyle}"/>
                         </Border>
 
                         <Border DockPanel.Dock="Right"
@@ -261,13 +283,26 @@
 
                                   Click="SuggestEntitiesWithAttachments_Click"
 
-                                  ToolTip="Attach entities.json or other reference files with instructions for the utility worker job"/>
+                                  ToolTip="Attach reference files for packet embed or DOM attach on the utility worker lane. For full entities.json revision with Project source publish + pointer, use Revise entities.json (AI) instead."/>
+
+                        <MenuItem x:Name="ProposeEntitiesFileMenuItem" Header="Revise entities.json (AI)"
+
+                                  Click="ProposeEntitiesFile_Click"
+
+                                  ToolTip="Publish entities.json to Project sources, run an ephemeral utility chat, and return a downloadable revised file for review"/>
 
                         <MenuItem x:Name="ExpandEntityMenuItem" Header="Expand selected (AI)"
 
                                   Click="ExpandEntity_Click"
 
                                   ToolTip="Enrich the selected entity with AI"/>
+
+                        <MenuItem x:Name="ProposeEntityStateMenuItem" Header="Propose entity state (AI)"
+                                  Click="ProposeEntityState_Click"
+                                  ToolTip="Queue internal state proposals for selected entities"/>
+                        <MenuItem x:Name="ProposeCanonEvolutionMenuItem" Header="Propose canon evolution (AI)"
+                                  Click="ProposeCanonEvolution_Click"
+                                  ToolTip="Propose durable canon profile updates from play context"/>
 
                     </MenuItem>
 
@@ -308,6 +343,7 @@
                      ItemContainerStyle="{StaticResource ShellLibraryListItemStyle}"
 
                      ItemTemplate="{StaticResource EntityRowTemplateAdaptive}"
+                     SelectionMode="Extended"
 
                      SelectionChanged="EntityList_SelectionChanged"
 

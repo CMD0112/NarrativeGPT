@@ -5,6 +5,8 @@ using Microsoft.Web.WebView2.Wpf;
 
 namespace ChatGPTWrapper;
 
+// CoreWebView2 helpers are used by the WinUI shell host (CMD-553).
+
 internal static class ChromePreferencesApplier
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -67,6 +69,62 @@ internal static class ChromePreferencesApplier
                ChatGptContinuousViewInjection.BuildLegacyPreferenceUpdateScript(settings) + "}})();";
     }
 
+    public static async Task ApplyToCoreWebView2Async(
+        object coreWebView2,
+        UiChromeSettings settings,
+        bool includeLibraries = false)
+    {
+        WinUiBridge.WinUiWebView2CoreRuntime.EnsureManagedCoreLoaded();
+
+        if (!WinUiBridge.WinUiWebView2CoreRuntime.TryAsCore(coreWebView2, out _))
+            return;
+
+        await ApplyToCoreWebView2CoreAsync(
+            WinUiBridge.WinUiWebView2CoreRuntime.RequireTypedCore(coreWebView2),
+            settings,
+            includeLibraries);
+    }
+
+    private static bool IsTrustedInjectable(CoreWebView2 core) =>
+        Uri.TryCreate(core.Source, UriKind.Absolute, out var uri)
+        && ChatGptUrls.IsTrustedChatGptTopLevelUri(uri);
+
+    private static async Task ApplyToCoreWebView2CoreAsync(
+        CoreWebView2 core,
+        UiChromeSettings settings,
+        bool includeLibraries = false)
+    {
+        if (!IsTrustedInjectable(core))
+            return;
+
+        await ChatGptStyleInjection.ReapplyAsync(core);
+
+        var script = includeLibraries
+            ? ChatGptContinuousViewInjection.BuildFullInjectionScript(settings)
+            : BuildApplyScript(settings);
+        if (string.IsNullOrWhiteSpace(script))
+            return;
+
+        try
+        {
+            await core.ExecuteScriptAsync(script);
+        }
+        catch
+        {
+            // Ignore transient failures during teardown or before document exists.
+        }
+    }
+
+    public static async Task ApplyToCoreWebView2CollectionAsync(
+        IEnumerable<object> cores,
+        UiChromeSettings? settings = null,
+        bool includeLibraries = false)
+    {
+        settings ??= UiChromeStore.Load();
+        foreach (var core in cores)
+            await ApplyToCoreWebView2Async(core, settings, includeLibraries);
+    }
+
     public static void ApplyToTrustedTabs(
         IEnumerable<TabItem> tabs,
         UiChromeSettings settings,
@@ -79,8 +137,7 @@ internal static class ChromePreferencesApplier
             if (tab.Content is not WebView2 wv || wv.CoreWebView2 is not { } core)
                 continue;
 
-            if (!Uri.TryCreate(core.Source, UriKind.Absolute, out var uri)
-                || !ChatGptUrls.IsTrustedChatGptTopLevelUri(uri))
+            if (!IsTrustedInjectable(core))
                 continue;
 
             _ = core.ExecuteScriptAsync(script);

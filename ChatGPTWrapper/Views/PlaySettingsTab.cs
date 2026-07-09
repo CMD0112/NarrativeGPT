@@ -6,12 +6,17 @@ public enum PlaySettingsTab
     NextSend,
     World,
     Session,
-    AiTools,
+    UtilityJobs,
 
-    /// <summary>Legacy alias — use <see cref="AiTools"/>.</summary>
-    AiActions = AiTools,
+    /// <summary>Legacy alias — use <see cref="UtilityJobs"/>.</summary>
+    AiTools = UtilityJobs,
+
+    /// <summary>Legacy alias — use <see cref="UtilityJobs"/>.</summary>
+    AiActions = UtilityJobs,
     PlaySurface,
     Settings,
     Sources,
     MemoryCards,
+    History,
+    Preview,
 }

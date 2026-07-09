@@ -54,15 +54,7 @@ internal static class ProjectSourceExportService
             InstructionSourcesPolicy.BuildInstructionsSnippet(bundle),
             manifest, existingByPath, newEntries, mode, sections: null);
 
-        WriteIfNotEmpty(adventureId, dir, SectionSchema.CanonFormatFile,
-            CanonFormatGenerator.Generate(),
-            manifest, existingByPath, newEntries, mode, sections: null);
-
-        var narratorScalesContent = NarratorScalesGenerator.Generate();
-        WriteIfNotEmpty(adventureId, dir, SectionSchema.NarratorScalesFile,
-            narratorScalesContent,
-            manifest, existingByPath, newEntries, mode,
-            sections: NarratorScalesManifestService.ParseSections(narratorScalesContent));
+        WriteReferenceFilesInto(adventureId, dir, bundle, manifest, existingByPath, newEntries, mode);
 
         WriteIfNotEmpty(adventureId, dir, SectionSchema.LexiconFile,
             LexiconExportService.Build(bundle),
@@ -78,6 +70,103 @@ internal static class ProjectSourceExportService
 
         manifest.Entries = newEntries;
         return true;
+    }
+
+    /// <summary>
+    /// Writes schema-driven reference files only (canon-format, narrator-scales, entity-state-format).
+    /// Merges manifest entries without requiring lore JSON. Used from Design → Sources (CMD-477).
+    /// </summary>
+    public static bool ExportReferenceFiles(AdventureBundle bundle, SourceExportMode mode = SourceExportMode.IfStale)
+    {
+        if (mode == SourceExportMode.Skip)
+            return false;
+
+        var dir = SourcesDirectory(bundle);
+        Directory.CreateDirectory(dir);
+
+        var manifest = bundle.SourceManifest;
+        var existingByPath = manifest.Entries.ToDictionary(
+            e => e.RelativePath,
+            StringComparer.OrdinalIgnoreCase);
+
+        var scratch = new List<SourceManifestEntry>();
+        WriteReferenceFilesInto(bundle.Metadata.Id, dir, bundle, manifest, existingByPath, scratch, mode);
+
+        if (scratch.Count == 0)
+            return false;
+
+        var updatedByPath = scratch.ToDictionary(e => e.RelativePath, StringComparer.OrdinalIgnoreCase);
+        var merged = new List<SourceManifestEntry>();
+
+        foreach (var entry in manifest.Entries)
+        {
+            if (updatedByPath.TryGetValue(entry.RelativePath, out var updated))
+            {
+                merged.Add(updated);
+                updatedByPath.Remove(entry.RelativePath);
+            }
+            else
+            {
+                merged.Add(entry);
+            }
+        }
+
+        foreach (var remaining in updatedByPath.Values)
+            merged.Add(remaining);
+
+        manifest.Entries = merged;
+        return true;
+    }
+
+    private static void WriteReferenceFilesInto(
+        Guid adventureId,
+        string dir,
+        AdventureBundle bundle,
+        SourceManifest manifest,
+        Dictionary<string, SourceManifestEntry> existingByPath,
+        List<SourceManifestEntry> targetEntries,
+        SourceExportMode mode)
+    {
+        foreach (var fileName in SectionSchema.ReferenceSourceFiles)
+        {
+            if (!TryGenerateReferenceContent(fileName, out var content, out var sections))
+                continue;
+
+            WriteIfNotEmpty(
+                adventureId,
+                dir,
+                fileName,
+                content,
+                manifest,
+                existingByPath,
+                targetEntries,
+                mode,
+                sections);
+        }
+    }
+
+    internal static bool TryGenerateReferenceContent(
+        string fileName,
+        out string content,
+        out List<SectionManifestEntry>? sections)
+    {
+        sections = null;
+        switch (fileName.ToLowerInvariant())
+        {
+            case SectionSchema.CanonFormatFile:
+                content = CanonFormatGenerator.Generate();
+                return !string.IsNullOrWhiteSpace(content);
+            case SectionSchema.NarratorScalesFile:
+                content = NarratorScalesGenerator.Generate();
+                sections = NarratorScalesManifestService.ParseSections(content);
+                return !string.IsNullOrWhiteSpace(content);
+            case SectionSchema.EntityStateFormatFile:
+                content = EntityInternalStateFormatGenerator.Generate();
+                return !string.IsNullOrWhiteSpace(content);
+            default:
+                content = "";
+                return false;
+        }
     }
 
     private static void WriteSectioned(

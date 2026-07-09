@@ -8,8 +8,17 @@ internal static class UtilityEphemeralWorkerPolicy
     public static bool IsEnabled(AdventureBundle bundle) =>
         bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat;
 
-    public static bool IsWorkerLaneAvailable(AdventureBundle bundle)
+    public static bool ShouldUseEphemeralLane(AdventureBundle bundle, string jobId) =>
+        IsEnabled(bundle) || UtilityWorkerTransitionCatalog.ForcesEphemeralLane(jobId);
+
+    public static bool IsWorkerLaneAvailable(AdventureBundle bundle, string? jobId = null)
     {
+        if (jobId is not null && UtilityWorkerTransitionCatalog.ForcesEphemeralLane(jobId))
+        {
+            return !string.IsNullOrWhiteSpace(
+                AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata));
+        }
+
         if (IsEnabled(bundle))
         {
             return !string.IsNullOrWhiteSpace(
@@ -19,8 +28,9 @@ internal static class UtilityEphemeralWorkerPolicy
         return UtilityWorkerCapabilityGate.IsGreen(bundle);
     }
 
-    public static bool RequiresWorkerPin(AdventureBundle bundle) =>
-        !IsEnabled(bundle) && !UtilityWorkerPinService.HasWorkerPin(bundle);
+    public static bool RequiresWorkerPin(AdventureBundle bundle, string? jobId = null) =>
+        !ShouldUseEphemeralLane(bundle, jobId ?? "")
+        && !UtilityWorkerPinService.HasWorkerPin(bundle);
 
     /// <summary>Ephemeral + force DOM attach for all staged reference files (QA / testing).</summary>
     public static bool ForceDomAttach(AdventureBundle bundle) =>

@@ -1,4 +1,5 @@
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.PlaySend;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Diagnostics;
 using ChatGPTWrapper.PageIntegration;
@@ -7,8 +8,12 @@ using Microsoft.Web.WebView2.Wpf;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using WebViewCoreRuntime = ChatGPTWrapper.WebView.WebView2ManagedCoreRuntime;
 
 namespace ChatGPTWrapper;
+
+/// <summary>Host-specific wiring for standalone play compose (WinUI WinRT core events).</summary>
+public delegate void PlayComposeStandaloneWireHandler(object core, ChatGptPlayComposeInjection injection);
 
 /// <summary>
 /// Pending file attachment staged in the wrapper composer before upload.
@@ -63,8 +68,10 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
     private static string? _cachedScriptPayload;
     private static long _cachedScriptStamp;
 
-    private readonly WebView2 _webView;
+    private readonly object _tabHost;
+    private readonly Func<object?> _getCore;
     private readonly Func<bool> _getWrapperComposerEnabled;
+    private readonly PlayComposeStandaloneWireHandler? _wireStandaloneEvents;
     private ChatGptPageHost? _pageHost;
     private bool _standaloneRegistered;
     private bool _nativePassthrough;
@@ -74,19 +81,70 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
     string IPageFeature.FeatureId => PageFeatureIds.PlayCompose;
 
     public ChatGptPlayComposeInjection(WebView2 webView, Func<bool> getWrapperComposerEnabled)
+        : this(
+            webView,
+            () => webView.CoreWebView2,
+            getWrapperComposerEnabled)
     {
-        _webView = webView ?? throw new ArgumentNullException(nameof(webView));
+    }
+
+    public ChatGptPlayComposeInjection(
+        object tabHost,
+        Func<object?> getCore,
+        Func<bool> getWrapperComposerEnabled,
+        PlayComposeStandaloneWireHandler? wireStandaloneEvents = null)
+    {
+        _tabHost = tabHost ?? throw new ArgumentNullException(nameof(tabHost));
+        _getCore = getCore ?? throw new ArgumentNullException(nameof(getCore));
         _getWrapperComposerEnabled = getWrapperComposerEnabled
             ?? throw new ArgumentNullException(nameof(getWrapperComposerEnabled));
+        _wireStandaloneEvents = wireStandaloneEvents;
+    }
+
+    static ChatGptPlayComposeInjection() => WebViewCoreRuntime.Register();
+
+    private object? TryGetCoreObject()
+    {
+        var core = _getCore();
+        if (core is null)
+            return null;
+
+        WebViewCoreRuntime.TryAsCore(core, out _);
+        return core;
+    }
+
+    private CoreWebView2? TryGetCore()
+    {
+        var core = TryGetCoreObject();
+        if (core is CoreWebView2 typed)
+            return typed;
+
+        if (core is null)
+            return null;
+
+        try
+        {
+            return WebViewCoreRuntime.RequireTypedCore(core);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public bool IsRegistered => _pageHost is not null || _standaloneRegistered;
+
+    public object TabHost => _tabHost;
+
+    public object? CoreWebView => _getCore();
+
+    public CoreWebView2? CoreWebView2 => TryGetCore();
 
     public void Register(ChatGptPageHost pageHost)
     {
         _pageHost = pageHost ?? throw new ArgumentNullException(nameof(pageHost));
         pageHost.RegisterFeature(this);
-        if (_webView.CoreWebView2 is { } core)
+        if (TryGetCore() is { } core)
             _ = ApplyAsync(core);
     }
 
@@ -119,28 +177,97 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
         }));
     }
 
-    internal WebView2 WebView => _webView;
+    [Obsolete("Use TabHost for host-neutral orchestration.")]
+    internal WebView2? WebView => _tabHost as WebView2;
 
     public void Register()
     {
         if (_pageHost is not null)
             return;
 
-        var core = _webView.CoreWebView2
-                   ?? throw new InvalidOperationException("Call after CoreWebView2 is ready.");
+        var coreObj = TryGetCoreObject()
+                      ?? throw new InvalidOperationException("Call after CoreWebView2 is ready.");
 
-        core.Settings.IsWebMessageEnabled = true;
-
-        if (!_standaloneRegistered)
+        if (TryGetCore() is { } managedCore)
         {
-            core.WebMessageReceived += OnStandaloneWebMessageReceived;
-            core.NavigationCompleted += OnStandaloneNavigationCompleted;
-            _standaloneRegistered = true;
-            _ = ApplyAsync(core);
+            managedCore.Settings.IsWebMessageEnabled = true;
+
+            if (!_standaloneRegistered)
+            {
+                managedCore.WebMessageReceived += OnStandaloneWebMessageReceived;
+                managedCore.NavigationCompleted += OnStandaloneNavigationCompleted;
+                _standaloneRegistered = true;
+                _ = ApplyAsync(managedCore);
+                return;
+            }
+
+            _ = ApplyPreferenceAsync(managedCore, _getWrapperComposerEnabled());
             return;
         }
 
-        _ = ApplyPreferenceAsync(core, _getWrapperComposerEnabled());
+        EnableWebMessages(coreObj);
+
+        if (!_standaloneRegistered)
+        {
+            if (_wireStandaloneEvents is null)
+            {
+                throw new InvalidOperationException(
+                    "WinUI play compose requires PlayComposeStandaloneWireHandler.");
+            }
+
+            _wireStandaloneEvents(coreObj, this);
+            _standaloneRegistered = true;
+            _ = ApplyAsyncObject(coreObj);
+            return;
+        }
+
+        _ = ApplyPreferenceObjectAsync(coreObj, _getWrapperComposerEnabled());
+    }
+
+    public void HandleStandaloneWebMessage(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var typeEl) || typeEl.ValueKind != JsonValueKind.String)
+                return;
+
+            HandleMessage(typeEl.GetString() ?? "", root);
+        }
+        catch
+        {
+            /* ignore malformed messages */
+        }
+    }
+
+    public async Task OnStandaloneNavigationCompletedObject(object sender, object e)
+    {
+        try
+        {
+            dynamic args = e;
+            if (args.IsSuccess != true)
+                return;
+
+            var source = WebViewCoreRuntime.GetSource(sender);
+            if (!ChatGptPageGate.IsInjectable(source))
+                return;
+
+            await ApplyAsyncObject(sender);
+        }
+        catch
+        {
+            /* page may still be loading */
+        }
+    }
+
+    private static void EnableWebMessages(object core)
+    {
+        dynamic dynamicCore = core;
+        dynamicCore.Settings.IsWebMessageEnabled = true;
     }
 
     private void HandleMessage(string type, JsonElement root)
@@ -201,7 +328,7 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
                         attachmentKinds = AttachmentSendPolicy.AttachmentKinds(traceContext),
                         attachmentOnly = traceContext?.IsAttachmentOnly(_cachedText) == true,
                         preview = TruncateForLog(_cachedText, 120),
-                        webViewSource = _webView.CoreWebView2?.Source,
+                        webViewSource = PlayWebViewCoreBridge.GetSource(_getCore()),
                     });
 
                 _ = HandleComposeSendAsync(_cachedText, attachments, attachmentsPreStaged, attachmentMeta);
@@ -250,7 +377,7 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
             {
                 jobId,
                 attachmentCount = attachments.Count,
-                webViewSource = _webView.CoreWebView2?.Source,
+                webViewSource = PlayWebViewCoreBridge.GetSource(_getCore()),
             });
 
         UploadRequested?.Invoke(this, new PlayComposeUploadEventArgs
@@ -383,7 +510,7 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
     {
         _lastAttachmentMeta = attachmentMeta ?? [];
 
-        if (_webView.CoreWebView2 is { } core)
+        if (TryGetCore() is { } core)
         {
             PlaySendTrace.Event(
                 PlaySendTraceEvents.ComposeState,
@@ -393,6 +520,21 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
                 data: new { busy = true, status = "Preparing…" });
 
             await ApplyStateAsync(core, new PlayComposeUiState
+            {
+                Busy = true,
+                Status = "Preparing…",
+            });
+        }
+        else if (TryGetCoreObject() is { } coreObj)
+        {
+            PlaySendTrace.Event(
+                PlaySendTraceEvents.ComposeState,
+                PlaySendCategory.Compose,
+                PlaySendLevel.Debug,
+                "Applying compose busy state before host send",
+                data: new { busy = true, status = "Preparing…" });
+
+            await ApplyStateObjectAsyncHost(coreObj, new PlayComposeUiState
             {
                 Busy = true,
                 Status = "Preparing…",
@@ -430,15 +572,8 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
             var json = e.TryGetWebMessageAsString();
             if (string.IsNullOrWhiteSpace(json))
                 json = e.WebMessageAsJson;
-            if (string.IsNullOrWhiteSpace(json))
-                return;
 
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("type", out var typeEl) || typeEl.ValueKind != JsonValueKind.String)
-                return;
-
-            HandleMessage(typeEl.GetString() ?? "", root);
+            HandleStandaloneWebMessage(json);
         }
         catch
         {
@@ -466,13 +601,34 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
     public async Task SetNativePassthroughAsync(bool passthrough)
     {
         _nativePassthrough = passthrough;
-        if (_webView.CoreWebView2 is { } core)
+        if (TryGetCore() is { } core)
             await ApplyNativePassthroughAsync(core, passthrough);
+        else if (TryGetCoreObject() is { } coreObj)
+            await ApplyNativePassthroughObjectAsync(coreObj, passthrough);
     }
 
     public bool NativePassthrough => _nativePassthrough;
 
     private readonly SemaphoreSlim _applyGate = new(1, 1);
+
+    public Task ApplyComposeStateFromHost(object? coreWebView, PlayComposeUiState state)
+    {
+        if (coreWebView is null)
+            return Task.CompletedTask;
+
+        if (coreWebView is CoreWebView2 typed)
+            return ApplyStateAsync(typed, state);
+
+        return ApplyStateObjectAsyncHost(coreWebView, state);
+    }
+
+    public Task ApplyStateAsync(object coreWebView, PlayComposeUiState state)
+    {
+        if (coreWebView is CoreWebView2 typed)
+            return ApplyStateAsync(typed, state);
+
+        return ApplyStateObjectAsyncHost(coreWebView, state);
+    }
 
     public async Task ApplyStateAsync(CoreWebView2 core, PlayComposeUiState state)
     {
@@ -507,6 +663,39 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
         }
     }
 
+    private async Task ApplyStateObjectAsyncHost(object core, PlayComposeUiState state)
+    {
+        if (state.Clear == true)
+            _cachedText = "";
+        else if (state.Text is not null)
+            _cachedText = state.Text;
+
+        PlaySendTrace.Event(
+            PlaySendTraceEvents.ComposeState,
+            PlaySendCategory.Host,
+            PlaySendLevel.Debug,
+            "Applying compose UI state",
+            data: new
+            {
+                busy = state.Busy,
+                clear = state.Clear,
+                focus = state.Focus,
+                status = state.Status,
+                textLength = state.Text?.Length,
+                webViewSource = WebViewCoreRuntime.GetSource(core),
+            });
+
+        await _applyGate.WaitAsync();
+        try
+        {
+            await ApplyStateObjectAsync(core, state);
+        }
+        finally
+        {
+            _applyGate.Release();
+        }
+    }
+
     public async Task SyncTextFromPageAsync(CoreWebView2 core)
     {
         try
@@ -524,8 +713,16 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
 
     private async Task ApplyAsync(CoreWebView2? core)
     {
-        core ??= _webView.CoreWebView2;
-        if (core is null || !ChatGptPageGate.IsInjectable(core.Source))
+        core ??= TryGetCore();
+        if (core is null)
+        {
+            if (TryGetCoreObject() is { } coreObj)
+                await ApplyAsyncObject(coreObj);
+
+            return;
+        }
+
+        if (!ChatGptPageGate.IsInjectable(core.Source))
             return;
 
         var script = GetScriptPayload();
@@ -538,8 +735,27 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
             await ApplyNativePassthroughAsync(core, true);
     }
 
+    private async Task ApplyAsyncObject(object core)
+    {
+        var source = WebViewCoreRuntime.GetSource(core);
+        if (!ChatGptPageGate.IsInjectable(source))
+            return;
+
+        var script = GetScriptPayload();
+        if (string.IsNullOrWhiteSpace(script))
+            return;
+
+        await WebViewCoreRuntime.ExecuteScriptAsync(core, script);
+        await ApplyPreferenceObjectAsync(core, _getWrapperComposerEnabled());
+        if (_nativePassthrough)
+            await ApplyNativePassthroughObjectAsync(core, true);
+    }
+
     private static Task ApplyPreferenceAsync(CoreWebView2 core, bool enabled) =>
         core.ExecuteScriptAsync(BuildPreferenceScript(enabled));
+
+    private static Task ApplyPreferenceObjectAsync(object core, bool enabled) =>
+        WebViewCoreRuntime.ExecuteScriptAsync(core, BuildPreferenceScript(enabled));
 
     private static Task ApplyStateScriptAsync(CoreWebView2 core, PlayComposeUiState state)
     {
@@ -547,6 +763,17 @@ public sealed class ChatGptPlayComposeInjection : IPageFeature
         return core.ExecuteScriptAsync(
             $"(function(){{var fn=globalThis.__cgwPlayComposeApplyState;if(typeof fn==='function')fn({json});}})()");
     }
+
+    private static Task ApplyStateObjectAsync(object core, PlayComposeUiState state)
+    {
+        var json = JsonSerializer.Serialize(state, ComposeJsonOptions);
+        return WebViewCoreRuntime.ExecuteScriptAsync(
+            core,
+            $"(function(){{var fn=globalThis.__cgwPlayComposeApplyState;if(typeof fn==='function')fn({json});}})()");
+    }
+
+    private static Task ApplyNativePassthroughObjectAsync(object core, bool passthrough) =>
+        WebViewCoreRuntime.ExecuteScriptAsync(core, BuildPassthroughScript(passthrough));
 
     private static readonly JsonSerializerOptions ComposeJsonOptions = new()
     {

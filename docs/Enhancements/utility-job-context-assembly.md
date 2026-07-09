@@ -47,6 +47,7 @@ Utility jobs were assembled through **three divergent paths** (now unified behin
 ## Target architecture
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
     subgraph inputs [Inputs]
         JOB[jobId + GenerationJobContext]
@@ -60,7 +61,7 @@ flowchart TB
         STORY[Story slice: transcript summary state memory]
         CANON[Task-scoped canon slices]
         DEDUP[Lane-aware dedup vs play packet / thread]
-        LORE[Worker lore channel: sources pointers or excerpts]
+        LORE[Worker lore channel<br/>: sources pointers or excerpts]
     end
 
     subgraph output [Output]
@@ -86,7 +87,10 @@ flowchart TB
 
 ---
 
-## Content matrix (per job — ADR to lock)
+## Content matrix (per job — canonical)
+
+> **Authoritative table:** [ai-tools-context-matrix.md](ai-tools-context-matrix.md) (2026-07-04).  
+> The draft below is retained for CMD-391 history; update the canonical doc when requirements change.
 
 Draft requirements; finalize in CMD-391 spike.
 
@@ -94,6 +98,7 @@ Draft requirements; finalize in CMD-391 spike.
 |-----|------------------|---------|-------|--------------|---------------|--------------|-------------|
 | `propose_memories` | Trigger turn only | Omit if in play ctx | Omit if bundled | No | Optional | No | Pointer-only if linked |
 | `extract_entities` | Trigger turn | Omit if bundled | No | Compact index | No | Mentioned entities | Pointer-only |
+| `update_state` | Trigger + prior | Omit if bundled | Via SIO | Compact (presence) | No | No | No |
 | `update_summary` | Wide window | Prior summary | Yes | No | No | No | No |
 | `continuity_check` | Recent window | Yes | Yes | Full compact | Optional | **Task-scoped** world/cast excerpts | **Required** when linked |
 | `process_turn` | Trigger + prior | Yes | Yes | Yes | Yes | Task-scoped | Pointer-only |

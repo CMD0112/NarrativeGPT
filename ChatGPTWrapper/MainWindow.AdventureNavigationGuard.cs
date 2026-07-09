@@ -4,6 +4,7 @@ using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
+using ChatGPTWrapper.ChatGptApi.ProjectSource;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -115,6 +116,9 @@ public partial class MainWindow
             return;
 
         if (Volatile.Read(ref _activePlaySendCount) > 0)
+            return;
+
+        if (ProjectDomPublicationGuard.IsActive)
             return;
 
         if (_activeAdventureId is not { } adventureId)

@@ -12,7 +12,7 @@ There is **no OpenAI API key** — all ChatGPT access uses your logged-in web se
 |--------|---------|
 | [`user/`](user/) | Author and end-user guides — Adventures UI, instructions, prompts, troubleshooting |
 | [`developer/`](developer/) | Code architecture, build, test, bridges, utility pipeline |
-| [`reference/`](reference/) | Catalogs — data model, services, UI components, thread registry |
+| [`reference/`](reference/) | Catalogs — data models, API endpoints, services, UI components, thread registry |
 | [`settings/`](settings/) | Settings UX taxonomy, inventory, appearance |
 | [`adr/`](adr/) | Normative architecture decision records |
 | [`plans/`](plans/) | Implementation plans and phased delivery docs |
@@ -22,6 +22,7 @@ There is **no OpenAI API key** — all ChatGPT access uses your logged-in web se
 ## Architecture at a glance
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
     subgraph shell [ChatGPTWrapper WPF Shell]
         MW[MainWindow]
@@ -99,16 +100,25 @@ flowchart TB
 
 | Document | Description |
 |----------|-------------|
+| [API & Data Models Index](reference/api-and-data-models-index.md) | **Hub** — on-disk JSON, backend-api paths, bridge protocol, code anchors |
 | [AGENTS.md](../AGENTS.md) | Agent entry point — Linear issue workflow, dual-canon sync |
 | [Architecture](developer/architecture.md) | Solution structure, runtime modes, page integration, concurrency |
 | [Play Send Orchestration Plan](plans/play-send-orchestration-implementation-plan.md) | Host-owned send pipeline — phases 0–9 |
 | [Play Send Orchestration ADR](adr/play-send-orchestration-adr.md) | Delivery invariants, capability matrix, tiered delivery |
 | [Play/Design surface convergence ADR](adr/play-design-surface-convergence-adr.md) | CMD-21 / CMD-230 — in-session Play/Design toggle (Option 2) |
 | [Play surface UX modernization ADR](adr/play-surface-ux-modernization-adr.md) | CMD-415 / CMD-416 — Phase 3 shell & companion IA, density, deduped chrome |
+| [WinUI 3 shell migration ADR](adr/winui-shell-migration-adr.md) | CMD-478 — WinUI long-term shell; strangler via XAML Islands |
+| [WinUI post-migration parity plan](plans/winui-post-migration-parity-plan.md) | CMD-521 — single-pass audit/repair/QA to close WinUI functional gaps |
+| [WinUI UX parity backlog](plans/winui-ux-parity-backlog.md) | CMD-521/532 — manual QA capture: view modes, dialogs, play/design surfaces, polish |
+| [WinUI dialog redesign strategy](plans/winui-dialog-redesign-strategy.md) | CMD-552/515 — resizable WinUI-only dialog program; full inventory, waves, enrichment |
+| [Play Settings UI roadmap](plans/play-settings-ui-roadmap.md) | WinUI Play Settings backlog + workbench paradigm seed for wrapper-wide UI alignment |
 | [Play surface UX modernization plan](plans/play-surface-ux-modernization-implementation-plan.md) | CMD-415 — phased implementation handoff for Plan tool |
 | [WebView Bridges](developer/webview-bridges.md) | JS↔C# protocol, every bridge command |
-| [ChatGPT API Integration](developer/chatgpt-api-integration.md) | Internal backend-api paths, send pipeline, caches |
-| [Data Model Reference](reference/data-model-reference.md) | JSON schemas, on-disk layout, migrations |
+| [ChatGPT API Integration](developer/chatgpt-api-integration.md) | Send pipeline, caches, file lifecycle, error handling |
+| [ChatGPT API Endpoints](reference/chatgpt-api-endpoints-reference.md) | Full `ChatGptApiEndpoints` catalog — upload, download variants, delete, conversation PATCH, project settings |
+| [Gizmo API Response Shapes](reference/gizmo-api-response-shapes.md) | Project JSON nesting, file ref parsing, inline content |
+| [Data Model Reference](reference/data-model-reference.md) | Adventure bundle JSON — schemas, on-disk layout, migrations |
+| [Data Model — Secondary Files](reference/data-model-secondary-files.md) | Satellite indexes — context-index, utility-outbox, thread logs, diagnostics |
 | [Adventure Thread Registry](reference/adventure-thread-registry.md) | Thread registry, pins, UtilityWorker, Threads hub |
 | [Canon schema ADR](reference/canon-schema.md) | Dynamic canon field mapping (CMD-191) |
 | [Runtime canon schema plan](plans/runtime-canon-schema-plan.md) | CMD-196 schema-as-data engine roadmap |
@@ -121,6 +131,10 @@ flowchart TB
 | [Utility Job Orchestration](developer/utility-job-orchestration.md) | Dual-lane utility pipeline (play injection + worker) |
 | [Utility Worker Lane ADR](adr/utility-worker-lane-adr.md) | Worker lane normative decisions (CMD-358) |
 | [Utility Worker Lane plan](plans/utility-worker-lane-plan.md) | Worker lane implementation phases |
+| [Wrapper UI paradigm](reference/wrapper-ui-paradigm.md) | **Cross-surface alignment canon** — layout paradigms, principles, component kit, surface matrix |
+| [UI surface catalog](reference/ui-surface-catalog.md) | **End-to-end inventory** — every shell, page, panel, modal, menu, and WebView surface |
+| [UI paradigm Linear tracker](plans/ui-paradigm-linear-tracker.md) | **CMD-584 program** — wave map and issue index (CMD-585–622) |
+| [UI paradigm QA matrix](developer/ui-paradigm-qa-matrix.md) | T3/T4 alignment checklist per surface |
 | [UI Components](reference/ui-components.md) | WPF views, dialogs, MainWindow partial-class map |
 | [Settings interactables audit](settings/settings-interactables-audit.md) | Surface audits: keep / merge / deprecate (CMD-256–261) |
 | [Injected Assets](developer/injected-assets.md) | `ChatGPT_files/` JS and CSS reference |
@@ -135,8 +149,12 @@ flowchart TB
 
 | Document | Description |
 |----------|-------------|
-| [Chat File I/O Feasibility](Enhancements/chat-file-io-feasibility.md) | Chat upload/download: API vs DOM, diagnostics, production paths |
-| [Utility worker attachment delivery](Enhancements/utility-worker-attachment-delivery.md) | Dual-lane reference files for worker jobs ([CMD-411](https://linear.app/cmd0112/issue/CMD-411)) |
+| [Utility source-reference file I/O](Enhancements/utility-source-file-io.md) | **Canon** — sources upload + pointer + delimited scrape + ephemeral thread ([CMD-441](https://linear.app/cmd0112/issue/CMD-441)) |
+| [Utility file I/O — retired methodologies](Enhancements/utility-source-file-io-retired-methodologies.md) | Retired spikes; removed diagnostic code inventory |
+| [Chat File I/O Feasibility](Enhancements/chat-file-io-feasibility.md) | Archived chat attach spike |
+| [Chat File I/O Transport Redesign](Enhancements/chat-file-io-transport-redesign.md) | `ChatFileTransport` architecture (production layer retained) |
+| [Chat File I/O API Attach Retirement](Enhancements/chat-file-io-api-attach-retirement.md) | API attach retirement + historical gate evidence |
+| [Utility worker attachment delivery](Enhancements/utility-worker-attachment-delivery.md) | Manual utility reference files (DOM attach) — not programmatic file loop |
 | [Project source publication redesign](Enhancements/project-source-publication-redesign.md) | Publication lab + shared browser-file kernel ([CMD-428](https://linear.app/cmd0112/issue/CMD-428)) |
 | [Project source publication ADR](adr/project-source-publication-adr.md) | DOM-first publication lab; manual publish authoritative ([CMD-429](https://linear.app/cmd0112/issue/CMD-429)) |
 | [Attachment-aware context injection](Enhancements/attachment-aware-context-injection.md) | Branch play packet injection by attachment type |
@@ -149,6 +167,28 @@ flowchart TB
 | [plans/native-advanced-color-picker](plans/native-advanced-color-picker.md) | Backlog: native advanced color picker |
 | Utility job context assembly (v1) | [CMD-390](https://linear.app/cmd0112/issue/CMD-390) — [design](Enhancements/utility-job-context-assembly.md) · [ADR](adr/utility-job-context-assembly-adr.md) · [E2E review](Enhancements/utility-job-e2e-review.md) |
 | [Utility inference routing tracker](Enhancements/utility-inference-routing-tracker.md) | Track A vs Track B local inference policy |
+| [**AI Tools review — document index**](Enhancements/ai-tools-review-index.md) | **Hub** — catalog of all AI Tools review docs (start here) |
+| [AI Tools — backlog tracker](Enhancements/ai-tools-backlog-tracker.md) | Tier 1–3 + **staged decisions locked** (AIT-*); auto defaults; entity naming |
+| [AI Tools — implementation plan](Enhancements/ai-tools-implementation-plan.md) | Pass-1 wave plan · epic [CMD-449](https://linear.app/cmd0112/issue/CMD-449) |
+| [AI Tools — context matrix](Enhancements/ai-tools-context-matrix.md) | Canonical per-job context requirements |
+| [Design AI Tools — context](Enhancements/design-ai-tools-context.md) | Design catalog per-job context |
+| [AI Tools jobs — living review](Enhancements/ai-tools-jobs-review.md) | Per-job inventory, prompts, review log |
+| [AI Tools — play vs design segregation](Enhancements/ai-tools-design-segregation.md) | Policy: play (6 target) vs design (8+1 planned) catalogs |
+| [Entity extract vs update workflow](Enhancements/entity-extract-update-workflow.md) | `extract_entities` — dual-section design |
+| [Expand entity — enhancement](Enhancements/expand-entity-enhancement.md) | `expand_entity`; clarifies no `update_entity` job id |
+| [Update state — workflow](Enhancements/update-state-workflow.md) | `update_state` (AIT-T1-A) — session state proposals |
+| [Entity internal state tracker](Enhancements/entity-internal-state-tracker.md) | `propose_entity_state` sub-action (AIT-T1-C) |
+| [Entity internal state model](Enhancements/entity-internal-state-model.md) | Per-kind internal state schema + `entity-state.json` |
+| [**Canon reference document paradigm**](Enhancements/canon-reference-paradigm.md) | Reference vs lore vs JSON taxonomy, delivery matrix, change integration ([CMD-476](https://linear.app/cmd0112/issue/CMD-476)) |
+| [Memory propose — refinement](Enhancements/memory-propose-refinement.md) | `propose_memories` — baseline, tags, auto on |
+| [Memory update / link workflow](Enhancements/memory-update-workflow.md) | AIT-T1-B — `{ events, links }` on `propose_memories` |
+| [Update summary — refinement](Enhancements/update-summary-refinement.md) | `update_summary` — digest contract, auto on |
+| [Continuity check — redesign](Enhancements/continuity-check-redesign.md) | `continuity_check` — source I/O + continuity brief |
+| [Process turn — catch-all review](Enhancements/process-turn-review.md) | `process_turn` — manual composition job |
+| [Propose source edits — review](Enhancements/propose-source-edits-review.md) | `propose_source_edits` — design-only canon edits |
+| [Audit canon — workflow](Enhancements/audit-canon-workflow.md) | `audit_canon` (AIT-T2-D) — pre-play canon audit |
+| [Refresh context index — workflow](Enhancements/refresh-context-index-workflow.md) | `refresh_context_index` (AIT-T2-E) |
+| [Resolve continuity warning — workflow](Enhancements/resolve-continuity-warning-workflow.md) | AIT-T2-F — composition job from Continuity hub |
 | [Local generative assist use cases](Enhancements/local-generative-assist-use-cases.md) | Track B catalog (LGA-01–08) |
 | [Local inference quality guide](Enhancements/local-inference-quality-guide.md) | Ollama models, settings, chunking |
 

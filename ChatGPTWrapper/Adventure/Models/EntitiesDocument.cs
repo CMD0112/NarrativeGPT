@@ -2,7 +2,7 @@ namespace ChatGPTWrapper.Adventure.Models;
 
 public sealed class EntitiesDocument
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -15,6 +15,8 @@ public sealed class EntitiesDocument
     public List<LocationEntry> Locations { get; set; } = [];
 
     public List<InventoryEntry> Inventory { get; set; } = [];
+
+    public List<VehicleEntry> Vehicles { get; set; } = [];
 
     public List<QuestEntry> Quests { get; set; } = [];
 
@@ -33,6 +35,40 @@ public sealed class EntitiesDocument
     public List<CustomEntry> CustomEntries { get; set; } = [];
 
     public List<EntityReviewItem> ReviewQueue { get; set; } = [];
+
+    /// <summary>Review queue for durable canon profile promotions from play (CMD-474).</summary>
+    public List<CanonEvolutionProposalEntry> CanonEvolutionReviewQueue { get; set; } = [];
+
+    /// <summary>Last proposed entities.json from the entities-file AI action (downloadable in Review).</summary>
+    public EntitiesProposedSnapshot? ProposedSnapshot { get; set; }
+
+    /// <summary>True when all named canon collections and the player sheet are empty.</summary>
+    public bool IsCanonEmpty() =>
+        string.IsNullOrWhiteSpace(Player?.Name)
+        && Characters.Count == 0
+        && Party.Count == 0
+        && Locations.Count == 0
+        && Inventory.Count == 0
+        && Vehicles.Count == 0
+        && Quests.Count == 0
+        && Factions.Count == 0
+        && Concepts.Count == 0
+        && Relationships.Count == 0
+        && Mysteries.Count == 0
+        && Conflicts.Count == 0
+        && Consequences.Count == 0
+        && CustomEntries.Count == 0;
+}
+
+public sealed class EntitiesProposedSnapshot
+{
+    public string EntitiesJson { get; set; } = "";
+
+    public string RemoteSourceFileName { get; set; } = "";
+
+    public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public List<string> PreviewWarnings { get; set; } = [];
 }
 
 public sealed class PlayerCharacterSheet
@@ -79,6 +115,10 @@ public sealed class CharacterEntry
     public string Location { get; set; } = "";
 
     public string History { get; set; } = "";
+
+    public string Personality { get; set; } = "";
+
+    public string UseInPlay { get; set; } = "";
 
     public List<string> Tags { get; set; } = [];
 
@@ -130,6 +170,14 @@ public sealed class CompanionEntry
 
     public string Secrets { get; set; } = "";
 
+    public string Personality { get; set; } = "";
+
+    public string Abilities { get; set; } = "";
+
+    public string Weaknesses { get; set; } = "";
+
+    public string Flavor { get; set; } = "";
+
     public string ImagePath { get; set; } = "";
 
     public List<string> Tags { get; set; } = [];
@@ -172,6 +220,9 @@ public sealed class InventoryEntry
 
     public string Name { get; set; } = "";
 
+    /// <summary>Item subtype: weapon, armor, tool, key, document, consumable, vehicle-part, etc.</summary>
+    public string Category { get; set; } = "";
+
     public string Description { get; set; } = "";
 
     public string Source { get; set; } = "";
@@ -181,6 +232,43 @@ public sealed class InventoryEntry
     public string Notes { get; set; } = "";
 
     public string ImagePath { get; set; } = "";
+
+    public List<string> Tags { get; set; } = [];
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>Travel assets (ships, mounts, wagons) — distinct from handheld inventory items.</summary>
+public sealed class VehicleEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public string Name { get; set; } = "";
+
+    /// <summary>ship, wagon, mount, aircraft, etc.</summary>
+    public string VehicleType { get; set; } = "";
+
+    public string Description { get; set; } = "";
+
+    public string Capacity { get; set; } = "";
+
+    public string Crew { get; set; } = "";
+
+    public string Status { get; set; } = "";
+
+    public string Location { get; set; } = "";
+
+    public string Condition { get; set; } = "";
+
+    public List<string> Tags { get; set; } = [];
+
+    public List<string> Aliases { get; set; } = [];
+
+    public bool Pinned { get; set; }
+
+    public string ImagePath { get; set; } = "";
+
+    public Dictionary<string, string> ExtendedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class QuestEntry
@@ -309,6 +397,31 @@ public sealed class EntityReviewItem
     public string EntityType { get; set; } = "";
 
     public string ProposedChange { get; set; } = "";
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public string? InferenceSource { get; set; }
+
+    public Guid? UtilityRunId { get; set; }
+}
+
+public sealed class CanonEvolutionProposalEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid EntityId { get; set; }
+
+    public string KindId { get; set; } = "";
+
+    public string EntityName { get; set; } = "";
+
+    public string CanonFieldKey { get; set; } = "";
+
+    public string ProposedCanonValue { get; set; } = "";
+
+    public string SourceStatePath { get; set; } = "";
+
+    public string? Rationale { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 

@@ -16,6 +16,41 @@ internal readonly record struct PlayTabCapabilityContext(
     ProjectChatDraftKind? ActiveDraftKind,
     bool IsPlayMode)
 {
+    public static PlayTabCapabilityContext FromRegistry(
+        AdventureBundle? bundle,
+        object? tabHost,
+        IPlayTabRegistry registry,
+        string? source = null)
+    {
+        if (bundle is null)
+        {
+            return new PlayTabCapabilityContext(
+                null,
+                source ?? (tabHost is not null ? PlayWebViewCoreBridge.GetSource(registry.GetCoreWebView(tabHost)) : null),
+                null,
+                null,
+                false,
+                null,
+                false);
+        }
+
+        source ??= tabHost is not null ? PlayWebViewCoreBridge.GetSource(registry.GetCoreWebView(tabHost)) : null;
+        var candidateTabKey = tabHost is not null ? registry.GetTabKey(tabHost) : null;
+        var pinKey = PlayTabPinService.GetPlayPinKey(bundle);
+        var draftKind = ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id);
+        var isDraftTab = tabHost is not null
+                         && ProjectChatDraftService.IsDraftTabHost(bundle, tabHost, registry);
+
+        return new PlayTabCapabilityContext(
+            bundle,
+            source,
+            candidateTabKey,
+            pinKey,
+            isDraftTab,
+            draftKind,
+            IsPlayMode: true);
+    }
+
     public static PlayTabCapabilityContext From(
         AdventureBundle? bundle,
         WebView2? webView,
@@ -34,24 +69,20 @@ internal readonly record struct PlayTabCapabilityContext(
                 false);
         }
 
-        source ??= webView?.CoreWebView2?.Source;
-        var candidateTabKey = webView is not null && tabs is not null
-            ? PlayTabPinService.GetTabKey(webView, tabs)
-            : null;
-        var pinKey = PlayTabPinService.GetPlayPinKey(bundle);
-        var draftKind = ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id);
-        var isDraftTab = webView is not null
-                         && tabs is not null
-                         && ProjectChatDraftService.IsDraftTab(bundle, webView, tabs);
+        if (tabs is null)
+        {
+            source ??= webView?.CoreWebView2?.Source;
+            return new PlayTabCapabilityContext(
+                bundle,
+                source,
+                null,
+                PlayTabPinService.GetPlayPinKey(bundle),
+                false,
+                ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id),
+                IsPlayMode: true);
+        }
 
-        return new PlayTabCapabilityContext(
-            bundle,
-            source,
-            candidateTabKey,
-            pinKey,
-            isDraftTab,
-            draftKind,
-            IsPlayMode: true);
+        return FromRegistry(bundle, webView, new WpfPlayTabRegistry(tabs), source);
     }
 
     public static PlayTabCapabilityContext FromUrl(

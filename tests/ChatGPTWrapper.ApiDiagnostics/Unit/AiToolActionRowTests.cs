@@ -57,6 +57,35 @@ public sealed class AiToolActionRowTests : IClassFixture<FileLockAwareFixture>, 
     }
 
     [Fact]
+    public void Build_play_tools_panel_lists_post_turn_actions_in_catalog_order()
+    {
+        var bundle = AdventureStore.CreateNew("Play tools");
+        bundle.Metadata.LinkedProjectId = "g-p-test";
+        AdventureStore.Save(bundle);
+
+        var rows = AiToolActionRowBuilder.Build(bundle, includeReview: false);
+
+        Assert.Equal(AiToolActionRowBuilder.PlayActionKeys.Count, rows.Count);
+        Assert.Equal(AiToolActionRowBuilder.PlayActionKeys, rows.Select(r => r.ActionKey).ToList());
+        Assert.Contains(rows, r => r.ActionKey == "ExtractEntities" && r.Title == "Entities");
+        Assert.Contains(rows, r => r.ActionKey == "State" && r.Title == "Session state");
+        Assert.Contains(rows, r => r.ActionKey == "EntityState" && r.Title == "Entity state");
+        Assert.Contains(rows, r => r.ActionKey == "CanonEvolution" && r.Title == "Canon evolution");
+        Assert.DoesNotContain(rows, r => r.ActionKey == "Cards");
+    }
+
+    [Fact]
+    public void SortPlayActionKeys_orders_batch_runs_like_catalog()
+    {
+        var sorted = AiToolActionRowBuilder.SortPlayActionKeys(
+            ["Continuity", "Memories", "State", "ExtractEntities"]);
+
+        Assert.Equal(
+            ["ExtractEntities", "Memories", "State", "Continuity"],
+            sorted);
+    }
+
+    [Fact]
     public void Build_excludes_review_row()
     {
         var bundle = AdventureStore.CreateNew("No review row");

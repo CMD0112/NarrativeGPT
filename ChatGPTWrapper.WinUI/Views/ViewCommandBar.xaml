@@ -1,0 +1,25 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.ViewCommandBar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:ChatGPTWrapper.WinUI.Controls">
+
+    <StackPanel Orientation="Horizontal"
+                Spacing="{ThemeResource SpaceSm}"
+                VerticalAlignment="Center">
+        <controls:SegmentedControl x:Name="TranscriptModeSegment"
+                                   Visibility="Collapsed"
+                                   SelectionChanged="TranscriptModeSegment_SelectionChanged" />
+
+        <Button x:Name="FormatButton"
+                Style="{ThemeResource ShellGhostButtonStyle}"
+                Content="Format…"
+                Click="FormatButton_Click" />
+        <Button Style="{ThemeResource ShellGhostButtonStyle}"
+                Content="Preferences"
+                Click="PreferencesButton_Click" />
+        <Button Style="{ThemeResource ShellGhostButtonStyle}"
+                Content="Appearance"
+                Click="AppearanceButton_Click" />
+    </StackPanel>
+</UserControl>

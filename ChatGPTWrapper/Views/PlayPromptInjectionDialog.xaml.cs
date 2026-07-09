@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Windows;
 using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -18,7 +19,7 @@ using Microsoft.Win32;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class PlayPromptInjectionDialog : ShellDialogWindow
+public partial class PlayPromptInjectionDialog : ShellDialogWindow, IPlaySettingsHost
 {
     public static readonly RoutedUICommand SavePlaySettingsCommand = new(nameof(SavePlaySettingsCommand), nameof(SavePlaySettingsCommand), typeof(PlayPromptInjectionDialog));
 
@@ -136,6 +137,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             (_, _) => SavePlaySettings_Click(null!, null!),
             (_, e) => e.CanExecute = PlaySettingsSaveButton?.IsEnabled == true));
         InputBindings.Add(new KeyBinding(SavePlaySettingsCommand, Key.S, ModifierKeys.Control));
+        PreviewKeyDown += PlayPromptInjectionDialog_PreviewKeyDown;
         ApplyPlaySettingsTabOrder();
 
         _previewDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
@@ -162,6 +164,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         BindInjectionPolicyPanel();
         BindAdventureSettings();
         BindAutomationPanel();
+        BindThreadSnapshotPanel();
         BindUtilityDeliveryPanel();
         BindPlaySurfaceSettings();
         BindInjectionNarratorPanel();
@@ -170,6 +173,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         BindAiActions();
         BindMemoryAndCards();
         BindHistory();
+        CapturePersistedBaseline();
         _sourceAutosave = new DebouncedAdventureSaver(
             () => _bundle,
             at => SourceAutosaveLine.Text = $"Source changes saved automatically at {at.LocalDateTime:t}.",
@@ -190,7 +194,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
     }
 
     /// <summary>Call after host callbacks (e.g. OpenApiSyncDiagnosticsAsync) are wired — constructor runs BindSources too early.</summary>
-    internal void RefreshHostDelegates()
+    public void RefreshHostDelegates()
     {
         RefreshApiSyncDiagnosticsAvailability();
     }
@@ -224,11 +228,12 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             PlaySettingsTab.NextSend => NextSendTab,
             PlaySettingsTab.World => WorldTab,
             PlaySettingsTab.Session => SessionTab,
-            PlaySettingsTab.AiTools => AiActionsTab,
+            PlaySettingsTab.UtilityJobs => AiActionsTab,
             PlaySettingsTab.PlaySurface => PlaySurfaceTab,
             PlaySettingsTab.Settings => AdventureSettingsTab,
             PlaySettingsTab.Sources => SourcesTab,
             PlaySettingsTab.MemoryCards => MemoryCardsTab,
+            PlaySettingsTab.Preview => InjectionTab,
             _ => InjectionTab,
         };
     }
@@ -251,11 +256,16 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
     private void BindAiActions()
     {
         InitializeStoryContextCombos();
-        AiActionsList.ItemsSource = GenerationJobGuideService.EditableUtilityJobIds
+        var rows = GenerationJobGuideService.EditablePlayUtilityJobIds
             .Select(jobId => new AiActionRowViewModel(jobId))
+            .OrderBy(r => GenerationJobGuideService.GetLayerSortOrder(r.Category))
+            .ThenBy(r => r.DisplayLabel, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        if (AiActionsList.Items.Count > 0)
-            AiActionsList.SelectedIndex = 0;
+        var view = new CollectionViewSource { Source = rows }.View;
+        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(AiActionRowViewModel.Category)));
+        AiActionsList.ItemsSource = view;
+        if (rows.Count > 0)
+            AiActionsList.SelectedItem = rows[0];
     }
 
     private void InitializeStoryContextCombos()
@@ -277,16 +287,19 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         var effective = UtilityStoryContextSettingsService.Resolve(_bundle, jobId);
         var hasOverride = StoryContextPerJobOverrideCheck.IsChecked == true;
 
+        var layer = GenerationJobGuideService.GetCatalogCategory(jobId);
         StoryContextJobDefaultHint.Text =
-            $"Built-in default for {GenerationJobGuideService.GetDisplayLabel(jobId)}: " +
-            UtilityStoryContextDefaults.FormatContextWindowSummary(jobDefaults) + ".";
+            $"{layer} · built-in default for {GenerationJobGuideService.GetDisplayLabel(jobId)}: " +
+            UtilityStoryContextDefaults.FormatContextWindowSummary(jobDefaults, jobId) + ".";
         StoryContextEffectiveHint.Text =
-            $"Effective after profile: {UtilityStoryContextDefaults.FormatContextWindowSummary(effective)}.";
+            $"Effective after profile: {UtilityStoryContextDefaults.FormatContextWindowSummary(effective, jobId)}.";
         StoryContextMaxTurnsDefaultHint.Text = $"Default: {jobDefaults.MaxTurnPairs}";
         StoryContextLookbackDefaultHint.Text =
-            $"Default: {UtilityStoryContextDefaults.FormatLookbackAnchor(jobDefaults.LookbackAnchor)}";
+            $"Default: {UtilityStoryContextDefaults.DescribeTranscriptScopeForLayer(layer, jobDefaults.LookbackAnchor)}";
         StoryContextMaxCharsDefaultHint.Text =
             $"Default: {UtilityStoryContextDefaults.FormatContextCharBudget(jobDefaults.MaxContextChars)}";
+        StoryContextLayerGuidanceHint.Text =
+            UtilityStoryContextDefaults.DescribePacketIncludesForLayer(layer);
         StoryContextPreviewMeta.Text = hasOverride
             ? "Per-action context override active."
             : "Edits apply adventure-wide unless you enable per-action customization.";
@@ -302,6 +315,8 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
 
         _selectedAiActionJobId = row.JobId;
         AiActionTitleBlock.Text = row.DisplayLabel;
+        AiActionLayerBadge.Text = row.Category;
+        AiActionLayerHintBlock.Text = GenerationJobGuideService.DescribeUtilityLayer(row.Category);
         AiActionInstructionBox.Text = GenerationJobGuideService.ResolveInstructionBody(_bundle, row.JobId);
         UpdateAiActionStatus(row.JobId);
         BindJobOverridePanel(row.JobId);
@@ -585,24 +600,27 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             ? "Session"
             : chrome.PlayCompanionDefaultSection;
 
-        NarratorPanelDensityCombo.ItemsSource = new[] { "Minimal", "Full" };
+        NarratorPanelDensityCombo.ItemsSource = new[] { "RememberLast", "Minimal", "Full" };
         NarratorPanelDensityCombo.SelectedItem = string.IsNullOrWhiteSpace(chrome.NarratorPanelDensity)
             ? "Minimal"
             : chrome.NarratorPanelDensity;
+
+        AiToolsLayoutCombo.ItemsSource = new[]
+        {
+            new PlayChromeComboItem(AiToolsLayoutModes.ActionList, "Action list (cockpit)"),
+            new PlayChromeComboItem(AiToolsLayoutModes.MenuOnly, "Menu only (Play settings)"),
+            new PlayChromeComboItem(AiToolsLayoutModes.ButtonBank, "Button bank (uses action list for now)"),
+        };
+        AiToolsLayoutCombo.DisplayMemberPath = nameof(PlayChromeComboItem.Label);
+        AiToolsLayoutCombo.SelectedItem = AiToolsLayoutCombo.Items
+            .Cast<PlayChromeComboItem>()
+            .FirstOrDefault(i => string.Equals(i.Id, chrome.AiToolsLayout, StringComparison.OrdinalIgnoreCase))
+            ?? AiToolsLayoutCombo.Items[0];
     }
 
     private void SavePlayChromeSettings()
     {
-        var chrome = _chromeSettings.PlaySurface;
-        if (PlayCompanionOnEnterCombo.SelectedItem is PlayChromeComboItem onEnter)
-            chrome.PlayCompanionOnEnter = onEnter.Id;
-        if (PlayCompanionDefaultTabCombo.SelectedItem is string defaultTab)
-            chrome.PlayCompanionDefaultTab = defaultTab;
-        chrome.PlayCompanionRememberExpanders = PlayCompanionRememberExpandersCheck.IsChecked == true;
-        if (PlayCompanionDefaultSectionCombo.SelectedItem is string defaultSection)
-            chrome.PlayCompanionDefaultSection = defaultSection;
-        if (NarratorPanelDensityCombo.SelectedItem is string narratorDensity)
-            chrome.NarratorPanelDensity = narratorDensity;
+        FlushPlayChromeSettingsToMemory();
         UiChromeStore.Save(_chromeSettings);
     }
 
@@ -803,6 +821,12 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         AutoUpdateSummaryCheck.Unchecked += PlaySettingsInputs_Changed;
         AutoContinuityCheckCheck.Checked += PlaySettingsInputs_Changed;
         AutoContinuityCheckCheck.Unchecked += PlaySettingsInputs_Changed;
+        AutoUpdateStateCheck.Checked += PlaySettingsInputs_Changed;
+        AutoUpdateStateCheck.Unchecked += PlaySettingsInputs_Changed;
+        AutoProposeEntityStateCheck.Checked += PlaySettingsInputs_Changed;
+        AutoProposeEntityStateCheck.Unchecked += PlaySettingsInputs_Changed;
+        AutoProposeCanonEvolutionCheck.Checked += PlaySettingsInputs_Changed;
+        AutoProposeCanonEvolutionCheck.Unchecked += PlaySettingsInputs_Changed;
         AutoSyncInstructionsCheck.Checked += PlaySettingsInputs_Changed;
         AutoSyncInstructionsCheck.Unchecked += PlaySettingsInputs_Changed;
         SummaryIntervalBox.LostFocus += PlaySettingsInputs_Changed;
@@ -1426,6 +1450,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
             BindInjectionPolicyPanel();
             BindAdventureSettings();
             BindAutomationPanel();
+        BindThreadSnapshotPanel();
             BindUtilityDeliveryPanel();
             BindPlaySurfaceSettings();
             BindInjectionNarratorPanel();
@@ -1450,21 +1475,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         BindNextSendPanel();
         BindMemoryAndCards();
         BindSourceEditReview();
-        BindAiToolsPendingReviewLine();
         RefreshUtilityParseLog();
-    }
-
-    private void BindAiToolsPendingReviewLine()
-    {
-        if (AiToolsPendingReviewLine is null)
-            return;
-
-        var counts = PendingReviewService.GetCounts(_bundle);
-        AiToolsPendingReviewLine.Text = counts.Total switch
-        {
-            0 => "No proposals queued yet. Run an AI tool below, then return here to review results.",
-            _ => PendingReviewService.FormatSummaryLine(counts),
-        };
     }
 
     private void RefreshUtilityParseLog()
@@ -1674,6 +1685,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         if (!IsLoaded || _playSettingsBinding)
             return;
 
+        FlushPlaySettingsUiToWorkingBundle();
         UpdatePlaySettingsSaveUi();
     }
 
@@ -1706,88 +1718,6 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         UpdateInstructionsUi();
     }
 
-    private List<string> BuildStagingEditsSummary()
-    {
-        var hints = new List<string>();
-        var s = _bundle.Metadata.Settings;
-
-        var queueLines = QueueBox.Text
-            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (!queueLines.SequenceEqual(_bundle.ContinuationQueue))
-            hints.Add("continuation queue");
-
-        var previewPlayerLine = string.IsNullOrWhiteSpace(PreviewPlayerLinePanelBox.Text)
-            ? PreviewPlayerLineBox.Text.Trim()
-            : PreviewPlayerLinePanelBox.Text.Trim();
-        if (!string.Equals(previewPlayerLine, _previewPlayerLineBaseline, StringComparison.Ordinal))
-            hints.Add("preview player line");
-
-        if (!string.Equals(SummaryBox.Text, _bundle.Summary.RollingSummary, StringComparison.Ordinal))
-            hints.Add("rolling summary");
-        if (!string.Equals(LocationBox.Text, _bundle.State.CurrentLocation, StringComparison.Ordinal))
-            hints.Add("location");
-        if (!string.Equals(ObjectivesBox.Text, _bundle.State.OpenObjectives, StringComparison.Ordinal))
-            hints.Add("objectives");
-
-        if (HasInstructionDomainChanges())
-            hints.Add("project instructions");
-
-        if (HasAutomationChanges())
-            hints.Add("AI automation");
-
-        if (ForceFatPacketsCheck.IsChecked != s.ForceInlineLore)
-        {
-            hints.Add("developer send options");
-        }
-
-        if (HasUtilityDeliveryChanges())
-            hints.Add("utility delivery");
-
-        if (HasTurnOverrideChanges())
-            hints.Add("next-send overrides");
-
-        var policy = PlayInjectionPolicyService.Resolve(s);
-        var presetId = InjectionPresetCombo.SelectedItem is InjectionPresetComboItem presetItem
-            ? presetItem.Id
-            : policy.InjectionPresetId;
-        _ = int.TryParse(TranscriptMaxTurnsBox.Text, out var transcriptTurns);
-        if (!string.Equals(presetId, policy.InjectionPresetId, StringComparison.OrdinalIgnoreCase)
-            || IncludeSummaryCheck.IsChecked != policy.IncludeSummary
-            || IncludeStateCheck.IsChecked != policy.IncludeState
-            || IncludeMemoryCheck.IsChecked != policy.IncludePinnedMemory
-            || IncludeTranscriptCheck.IsChecked != policy.IncludeTranscript
-            || IncludeCardsCheck.IsChecked != policy.IncludeTriggeredCards
-            || IncludeSourcesCheck.IsChecked != policy.IncludeSourcesPointers
-            || ReadEffectiveMaxPacketChars() != s.MaxPacketChars
-            || transcriptTurns != policy.TranscriptMaxTurns
-            || InjectAttachmentGuidanceInjectionCheck.IsChecked != s.InjectAttachmentGuidance
-            || UseContextTagsCheck.IsChecked != s.UseContextTags
-            || UseSectionInjectionCheck.IsChecked != s.UseSectionInjection)
-        {
-            hints.Add("injection policy");
-        }
-
-        if (HasPlaySurfaceChanges())
-            hints.Add("play surface");
-
-        if (HasNarratorBehaviorChanges())
-            hints.Add("narrator behavior");
-
-        if (HasAutomationContextChanges())
-            hints.Add("automation context");
-
-        if (HasStoryContextChanges())
-            hints.Add("story context");
-
-        if (HasJobOverrideChanges())
-            hints.Add("job overrides");
-
-        if (HasAiActionGuideChanges())
-            hints.Add("job guides");
-
-        return hints;
-    }
-
     private bool HasInstructionDomainChanges() =>
         !string.Equals(
             InstructionSourcesPolicy.ComputeInstructionDomainHash(BuildInstructionsStagingBundle()),
@@ -1809,55 +1739,6 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
 
     private static string NormalizeAttachmentPlaceholder(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "[Attached file]" : value.Trim();
-
-    private bool HasPlaySurfaceChanges()
-    {
-        var s = _bundle.Metadata.Settings;
-        if (AttachmentContextModeCombo.SelectedItem is AttachmentContextMode mode && mode != s.AttachmentContextMode)
-            return true;
-
-        var placeholder = NormalizeAttachmentPlaceholder(AttachmentOnlyPlaceholderBox.Text);
-        if (!string.Equals(placeholder, NormalizeAttachmentPlaceholder(s.AttachmentOnlyPlaceholder), StringComparison.Ordinal))
-            return true;
-
-        if ((InjectAttachmentGuidanceCheck.IsChecked == true) != s.InjectAttachmentGuidance)
-            return true;
-
-        var actions = ReadPlaySurfaceActionsFromUi();
-        if (!DictionaryEquals(actions, s.PlaySurfaceActions))
-            return true;
-
-        var placement = ReadPlayTabPlacementFromUi();
-        if (!DictionaryEquals(placement, s.PlayTabPlacement))
-            return true;
-
-        return HasPlayChromeChanges();
-    }
-
-    private bool HasPlayChromeChanges()
-    {
-        var chrome = _chromeSettings.PlaySurface;
-        if (PlayCompanionOnEnterCombo.SelectedItem is PlayChromeComboItem onEnter
-            && !string.Equals(onEnter.Id, chrome.PlayCompanionOnEnter, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        var defaultTab = PlayCompanionDefaultTabCombo.SelectedItem as string ?? "Reference";
-        if (!string.Equals(defaultTab, chrome.PlayCompanionDefaultTab, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        if ((PlayCompanionRememberExpandersCheck.IsChecked == true) != chrome.PlayCompanionRememberExpanders)
-            return true;
-
-        var defaultSection = PlayCompanionDefaultSectionCombo.SelectedItem as string ?? "Session";
-        if (!string.Equals(defaultSection, chrome.PlayCompanionDefaultSection, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        var narratorDensity = NarratorPanelDensityCombo.SelectedItem as string ?? "Minimal";
-        if (!string.Equals(narratorDensity, chrome.NarratorPanelDensity, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return false;
-    }
 
     private Dictionary<string, string> ReadPlaySurfaceActionsFromUi()
     {
@@ -1906,59 +1787,8 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         return true;
     }
 
-    private bool HasNarratorBehaviorChanges()
-    {
-        if (!IsLoaded)
-            return false;
-
-        InjectionNarratorPanel.FlushToSession();
-        return !NarratorSettingsSession.NarratorSettingsEqual(
-            _narratorSession.Bundle.Metadata.Settings,
-            _narratorBaselineAtOpen);
-    }
-
-    private bool HasStoryContextChanges()
-    {
-        if (!IsLoaded || StoryContextPreviewMeta is null)
-            return false;
-
-        var current = ReadStoryContextFromForm();
-        if (StoryContextPerJobOverrideCheck.IsChecked == true && _selectedAiActionJobId is { } jobId)
-        {
-            var saved = UtilityStoryContextSettingsService.TryGetJobOverride(_bundle, jobId)
-                ?? UtilityStoryContextDefaults.AdventureBaseline.Clone();
-            return !StoryContextSettingsEqual(saved, current);
-        }
-
-        return !StoryContextSettingsEqual(_bundle.Metadata.Settings.UtilityStoryContext, current);
-    }
-
     private static bool StoryContextSettingsEqual(UtilityStoryContextSettings left, UtilityStoryContextSettings right) =>
         string.Equals(JsonSerializer.Serialize(left), JsonSerializer.Serialize(right), StringComparison.Ordinal);
-
-    private bool HasJobOverrideChanges()
-    {
-        if (!IsLoaded || string.IsNullOrWhiteSpace(_selectedAiActionJobId))
-            return false;
-
-        var utilityId = GenerationJobHandlers.GetUtilityJobId(_selectedAiActionJobId);
-        _bundle.Metadata.Settings.UtilityJobOverrides.TryGetValue(utilityId, out var saved);
-        saved ??= new UtilityJobOverrideSettings();
-
-        var current = new UtilityJobOverrideSettings
-        {
-            ResponseLength = JobOverrideResponseLengthCombo.SelectedItem as string ?? "normal",
-            ResponseDetail = JobOverrideResponseDetailCombo.SelectedItem as string ?? "standard",
-        };
-
-        var isDefault = string.Equals(current.ResponseLength, "normal", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(current.ResponseDetail, "standard", StringComparison.OrdinalIgnoreCase);
-        if (isDefault)
-            return _bundle.Metadata.Settings.UtilityJobOverrides.ContainsKey(utilityId);
-
-        return !string.Equals(saved.ResponseLength, current.ResponseLength, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(saved.ResponseDetail, current.ResponseDetail, StringComparison.OrdinalIgnoreCase);
-    }
 
     private void SyncPreviewPlayerLineBoxes(string value, bool fromPanel)
     {
@@ -2009,20 +1839,8 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         if (!IsLoaded)
             return;
 
-        SaveQueueAndPreviewLine();
-        SaveWorldPanel();
-        SaveAdventureSettings();
-        SaveAutomationSettingsTo(_bundle.Metadata.Settings);
-        SaveAutomationContextFromGrid(_bundle);
-        SaveUtilityDeliverySettings();
-        SaveTurnOverrideSettings();
-        SaveInjectionPolicyPanel();
-        SavePlaySurfaceSettings();
+        FlushPlaySettingsUiToWorkingBundle();
         SavePlayChromeSettings();
-        SaveNarratorBehaviorSettings();
-        FlushCurrentAiActionEdits();
-        SaveAiActionGuides();
-        SaveStoryContextSettings();
     }
 
     private void FlushPendingSourceManifest() => _sourceAutosave?.SaveNow();
@@ -2040,9 +1858,7 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
                 _narratorBaselineAtOpen = NarratorSettingsSession.CaptureNarratorBaseline(
                     _narratorSession.Bundle.Metadata.Settings);
                 _lastPlaySettingsSaveAt = DateTimeOffset.Now;
-                _previewPlayerLineBaseline = string.IsNullOrWhiteSpace(PreviewPlayerLinePanelBox.Text)
-                    ? PreviewPlayerLineBox.Text.Trim()
-                    : PreviewPlayerLinePanelBox.Text.Trim();
+                RefreshPersistedBaselineAfterSave();
                 RebindPlaySettingsFromBundle();
                 UpdatePlaySettingsSaveUi();
                 NotifyTransportSettingsCommitted();
@@ -2375,6 +2191,72 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         ReviewQueueChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    private void PlayPromptInjectionDialog_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (SettingsTabControl.SelectedItem == WorldTab)
+        {
+            TryHandleSummaryReviewKey(e);
+            return;
+        }
+
+        if (SettingsTabControl.SelectedItem != MemoryCardsTab)
+            return;
+
+        if (CardReviewList.IsKeyboardFocusWithin)
+        {
+            TryHandleCardReviewKey(e);
+            return;
+        }
+
+        if (!TryHandleMemoryReviewKey(e))
+            TryHandleCardReviewKey(e);
+    }
+
+    private bool TryHandleMemoryReviewKey(KeyEventArgs e)
+    {
+        if (!MemoryReviewExpander.IsExpanded || MemoryReviewList.Items.Count == 0)
+            return false;
+
+        if (MemoryReviewList.SelectedItem is null && MemoryReviewList.Items.Count > 0)
+            MemoryReviewList.SelectedIndex = 0;
+
+        return ProposalReviewKeyBindings.TryHandlePreviewKeyDown(
+            e,
+            MemoryReviewList.SelectedItem is not null,
+            MemoryReviewList.SelectedItem is not null,
+            () => AcceptMemoryReview_Click(this, new RoutedEventArgs()),
+            () => DismissMemoryReview_Click(this, new RoutedEventArgs()));
+    }
+
+    private bool TryHandleCardReviewKey(KeyEventArgs e)
+    {
+        if (!CardReviewExpander.IsExpanded || CardReviewList.Items.Count == 0)
+            return false;
+
+        if (CardReviewList.SelectedItem is null && CardReviewList.Items.Count > 0)
+            CardReviewList.SelectedIndex = 0;
+
+        return ProposalReviewKeyBindings.TryHandlePreviewKeyDown(
+            e,
+            CardReviewList.SelectedItem is not null,
+            CardReviewList.SelectedItem is not null,
+            () => AcceptCardReview_Click(this, new RoutedEventArgs()),
+            () => DismissCardReview_Click(this, new RoutedEventArgs()));
+    }
+
+    private bool TryHandleSummaryReviewKey(KeyEventArgs e)
+    {
+        if (SummaryReviewPanel.Visibility != Visibility.Visible)
+            return false;
+
+        return ProposalReviewKeyBindings.TryHandlePreviewKeyDown(
+            e,
+            canAccept: true,
+            canDismiss: true,
+            () => AcceptSummary_Click(this, new RoutedEventArgs()),
+            () => DismissSummary_Click(this, new RoutedEventArgs()));
+    }
+
     private async void RefreshSummaryAi_Click(object sender, RoutedEventArgs e)
     {
         if (RefreshSummaryAsync is not null)
@@ -2452,9 +2334,6 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         base.OnClosing(e);
     }
 
-    private bool HasUnsavedPlaySettings() =>
-        BuildStagingEditsSummary().Count > 0;
-
     private async void Ok_Click(object sender, RoutedEventArgs e)
     {
         await FinalizePlaySettingsSaveAsync();
@@ -2484,11 +2363,17 @@ public partial class PlayPromptInjectionDialog : ShellDialogWindow
         {
             JobId = jobId;
             DisplayLabel = GenerationJobGuideService.GetDisplayLabel(jobId);
+            Category = GenerationJobGuideService.GetCatalogCategory(jobId);
+            Description = GenerationJobGuideService.GetCatalogDescription(jobId);
         }
 
         public string JobId { get; }
 
         public string DisplayLabel { get; }
+
+        public string Category { get; }
+
+        public string Description { get; }
 
         public override string ToString() => DisplayLabel;
     }

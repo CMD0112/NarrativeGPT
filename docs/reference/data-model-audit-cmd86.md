@@ -16,6 +16,7 @@ Focused audit appendix for [CMD-190](https://linear.app/cmd0112/issue/CMD-190) d
 | ChatGPT thread | Live play transcript | Narrative truth during play (synced to `log.json` on confirm) |
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":42,"rankSpacing":48,"padding":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
   Sources[sources md]
   JSON[scenario entities json]

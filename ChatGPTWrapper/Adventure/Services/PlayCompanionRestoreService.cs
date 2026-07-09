@@ -9,6 +9,13 @@ public static class PlayCompanionOnEnterModes
     public const string AlwaysOpen = "AlwaysOpen";
 }
 
+public static class AiToolsLayoutModes
+{
+    public const string ActionList = "ActionList";
+    public const string ButtonBank = "ButtonBank";
+    public const string MenuOnly = "MenuOnly";
+}
+
 public sealed class PlaySurfaceChromeDefaults
 {
     public string PlayCompanionOnEnter { get; set; } = PlayCompanionOnEnterModes.RememberLast;
@@ -20,6 +27,9 @@ public sealed class PlaySurfaceChromeDefaults
     public string NarratorPanelDensity { get; set; } = "Minimal";
 
     public string PlayCompanionDefaultSection { get; set; } = "Session";
+
+    /// <summary>ActionList (default), ButtonBank (reserved), or MenuOnly (hide cockpit AI list).</summary>
+    public string AiToolsLayout { get; set; } = AiToolsLayoutModes.ActionList;
 }
 
 public static class PlayCompanionRestoreService
@@ -99,4 +109,7 @@ public static class PlayCompanionRestoreService
         settings.PlayCompanionExpanderState ??= new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         settings.PlayCompanionExpanderState[expanderName] = isExpanded;
     }
+
+    /// <summary>Known expander keys: <c>StateAllFields</c> (State tab all-fields grid).</summary>
+    public const string StateAllFieldsExpanderKey = "StateAllFields";
 }

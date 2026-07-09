@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ChatGPTWrapper.WebView</RootNamespace>
+    <AssemblyName>ChatGPTWrapper.WebView</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Core API only — avoid WebView2 NuGet targets that pull WPF/WinForms (MSB3277). -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3912.50" GeneratePathProperty="true">
+      <IncludeAssets>none</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.Web.WebView2.Core">
+      <HintPath>$(PkgMicrosoft_Web_WebView2)\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ChatGPTWrapper.Core\ChatGPTWrapper.Core.csproj" />
+    <ProjectReference Include="..\ChatGPTWrapper.Diagnostics\ChatGPTWrapper.Diagnostics.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ChatGPT Wrapper" />
+    <InternalsVisibleTo Include="ChatGPT Wrapper WinUI" />
+    <InternalsVisibleTo Include="ChatGPTWrapper.ApiDiagnostics" />
+  </ItemGroup>
+
+</Project>

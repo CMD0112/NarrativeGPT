@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings.PlaySettingsNarratorContractTab"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings">
+    <StackPanel Spacing="12">
+        <Border Style="{ThemeResource ShellCardStyle}"
+                Background="{ThemeResource BgElevatedBrush}"
+                Padding="12,10">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <FontIcon Glyph="&#xE8BD;" FontSize="14" Foreground="{ThemeResource AccentPrimaryBrush}" />
+                <TextBlock Text="Adventure-wide instruction baseline synced to your ChatGPT Project."
+                           Style="{ThemeResource ShellSectionHintStyle}" />
+            </StackPanel>
+        </Border>
+
+        <local:PlaySettingsSectionCard Title="Packet policy"
+                                       Hint="Global packet size and lore delivery mode."
+                                       ScopeLabel="Adventure">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Max packet characters" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <TextBox x:Name="MaxPacketBox" LostFocus="OnChanged" />
+                <CheckBox x:Name="ForceFatPacketsCheck" Content="Force inline lore (fat packets)" Checked="OnChanged" Unchecked="OnChanged" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard Title="Voice &amp; boundaries"
+                                       Hint="Perspective and portrayal rules for the narrator."
+                                       ScopeLabel="Adventure">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Perspective" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <TextBox x:Name="PerspectiveBox" LostFocus="OnChanged" />
+                <TextBlock Text="Content boundaries (one per line)" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <TextBox x:Name="BoundariesBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" LostFocus="OnChanged" />
+                <TextBlock Text="Character portrayal rules" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <TextBox x:Name="CharacterPortrayalBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" LostFocus="OnChanged" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard Title="Project instructions"
+                                       Hint="Addendum pushed to your ChatGPT Project on sync."
+                                       ScopeLabel="Project">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Instruction addendum" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <TextBox x:Name="InstructionAddendumBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="96" LostFocus="OnChanged" />
+                <Button Content="Sync instructions to project"
+                        Style="{ThemeResource ShellPrimaryButtonStyle}"
+                        HorizontalAlignment="Left"
+                        Click="SyncInstructions_Click" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+    </StackPanel>
+</UserControl>

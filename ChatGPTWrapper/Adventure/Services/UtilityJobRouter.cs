@@ -51,12 +51,24 @@ internal static class UtilityJobRouter
         if (DesignJobs.Contains(jobId))
             return new UtilityRouteDecision { Lane = UtilityRouteLane.DesignThread };
 
+        if (UtilityWorkerTransitionCatalog.RequiresWorkerLane(jobId))
+        {
+            if (UtilityEphemeralWorkerPolicy.IsWorkerLaneAvailable(bundle, jobId))
+                return new UtilityRouteDecision { Lane = UtilityRouteLane.WorkerOutbox };
+
+            return new UtilityRouteDecision
+            {
+                Lane = UtilityRouteLane.Blocked,
+                Reason = "transitioned_job_requires_worker",
+            };
+        }
+
         if (string.Equals(jobId, GenerationJobId.UtilityWorkerPing, StringComparison.OrdinalIgnoreCase))
             return new UtilityRouteDecision { Lane = UtilityRouteLane.WorkerOutbox };
 
         if (LocalUtilityInferencePolicy.IsDualRun(bundle) && LocalUtilityInferencePolicy.SupportsJob(jobId))
         {
-            if (UtilityEphemeralWorkerPolicy.IsWorkerLaneAvailable(bundle))
+            if (UtilityEphemeralWorkerPolicy.IsWorkerLaneAvailable(bundle, jobId))
                 return new UtilityRouteDecision { Lane = UtilityRouteLane.WorkerOutbox };
 
             return new UtilityRouteDecision
@@ -67,7 +79,7 @@ internal static class UtilityJobRouter
         }
 
         var policy = bundle.Metadata.Settings.UtilityExecutionPolicy;
-        var workerAvailable = UtilityEphemeralWorkerPolicy.IsWorkerLaneAvailable(bundle);
+        var workerAvailable = UtilityEphemeralWorkerPolicy.IsWorkerLaneAvailable(bundle, jobId);
         var injectionFirst = PlayUtilityInjectionService.UsesInjectionFirst(bundle);
 
         if (policy == UtilityExecutionPolicy.WorkerOnly)

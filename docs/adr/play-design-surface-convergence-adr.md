@@ -15,6 +15,7 @@ Parent spike: [CMD-21](https://linear.app/cmd0112/issue/CMD-21) · Implementatio
 Toolbar mode buttons are **Browse** and **Adventures** only. **Play** and **Design** are session modes entered from the adventure dashboard or cross-links inside an active session.
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
   subgraph entry [Entry points]
     Dash[AdventureDashboardView]

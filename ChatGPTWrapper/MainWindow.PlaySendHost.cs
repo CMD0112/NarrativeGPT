@@ -34,11 +34,13 @@ public partial class MainWindow : IPlaySendHost
         RefreshPlaySendArmState(composeInjection);
     }
 
+    IPlayTabRegistry IPlaySendHost.TabRegistry => new WpfPlayTabRegistry(ChatTabs);
+
     ChatGptPlayComposeInjection? IPlaySendHost.GetActiveComposeInjection() =>
         GetActivePlayComposeInjection();
 
-    PlayTabCapabilities IPlaySendHost.ResolveCapabilities(AdventureBundle bundle, WebView2 webView) =>
-        PlayTabSessionResolver.ResolveCapabilities(bundle, webView, ChatTabs, webView.CoreWebView2?.Source);
+    PlayTabCapabilities IPlaySendHost.ResolveCapabilities(AdventureBundle bundle, object tabHost) =>
+        PlayTabSessionResolver.ResolveCapabilities(bundle, tabHost, new WpfPlayTabRegistry(ChatTabs));
 
     string IPlaySendHost.ResolvePlayerInput(AdventureBundle bundle, bool consumeQueue, string? composeText) =>
         ResolvePlayPlayerInput(bundle, consumeQueue, composeText);
@@ -81,24 +83,30 @@ public partial class MainWindow : IPlaySendHost
         bool navigateToBrowseTarget) =>
         EnsurePlayWebViewReadyAsync(adventureId, selectTab, prepareContext, navigateToBrowseTarget);
 
-    WebView2? IPlaySendHost.PlayWebView
+    object? IPlaySendHost.ActivePlayTabHost
     {
         get => _playWebView;
-        set => _playWebView = value;
+        set => _playWebView = value as WebView2;
     }
 
-    AdventureTurnService? IPlaySendHost.GetOrCreateTurnService(WebView2 webView) =>
-        GetOrCreateTurnService(webView);
+    AdventureTurnService? IPlaySendHost.GetOrCreateTurnService(object tabHost) =>
+        tabHost is WebView2 wv ? GetOrCreateTurnService(wv) : null;
+
+    void IPlaySendHost.FocusPlayTab(object tabHost)
+    {
+        if (tabHost is WebView2 wv)
+            wv.Focus();
+    }
 
     Task<PlayContextResult?> IPlaySendHost.RequireLinkedPlayThreadForSendAsync(
         AdventureBundle bundle,
-        CoreWebView2 core) =>
-        RequireLinkedPlayThreadForSendAsync(bundle, core);
+        object core) =>
+        RequireLinkedPlayThreadForSendAsync(bundle, (CoreWebView2)core);
 
-    async Task IPlaySendHost.PrefetchSendWarmupAsync(CoreWebView2 core, AdventureBundle bundle)
+    async Task IPlaySendHost.PrefetchSendWarmupAsync(object core, AdventureBundle bundle)
     {
         if (_playSendWarmupService is not null)
-            await _playSendWarmupService.PrefetchAsync(core, bundle);
+            await _playSendWarmupService.PrefetchAsync((CoreWebView2)core, bundle);
     }
 
     PlaySendSourcesPromptResult IPlaySendHost.PromptSourcesInlineFallback(string warnMessage)
@@ -130,7 +138,7 @@ public partial class MainWindow : IPlaySendHost
             request.Bundle,
             request.Turn,
             request.SendResult,
-            request.Core,
+            (CoreWebView2)request.Core,
             request.TurnService,
             request.ComposeInjection,
             request.AssistantBaselineCount);
@@ -140,11 +148,13 @@ public partial class MainWindow : IPlaySendHost
         if (string.IsNullOrWhiteSpace(
                 AdventureThreadRegistryService.GetActiveEntry(request.Bundle, AdventureThreadKind.Play)?.PinnedTabKey))
         {
-            PlayTabPinService.PinTab(request.Bundle, request.PlayWebView, ChatTabs);
+            if (request.PlayTabHost is WebView2 wv)
+                PlayTabPinService.PinTab(request.Bundle, wv, ChatTabs);
         }
 
         PlayHandoffService.TryReconcileAfterFirstSend(request.Bundle);
-        request.PlayWebView.Focus();
+        if (request.PlayTabHost is WebView2 playWv)
+            playWv.Focus();
         ReloadPlayAdventure(request.AdventureId);
         UpdatePlayLinkStatus();
         PlayPromptComposer?.SetMergedPreview(null);
@@ -166,6 +176,9 @@ public partial class MainWindow : IPlaySendHost
 
         RefreshPlaySendArmState(request.ComposeInjection);
     }
+
+    void IPlaySendHost.SchedulePostTurnJobs(AdventureBundle bundle, TurnRecord turn) =>
+        _ = RunScheduledJobsAfterTurnAsync(bundle, turn);
 
     void IPlaySendHost.ShowSendError(string message, bool isWarning)
     {
@@ -191,18 +204,15 @@ public partial class MainWindow : IPlaySendHost
     internal void RefreshPlaySendArmState(ChatGptPlayComposeInjection? injection = null)
     {
         injection ??= GetActivePlayComposeInjection();
-        if (_activeAdventureId is not { } id || injection?.WebView is not { } wv)
+        if (_activeAdventureId is not { } id || injection?.TabHost is not { } tabHost)
             return;
 
         var bundle = AdventureStore.Load(id);
         if (bundle is null)
             return;
 
-        var caps = PlayTabSessionResolver.ResolveCapabilities(
-            bundle,
-            wv,
-            ChatTabs,
-            wv.CoreWebView2?.Source);
+        var registry = new WpfPlayTabRegistry(ChatTabs);
+        var caps = PlayTabSessionResolver.ResolveCapabilities(bundle, tabHost, registry);
         var arm = PlaySendArmService.Evaluate(caps, _preparedSendArtifactStore);
         PlaySendTraceMapper.LogArmState(arm);
 

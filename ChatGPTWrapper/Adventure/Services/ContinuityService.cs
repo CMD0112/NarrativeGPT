@@ -69,6 +69,8 @@ internal static class ContinuityService
             }
         }
 
+        warnings.AddRange(EntityCanonStateOverlapService.AnalyzeCrossLayer(bundle));
+
         return warnings;
     }
 }

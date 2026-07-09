@@ -198,8 +198,12 @@ internal sealed class PlayThreadTranscriptService(
 
         if (ThreadConversationLogReader.HasActivePlayLog(bundle))
         {
+            var projectionCapture = ThreadTranscriptResolver.ResolvePlayThreadTranscript(bundle, normalized);
+            if (projectionCapture.TurnPairs.Count > 0)
+                return projectionCapture;
+
             var entry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play)!;
-            var threadPairs = ThreadConversationLogService.ToTranscriptPairs(bundle.Metadata.Id, entry.Id);
+            var threadPairs = ThreadConversationLogReader.GetTranscriptPairs(bundle, entry);
             if (threadPairs.Count > 0)
             {
                 var filteredThread = TranscriptFilterService.ApplyLookbackAndFilter(

@@ -48,7 +48,7 @@ internal partial class TextPromptDialog : ShellDialogWindow
     }
 
     public static bool TryPrompt(
-        Window owner,
+        Window? owner,
         string title,
         string prompt,
         string defaultText,
@@ -56,10 +56,9 @@ internal partial class TextPromptDialog : ShellDialogWindow
         string confirmButtonText = "OK",
         bool multiline = false)
     {
-        var dialog = new TextPromptDialog(title, prompt, defaultText, confirmButtonText, multiline)
-        {
-            Owner = owner,
-        };
+        var dialog = new TextPromptDialog(title, prompt, defaultText, confirmButtonText, multiline);
+        if (owner is not null)
+            dialog.Owner = owner;
 
         if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.ResultText))
         {

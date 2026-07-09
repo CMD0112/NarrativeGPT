@@ -7,18 +7,98 @@ internal static class CanonFieldMapper
 {
     public static void ApplyFreeformBody(object entity, CanonEntityKindSpec spec, string body)
     {
+        ApplyStructuredFieldsFromBody(entity, spec, body, overwriteExisting: true);
+    }
+
+    /// <summary>
+    /// Extracts labeled lines from a blob into typed fields without overwriting populated values.
+    /// Used for legacy entities and AI imports that dump structured text into description.
+    /// </summary>
+    public static bool TryPromoteStructuredFieldsFromBody(object entity, CanonEntityKindSpec spec)
+    {
+        var (body, sourceField) = ResolvePromotionSource(entity, spec);
+        if (string.IsNullOrWhiteSpace(body) || !BodyContainsStructuredFields(body, spec))
+            return false;
+
+        var changed = ApplyStructuredFieldsFromBody(entity, spec, body, overwriteExisting: false);
+
+        if (sourceField?.Format == CanonFieldFormat.FreeformBody)
+        {
+            var stripped = StripStructuredFieldLines(body, spec, entity);
+            var current = GetField(entity, spec, sourceField.JsonKey) ?? "";
+            if (!string.Equals(current, stripped, StringComparison.Ordinal))
+            {
+                SetField(entity, spec, sourceField.JsonKey, stripped);
+                changed = true;
+            }
+        }
+        else if (sourceField is not null)
+        {
+            var stripped = StripStructuredFieldLines(body, spec, entity);
+            if (!string.Equals(stripped, body, StringComparison.Ordinal))
+            {
+                SetField(entity, spec, sourceField.JsonKey, stripped);
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Moves legacy extendedFields keys into typed canon properties when labels match the schema.
+    /// </summary>
+    public static bool TryPromoteKnownExtendedFields(object entity, CanonEntityKindSpec spec)
+    {
+        var dict = GetExtendedDictionary(entity);
+        if (dict is null || dict.Count == 0)
+            return false;
+
+        var changed = false;
         foreach (var field in spec.BodyFields)
         {
-            if (field.Format == CanonFieldFormat.FreeformBody)
-            {
-                SetField(entity, spec, field.JsonKey, SectionMarkdownParser.StripStructuredLines(body));
+            if (field.Format is CanonFieldFormat.FreeformBody)
                 continue;
-            }
 
-            var value = ExtractField(body, field);
-            if (value is not null)
-                SetField(entity, spec, field.JsonKey, value);
+            var keys = new List<string> { field.Label };
+            keys.AddRange(field.AlternateLabels);
+            if (field.Format == CanonFieldFormat.BlockquoteFlavor)
+                keys.Add("> Flavor");
+
+            foreach (var key in keys)
+            {
+                if (!dict.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(GetField(entity, spec, field.JsonKey)))
+                {
+                    dict.Remove(key);
+                    changed = true;
+                    break;
+                }
+
+                SetField(entity, spec, field.JsonKey, value.Trim().Trim('"'));
+                dict.Remove(key);
+                changed = true;
+                break;
+            }
         }
+
+        return changed;
+    }
+
+    public static string StripStructuredFieldLines(string body, CanonEntityKindSpec spec, object? entity = null)
+    {
+        var labels = spec.Fields
+            .SelectMany(f => new[] { f.Label }.Concat(f.AlternateLabels))
+            .Concat(["Id", "Aliases", "Tags", "ImagePath", "Pinned"])
+            .ToList();
+
+        var dict = entity is null ? null : GetExtendedDictionary(entity);
+        if (dict is not null)
+            labels.AddRange(dict.Keys);
+
+        return SectionMarkdownParser.StripLabeledLines(body, labels);
     }
 
     public static void ApplyEntry(object entity, CanonEntityKindSpec spec, ParsedMarkdownEntry entry)
@@ -28,24 +108,144 @@ internal static class CanonFieldMapper
         if (spec.CategorySpec is not null)
             ApplyCategoryShellLines(entity, entry.Body, includeAliases: false);
 
-        foreach (var field in spec.BodyFields)
-        {
-            string? value = field.Format switch
-            {
-                CanonFieldFormat.FreeformBody => SectionMarkdownParser.StripStructuredLines(entry.Body),
-                CanonFieldFormat.BlockquoteFlavor => SectionMarkdownParser.ExtractFlavor(entry.Body),
-                _ => ExtractField(entry.Body, field),
-            };
-
-            if (value is not null)
-                SetField(entity, spec, field.JsonKey, value);
-        }
+        ApplyStructuredFieldsFromBody(entity, spec, entry.Body, overwriteExisting: true);
+        ApplyExtendedFieldLines(entity, spec, entry.Body);
 
         if (entry.Aliases.Count > 0 && CanonEntityPropertyGraph.HasProperty(entity, "aliases"))
             SetAliases(entity, entry.Aliases, entry.Title);
-
-        ApplyExtendedFieldLines(entity, spec, entry.Body);
     }
+
+    private static bool ApplyStructuredFieldsFromBody(
+        object entity,
+        CanonEntityKindSpec spec,
+        string body,
+        bool overwriteExisting)
+    {
+        var changed = false;
+
+        foreach (var field in spec.BodyFields)
+        {
+            if (field.Format is CanonFieldFormat.FreeformBody or CanonFieldFormat.BlockquoteFlavor)
+                continue;
+
+            var value = ExtractField(body, field);
+            if (value is null)
+                continue;
+
+            if (!overwriteExisting)
+            {
+                var current = GetField(entity, spec, field.JsonKey);
+                if (!string.IsNullOrWhiteSpace(current))
+                    continue;
+            }
+
+            SetField(entity, spec, field.JsonKey, value);
+            changed = true;
+        }
+
+        var flavorField = spec.BodyFields.FirstOrDefault(f => f.Format == CanonFieldFormat.BlockquoteFlavor);
+        if (flavorField is not null)
+        {
+            var flavor = SectionMarkdownParser.ExtractFlavor(body);
+            if (!string.IsNullOrWhiteSpace(flavor))
+            {
+                if (overwriteExisting || string.IsNullOrWhiteSpace(GetField(entity, spec, flavorField.JsonKey)))
+                {
+                    SetField(entity, spec, flavorField.JsonKey, flavor);
+                    changed = true;
+                }
+            }
+        }
+
+        var extendedBefore = GetExtendedDictionary(entity)?.Count ?? 0;
+        ApplyExtendedFieldLines(entity, spec, body, overwriteExisting);
+        if ((GetExtendedDictionary(entity)?.Count ?? 0) > extendedBefore)
+            changed = true;
+
+        var freeformField = spec.BodyFields.FirstOrDefault(f => f.Format == CanonFieldFormat.FreeformBody);
+        if (freeformField is not null)
+        {
+            var stripped = StripStructuredFieldLines(body, spec, entity);
+            if (overwriteExisting || string.IsNullOrWhiteSpace(GetField(entity, spec, freeformField.JsonKey)))
+            {
+                var current = GetField(entity, spec, freeformField.JsonKey) ?? "";
+                if (!string.Equals(current, stripped, StringComparison.Ordinal))
+                {
+                    SetField(entity, spec, freeformField.JsonKey, stripped);
+                    changed = true;
+                }
+            }
+        }
+
+        return changed;
+    }
+
+    private static (string? Body, CanonFieldSpec? SourceField) ResolvePromotionSource(
+        object entity,
+        CanonEntityKindSpec spec)
+    {
+        var freeformField = spec.BodyFields.FirstOrDefault(f => f.Format == CanonFieldFormat.FreeformBody);
+        if (freeformField is not null)
+        {
+            var body = GetField(entity, spec, freeformField.JsonKey);
+            if (!string.IsNullOrWhiteSpace(body))
+                return (body, freeformField);
+        }
+
+        foreach (var field in spec.BodyFields)
+        {
+            var body = GetField(entity, spec, field.JsonKey);
+            if (string.IsNullOrWhiteSpace(body) || !BodyContainsStructuredFields(body, spec))
+                continue;
+
+            return (body, field);
+        }
+
+        return (null, null);
+    }
+
+    private static bool BodyContainsStructuredFields(string body, CanonEntityKindSpec spec)
+    {
+        foreach (var field in spec.BodyFields)
+        {
+            if (field.Format == CanonFieldFormat.FreeformBody)
+                continue;
+
+            if (field.Format == CanonFieldFormat.BlockquoteFlavor)
+            {
+                if (!string.IsNullOrWhiteSpace(SectionMarkdownParser.ExtractFlavor(body)))
+                    return true;
+
+                continue;
+            }
+
+            if (ExtractField(body, field) is not null)
+                return true;
+        }
+
+        foreach (var line in body.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var colon = line.IndexOf(':');
+            if (colon <= 0)
+                continue;
+
+            var key = line[..colon].Trim();
+            if (spec.Fields.Any(f => string.Equals(f.Label, key, StringComparison.OrdinalIgnoreCase)
+                                     || f.AlternateLabels.Any(a =>
+                                         string.Equals(a, key, StringComparison.OrdinalIgnoreCase))))
+                return true;
+        }
+
+        return LineLooksLikeLabeledField(body);
+    }
+
+    private static bool LineLooksLikeLabeledField(string body) =>
+        body.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(line =>
+            {
+                var colon = line.IndexOf(':');
+                return colon > 0 && colon < 48;
+            });
 
     public static string BuildFreeformBody(object entity, CanonEntityKindSpec spec)
     {
@@ -136,7 +336,7 @@ internal static class CanonFieldMapper
         }
     }
 
-    private static void ApplyExtendedFieldLines(object entity, CanonEntityKindSpec spec, string body)
+    private static void ApplyExtendedFieldLines(object entity, CanonEntityKindSpec spec, string body, bool overwriteExisting = true)
     {
         var dict = GetExtendedDictionary(entity);
         if (dict is null)
@@ -149,8 +349,10 @@ internal static class CanonFieldMapper
                 continue;
 
             var key = line[..colon].Trim();
-            if (spec.Fields.Any(f => string.Equals(f.JsonKey, key, StringComparison.OrdinalIgnoreCase)
-                                     || string.Equals(f.Label, key, StringComparison.OrdinalIgnoreCase)))
+            if (IsKnownFieldLabel(spec, key))
+                continue;
+
+            if (!overwriteExisting && dict.ContainsKey(key))
                 continue;
 
             var value = line[(colon + 1)..].Trim();
@@ -158,6 +360,11 @@ internal static class CanonFieldMapper
                 dict[key] = value;
         }
     }
+
+    private static bool IsKnownFieldLabel(CanonEntityKindSpec spec, string key) =>
+        spec.Fields.Any(f => string.Equals(f.Label, key, StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(f.JsonKey, key, StringComparison.OrdinalIgnoreCase)
+                             || f.AlternateLabels.Any(a => string.Equals(a, key, StringComparison.OrdinalIgnoreCase)));
 
     private static List<string> ParseList(string text) =>
         text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

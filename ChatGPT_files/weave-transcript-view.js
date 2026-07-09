@@ -452,7 +452,9 @@
     if (k.bindTranscriptObserver) k.bindTranscriptObserver(scrollHost);
 
     var flow = buildFlow(segments, streamingTurnId);
-    var fingerprint = flowFingerprint(flow);
+    var fingerprint = k.computeOverlayFingerprint
+      ? k.computeOverlayFingerprint(segments, hiddenWraps)
+      : flowFingerprint(flow);
     var containerId = k.CONTAINER_ID || "cgw-continuous-view";
     var container = document.getElementById(containerId);
     var prevFingerprint = globalThis.__cgwWeaveViewFingerprint;
@@ -467,6 +469,9 @@
       k.isNativeStreaming &&
       !k.isNativeStreaming()
     ) {
+      if (k.applyTurnSuppressions) {
+        k.applyTurnSuppressions(segments, registry, hiddenWraps);
+      }
       if (k.syncOverlayGeometry) {
         k.syncOverlayGeometry(scrollHost, container, { preserveScroll: true });
       }

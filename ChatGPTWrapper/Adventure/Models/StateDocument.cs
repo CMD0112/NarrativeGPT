@@ -22,8 +22,36 @@ public sealed class StateDocument
 
     public string MapNotes { get; set; } = "";
 
+    public Dictionary<string, bool> Flags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Continuation lines merged into the next play packet (Play settings → Play packet).</summary>
     public List<string> ContinuationQueue { get; set; } = [];
+
+    /// <summary>AI-proposed state updates awaiting author review.</summary>
+    public List<StateProposalEntry> ReviewQueue { get; set; } = [];
+}
+
+public sealed class StateProposalEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public string? Location { get; set; }
+
+    public List<string> Objectives { get; set; } = [];
+
+    public List<string> ObjectivesRemove { get; set; } = [];
+
+    public Dictionary<string, bool> Flags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public string? Time { get; set; }
+
+    public string? Rationale { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public string? InferenceSource { get; set; }
+
+    public Guid? UtilityRunId { get; set; }
 }
 
 public sealed class SceneState

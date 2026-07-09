@@ -4,6 +4,7 @@ using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Services.UtilityWorker;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
+using ChatGPTWrapper.Diagnostics;
 using ChatGPTWrapper.Views;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -107,7 +108,9 @@ public partial class MainWindow
         bool forceRotate)
     {
         var needsScope = jobId is GenerationJobId.ExtractEntities
+            or GenerationJobId.ProposeEntitiesFile
             or GenerationJobId.ProposeMemories
+            or GenerationJobId.UpdateState
             or GenerationJobId.ProcessTurn;
 
         if (!needsScope)
@@ -164,7 +167,8 @@ public partial class MainWindow
             or GenerationJobId.DesignExtractStep
             or GenerationJobId.DraftFramework
             or GenerationJobId.ProposeJsonImport
-            or GenerationJobId.ProposeSourceEdits;
+            or GenerationJobId.ProposeSourceEdits
+            or GenerationJobId.AuditCanon;
 
     private async Task<GenerationJobResult?> RunGenerationJobForActiveAdventureAsync(
         string jobId,
@@ -528,6 +532,17 @@ public partial class MainWindow
             status = $"Draft framework saved to sources/{draftPath}";
         else if (jobId == GenerationJobId.SynthesizeSource && !string.IsNullOrWhiteSpace(result.DisplayText))
             status = $"{jobId}: synthesis ready — review in Source Manager.";
+        else if (result.Success
+                 && jobId == GenerationJobId.ProposeEntitiesFile
+                 && _activeAdventureId is { } entitiesFileAdventureId)
+        {
+            var entitiesBundle = AdventureStore.Load(entitiesFileAdventureId);
+            if (entitiesBundle is not null
+                && EntitiesFileRevisionService.HasProposedSnapshot(entitiesBundle.Entities))
+            {
+                status = $"{jobId}: revised entities.json captured — use Preview/Download in Reference review.";
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -638,6 +653,9 @@ public partial class MainWindow
             turn is null ? null : new GenerationJobContext { Turn = turn },
             forceRotate);
 
+    private Task RunProposeEntitiesFileForActiveAdventureAsync() =>
+        RunGenerationJobForActiveAdventureAsync(GenerationJobId.ProposeEntitiesFile);
+
     private Task RunEntityExtractionWithAttachmentsAsync() =>
         RunUtilityJobWithAttachmentsPromptAsync(GenerationJobId.ExtractEntities);
 
@@ -677,6 +695,9 @@ public partial class MainWindow
     private Task RunProposeMemoriesAsync() =>
         RunGenerationJobForActiveAdventureAsync(GenerationJobId.ProposeMemories);
 
+    private Task RunUpdateStateAsync() =>
+        RunGenerationJobForActiveAdventureAsync(GenerationJobId.UpdateState);
+
     private Task RunProcessLastExchangeAsync(bool includeSummary = false) =>
         RunGenerationJobForActiveAdventureAsync(
             GenerationJobId.ProcessTurn,
@@ -692,6 +713,26 @@ public partial class MainWindow
         RunGenerationJobForActiveAdventureAsync(
             GenerationJobId.ExpandEntity,
             new GenerationJobContext { EntityKind = entityKind, EntityId = entityId, SuppressInlineGuide = true });
+
+    private Task RunProposeEntityStateAsync(IReadOnlyList<EntityReferenceRow> rows, string categoryFilter) =>
+        RunGenerationJobForActiveAdventureAsync(
+            GenerationJobId.ProposeEntityState,
+            new GenerationJobContext
+            {
+                EntityStateTargets = rows,
+                EntityCategoryFilter = categoryFilter,
+                SuppressInlineGuide = true,
+            });
+
+    private Task RunProposeCanonEvolutionAsync(IReadOnlyList<EntityReferenceRow> rows, string categoryFilter) =>
+        RunGenerationJobForActiveAdventureAsync(
+            GenerationJobId.ProposeCanonEvolution,
+            new GenerationJobContext
+            {
+                EntityStateTargets = rows,
+                EntityCategoryFilter = categoryFilter,
+                SuppressInlineGuide = true,
+            });
 
     private Task RunUpdateSummaryAsync() =>
         RunGenerationJobForActiveAdventureAsync(GenerationJobId.UpdateSummary);
@@ -714,6 +755,90 @@ public partial class MainWindow
 
     private Task RunContinuityCheckAsync() =>
         RunGenerationJobForActiveAdventureAsync(GenerationJobId.ContinuityCheck);
+
+    private Task RunResolveContinuityWarningAsync(ContinuityWarningEntry warning) =>
+        RunGenerationJobForActiveAdventureAsync(
+            GenerationJobId.ResolveContinuityWarning,
+            new GenerationJobContext
+            {
+                UserPrompt = BuildResolveContinuityWarningPrompt(warning),
+                SuppressInlineGuide = true,
+            });
+
+    private static string BuildResolveContinuityWarningPrompt(ContinuityWarningEntry warning)
+    {
+        var refs = warning.Refs.Count == 0 ? "(none)" : string.Join(", ", warning.Refs);
+        return $"""
+            Resolve this continuity warning with minimal fixes.
+            Category: {warning.Category}
+            Severity: {warning.Severity}
+            Message: {warning.Message}
+            Refs: {refs}
+            Prefer entity updates for entity-state issues and state deltas for state/location issues.
+            """;
+    }
+
+    internal async Task RunSelectedAiToolJobsAsync(IReadOnlyList<string> actionKeys)
+    {
+        if (_activeAdventureId is not { } adventureId)
+            return;
+
+        var bundle = AdventureStore.Load(adventureId);
+        if (bundle is null || actionKeys.Count == 0)
+            return;
+
+        var jobs = new List<(string JobId, GenerationJobContext Context)>();
+        foreach (var actionKey in AiToolActionRowBuilder.SortPlayActionKeys(actionKeys))
+        {
+            if (!AiToolActionJobCatalog.TryResolve(bundle, actionKey, out var jobId, out var baseContext))
+                continue;
+
+            var context = EnrichJobContextWithScope(bundle, jobId, baseContext, forceRotate: false);
+            if (context is null)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                    SetPlayComposeStatus($"{jobId}: no play exchange available — send a turn first."));
+                return;
+            }
+
+            var route = UtilityJobRouter.Resolve(bundle, jobId, UtilityJobTrigger.ManualCompanion);
+            if (route.Lane == UtilityRouteLane.Blocked)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                    SetPlayComposeStatus(FormatUtilityRouteBlocked(jobId, route.Reason)));
+                return;
+            }
+
+            if (route.Lane != UtilityRouteLane.WorkerOutbox)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                    SetPlayComposeStatus($"{jobId}: not available on utility worker lane."));
+                return;
+            }
+
+            jobs.Add((jobId, context));
+        }
+
+        if (jobs.Count == 0)
+            return;
+
+        DiagnosticsLog.Write(
+            DiagnosticsChannel.Program,
+            DiagnosticsLevel.Info,
+            "utility_worker.batch_enqueue",
+            $"utility_worker.batch_enqueue count={jobs.Count} pendingBefore={UtilityOutboxService.PendingCount(adventureId)}",
+            adventureId: adventureId,
+            category: "utility_worker",
+            source: nameof(MainWindow),
+            data: new
+            {
+                count = jobs.Count,
+                jobIds = jobs.Select(j => j.JobId).ToArray(),
+                pendingBefore = UtilityOutboxService.PendingCount(adventureId),
+            });
+
+        await EnqueueWorkerUtilityJobsBatchAsync(adventureId, bundle, jobs);
+    }
 
     private Task RunSourceEditJobAsync(
         string userPrompt,

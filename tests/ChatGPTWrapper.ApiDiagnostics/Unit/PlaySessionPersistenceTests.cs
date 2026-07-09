@@ -56,7 +56,7 @@ public sealed class PlaySessionPersistenceTests : IClassFixture<FileLockAwareFix
 
         var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
         Assert.Equal("g-p-legacy", reloaded.Metadata.LinkedProjectId);
-        Assert.Equal("conv-legacy", reloaded.Metadata.LinkedConversationId);
+        Assert.Equal("conv-legacy", PlayThreadBindingService.GetActiveConversationId(reloaded));
     }
 
     [Fact]
@@ -414,5 +414,72 @@ public sealed class PlaySessionPersistenceTests : IClassFixture<FileLockAwareFix
         Assert.Equal("registry-pin-key", PlayTabPinService.GetPlayPinKey(reloaded));
         Assert.Equal("Play thread tab", PlayTabPinService.GetPlayPinTitle(reloaded));
         Assert.True(PlayTabPinService.PreferPinnedPlayWebView(true, reloaded));
+    }
+
+    [Fact]
+    public void TryBindProjectSessionFromSource_rejects_design_thread()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Play design guard");
+        bundle.Metadata.LinkedProjectId = "g-p-test";
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var designEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        designEntry.ConversationId = "design-thread-id";
+
+        var designUrl = ChatGptUrls.BuildProjectConversationUrl("design-thread-id", "g-p-test");
+        Assert.False(PlayTabPinService.TryBindProjectSessionFromSource(bundle, designUrl));
+        Assert.Null(PlayThreadBindingService.GetActiveConversationId(bundle));
+
+        var playUrl = ChatGptUrls.BuildProjectConversationUrl("play-thread-id", "g-p-test");
+        Assert.True(PlayTabPinService.TryBindProjectSessionFromSource(bundle, playUrl));
+        Assert.Equal("play-thread-id", PlayThreadBindingService.GetActiveConversationId(bundle));
+    }
+
+    [Fact]
+    public void MarkVerified_rejects_design_conversation_id()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Verified guard");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var designEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        designEntry.ConversationId = "shared-design";
+
+        PlayThreadBindingService.MarkVerified(bundle, "shared-design");
+
+        Assert.False(PlayThreadBindingService.IsVerified(bundle));
+        Assert.True(string.IsNullOrWhiteSpace(PlayThreadBindingService.GetActiveConversationId(bundle)));
+    }
+
+    [Fact]
+    public void SanitizeDesignCollision_restores_play_from_pin_when_design_ids_match()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Collision restore");
+        bundle.Metadata.LinkedProjectId = "g-p-test";
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+
+        var playEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play);
+        playEntry.ConversationId = "design-thread-id";
+        playEntry.BindingTrust = PlayThreadBindingTrust.Verified;
+        playEntry.PinnedTabUrl = ChatGptUrls.BuildProjectConversationUrl("play-thread-id", "g-p-test");
+
+        var designEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        designEntry.ConversationId = "design-thread-id";
+
+        Assert.True(PlayThreadBindingService.SanitizeDesignCollision(bundle));
+        Assert.Equal("play-thread-id", PlayThreadBindingService.GetActiveConversationId(bundle));
+        Assert.True(PlayThreadBindingService.IsVerified(bundle));
+    }
+
+    [Fact]
+    public void TryResolvePlayConversationFromSource_rejects_design_thread()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Resolve guard");
+        bundle.Metadata.LinkedProjectId = "g-p-test";
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var designEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        designEntry.ConversationId = "design-thread-id";
+
+        var designUrl = ChatGptUrls.BuildProjectConversationUrl("design-thread-id", "g-p-test");
+        Assert.False(
+            PlayTabPinService.TryResolvePlayConversationFromSource(bundle, designUrl, out _, out var error));
+        Assert.Equal("play_same_as_design_thread", error);
     }
 }

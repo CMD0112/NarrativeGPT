@@ -2,7 +2,7 @@ using ChatGPTWrapper.Adventure.Models;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
-internal static class ThreadManagerCopy
+public static class ThreadManagerCopy
 {
     public const string DialogTitle = "Manage adventure threads";
 

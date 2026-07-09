@@ -22,6 +22,7 @@ Generation jobs run on **two surfaces only**:
 Dedicated utility tabs, hidden utility WebViews, and per-job utility sessions for play jobs are **retired**.
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart TB
     subgraph playPath [Play jobs]
         PJ[RunGenerationJobForActiveAdventureAsync]

@@ -57,4 +57,25 @@ public sealed class ThemeDensityPresetTests
         var settings = ThemeApplicationService.CreateDefaultSettings();
         Assert.Equal(ThemeDensityPreset.Comfortable, settings.DensityPreset);
     }
+
+    [Fact]
+    public void Comfortable_and_Compact_differ_on_control_min_height_and_compose_vars()
+    {
+        var comfortable = ThemeApplicationService.ResolveEffectiveTheme(new ThemeSettings
+        {
+            DensityPreset = ThemeDensityPreset.Comfortable,
+        });
+        var compact = ThemeApplicationService.ResolveEffectiveTheme(new ThemeSettings
+        {
+            DensityPreset = ThemeDensityPreset.Compact,
+        });
+
+        Assert.True(compact.ControlMinHeight < comfortable.ControlMinHeight);
+        Assert.True(compact.ComposeSendSize < comfortable.ComposeSendSize);
+
+        var comfortableCss = ThemeApplicationService.BuildCssVariableBlock(comfortable);
+        var compactCss = ThemeApplicationService.BuildCssVariableBlock(compact);
+        Assert.Contains("--cgw-compose-send-size: 34px;", comfortableCss);
+        Assert.Contains("--cgw-compose-send-size: 28px;", compactCss);
+    }
 }

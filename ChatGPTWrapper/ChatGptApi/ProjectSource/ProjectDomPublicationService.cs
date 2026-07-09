@@ -1,4 +1,4 @@
-using System.Text.Json;
+using ChatGPTWrapper.ChatGptApi.BrowserFileDelivery;
 using Microsoft.Web.WebView2.Core;
 
 namespace ChatGPTWrapper.ChatGptApi.ProjectSource;
@@ -25,20 +25,63 @@ internal sealed class ProjectDomPublicationService
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
-        using var compositor = ProjectDomCompositor.TryBegin(core);
+        var file = await PublishDomCandidateAsync(
+            core,
+            request,
+            await SnapshotRemoteFileIdsAsync(core, request.GizmoId, cancellationToken),
+            progress,
+            cancellationToken);
+
+        progress?.Report("Verifying DOM upload…");
+        var verifiedBytes = await _verifier.VerifyExactContentAsync(
+            core,
+            request.GizmoId,
+            file,
+            request.Content,
+            cancellationToken);
+
+        return new ProjectSourcePublicationResult
+        {
+            File = file,
+            BindingStrategy = ProjectSourceBindingStrategy.SnorlaxDomEscalation,
+            VerifiedByteCount = verifiedBytes,
+        };
+    }
+
+    public async Task<GizmoFileRef> PublishDomCandidateAsync(
+        CoreWebView2 core,
+        ProjectSourcePublicationRequest request,
+        HashSet<string> baselineIds,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        using var publicationGuard = ProjectDomPublicationGuard.Begin();
+
+        var compositor = DomUploadCompositor.TryBegin(core);
+        if (compositor is null)
+        {
+            ProjectLinkDiagnostics.Log(
+                "Project DOM compositor scope unavailable — tab may not be selected; upload may be throttled");
+        }
+
+        using var compositorScope = compositor;
 
         ProjectLinkDiagnostics.Log(
             $"Source publication DOM starting file={request.RemoteFileName} for {request.GizmoId} "
-            + $"bytes={request.Content.Length}");
+            + $"bytes={request.Content.Length} source={core.Source}");
 
-        await _api.EnsureProjectPageAsync(core, request.GizmoId, cancellationToken);
-
-        var baselineIds = await SnapshotRemoteFileIdsAsync(_api, core, request.GizmoId, cancellationToken);
+        await _api.EnsureCanonicalProjectHomeAsync(core, request.GizmoId, cancellationToken);
 
         progress?.Report("Preparing project files UI…");
-        var prepared = await PrepareProjectKnowledgeUiAsync(core, request.GizmoId, cancellationToken);
+        var prepared = await ProjectKnowledgeFileInputPreparer.PrepareUiAsync(
+            _bridge,
+            core,
+            request.GizmoId,
+            cancellationToken);
         if (!prepared)
         {
+            await ProjectKnowledgeFileInputPreparer.LogDomDiagnosticsAsync(
+                _bridge, core, "prepare_failed", cancellationToken);
             throw new ChatGptApiException(
                 "dom_prepare_failed: could not locate project knowledge file input",
                 ChatGptApiEndpoints.ProjectFilesList(request.GizmoId));
@@ -53,39 +96,25 @@ internal sealed class ProjectDomPublicationService
             cancellationToken);
         if (!staged.Success)
         {
+            await ProjectKnowledgeFileInputPreparer.LogDomDiagnosticsAsync(
+                _bridge, core, "cdp_stage_failed", cancellationToken);
             throw new ChatGptApiException(
                 $"dom_cdp_stage_failed: {staged.Error ?? "unknown"}",
                 ChatGptApiEndpoints.ProjectFilesList(request.GizmoId));
         }
 
+        progress?.Report("Confirming project file upload…");
+        await ProjectKnowledgeFileInputPreparer.ConfirmUploadAsync(_bridge, core, cancellationToken);
+
         try
         {
             progress?.Report("Waiting for project file list…");
-            var file = await WaitForNewRemoteFileAsync(
+            return await WaitForNewRemoteFileForPublishAsync(
                 core,
                 request.GizmoId,
                 request.RemoteFileName,
                 baselineIds,
                 cancellationToken);
-
-            progress?.Report("Verifying DOM upload…");
-            var verifiedBytes = await _verifier.VerifyExactContentAsync(
-                core,
-                request.GizmoId,
-                file,
-                request.Content,
-                cancellationToken);
-
-            ProjectLinkDiagnostics.Log(
-                $"Source publication DOM complete file={request.RemoteFileName} file_id={file.FileId} "
-                + $"verified={verifiedBytes}B");
-
-            return new ProjectSourcePublicationResult
-            {
-                File = file,
-                BindingStrategy = ProjectSourceBindingStrategy.SnorlaxDomEscalation,
-                VerifiedByteCount = verifiedBytes,
-            };
         }
         finally
         {
@@ -93,52 +122,47 @@ internal sealed class ProjectDomPublicationService
         }
     }
 
-    private async Task<bool> PrepareProjectKnowledgeUiAsync(
-        CoreWebView2 core,
-        string gizmoId,
-        CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var msg = await _bridge.SendAsync(
-                core,
-                new { action = "prepareProjectKnowledgeUpload", gizmoId },
-                timeoutMs: 30_000,
-                cancellationToken: cancellationToken,
-                skipReadyWait: _bridge.IsWarm(core));
-
-            if (msg.Ok)
-            {
-                ProjectLinkDiagnostics.Log(
-                    $"Project DOM prepare ok attempt={attempt + 1} for {gizmoId}");
-                return true;
-            }
-
-            ProjectLinkDiagnostics.Log(
-                $"Project DOM prepare failed attempt={attempt + 1} for {gizmoId}: "
-                + $"{msg.Error ?? msg.Message}");
-            await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
-        }
-
-        return false;
-    }
-
-    private async Task<GizmoFileRef> WaitForNewRemoteFileAsync(
+    public async Task<GizmoFileRef> WaitForNewRemoteFileForPublishAsync(
         CoreWebView2 core,
         string gizmoId,
         string remoteFileName,
         HashSet<string> baselineIds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool headlessBrowserLane = false,
+        bool requireDownloadable = false,
+        bool skipDomPoll = false)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(2);
         GizmoFileRef? lastCandidate = null;
+        var pollCount = 0;
+        bool? lastReady = null;
+        bool? lastPending = null;
+        var baselineCount = baselineIds.Count;
 
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            pollCount++;
 
-            await PollDomUploadHintAsync(core, remoteFileName, cancellationToken);
+            if (!skipDomPoll)
+            {
+                var poll = await PollDomUploadHintAsync(core, remoteFileName, cancellationToken);
+                if (poll.Ready != lastReady || poll.Pending != lastPending || pollCount % 20 == 0)
+                {
+                    ProjectLinkDiagnostics.Log(
+                        $"Project DOM poll #{pollCount} file={remoteFileName} ready={poll.Ready?.ToString() ?? "?"}"
+                        + $" pending={poll.Pending?.ToString() ?? "?"} inputs={poll.FileInputCount?.ToString() ?? "?"}"
+                        + $" href={poll.Href ?? core.Source}");
+                    lastReady = poll.Ready;
+                    lastPending = poll.Pending;
+                }
+            }
+            else if (pollCount == 1 || pollCount % 20 == 0)
+            {
+                ProjectLinkDiagnostics.Log(
+                    $"Project API poll #{pollCount} file={remoteFileName} headlessLane={headlessBrowserLane} "
+                    + $"requireDownloadable={requireDownloadable}");
+            }
 
             var remoteFiles = await _api.GetProjectFilesDirectAsync(
                 core,
@@ -146,14 +170,41 @@ internal sealed class ProjectDomPublicationService
                 cancellationToken,
                 ensureProjectPage: false);
 
+            if (pollCount % 20 == 0)
+            {
+                ProjectLinkDiagnostics.Log(
+                    $"Project DOM list poll #{pollCount} remoteCount={remoteFiles.Count} "
+                    + $"baseline={baselineCount} file={remoteFileName}");
+            }
+
             foreach (var file in remoteFiles)
             {
                 if (string.IsNullOrWhiteSpace(file.FileId))
                     continue;
                 if (baselineIds.Contains(file.FileId))
                     continue;
-                if (!ProjectKnowledgeFileStaging.RemoteFileMatchesName(file, remoteFileName))
+
+                var nameMatch = ProjectKnowledgeFileStaging.RemoteFileMatchesPublicationTarget(
+                    file,
+                    remoteFileName);
+                if (!nameMatch && !headlessBrowserLane)
+                {
+                    if (pollCount % 20 == 0)
+                    {
+                        ProjectLinkDiagnostics.Log(
+                            $"Project DOM new remote file skipped (name mismatch) "
+                            + $"name={file.Name} file_id={file.FileId} expected={remoteFileName}");
+                    }
+
                     continue;
+                }
+
+                if (!nameMatch)
+                {
+                    ProjectLinkDiagnostics.Log(
+                        $"Project DOM headless-browser new list entry (id fallback) "
+                        + $"name={file.Name} file_id={file.FileId} expected={remoteFileName}");
+                }
 
                 lastCandidate = file;
                 try
@@ -167,28 +218,46 @@ internal sealed class ProjectDomPublicationService
                         && !ProjectSourceIntegrityVerifier.IsLikelyApiErrorJsonPayload(downloaded))
                     {
                         ProjectLinkDiagnostics.Log(
-                            $"Project DOM list matched file={file.Name} file_id={file.FileId}");
+                            $"Project DOM list matched file={file.Name} file_id={file.FileId} "
+                            + $"downloadable={downloaded.Length}B");
                         return file;
                     }
                 }
-                catch (ChatGptApiException)
+                catch (ChatGptApiException ex)
                 {
-                    /* blob may still be finalizing */
+                    ProjectLinkDiagnostics.Log(
+                        $"Project DOM candidate not yet downloadable file_id={file.FileId}: {ex.Message}");
                 }
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
         }
 
-        if (lastCandidate is not null)
+        await ProjectKnowledgeFileInputPreparer.LogDomDiagnosticsAsync(
+            _bridge, core, "wait_timeout", cancellationToken);
+
+        if (lastCandidate is not null && !requireDownloadable)
+        {
+            ProjectLinkDiagnostics.Log(
+                $"Project DOM wait timeout returning unverified list candidate file_id={lastCandidate.FileId}");
             return lastCandidate;
+        }
+
+        if (lastCandidate is not null && requireDownloadable)
+        {
+            ProjectLinkDiagnostics.Log(
+                $"Project DOM wait timeout without downloadable blob file_id={lastCandidate.FileId} "
+                + $"file={remoteFileName}");
+        }
 
         throw new ChatGptApiException(
-            $"dom_upload_timeout: file={remoteFileName}",
+            requireDownloadable
+                ? $"upload_not_downloadable: file={remoteFileName}"
+                : $"dom_upload_timeout: file={remoteFileName}",
             ChatGptApiEndpoints.ProjectFilesList(gizmoId));
     }
 
-    private async Task PollDomUploadHintAsync(
+    private async Task<DomPollSnapshot> PollDomUploadHintAsync(
         CoreWebView2 core,
         string remoteFileName,
         CancellationToken cancellationToken)
@@ -202,28 +271,35 @@ internal sealed class ProjectDomPublicationService
                 cancellationToken: cancellationToken,
                 skipReadyWait: true);
             if (msg.Json is not { } json)
-                return;
+                return DomPollSnapshot.Empty;
 
             var ready = json.TryGetProperty("ready", out var readyEl) && readyEl.GetBoolean();
-            if (ready)
-            {
-                ProjectLinkDiagnostics.Log(
-                    $"Project DOM poll saw file name in UI file={remoteFileName}");
-            }
+            var pending = json.TryGetProperty("pending", out var pendingEl) && pendingEl.GetBoolean();
+            int? inputCount = json.TryGetProperty("fileInputCount", out var countEl)
+                              && countEl.TryGetInt32(out var count)
+                ? count
+                : null;
+            var href = json.TryGetProperty("href", out var hrefEl) ? hrefEl.GetString() : core.Source;
+
+            return new DomPollSnapshot(ready, pending, inputCount, href);
         }
         catch
         {
-            /* advisory only */
+            return DomPollSnapshot.Empty;
         }
     }
 
-    private static async Task<HashSet<string>> SnapshotRemoteFileIdsAsync(
-        ChatGptProjectApiService api,
+    private readonly record struct DomPollSnapshot(bool? Ready, bool? Pending, int? FileInputCount, string? Href)
+    {
+        public static DomPollSnapshot Empty => new(null, null, null, null);
+    }
+
+    private async Task<HashSet<string>> SnapshotRemoteFileIdsAsync(
         CoreWebView2 core,
         string gizmoId,
         CancellationToken cancellationToken)
     {
-        var remoteFiles = await api.GetProjectFilesDirectAsync(
+        var remoteFiles = await _api.GetProjectFilesDirectAsync(
             core,
             gizmoId,
             cancellationToken,

@@ -20,6 +20,7 @@ public enum AdventureSaveScope
     SourceManifest = 1 << 13,
     ContextIndex = 1 << 14,
     DesignWorkspace = 1 << 15,
+    EntityInternalState = 1 << 16,
 
     /// <summary>Play settings dialog — never writes entities.json, log.json, or source-manifest.json.</summary>
     PlaySettingsDialog = Metadata
@@ -50,5 +51,6 @@ public enum AdventureSaveScope
           | Notes
           | SourceManifest
           | ContextIndex
-          | DesignWorkspace,
+          | DesignWorkspace
+          | EntityInternalState,
 }

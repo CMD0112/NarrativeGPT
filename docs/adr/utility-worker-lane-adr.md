@@ -16,7 +16,7 @@ CMD-248 retired per-job dedicated utility threads because push/pull failed too o
 | Topic | Decision |
 |-------|----------|
 | Lanes | **Play injection** (auto/light) + **Utility worker** (manual/heavy/overflow) |
-| Worker model | **One** multiplexed worker conversation per adventure (`[CGW:worker]`) |
+| Worker model | **One** multiplexed worker conversation per adventure (`[CGW:worker]`) for pinned/serial path; **parallel ephemeral slot pool** when `MaxParallelUtilityWorkerJobs > 1` — see [utility-worker-parallel-adr.md](utility-worker-parallel-adr.md) |
 | Transport | **API-only after registration**; one DOM bootstrap per new worker chat registers the conversation, then API push/pull |
 | Pull | Always keyed to `sentMessageId` from API push |
 | Queue | Durable `utility-outbox.json`; resumable run state machine |

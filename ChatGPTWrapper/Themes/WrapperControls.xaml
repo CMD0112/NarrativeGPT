@@ -326,9 +326,11 @@
         <Setter Property="FontSize" Value="{DynamicResource FontSizeHint}"/>
     </Style>
 
+    <!-- Flat chrome: shell top bar uses border separator only (no drop shadow) — CMD-417 -->
     <Style x:Key="ModeButtonStyle" TargetType="Button">
-        <Setter Property="Padding" Value="14,6"/>
+        <Setter Property="Padding" Value="{DynamicResource SegmentButtonPadding}"/>
         <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}"/>
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
         <Setter Property="BorderBrush" Value="Transparent"/>
@@ -1381,8 +1383,8 @@
     <Style x:Key="ShellCommandBarPrimarySlot" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}"/>
 
     <Style x:Key="ShellCommandBarSecondarySlot" TargetType="Button">
-        <Setter Property="Padding" Value="12,6"/>
-        <Setter Property="MinHeight" Value="28"/>
+        <Setter Property="Padding" Value="{DynamicResource CommandBarSecondaryPadding}"/>
+        <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
         <Setter Property="Background" Value="{DynamicResource ButtonGhostBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
@@ -1431,6 +1433,9 @@
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="{DynamicResource StatusChipPadding}"/>
+        <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeHint}"/>
         <Setter Property="FocusVisualStyle" Value="{StaticResource WrapperFocusVisualStyle}"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -1515,18 +1520,16 @@
                             <TextBlock x:Name="IconGlyph"
                                        Style="{StaticResource ShellIconGlyphStyle}"
                                        Text="{TemplateBinding Tag}"
-                                       Margin="0,0,6,0"/>
-                            <ContentPresenter x:Name="LabelPresenter" VerticalAlignment="Center"/>
+                                       Margin="{DynamicResource ShellIconLabelGap}"/>
+                            <ContentPresenter x:Name="LabelPresenter"
+                                              VerticalAlignment="Center"
+                                              Visibility="{DynamicResource ShellIconLabelVisibility}"/>
                         </StackPanel>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Border" Property="Background" Value="{DynamicResource ButtonGhostHoverBrush}"/>
                         </Trigger>
-                        <DataTrigger Binding="{DynamicResource DensityPreset}" Value="Compact">
-                            <Setter TargetName="LabelPresenter" Property="Visibility" Value="Collapsed"/>
-                            <Setter TargetName="IconGlyph" Property="Margin" Value="0"/>
-                        </DataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
@@ -1538,8 +1541,8 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="{DynamicResource RadiusControl}"/>
-        <Setter Property="Padding" Value="10,8"/>
-        <Setter Property="Margin" Value="0,0,0,6"/>
+        <Setter Property="Padding" Value="{DynamicResource ActionListRowPadding}"/>
+        <Setter Property="Margin" Value="{DynamicResource ActionListRowMargin}"/>
         <Setter Property="MinHeight" Value="{DynamicResource ControlMinHeight}"/>
     </Style>
 
@@ -1576,6 +1579,18 @@
                 <Setter Property="Foreground" Value="{DynamicResource AccentPrimaryBrush}"/>
             </DataTrigger>
         </Style.Triggers>
+    </Style>
+
+    <Style x:Key="EntityStateDivergenceBadgeStyle" TargetType="Border">
+        <Setter Property="Padding" Value="4,1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Background" Value="{DynamicResource WarningSubtleBrush}"/>
+    </Style>
+
+    <Style x:Key="EntityStateDivergenceBadgeTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="9"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
     </Style>
 
     <Style x:Key="ShellLibraryListItemStyle" TargetType="ListBoxItem">

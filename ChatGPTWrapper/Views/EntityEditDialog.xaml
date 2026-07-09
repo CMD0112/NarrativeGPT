@@ -72,6 +72,11 @@
                     <local:EntityEditFormHost x:Name="FormHost"/>
                 </ScrollViewer>
             </TabItem>
+            <TabItem x:Name="InternalTab" Header="Internal">
+                <ScrollViewer Style="{StaticResource ShellTabScrollViewerStyle}">
+                    <local:EntityInternalStateFormHost x:Name="InternalStateHost"/>
+                </ScrollViewer>
+            </TabItem>
             <TabItem Header="Sources">
                 <ContentControl x:Name="SourcesContentHost"/>
             </TabItem>

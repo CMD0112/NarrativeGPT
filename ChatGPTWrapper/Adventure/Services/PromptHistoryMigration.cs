@@ -4,7 +4,7 @@ namespace ChatGPTWrapper.Adventure.Services;
 
 internal static class PromptHistoryMigration
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public static bool Migrate(PromptHistoryDocument document)
     {

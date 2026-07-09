@@ -1,0 +1,25 @@
+{
+  "capturedAt": "2026-07-02T04:08:00+00:00",
+  "method": "POST",
+  "path": "/backend-api/f/conversation/prepare",
+  "status": 200,
+  "source": "api-text-warmup-live-capture",
+  "requestBody": {
+    "action": "next",
+    "conversation_id": "6a45badd-b010-83ea-98f5-c5f1d4b3e383",
+    "parent_message_id": "4d7075c8-3892-4a22-84d2-d8260f05059c",
+    "model": "auto",
+    "timezone_offset_min": -240,
+    "supports_buffering": true,
+    "supported_encodings": [
+      "v1"
+    ],
+    "system_hints": [],
+    "gizmo_id": "g-p-6a2c6cd152e08191b018455b5712bd5e",
+    "conversation_mode": {
+      "kind": "gizmo_interaction",
+      "gizmo_id": "g-p-6a2c6cd152e08191b018455b5712bd5e"
+    }
+  },
+  "responseBodyPreview": null
+}

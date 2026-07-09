@@ -81,7 +81,7 @@ internal static class ExportService
         if (ThreadConversationLogReader.HasActivePlayLog(bundle))
         {
             var entry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play)!;
-            foreach (var pair in ThreadConversationLogService.ToTranscriptPairs(bundle.Metadata.Id, entry.Id))
+            foreach (var pair in ThreadConversationLogReader.GetTranscriptPairs(bundle, entry))
                 yield return (pair.PlayerText, pair.NarratorText);
             yield break;
         }

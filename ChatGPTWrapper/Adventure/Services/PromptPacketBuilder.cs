@@ -175,6 +175,10 @@ internal static class PromptPacketBuilder
             var stateBlock = BuildStateBlock(bundle);
             if (!string.IsNullOrWhiteSpace(stateBlock))
                 sections.Add("=== STATE DELTA ===\n\n" + stateBlock);
+
+            var entityStateBlock = BuildEntityStateSkimBlock(bundle);
+            if (!string.IsNullOrWhiteSpace(entityStateBlock))
+                sections.Add(entityStateBlock);
         }
 
         AppendMemoryAndTranscript(bundle, sections, contextMode, attachment, handoff, freshNarrativeBootstrap, mode);
@@ -297,6 +301,10 @@ internal static class PromptPacketBuilder
             var stateBlock = BuildStateBlock(bundle);
             if (!string.IsNullOrWhiteSpace(stateBlock))
                 sections.Add("=== CURRENT STATE ===\n\n" + stateBlock);
+
+            var entityStateBlock = BuildEntityStateSkimBlock(bundle);
+            if (!string.IsNullOrWhiteSpace(entityStateBlock))
+                sections.Add(entityStateBlock);
         }
 
         var searchText = (searchHint + " " + bundle.Summary.RollingSummary).ToLowerInvariant();
@@ -685,6 +693,32 @@ internal static class PromptPacketBuilder
             parts.Add($"Time: {s.Time.InWorldTime}");
 
         return string.Join("\n", parts);
+    }
+
+    private static string BuildEntityStateSkimBlock(AdventureBundle bundle)
+    {
+        var lines = new List<string>();
+        foreach (var record in bundle.EntityInternalState.Entries)
+        {
+            if (!EntityCanonStateOverlapService.ShouldIncludeInPlaySkim(bundle, record))
+                continue;
+
+            var state = EntityInternalStateService.GetStateObject(record, record.KindId);
+            if (state is null)
+                continue;
+
+            var summary = EntityInternalStateSummary.Build(record.KindId, state);
+            if (string.IsNullOrWhiteSpace(summary))
+                continue;
+
+            var name = EntityCanonStateOverlapService.ResolveEntityName(bundle, record.KindId, record.EntityId);
+            lines.Add($"- {name}: {summary}");
+        }
+
+        if (lines.Count == 0)
+            return "";
+
+        return "=== ENTITY PLAY STATE ===\n" + string.Join("\n", lines);
     }
 
     private static bool HasExportedLoreSources(AdventureBundle bundle)

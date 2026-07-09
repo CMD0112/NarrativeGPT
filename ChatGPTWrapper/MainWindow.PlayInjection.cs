@@ -6,11 +6,15 @@ using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
 using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 
 namespace ChatGPTWrapper;
 
 public partial class MainWindow
 {
+    private static WebView2? GetPlayComposeWebView(ChatGptPlayComposeInjection? injection) =>
+        injection?.TabHost as WebView2;
+
     private CancellationTokenSource? _mergedPreviewDebounceCts;
     private readonly SemaphoreSlim _playSendGate = new(1, 1);
     private int _activePlaySendCount;
@@ -72,7 +76,7 @@ public partial class MainWindow
         ChatGptPlayComposeInjection? injection = null)
     {
         injection ??= GetActivePlayComposeInjection();
-        if (injection?.WebView.CoreWebView2 is not { } core)
+        if (injection?.CoreWebView2 is not { } core)
             return;
 
         await injection.ApplyStateAsync(core, state);
@@ -84,8 +88,9 @@ public partial class MainWindow
     {
         PlayPromptComposer?.SetPromptText(text);
         injection ??= GetActivePlayComposeInjection();
-        if (injection?.WebView.CoreWebView2 is { } core
-            && !ShouldUseWrapperComposer(injection.WebView))
+        if (injection?.CoreWebView2 is { } core
+            && GetPlayComposeWebView(injection) is { } composeWebView
+            && !ShouldUseWrapperComposer(composeWebView))
         {
             if (ConversationStreamParser.IsInjectedContextUserMessage(text))
             {
@@ -98,7 +103,7 @@ public partial class MainWindow
                 return;
             }
 
-            GetOrRegisterAdventureBridge(injection.WebView)
+            GetOrRegisterAdventureBridge(composeWebView)
                 .SendFillComposerCommand(core, text);
             await SyncPlayComposeUiAsync(new PlayComposeUiState { Busy = false }, injection);
             return;
@@ -134,12 +139,13 @@ public partial class MainWindow
     internal async Task RestorePlayComposerAsync(ChatGptPlayComposeInjection? injection = null)
     {
         injection ??= GetActivePlayComposeInjection();
-        if (injection?.WebView.CoreWebView2 is not { } core)
+        if (injection?.CoreWebView2 is not { } core
+            || GetPlayComposeWebView(injection) is not { } composeWebView)
             return;
 
         await SetPlayComposeBusyAsync(false, null, injection);
 
-        var useWrapper = ShouldUseWrapperComposer(injection.WebView);
+        var useWrapper = ShouldUseWrapperComposer(composeWebView);
         await ChatGptPlayComposeInjection.ReapplyAsync(core, useWrapper);
 
         await core.ExecuteScriptAsync(
@@ -321,13 +327,14 @@ public partial class MainWindow
         ChatGptPlayComposeInjection? composeInjection = null)
     {
         composeInjection ??= GetActivePlayComposeInjection();
-        if (composeInjection?.WebView.CoreWebView2 is not { } core)
+        if (composeInjection?.CoreWebView2 is not { } core
+            || GetPlayComposeWebView(composeInjection) is not { } composeWebView)
             return;
 
-        if (!ShouldUseWrapperComposer(composeInjection.WebView))
+        if (!ShouldUseWrapperComposer(composeWebView))
             return;
 
-        var bridge = GetOrRegisterAdventureBridge(composeInjection.WebView);
+        var bridge = GetOrRegisterAdventureBridge(composeWebView);
         var uploadService = new PlayComposeNativeUploadService(bridge);
         var payloads = args.Attachments
             .Select(a => new DomAttachmentPayload
@@ -454,7 +461,12 @@ public partial class MainWindow
         if (PlayTurnScopeService.IsIncompleteNarratorCapture(narratorText))
         {
             AdventureStore.Save(bundle);
-            _ = SyncActiveThreadLogAsync(bundle.Metadata.Id, AdventureThreadKind.Play, ThreadConversationLogCaptureSource.Send);
+            _ = SyncActiveThreadLogAsync(
+                bundle.Metadata.Id,
+                AdventureThreadKind.Play,
+                ThreadConversationLogCaptureSource.Send,
+                snapshotTrigger: ThreadConversationLogSnapshotTrigger.Send,
+                snapshotCorrelation: BuildSendSnapshotCorrelation(bundle, turn));
             return string.IsNullOrWhiteSpace(narratorText)
                 ? "Sent — narrator response not captured yet. Send again or use context menu Edit response when ready."
                 : "Sent — narrator still generating (placeholder captured). Use context menu Edit response or retry when ready.";
@@ -472,7 +484,12 @@ public partial class MainWindow
         NarratorOverrideResolver.ClearTurnOverrides(bundle.Metadata.Settings);
         CanonReconciliationService.ClearNotify(bundle);
         AdventureStore.Save(bundle);
-        await SyncActiveThreadLogAsync(bundle.Metadata.Id, AdventureThreadKind.Play, ThreadConversationLogCaptureSource.Send);
+        await SyncActiveThreadLogAsync(
+            bundle.Metadata.Id,
+            AdventureThreadKind.Play,
+            ThreadConversationLogCaptureSource.Send,
+            snapshotTrigger: ThreadConversationLogSnapshotTrigger.Send,
+            snapshotCorrelation: BuildSendSnapshotCorrelation(bundle, turn));
 
         if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
             _ = RunScheduledJobsAfterTurnAsync(bundle, turn);
@@ -519,7 +536,7 @@ public partial class MainWindow
 
     private void SyncPlayThreadScopeForPacket(AdventureBundle bundle)
     {
-        var core = GetActivePlayComposeInjection()?.WebView.CoreWebView2
+        var core = GetActivePlayComposeInjection()?.CoreWebView2
                    ?? _playWebView?.CoreWebView2;
         if (core is null)
             return;

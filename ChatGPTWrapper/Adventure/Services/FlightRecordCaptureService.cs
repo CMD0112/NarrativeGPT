@@ -131,4 +131,35 @@ internal static class FlightRecordCaptureService
         foreach (var runId in entry.UtilityJobIds)
             UtilityJobResultStore.TryLinkFlightRecord(bundle.Metadata.Id, runId, entry.Id);
     }
+
+    public static bool TryLinkThreadIngest(
+        AdventureBundle bundle,
+        ThreadSnapshotCorrelation? correlation,
+        ThreadConversationLogSyncResult syncResult,
+        AdventureThreadEntry threadEntry)
+    {
+        if (syncResult.IngestEventId is null)
+            return false;
+
+        PromptHistoryEntry? entry = null;
+        if (correlation?.FlightRecordId is { } flightRecordId)
+        {
+            entry = bundle.PromptHistory.Entries.FirstOrDefault(e => e.Id == flightRecordId);
+        }
+        else if (correlation?.TurnId is { } turnId)
+        {
+            entry = bundle.PromptHistory.Entries.LastOrDefault(e => e.TurnId == turnId);
+        }
+
+        if (entry is null)
+            return false;
+
+        entry.ThreadEntryId = threadEntry.Id;
+        entry.ThreadIngestEventId = syncResult.IngestEventId;
+        entry.ThreadRawPath = syncResult.RawPath;
+        entry.ThreadProjectionPath = syncResult.ProjectionPath;
+        entry.ThreadSnapshotPath = syncResult.SnapshotPath;
+        PromptHistoryMigration.EnsureCurrentSchema(bundle.PromptHistory);
+        return true;
+    }
 }

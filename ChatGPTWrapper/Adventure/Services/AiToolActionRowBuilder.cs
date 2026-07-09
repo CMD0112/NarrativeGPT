@@ -12,6 +12,19 @@ public sealed record AiToolActionState(
 
 public static class AiToolActionRowBuilder
 {
+    /// <summary>Play cockpit utility job row order (matches post-turn catalog).</summary>
+    public static readonly IReadOnlyList<string> PlayActionKeys =
+    [
+        "ProcessLastExchange",
+        "ExtractEntities",
+        "Memories",
+        "State",
+        "EntityState",
+        "CanonEvolution",
+        "Digest",
+        "Continuity",
+    ];
+
     public static IReadOnlyList<AiToolActionState> Build(AdventureBundle? bundle) =>
         Build(bundle, includeReview: false);
 
@@ -23,7 +36,7 @@ public static class AiToolActionRowBuilder
             rows.Add(new AiToolActionState(
                 "Review",
                 "Review proposals",
-                "Queued AI proposals — entities, memories, cards, and more",
+                "Queued utility proposals — canon profile, play state, session, memories, and continuity",
                 bundle is not null,
                 bundle is null ? "Open an adventure first" : null));
         }
@@ -46,13 +59,23 @@ public static class AiToolActionRowBuilder
         var workerReady = UtilityWorkerCapabilityGate.IsGreen(bundle);
         var canRunScopedJobs = hasProject && (hasExchange || workerReady);
         var scopedTooltip = hasExchange
-            ? "Bundled memories + entities for the latest play exchange"
+            ? "Propose memories and entity creates/updates for the latest exchange"
             : workerReady
                 ? "Uses live play thread context via the utility worker lane"
                 : "Send a play turn first, or verify the utility worker in Threads";
 
         rows.AddRange(ScopedJobRows(hasProject, canRunScopedJobs, scopedTooltip, workerReady, hasExchange));
         return rows;
+    }
+
+    public static IReadOnlyList<string> SortPlayActionKeys(IEnumerable<string> actionKeys)
+    {
+        var order = PlayActionKeys
+            .Select((key, index) => (key, index))
+            .ToDictionary(pair => pair.key, pair => pair.index, StringComparer.Ordinal);
+        return actionKeys
+            .OrderBy(key => order.TryGetValue(key, out var index) ? index : int.MaxValue)
+            .ToList();
     }
 
     private static IEnumerable<AiToolActionState> ScopedJobRows(
@@ -68,8 +91,15 @@ public static class AiToolActionRowBuilder
 
         yield return new AiToolActionState(
             "ProcessLastExchange",
-            "Process last exchange",
+            "Process exchange",
             scopedTooltip,
+            canRunScopedJobs,
+            canRunScopedJobs ? null : scopedTooltip);
+
+        yield return new AiToolActionState(
+            "ExtractEntities",
+            "Entities",
+            "Extract entity creates and updates from the latest exchange",
             canRunScopedJobs,
             canRunScopedJobs ? null : scopedTooltip);
 
@@ -81,23 +111,37 @@ public static class AiToolActionRowBuilder
             canRunScopedJobs ? null : memoriesHint);
 
         yield return new AiToolActionState(
-            "Digest",
-            "Digest",
-            "Refresh the story digest summary",
-            hasProject,
-            hasProject ? null : "Link a ChatGPT Project first");
+            "State",
+            "Session state",
+            "Propose location, objectives, flags, and time from the latest exchange",
+            canRunScopedJobs,
+            canRunScopedJobs ? null : scopedTooltip);
 
         yield return new AiToolActionState(
-            "Cards",
-            "Cards",
-            "Bootstrap lore or section story cards",
+            "EntityState",
+            "Entity state",
+            "Propose live internal-state deltas (disposition, mood, location, etc.) for tracked entities",
+            canRunScopedJobs,
+            canRunScopedJobs ? null : scopedTooltip);
+
+        yield return new AiToolActionState(
+            "CanonEvolution",
+            "Canon evolution",
+            "Propose durable canon profile updates when play diverges from entity definitions",
+            canRunScopedJobs,
+            canRunScopedJobs ? null : scopedTooltip);
+
+        yield return new AiToolActionState(
+            "Digest",
+            "Story digest",
+            "Refresh the rolling story digest (memory index since last revision)",
             hasProject,
             hasProject ? null : "Link a ChatGPT Project first");
 
         yield return new AiToolActionState(
             "Continuity",
             "Continuity",
-            "Run an AI continuity check on recent play",
+            "Check narrative consistency across transcript, summary, entities, and state",
             hasProject,
             hasProject ? null : "Link a ChatGPT Project first");
     }

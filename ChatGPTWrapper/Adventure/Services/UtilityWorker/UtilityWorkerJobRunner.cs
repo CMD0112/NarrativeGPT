@@ -20,7 +20,26 @@ internal static class UtilityWorkerJobRunner
         if (entry is null)
             return null;
 
-        return await RunEntryAsync(
+        return await RunClaimedAsync(
+            bundle,
+            entry,
+            workerCore,
+            conversationSend,
+            turnService,
+            workerHost,
+            cancellationToken);
+    }
+
+    public static async Task<GenerationJobResult?> RunClaimedAsync(
+        AdventureBundle bundle,
+        UtilityOutboxEntry entry,
+        CoreWebView2 workerCore,
+        ChatGptConversationSendService conversationSend,
+        AdventureTurnService turnService,
+        IUtilityWorkerHost? workerHost = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await RunEntryAsync(
             bundle,
             entry,
             jobContext: null,
@@ -31,6 +50,7 @@ internal static class UtilityWorkerJobRunner
             turnService,
             workerHost,
             cancellationToken);
+        return result;
     }
 
     public static async Task<GenerationJobResult> RunDirectAsync(
@@ -87,7 +107,7 @@ internal static class UtilityWorkerJobRunner
         IUtilityWorkerHost? workerHost,
         CancellationToken cancellationToken)
     {
-        if (UtilityEphemeralWorkerPolicy.IsEnabled(bundle))
+        if (UtilityEphemeralWorkerPolicy.ShouldUseEphemeralLane(bundle, entry.JobId))
         {
             return await UtilityEphemeralJobRunner.RunEntryAsync(
                 bundle,
@@ -140,6 +160,9 @@ internal static class UtilityWorkerJobRunner
         }
 
         var context = jobContext ?? UtilityWorkerOrchestrator.BuildJobContext(bundle, entry);
+        context.UtilityRunId ??= entry.RunId;
+        UtilityEphemeralJobRunner.ApplySourceIoInputPath(bundle, entry, context);
+        UtilityJobLoggingHooks.BeforeDispatch(bundle, entry.JobId, context);
 
         if (entry.State == UtilityJobRunState.Queued
             && (jobContext is null || string.IsNullOrWhiteSpace(context.StoryContextBlock)))
@@ -240,11 +263,7 @@ internal static class UtilityWorkerJobRunner
             if (persistToOutbox)
                 UtilityOutboxService.Update(bundle, entry);
 
-            if (entry.Attachments is { Count: > 0 } && !string.IsNullOrWhiteSpace(push.PacketText))
-            {
-                FlightRecordCaptureService.CaptureWorkerUtilitySend(bundle, entry, push);
-                AdventureStore.Save(bundle);
-            }
+            UtilityJobLoggingHooks.LinkWorkerFlightRecord(bundle, entry, push);
         }
 
         entry.State = UtilityJobRunState.Pulling;

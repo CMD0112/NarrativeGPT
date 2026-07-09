@@ -181,6 +181,48 @@ internal static class SectionMarkdownParser
         return string.Join("\n", lines).Trim();
     }
 
+    public static string StripLabeledLines(string body, IEnumerable<string> labels)
+    {
+        var labelSet = labels
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var lines = new List<string>();
+        foreach (var line in body.Split('\n'))
+        {
+            if (IsLabeledLine(line, labelSet))
+                continue;
+
+            lines.Add(line);
+        }
+
+        return string.Join("\n", lines).Trim();
+    }
+
+    private static bool IsLabeledLine(string line, ISet<string> labelSet)
+    {
+        var trimmed = line.Trim();
+        if (trimmed.StartsWith("> Flavor:", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (trimmed.StartsWith("**", StringComparison.Ordinal) && trimmed.Contains(':'))
+        {
+            var inner = trimmed.Trim('*');
+            var colon = inner.IndexOf(':');
+            if (colon > 0 && labelSet.Contains(inner[..colon].Trim()))
+                return true;
+        }
+
+        if (trimmed.StartsWith("**", StringComparison.Ordinal))
+            return false;
+
+        var plainColon = trimmed.IndexOf(':');
+        if (plainColon > 0 && labelSet.Contains(trimmed[..plainColon].Trim()))
+            return true;
+
+        return false;
+    }
+
     private static void ParseEntryMetadata(List<string> lines, ParsedMarkdownEntry entry)
     {
         while (lines.Count > 0)

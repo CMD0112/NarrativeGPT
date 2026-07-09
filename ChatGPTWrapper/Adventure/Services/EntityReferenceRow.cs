@@ -55,4 +55,10 @@ public sealed class EntityReferenceRow
     public Visibility SyncBadgeVisibility { get; set; } = Visibility.Collapsed;
 
     public Brush? SyncBadgeBrush { get; set; }
+
+    public Visibility StateDivergenceBadgeVisibility { get; set; } = Visibility.Collapsed;
+
+    public string StateDivergenceBadgeText { get; set; } = "";
+
+    public string StateDivergenceBadgeTooltip { get; set; } = "";
 }

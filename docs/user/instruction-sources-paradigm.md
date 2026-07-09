@@ -4,7 +4,7 @@ This document is the canonical reference for **what belongs in ChatGPT Project c
 
 **Documentation hub:** [INDEX.md](../INDEX.md)
 
-> **Read order:** 1. This paradigm (theory) → 2. [Instruction Channels Glossary](instruction-channels.md) (terminology) → 3. [Instruction Contract Guide](instruction-contract-guide.md) (authoring) → 4. [Injection Policy ADR](../adr/injection-policy-adr.md) (normative assembly/dedup rules) → 5. [Prompt Construction Guide](prompt-construction-guide.md) (implementation) → 6. [Narrator Settings](narrator-settings.md) (runtime overrides)
+> **Read order:** 1. This paradigm (theory) → 2. [Instruction Channels Glossary](instruction-channels.md) (terminology) → 3. [Instruction Contract Guide](instruction-contract-guide.md) (authoring) → 4. [Injection Policy ADR](../adr/injection-policy-adr.md) (normative assembly/dedup rules) → 5. [Prompt Construction Guide](prompt-construction-guide.md) (implementation) → 6. [Narrator Settings](narrator-settings.md) (runtime overrides) → 7. [Canon reference document paradigm](../Enhancements/canon-reference-paradigm.md) (format/label reference files + change workflow)
 
 Related docs: [adventure-panel.md](adventure-panel.md) · [adventure-developer-reference.md](../developer/adventure-developer-reference.md) · [instruction-channels.md](instruction-channels.md) · [instruction-contract-guide.md](instruction-contract-guide.md) · [injection-policy-adr.md](../adr/injection-policy-adr.md) · [user-projects-and-sync.md](user-projects-and-sync.md) · [data-model-reference.md](../reference/data-model-reference.md) · [services-reference.md](../reference/services-reference.md) · [architecture.md](../developer/architecture.md) · [INDEX.md — Adventures roadmap](../INDEX.md#adventures-roadmap-phase-status)
 
@@ -15,6 +15,7 @@ Related docs: [adventure-panel.md](adventure-panel.md) · [adventure-developer-r
 ChatGPT Project context is not one blob. The wrapper treats it as **four channels**, each with a different change rate:
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
     subgraph static [Slow change - set at adventure design]
         ProjInstr[Project custom instructions]
@@ -180,9 +181,11 @@ Open folders quickly: **Source Manager → Open canonical folder** / **Open hist
 Typical files after export:
 
 - `scenario.md`, `world.md`, `plot.md`, `cast.md` — play RAG lore (sectioned canon)
-- `canon-format.md` — model-facing section/field reference (local + design prompts; optional Project upload). See [canon-schema.md](../reference/canon-schema.md).
+- `canon-format.md` — model-facing section/field reference (local + design prompts; optional Project upload). See [canon-schema.md](../reference/canon-schema.md) and [canon reference paradigm](../Enhancements/canon-reference-paradigm.md).
 - `narrator-scales.md` — narrator preset definitions (response length, detail, tone, difficulty, violence; auto-generated; optional Project upload). See [narrator-settings.md](narrator-settings.md#scale-definitions-narrator-scalesmd).
 - `instructions-snippet.md` — mirror of narrator contract (optional upload; copy instructions to the settings box is the primary path)
+
+**Design phase:** On **Design → Sources**, use **Generate reference files** (planned [CMD-477](https://linear.app/cmd0112/issue/CMD-477)) to write `canon-format.md` and `narrator-scales.md` into `sources/` before drafting lore — no full export required. See [canon reference paradigm § Design phase](../Enhancements/canon-reference-paradigm.md#design-phase--materializing-reference-files-in-sources).
 
 ### Pull sources into your ChatGPT Project
 

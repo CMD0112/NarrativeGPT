@@ -2,6 +2,21 @@
 
 Guidance for AI agents working in this repository.
 
+## Workspace layout
+
+This Cursor workspace (`chatgpt-wrapper.code-workspace`) has two roots:
+
+| Root | Purpose |
+|------|---------|
+| **chatgpt-wrapper** | ChatGPT Wrapper application — source, tests, `docs/` |
+| **NarrativeGPT** | **Obsidian vault** for narrative/worldbuilding documentation (`.md` notes, wikilinks, tags) |
+
+**NarrativeGPT** is not application code. Use it for lore, long-form notes, and Obsidian-linked reference material. Use `docs/` in the repo for developer and product documentation.
+
+The GitHub repository is also named **NarrativeGPT**; the product and Linear project use **ChatGPT Wrapper**. See [docs/linear/linear-integration.md](docs/linear/linear-integration.md).
+
+Cursor rule: [.cursor/rules/narrativegpt-vault.mdc](.cursor/rules/narrativegpt-vault.mdc)
+
 ## Linear issues (CMD0112)
 
 Before **creating or updating** Linear issues (via Linear MCP or otherwise), read:

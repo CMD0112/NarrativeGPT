@@ -1,7 +1,7 @@
 <shell:ShellDialogWindow xmlns:shell="clr-namespace:ChatGPTWrapper.Shell" x:Class="ChatGPTWrapper.Views.SourceSyncDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="API sync diagnostics"
+        Title="Publication lab"
         Height="560"
         Width="900"
         MinHeight="520"
@@ -15,24 +15,29 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,8"
-                   Text="Diagnostics only — programmatic API sync is deprecated. Use Source Manager for manual publish (copy instructions, drag files, mark Published)."/>
+                   Text="Publication lab (diagnostics) — choose headless DOM upload or pure backend-api upload. Manual publish via Source Manager remains authoritative. Manifest updates only on Verified byte match."/>
         <TextBlock x:Name="RemoteBanner" Grid.Row="1" TextWrapping="Wrap" Margin="0,0,0,8"
                    Foreground="{StaticResource TextMutedBrush}" Visibility="Collapsed"/>
         <TextBlock x:Name="StatusLine" Grid.Row="2" Foreground="{StaticResource TextMutedBrush}"
-                   TextWrapping="Wrap" Margin="0,0,0,8"/>
-        <DataGrid x:Name="FilesGrid" Grid.Row="3" AutoGenerateColumns="False"
+                   TextWrapping="Wrap" Margin="0,0,0,4"/>
+        <ListBox x:Name="PublicationAttemptList" Grid.Row="3" MaxHeight="72" Margin="0,0,0,8"
+                 Visibility="Collapsed" FontSize="11"
+                 Background="{StaticResource BgSurfaceBrush}"
+                 BorderBrush="{StaticResource BorderStrongBrush}"/>
+        <DataGrid x:Name="FilesGrid" Grid.Row="4" AutoGenerateColumns="False"
                   CanUserAddRows="False" SelectionMode="Single" RowHeight="36"
                   Background="{StaticResource BgSurfaceBrush}"
                   Foreground="{StaticResource TextPrimaryBrush}"
                   BorderBrush="{StaticResource BorderStrongBrush}"/>
-        <TextBlock x:Name="CapabilitiesHint" Grid.Row="4" Foreground="{StaticResource TextMutedBrush}"
+        <TextBlock x:Name="CapabilitiesHint" Grid.Row="5" Foreground="{StaticResource TextMutedBrush}"
                    FontSize="11" TextWrapping="Wrap" Margin="0,8,0,8"/>
-        <StackPanel Grid.Row="5">
+        <StackPanel Grid.Row="6">
             <WrapPanel Margin="0,0,0,8">
                 <TextBlock Text="Resolve" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,4"/>
                 <Button x:Name="KeepLocalButton" Content="Keep local" Padding="12,6" Margin="0,0,8,4" Click="KeepLocal_Click"/>
@@ -45,7 +50,10 @@
                 <Button x:Name="OpenLogsButton" Content="Open logs folder" Padding="12,6" Margin="0,0,8,4" Click="OpenLogs_Click"/>
             </WrapPanel>
             <WrapPanel Margin="0,0,0,8">
-                <TextBlock Text="Test upload" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBlock Text="Publication lab" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,4"/>
+                <TextBlock Text="Upload via" VerticalAlignment="Center" Margin="0,0,6,4"
+                           Foreground="{StaticResource TextMutedBrush}"/>
+                <ComboBox x:Name="UploadMethodCombo" MinWidth="220" VerticalAlignment="Center" Margin="0,0,8,4"/>
                 <Button x:Name="PublishSelectedButton" Content="Publish selected file" Padding="12,6" Margin="0,0,8,4" Click="PublishSelected_Click"/>
                 <Button x:Name="UploadTestFileButton" Content="Upload test file…" Padding="12,6" Margin="0,0,8,4" Click="UploadTestFile_Click"/>
                 <Button x:Name="CancelPublishButton" Content="Cancel publish" Padding="12,6" Margin="0,0,8,4" Click="CancelPublish_Click" IsEnabled="False"/>

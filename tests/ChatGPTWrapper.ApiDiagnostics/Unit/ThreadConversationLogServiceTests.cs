@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ChatGPTWrapper;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
@@ -7,8 +8,32 @@ using ChatGPTWrapper.ChatGptApi;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-public sealed class ThreadConversationLogServiceTests
+public sealed class ThreadConversationLogServiceTests : IDisposable
 {
+    private readonly string _tempRoot;
+
+    public ThreadConversationLogServiceTests()
+    {
+        _tempRoot = Path.Combine(Path.GetTempPath(), "cgw-thread-log-" + Guid.NewGuid().ToString("N"));
+        AppDirectories.ResetStoresForTests();
+        AppDirectories.TestRootOverride = _tempRoot;
+    }
+
+    public void Dispose()
+    {
+        AppDirectories.ResetStoresForTests();
+        AppDirectories.TestRootOverride = null;
+        try
+        {
+            if (Directory.Exists(_tempRoot))
+                Directory.Delete(_tempRoot, true);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
     [Fact]
     public void SyncRolling_appends_new_branch_messages()
     {
@@ -183,6 +208,208 @@ public sealed class ThreadConversationLogServiceTests
     }
 
     [Fact]
+    public void SyncRolling_with_snapshot_request_writes_snapshot_file()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
+        var entry = RegisterPlayThread(bundle);
+        var turnId = Guid.NewGuid();
+
+        var result = ThreadConversationLogService.SyncRollingFromBranch(
+            bundle,
+            entry,
+            [
+                new()
+                {
+                    NodeId = "u1",
+                    Role = "user",
+                    RawText = "look around",
+                    DisplayText = "look around",
+                    BranchIndex = 0,
+                },
+                new()
+                {
+                    NodeId = "a1",
+                    Role = "assistant",
+                    RawText = "Dark room.",
+                    DisplayText = "Dark room.",
+                    BranchIndex = 1,
+                },
+            ],
+            ThreadConversationLogCaptureSource.Send,
+            new ThreadSnapshotCaptureRequest
+            {
+                CaptureTrigger = ThreadConversationLogSnapshotTrigger.Send,
+                Correlation = new ThreadSnapshotCorrelation { TurnId = turnId },
+            });
+
+        Assert.NotNull(result.SnapshotPath);
+        var snapshot = ThreadConversationLogStore.LoadBranchSnapshot(
+            bundle.Metadata.Id,
+            entry.Id,
+            result.SnapshotPath!);
+        Assert.NotNull(snapshot);
+        Assert.Equal(2, snapshot!.BranchMessageCount);
+        Assert.Equal(turnId, snapshot.Correlation?.TurnId);
+        Assert.Single(snapshot.TranscriptPairs);
+        Assert.Equal("look around", snapshot.TranscriptPairs[0].PlayerText);
+        Assert.Equal("Dark room.", snapshot.TranscriptPairs[0].NarratorText);
+
+        var manifest = ThreadConversationLogStore.LoadOrCreateManifest(
+            bundle.Metadata.Id,
+            entry.Id,
+            entry.Kind,
+            entry.ConversationId);
+        Assert.Equal(1, manifest.SnapshotCount);
+        Assert.Equal(result.SnapshotPath, manifest.LatestSnapshotPath);
+        Assert.Equal(result.SnapshotPath, manifest.LatestSendSnapshotPath);
+    }
+
+    [Fact]
+    public void BuildBranchSnapshot_excludes_utility_from_transcript_pairs()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
+        var entry = RegisterPlayThread(bundle);
+        var manifest = ThreadConversationLogStore.LoadOrCreateManifest(
+            bundle.Metadata.Id,
+            entry.Id,
+            entry.Kind,
+            entry.ConversationId);
+
+        var snapshot = ThreadConversationLogService.BuildBranchSnapshot(
+            bundle,
+            entry,
+            manifest,
+            [
+                new()
+                {
+                    NodeId = "u-util",
+                    Role = "user",
+                    RawText = "[[cgw:utility job=\"propose_memories\"]]x[[/cgw:utility]]",
+                    DisplayText = "[[cgw:utility job=\"propose_memories\"]]x[[/cgw:utility]]",
+                    BranchIndex = 0,
+                    IsUtility = true,
+                },
+                new()
+                {
+                    NodeId = "u1",
+                    Role = "user",
+                    RawText = "next",
+                    DisplayText = "next",
+                    BranchIndex = 1,
+                },
+                new()
+                {
+                    NodeId = "a1",
+                    Role = "assistant",
+                    RawText = "ok",
+                    DisplayText = "ok",
+                    BranchIndex = 2,
+                },
+            ],
+            ThreadConversationLogCaptureSource.Api,
+            new ThreadSnapshotCaptureRequest
+            {
+                CaptureTrigger = ThreadConversationLogSnapshotTrigger.Send,
+            });
+
+        Assert.Equal(3, snapshot.Messages.Count);
+        Assert.Single(snapshot.TranscriptPairs);
+        Assert.Equal("next", snapshot.TranscriptPairs[0].PlayerText);
+    }
+
+    [Fact]
+    public void CaptureManualBranchSnapshot_writes_manual_trigger()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
+        var entry = RegisterPlayThread(bundle);
+
+        ThreadConversationLogService.SyncRollingFromBranch(
+            bundle,
+            entry,
+            [
+                new() { NodeId = "u1", Role = "user", RawText = "hi", DisplayText = "hi", BranchIndex = 0 },
+                new() { NodeId = "a1", Role = "assistant", RawText = "Hello.", DisplayText = "Hello.", BranchIndex = 1 },
+            ],
+            ThreadConversationLogCaptureSource.Api);
+
+        var result = ThreadConversationLogService.CaptureManualBranchSnapshot(bundle, entry);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Snapshot);
+        Assert.Equal(ThreadConversationLogSnapshotTrigger.Manual, result.Snapshot!.CaptureTrigger);
+    }
+
+    [Fact]
+    public void SessionLoad_snapshot_retention_keeps_last_three()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
+        var entry = RegisterPlayThread(bundle);
+        var branch = new List<ConversationBranchMessage>
+        {
+            new() { NodeId = "u1", Role = "user", RawText = "one", DisplayText = "one", BranchIndex = 0 },
+            new() { NodeId = "a1", Role = "assistant", RawText = "First.", DisplayText = "First.", BranchIndex = 1 },
+        };
+
+        for (var i = 0; i < 5; i++)
+        {
+            ThreadConversationLogService.SyncRollingFromBranch(
+                bundle,
+                entry,
+                branch,
+                ThreadConversationLogCaptureSource.Api,
+                new ThreadSnapshotCaptureRequest
+                {
+                    CaptureTrigger = ThreadConversationLogSnapshotTrigger.SessionLoad,
+                });
+        }
+
+        var sessionSnapshots = ThreadConversationLogStore.ListSnapshotRelativePaths(bundle.Metadata.Id, entry.Id)
+            .Select(path => ThreadConversationLogStore.LoadBranchSnapshot(bundle.Metadata.Id, entry.Id, path))
+            .Where(s => s?.CaptureTrigger == ThreadConversationLogSnapshotTrigger.SessionLoad)
+            .ToList();
+
+        Assert.Equal(3, sessionSnapshots.Count);
+    }
+
+    [Fact]
+    public void GetLatestSendSnapshot_returns_most_recent_send_snapshot()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
+        var entry = RegisterPlayThread(bundle);
+        var branch = new List<ConversationBranchMessage>
+        {
+            new() { NodeId = "u1", Role = "user", RawText = "go", DisplayText = "go", BranchIndex = 0 },
+            new() { NodeId = "a1", Role = "assistant", RawText = "Done.", DisplayText = "Done.", BranchIndex = 1 },
+        };
+
+        ThreadConversationLogService.SyncRollingFromBranch(
+            bundle,
+            entry,
+            branch,
+            ThreadConversationLogCaptureSource.Invalidation,
+            new ThreadSnapshotCaptureRequest
+            {
+                CaptureTrigger = ThreadConversationLogSnapshotTrigger.Invalidation,
+            });
+
+        var sendTurnId = Guid.NewGuid();
+        ThreadConversationLogService.SyncRollingFromBranch(
+            bundle,
+            entry,
+            branch,
+            ThreadConversationLogCaptureSource.Send,
+            new ThreadSnapshotCaptureRequest
+            {
+                CaptureTrigger = ThreadConversationLogSnapshotTrigger.Send,
+                Correlation = new ThreadSnapshotCorrelation { TurnId = sendTurnId },
+            });
+
+        var latestSend = ThreadConversationLogReader.GetLatestSendSnapshot(bundle.Metadata.Id, entry.Id);
+        Assert.NotNull(latestSend);
+        Assert.Equal(sendTurnId, latestSend!.Correlation?.TurnId);
+    }
+
+    [Fact]
     public void Dump_writes_conversation_and_updates_manifest()
     {
         var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
@@ -221,8 +448,32 @@ public sealed class ThreadConversationLogServiceTests
 }
 
 [Trait("Category", "Unit")]
-public sealed class ThreadConversationLogMigrationTests
+public sealed class ThreadConversationLogMigrationTests : IDisposable
 {
+    private readonly string _tempRoot;
+
+    public ThreadConversationLogMigrationTests()
+    {
+        _tempRoot = Path.Combine(Path.GetTempPath(), "cgw-thread-log-mig-" + Guid.NewGuid().ToString("N"));
+        AppDirectories.ResetStoresForTests();
+        AppDirectories.TestRootOverride = _tempRoot;
+    }
+
+    public void Dispose()
+    {
+        AppDirectories.ResetStoresForTests();
+        AppDirectories.TestRootOverride = null;
+        try
+        {
+            if (Directory.Exists(_tempRoot))
+                Directory.Delete(_tempRoot, true);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
     [Fact]
     public void MigrateIfNeeded_seeds_from_accepted_log()
     {

@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:ChatGPTWrapper.Views"
              xmlns:controls="clr-namespace:ChatGPTWrapper.Controls"
+             PreviewKeyDown="AdventurePlayView_PreviewKeyDown"
              Background="{DynamicResource BgBaseBrush}">
     <Grid x:Name="RootGrid" Margin="{DynamicResource SpaceMdPadding}">
         <Grid.RowDefinitions>
@@ -169,15 +170,66 @@
                 </StackPanel>
 
                 <StackPanel x:Name="AiToolsSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="Utility jobs"
+                               Style="{StaticResource ShellSectionHeaderStyle}"
+                               FontSize="{DynamicResource FontSizeSection}"
+                               Margin="0,0,0,4"/>
+                    <TextBlock Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"
+                               Text="Post-turn utility jobs for the latest exchange — canon profile, play state, session, and narrative. Auto-run toggles live in Play settings → Utility jobs."/>
+                    <TextBlock x:Name="AiToolsMenuOnlyHint"
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"
+                               Visibility="Collapsed"
+                               Text="AI jobs are available in Play settings → Utility jobs. Set layout to Action list on the Play surface tab to show jobs here."/>
+                    <StackPanel x:Name="AiToolsBatchPanel"
+                                Orientation="Horizontal"
+                                Margin="0,0,0,6"
+                                Visibility="Collapsed">
+                        <Button x:Name="RunSelectedAiToolsButton"
+                                Content="Run selected"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Margin="0,0,6,0"
+                                Click="RunSelectedAiTools_Click"
+                                IsEnabled="False"/>
+                        <Button x:Name="SelectAllAiToolsButton"
+                                Content="Select all"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Click="SelectAllAiTools_Click"/>
+                    </StackPanel>
                     <ItemsControl x:Name="AiToolsActionList">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <controls:ActionListRow Title="{Binding Title}"
-                                                        Hint="{Binding Hint}"
-                                                        RunCommand="{Binding RunCommand}"
-                                                        RowEnabled="{Binding IsEnabled}"
-                                                        DisabledReason="{Binding DisabledReason}"
-                                                        Margin="0,0,0,4"/>
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox Grid.Column="0"
+                                              Margin="0,0,8,0"
+                                              VerticalAlignment="Center"
+                                              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                              IsEnabled="{Binding IsEnabled}">
+                                        <CheckBox.Style>
+                                            <Style TargetType="CheckBox">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ShowBatchSelection}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </CheckBox.Style>
+                                    </CheckBox>
+                                    <controls:ActionListRow Grid.Column="1"
+                                                            Title="{Binding Title}"
+                                                            Hint="{Binding Hint}"
+                                                            RunCommand="{Binding RunCommand}"
+                                                            RowEnabled="{Binding IsEnabled}"
+                                                            DisabledReason="{Binding DisabledReason}"/>
+                                </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -203,9 +255,11 @@
                                          DisplayMemberPath="DisplayLabel"
                                          Margin="0,0,0,6"/>
                                 <StackPanel Orientation="Horizontal">
-                                    <Button Content="Accept" Style="{StaticResource ShellCommandBarSecondarySlot}" Margin="0,0,6,0" Click="AcceptReviewItem_Click"/>
-                                    <Button Content="Dismiss" Style="{StaticResource ShellCommandBarSecondarySlot}" Margin="0,0,6,0" Click="DismissReviewItem_Click"/>
-                                    <Button Content="Edit" Style="{StaticResource ShellCommandBarSecondarySlot}" Click="EditReviewItem_Click"/>
+                                    <Button Content="Accept (Y)" Style="{StaticResource ShellCommandBarSecondarySlot}" Margin="0,0,6,0" ToolTip="Accept selected proposal (Y or Enter)" Click="AcceptReviewItem_Click"/>
+                                    <Button Content="Dismiss (N)" Style="{StaticResource ShellCommandBarSecondarySlot}" Margin="0,0,6,0" ToolTip="Dismiss selected proposal (N)" Click="DismissReviewItem_Click"/>
+                                    <Button Content="Edit" Style="{StaticResource ShellCommandBarSecondarySlot}" Margin="0,0,6,0" Click="EditReviewItem_Click"/>
+                                    <Button x:Name="PreviewProposedEntitiesButton" Content="Preview file…" Style="{StaticResource ShellCommandBarSecondarySlot}" Margin="0,0,6,0" Click="PreviewProposedEntities_Click" Visibility="Collapsed"/>
+                                    <Button x:Name="DownloadProposedEntitiesButton" Content="Download file…" Style="{StaticResource ShellCommandBarSecondarySlot}" Click="DownloadProposedEntities_Click" Visibility="Collapsed"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -218,9 +272,15 @@
                     <Border DockPanel.Dock="Top" Style="{StaticResource ShellCardStyle}" Padding="8" Margin="0,0,0,8">
                         <StackPanel>
                             <TextBlock x:Name="WarningsLastCheckedBlock" Style="{StaticResource ShellSectionHintStyle}" Margin="0,0,0,6" Visibility="Collapsed"/>
-                            <Button x:Name="RunContinuityButton" Content="Run continuity check"
-                                    Style="{StaticResource ShellCommandBarSecondarySlot}" HorizontalAlignment="Left"
-                                    Click="RunContinuityCheck_Click" IsEnabled="False"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="RunContinuityButton" Content="Run continuity check"
+                                        Style="{StaticResource ShellCommandBarSecondarySlot}" HorizontalAlignment="Left"
+                                        Click="RunContinuityCheck_Click" IsEnabled="False"/>
+                                <Button x:Name="ResolveWarningButton" Content="Resolve with AI"
+                                        Style="{StaticResource ShellCommandBarSecondarySlot}" HorizontalAlignment="Left"
+                                        Margin="6,0,0,0"
+                                        Click="ResolveWarningWithAi_Click" IsEnabled="False"/>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
                     <TextBlock x:Name="WarningsEmptyState"
@@ -249,6 +309,7 @@
                         <ListBox.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Open in Reference" Click="WarningOpenInReference_Click"/>
+                                <MenuItem Header="Resolve with AI" Click="ResolveWarningWithAi_Click"/>
                                 <MenuItem Header="Dismiss" Click="WarningDismiss_Click"/>
                             </ContextMenu>
                         </ListBox.ContextMenu>
@@ -313,20 +374,23 @@
         <StackPanel x:Name="FooterActionBar" Grid.Row="2" Style="{StaticResource ShellCommandBarStyle}" Margin="0,8,0,0">
             <Button x:Name="FooterSearchButton"
                     Content="Search"
-                    Style="{StaticResource ShellCommandBarSecondarySlot}"
+                    Tag="{StaticResource ShellIconSearch}"
+                    Style="{StaticResource ShellIconLabelButtonStyle}"
                     Margin="0,0,8,0"
                     ToolTip="Search adventure transcript and content"
                     Click="Search_Click"/>
             <Button x:Name="FooterExportButton"
                     Content="Export"
-                    Style="{StaticResource ShellCommandBarSecondarySlot}"
+                    Tag="{StaticResource ShellIconExport}"
+                    Style="{StaticResource ShellIconLabelButtonStyle}"
                     MinWidth="72"
                     Margin="0,0,8,0"
                     ToolTip="Save adventure to a file"
                     Click="Export_Click"/>
             <Button x:Name="MoreActionsButton"
                     Content="More"
-                    Style="{StaticResource ShellCommandBarSecondarySlot}"
+                    Tag="{StaticResource ShellIconMore}"
+                    Style="{StaticResource ShellIconLabelButtonStyle}"
                     Click="MoreActionsButton_Click">
                 <Button.ContextMenu>
                     <ContextMenu>
@@ -334,9 +398,11 @@
                         <MenuItem Header="Recap" Click="GenerateRecap_Click" ToolTip="Story digest and recent play (no AI)"/>
                         <MenuItem Header="Branch" Click="Branch_Click"/>
                         <MenuItem Header="Sync thread log" Click="SyncFromThread_Click"/>
+                        <MenuItem Header="Save thread snapshot" Click="SaveThreadSnapshot_Click"/>
                         <MenuItem Header="Dump thread log" Click="DumpThreadLog_Click"/>
                         <Separator/>
                         <MenuItem Header="Advanced" Style="{StaticResource ShellMenuSectionHeaderStyle}"/>
+                        <MenuItem Header="Open adventure folder" Click="OpenAdventureFolder_Click"/>
                         <MenuItem Header="Local inference lab" Click="LocalInferenceLab_Click"/>
                         <MenuItem Header="Canon inbox" Click="CanonInbox_Click"/>
                         <MenuItem Header="Roll" Click="Roll_Click"/>

@@ -769,10 +769,13 @@ public partial class MainWindow
                 return;
 
             var bundle = AdventureStore.Load(adventureId);
-            if (bundle is null || injection.WebView.CoreWebView2 is not { } core)
+            if (bundle is null || injection.CoreWebView2 is not { } core)
                 return;
 
-            if (ShouldUseLegacyNativePassthrough(bundle, injection.WebView, core.Source))
+            if (GetPlayComposeWebView(injection) is not { } composeWebView)
+                return;
+
+            if (ShouldUseLegacyNativePassthrough(bundle, composeWebView, core.Source))
                 return;
 
             DebouncedPlaySendWarmup(bundle, core);

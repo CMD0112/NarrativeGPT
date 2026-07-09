@@ -1386,6 +1386,7 @@ Close in-flight orchestration, injection honesty, thread-canonical play. Allow r
 **Proposed architecture:**
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":42,"rankSpacing":48,"padding":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
     Canon[state.json + entities + scenario]
     Resolver[SceneUiResolver C#]

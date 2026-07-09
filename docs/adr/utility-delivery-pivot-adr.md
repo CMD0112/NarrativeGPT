@@ -20,6 +20,7 @@ No hidden utility WebView, no utility tab pin, no per-job `[CGW:memory]` / `[CGW
 ## Target architecture
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart TB
     subgraph playPath [Play jobs]
         PJ[RunGenerationJobForActiveAdventureAsync]

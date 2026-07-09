@@ -177,6 +177,7 @@ v1 documents (`schemaVersion` absent or `1`) migrate on load: each entry becomes
 ## 2. Capture pipeline
 
 ```mermaid
+%%{init: {"sequence":{"actorMargin":58,"boxMargin":12,"messageMargin":42,"mirrorActors":false,"useMaxWidth":true,"wrap":true},"themeVariables":{"fontSize":"13px"}} }%%
 sequenceDiagram
   participant ORC as PlaySendOrchestrator
   participant ART as PreparedSendArtifact

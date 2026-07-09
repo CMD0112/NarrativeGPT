@@ -88,6 +88,7 @@ Comprehensive execution plan for **SVA-03** — per-turn observability of what t
 ## Target architecture
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
   subgraph capture [Capture at send boundary]
     ORC[PlaySendOrchestrator]

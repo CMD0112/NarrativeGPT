@@ -1,6 +1,10 @@
 # Chat File I/O Feasibility
 
-**Status:** Spike complete — API upload/download proven for Projects; play attach uses native composer + DOM submit; chat download interception implemented. See executive summary below.
+# Chat file I/O feasibility (archived)
+
+**Status:** **Archived (2026-07-03)** — spike complete; live diagnostic runner **removed**. API attach automation retired. **Utility programmatic file I/O** uses [utility-source-file-io.md](utility-source-file-io.md). Production Play attach uses DOM composer; `ChatFileTransport` layer retained for upload/list/download.
+
+See [chat-file-io-api-attach-retirement.md](chat-file-io-api-attach-retirement.md) and [utility-source-file-io-retired-methodologies.md](utility-source-file-io-retired-methodologies.md).
 
 This document records the feasibility study for **uploading files to chat messages** and **downloading files from chat threads** in ChatGPT Wrapper. It compares the existing API-bridge stack (proven for Project knowledge files) with DOM/WebView hooks.
 
@@ -13,7 +17,7 @@ This document records the feasibility study for **uploading files to chat messag
 | Scenario | API path | DOM / WebView path | Status |
 |----------|----------|-------------------|--------|
 | Upload bytes to ChatGPT storage | **Proven** (`uploadFile` bridge) | Not used | Production for Project sync |
-| Attach files to outgoing play messages | API blocked on linked play threads (`http_403`) | **Native composer + DOM submit** (default); legacy wrapper uses CDP pre-upload | Production for Play (native default) |
+| Attach files to outgoing play messages | API blocked on **unprovisioned** threads (`http_403`); works in browser on live `/c/{id}` with prepare+sentinel | **Native composer + DOM submit** (default); legacy wrapper uses CDP pre-upload | Production for Play (native default) |
 | List files in a conversation thread | **Spike implemented** (`ListConversationFilesAsync`) | Not implemented | Parser covers metadata + asset pointers |
 | Download by known `file_id` | **Proven** (`downloadFile` bridge) | N/A | Reused from Project sync |
 | Download via browser UI (exports, blobs) | Partial (`fetchBlobUrl` bridge) | **Spike implemented** (`DownloadStarting` → `chat-downloads/`) | Needs manual classification |
@@ -34,7 +38,69 @@ Chat sends were **text-only** (`content_type: "text"`) via `ChatGptConversationS
 
 ---
 
-## Phase 0 — Diagnostics (implemented)
+## Phase 0 — Diagnostics (archived)
+
+### Multi-lane live runner (CMD-435) — removed 2026-07-03
+
+`LiveChatFileIoRunner` / `run-chat-file-io-diagnostics.ps1` were **deleted 2026-07-03**. Historical lane matrix and gate results: [chat-file-io-api-attach-retirement.md](chat-file-io-api-attach-retirement.md).
+
+**Utility file I/O gate (replacement):**
+
+```powershell
+.\tests\ChatGPTWrapper.ApiDiagnostics\scripts\run-utility-source-file-io-diagnostics.ps1 -E2E
+```
+
+### Former lanes (archived)
+
+| Lane | Transport | Purpose | Pass criteria |
+|------|-----------|---------|---------------|
+| `storage` | API | Upload → list → download on known thread | Requires `CGW_CHAT_CONVERSATION_ID` |
+| `api-text` | API | Server conversation provisioning (text-only send) | Text send returns server `conversation_id` |
+| `api-text` | API | Warmup + attach via `ChatGptChatFileService` (`ApiChatSendTransport`) | `warmup_send_context` + `send_with_attachment_on_server_thread` |
+| `api-attach-probe` | API | Regression probe for API attach on **unprovisioned** client-bootstrap threads | **Expected `http_403`** on `send_with_attachment_unprovisioned` |
+| `dom` | DOM + API verify | WebView2 + adventure-bridge attach → list → download | DOM send + file listed (flaky in diagnostic host) |
+| `playwright` | Playwright + API verify | Headless Chrome composer attach → list → download | Send (`wire_attach=true`) + file listed + download; **set `CGW_CHAT_CONVERSATION_ID`** to server `/c/{uuid}` |
+| `all` | Mixed | Full matrix (api-text → probe → playwright → storage) | Each selected lane passes |
+
+Report: `%LocalAppData%\ChatGPTWrapper\chat-file-io-report.{txt,json}` — per-step `lane`, `transport`, `classification` (`pass`, `expected-block`, `fail`).
+
+Env: `CGW_CHAT_GIZMO_ID`, `CGW_CHAT_CONVERSATION_ID` (bare UUID or `g-p-…/c/{uuid}` — normalized at startup), `CGW_CHAT_EXPECT_API_ATTACH_BLOCKED=1` (override probe expectation).
+
+When `CGW_CHAT_CONVERSATION_ID` is set, **`api-text`** skips provision/text-send and runs the server-thread attach re-probe directly (see [CMD-436](https://linear.app/cmd0112/issue/CMD-436)).
+
+**Golden API attach sample:** `tests/ChatGPTWrapper.ApiDiagnostics/Fixtures/api-send-samples/POST_backend-api_f_conversation_attachments.json` (browser HAR 200, `text` + `metadata.attachments` with `source: local`). Live runs seed this into `%LocalAppData%\ChatGPTWrapper\api-send-samples\` before diagnostics execute.
+
+### DevTools / network capture strategy (CMD-436)
+
+| Surface | Role | When to use |
+|---------|------|-------------|
+| **WebView2 in diagnostics** | `ChatGptApiDiscovery` + `ChatGptApiSendSampleCapture` hook `WebResourceResponseReceived` on the diagnostic host — captures `prepare`, `f/conversation` (incl. attach), seeds `ConversationConduitCache` / `ConversationParentCache` | **Automated** `api-text` / `dom` lanes; always on when bridge registers |
+| **Chrome DevTools MCP** | `list_network_requests` / `get_network_request` on a **standalone Chrome** session | **Agent-assisted** one-off captures when reproducing in real Chrome (export to `api-send-samples/` or repo fixtures) |
+| **WebView2 CDP** (`CallDevToolsProtocolMethodAsync`) | `DomFileStagingCore` — `DOM.setFileInputFiles` for composer/knowledge targets | **`dom` lane** attach staging (not API send headers) |
+
+`api-text` server-thread path now runs `warmup_send_context` (prefetch parent + conduit) before attach, and `diagnose_attach_gap` on failure (`classification: gap-diagnosis`) listing cache + golden template state.
+
+**2026-07-02:** Shipped `file_token_size` on attach metadata + preserve golden `client_prepare_state: none`. Live shortcut still `http_403` with body shape aligned to browser — remaining gap is **request headers** (sentinel / in-page fetch vs bridge `apiRequest`), not body fields.
+
+**2026-07-02 (sentinel):** `chatgpt-api-bridge.js` installs a fetch tap to capture native `openai-sentinel-*` headers, probes ChatGPT webpack modules for a sentinel builder, and merges headers into `apiRequest` conversation POSTs. `acquireConversationSentinelHeaders` bridge action + `PrefetchSentinelAsync` in warmup. Golden attach fixture now includes `requestHeaders` key names from browser HAR.
+
+**2026-07-02 (fresh sentinel):** Conversation POSTs no longer replay tap-cached sentinel tokens (single-use / anti-replay). `refreshConversationSentinelHeaders` loads page `SentinelSDK`, runs `token()` → `POST /backend-api/sentinel/chat-requirements/finalize`, then clears `__CGW_SENTINEL_CAPTURE__` after each `f/conversation` send. Fetch-tap cache remains a last-resort fallback for warmup probes only.
+
+`ChatGptApiSendSampleCapture` now records `requestHeaders` (wire, from WebView network) and `bridgeDeclaredHeaders` (C# → bridge `apiRequest`) on prepare/send samples. `diagnose_attach_gap` reports header key diff vs golden.
+
+### API attach automation gate (Track A)
+
+**Procedure:** `CGW_CHAT_LANE=api-text` via `run-chat-file-io-diagnostics.ps1` — **3 independent sessions**, no manual composer seed.
+
+| Pass | Fail |
+|------|------|
+| `sentinel_source` SDK/page-derived in warmup | Document **API attach automation no-go** in this doc |
+| `send_with_attachment_on_server_thread` HTTP 200 | Utility worker attach stays DOM-only |
+| Golden attach sample not overwritten by 403 | Product: DOM canonical for Play attach |
+
+**Recorded outcome (2026-07-02):** **FAIL** — gate not met; approach **retired**. See [chat-file-io-api-attach-retirement.md](chat-file-io-api-attach-retirement.md) for full state, live run evidence, and re-open criteria.
+
+**Product policy:** DOM canonical for Play attach; API storage round-trip shippable; no further API attach automation work unless re-opened.
 
 ### Download + permission logging
 
@@ -160,10 +226,14 @@ Legacy *wrapper composer* opt-in still uses CDP pre-upload via `PlayComposeNativ
 
 ## Architecture
 
+See [chat-file-io-transport-redesign.md](chat-file-io-transport-redesign.md) for the full transport diagram. Summary:
+
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart TB
   subgraph app [WPF]
     ChatFile[ChatGptChatFileService]
+    Transport[ChatFileTransportRegistry]
     Conv[ChatGptConversationSendService]
     Proj[ChatGptProjectApiService]
     Diag[ChatGptWebViewFileDiagnostics]
@@ -173,7 +243,8 @@ flowchart TB
     PlayBridge[adventure-bridge.js]
   end
 
-  ChatFile --> Conv
+  ChatFile --> Transport
+  Transport --> Conv
   ChatFile --> Proj
   Diag --> WebView2
   Conv --> APIBridge
@@ -182,7 +253,7 @@ flowchart TB
   PlayBridge -->|"listComposerFileUi"| ComposerDom[cgw-composer-dom.js]
 ```
 
-File bytes stay on **`chatgpt-api-bridge.js`** (base64, long timeouts). Adventure bridge is for DOM discovery only.
+File bytes stay on **`chatgpt-api-bridge.js`** (base64, long timeouts). Adventure bridge is for DOM discovery and native composer submit.
 
 ---
 

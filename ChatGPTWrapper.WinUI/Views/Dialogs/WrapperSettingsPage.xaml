@@ -1,0 +1,35 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.WrapperSettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Spacing="8" MinWidth="420">
+        <TextBlock Text="Adventures folder"
+                   Style="{ThemeResource ShellSectionHeaderStyle}" />
+        <TextBlock Style="{ThemeResource ShellSectionHintStyle}"
+                   Text="Each adventure is stored as {folder}/{adventure-id}/. Config and browser data stay under %LocalAppData%\ChatGPTWrapper\." />
+
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="AdventuresPathBox"
+                     PlaceholderText="Leave empty for default folder"
+                     MinWidth="280" />
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="6">
+                <Button Content="Browse…"
+                        Style="{ThemeResource ShellGhostButtonStyle}"
+                        Click="Browse_Click" />
+                <Button Content="Default"
+                        Style="{ThemeResource ShellGhostButtonStyle}"
+                        Click="Default_Click" />
+            </StackPanel>
+        </Grid>
+
+        <TextBlock x:Name="DefaultPathLine"
+                   Style="{ThemeResource ShellSectionHintStyle}" />
+    </StackPanel>
+</UserControl>

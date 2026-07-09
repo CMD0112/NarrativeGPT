@@ -433,71 +433,41 @@ public sealed class AdventureTurnService
                     attachmentsPreStaged,
                     cancellationToken);
 
+            if (attachments is { Count: > 0 })
+            {
+                return new AdventureTurnResult
+                {
+                    Success = false,
+                    Error = "play_attach_requires_dom_staging",
+                    RequiresManualFallback = true,
+                    PacketText = packetText,
+                };
+            }
+
             var conversationId = ResolveConversationIdForSend(bundle, core);
-            var useApiAttachments = PlaySendDeliveryPolicy.ShouldUseApiPlaySend(
-                bundle,
-                attachments,
-                domAttachments);
-            var useApiText = PlaySendDeliveryPolicy.ShouldUseApiTextPlaySend(bundle, deliveryChannel)
-                && attachments is not { Count: > 0 };
+            var useApiText = PlaySendDeliveryPolicy.ShouldUseApiTextPlaySend(bundle, deliveryChannel);
 
             if (_conversationSend is not null
                 && !string.IsNullOrWhiteSpace(conversationId)
-                && (useApiAttachments || useApiText))
+                && useApiText)
             {
-                ConversationSendResult apiResult;
-                if (useApiAttachments)
-                {
-                    apiResult = await _conversationSend.SendUserMessageWithAttachmentsAsync(
-                        core,
-                        conversationId,
-                        bundle.Metadata.LinkedProjectId,
-                        packetText,
-                        attachments!,
-                        cancellationToken);
+                var apiResult = await _conversationSend.SendUserMessageAsync(
+                    core,
+                    conversationId,
+                    bundle.Metadata.LinkedProjectId,
+                    packetText,
+                    cancellationToken);
 
-                    if (!apiResult.Success)
-                    {
-                        PlaySendTrace.Event(
-                            PlaySendTraceEvents.ApiSendFallbackDom,
-                            PlaySendCategory.Bridge,
-                            PlaySendLevel.Warn,
-                            $"Attachment API send failed ({apiResult.Error}); falling back to DOM submit",
-                            data: new { error = apiResult.Error, conversationId, attachmentCount = attachments!.Count });
-                    }
+                if (!apiResult.Success)
+                {
+                    PlaySendTrace.Event(
+                        PlaySendTraceEvents.ApiSendFallbackDom,
+                        PlaySendCategory.Bridge,
+                        PlaySendLevel.Warn,
+                        $"API send failed ({apiResult.Error}); falling back to DOM submit",
+                        data: new { error = apiResult.Error, conversationId });
                 }
                 else
-                {
-                    apiResult = await _conversationSend.SendUserMessageAsync(
-                        core,
-                        conversationId,
-                        bundle.Metadata.LinkedProjectId,
-                        packetText,
-                        cancellationToken);
-
-                    if (!apiResult.Success)
-                    {
-                        PlaySendTrace.Event(
-                            PlaySendTraceEvents.ApiSendFallbackDom,
-                            PlaySendCategory.Bridge,
-                            PlaySendLevel.Warn,
-                            $"API send failed ({apiResult.Error}); falling back to DOM submit",
-                            data: new { error = apiResult.Error, conversationId });
-                    }
-                    else
-                    {
-                        return await BuildApiSubmitSuccessResultAsync(
-                            core,
-                            bundle,
-                            packetText,
-                            displayPlayerLine,
-                            packetHash,
-                            conversationId,
-                            apiResult);
-                    }
-                }
-
-                if (apiResult.Success)
                 {
                     return await BuildApiSubmitSuccessResultAsync(
                         core,
@@ -590,13 +560,13 @@ public sealed class AdventureTurnService
             var hostCdpStaged = attachmentsPreStaged;
             if (!attachmentsPreStaged)
             {
-                await _bridge.StageDomFallbackAttachmentsAsync(core, domAttachments);
-
-                var cdpStage = await NativeComposerFileStaging.StageAsync(
+                var stage = await NativeComposerDomStaging.StageAttachmentsAsync(
+                    _bridge,
                     core,
                     domAttachments,
+                    attachmentsPreStaged: false,
                     cancellationToken);
-                hostCdpStaged = cdpStage.Success;
+                hostCdpStaged = stage.HostCdpStaged;
 
                 if (!hostCdpStaged)
                 {
@@ -604,9 +574,9 @@ public sealed class AdventureTurnService
                         PlaySendTraceEvents.BridgeSubmitInvoke,
                         PlaySendCategory.Bridge,
                         PlaySendLevel.Warn,
-                        $"CDP attachment staging failed ({cdpStage.Error}); falling back to in-page staging",
+                        $"CDP attachment staging failed ({stage.CdpError}); falling back to in-page staging",
                         outcome: "cdp_stage_failed",
-                        data: new { error = cdpStage.Error });
+                        data: new { error = stage.CdpError });
                 }
             }
 
@@ -804,6 +774,7 @@ public sealed class AdventureTurnService
     {
         var effectiveTimeout = ComputeUtilityJobTimeoutMs(messageText.Length);
 
+        var pageEnsured = false;
         if (!skipPageEnsure && !string.IsNullOrWhiteSpace(gizmoId))
         {
             var page = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
@@ -820,6 +791,8 @@ public sealed class AdventureTurnService
                     ConversationId = conversationId,
                 };
             }
+
+            pageEnsured = true;
         }
 
         if (!await _bridge.EnsureBridgeReadyAsync(core, cancellationToken))
@@ -832,13 +805,20 @@ public sealed class AdventureTurnService
             };
         }
 
+        await WaitForUtilityComposerSubmitReadyAsync(
+            core,
+            cancellationToken,
+            skipNavigation: skipPageEnsure || pageEnsured,
+            conversationId: conversationId,
+            gizmoId: gizmoId);
+
         var pageHref = await UtilityConversationPageService.GetPageHrefAsync(core);
         var health = await GetAdventureComposerHealthAsync(core, cancellationToken);
         PlaySendTrace.Event(
             PlaySendTraceEvents.BridgeSubmitInvoke,
             PlaySendCategory.Bridge,
             PlaySendLevel.Info,
-            "Utility DOM attach composer probe",
+            "Utility DOM attach composer ready",
             outcome: "attach_probe",
             data: new
             {
@@ -848,37 +828,31 @@ public sealed class AdventureTurnService
                 conversationId = health.ConversationId ?? conversationId,
                 attachmentCount = domAttachments.Count,
                 skipPageEnsure,
+                pageEnsured,
                 allowKeyboardSubmitOnProjectHome,
             });
-
-        await WaitForUtilityComposerSubmitReadyAsync(
-            core,
-            cancellationToken,
-            skipNavigation: skipPageEnsure,
-            conversationId: conversationId,
-            gizmoId: gizmoId);
 
         await _bridgeGate.WaitAsync(cancellationToken);
         try
         {
             await _bridge.InjectAsync(core);
             await NativeComposerFileStaging.ExposeComposerForUploadAsync(core, cancellationToken);
-            await _bridge.StageDomFallbackAttachmentsAsync(core, domAttachments);
-
-            var cdpStage = await NativeComposerFileStaging.StageAsync(
+            var stage = await NativeComposerDomStaging.StageAttachmentsAsync(
+                _bridge,
                 core,
                 domAttachments,
+                attachmentsPreStaged: false,
                 cancellationToken);
-            var hostCdpStaged = cdpStage.Success;
+            var hostCdpStaged = stage.HostCdpStaged;
             if (!hostCdpStaged)
             {
                 PlaySendTrace.Event(
                     PlaySendTraceEvents.BridgeSubmitInvoke,
                     PlaySendCategory.Bridge,
                     PlaySendLevel.Warn,
-                    $"Utility CDP attachment staging failed ({cdpStage.Error})",
+                    $"Utility CDP attachment staging failed ({stage.CdpError})",
                     outcome: "cdp_stage_failed",
-                    data: new { error = cdpStage.Error, attachmentCount = domAttachments.Count });
+                    data: new { error = stage.CdpError, attachmentCount = domAttachments.Count });
             }
             else
             {
@@ -1180,6 +1154,7 @@ public sealed class AdventureTurnService
             requireProjectContext,
             attachmentsPreStaged: attachmentsPreStaged,
             hostCdpStaged: false,
+            useWrapperAttachmentStash: useWrapperAttachmentStash && !hostCdpStaged,
             allowKeyboardSubmitOnProjectHome: allowKeyboardSubmitOnProjectHome);
 
         if (!invoked)
@@ -1217,7 +1192,12 @@ public sealed class AdventureTurnService
                 useWrapperAttachmentStash,
             });
 
-        var submitTimeoutMs = Math.Min(timeoutMs, 120_000);
+        // Bridge attachment path: up to ~90s submit-ready wait + verify retries (12s × 20).
+        var hasAttachmentDomPath = hostCdpStaged || useWrapperAttachmentStash;
+        var submitTimeoutCapMs = hasAttachmentDomPath ? 240_000 : 120_000;
+        var submitTimeoutMs = hasAttachmentDomPath
+            ? Math.Max(timeoutMs, submitTimeoutCapMs)
+            : Math.Min(timeoutMs, submitTimeoutCapMs);
         AdventureBridgeMessage msg;
         try
         {

@@ -6,6 +6,7 @@ using ChatGPTWrapper.Theme;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
+[Collection("WpfUi")]
 public sealed class ThemeSettingsTests
 {
     [Fact]
@@ -572,79 +573,41 @@ public sealed class ThemeSettingsTests
     [Fact]
     public void ApplyToWpf_skips_when_fingerprint_unchanged()
     {
-        Exception? failure = null;
-        var thread = new Thread(() =>
+        WpfStaTestHost.Run(() =>
         {
-            try
-            {
-                if (System.Windows.Application.Current is null)
-                    _ = new System.Windows.Application();
-
-                var resolved = ThemeApplicationService.ResolveEffectiveTheme(ThemeApplicationService.CreateDefaultSettings());
-                ThemeApplicationService.InvalidateApplyCache();
-                Assert.True(ThemeApplicationService.ApplyToWpf(resolved));
-                Assert.False(ThemeApplicationService.ApplyToWpf(resolved));
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        })
-        {
-            IsBackground = true,
-        };
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join(TimeSpan.FromSeconds(15));
-        if (failure is not null)
-            throw failure;
+            var resolved = ThemeApplicationService.ResolveEffectiveTheme(ThemeApplicationService.CreateDefaultSettings());
+            ThemeApplicationService.InvalidateApplyCache();
+            Assert.True(ThemeApplicationService.ApplyToWpf(resolved));
+            Assert.False(ThemeApplicationService.ApplyToWpf(resolved));
+        });
     }
 
     [Fact]
     public void ApplyToWpf_updates_bg_base_brush()
     {
-        Exception? failure = null;
-        var thread = new Thread(() =>
+        WpfStaTestHost.Run(() =>
         {
-            try
+            var app = System.Windows.Application.Current
+                ?? throw new InvalidOperationException("WPF Application not initialized.");
+
+            var settings = new ThemeSettings
             {
-                if (System.Windows.Application.Current is null)
-                    _ = new System.Windows.Application();
-
-                var app = System.Windows.Application.Current
-                    ?? throw new InvalidOperationException("WPF Application not initialized.");
-
-                var settings = new ThemeSettings
+                ActivePresetId = ThemePresetIds.DefaultDark,
+                CustomOverrides = new Dictionary<string, string>
                 {
-                    ActivePresetId = ThemePresetIds.DefaultDark,
-                    CustomOverrides = new Dictionary<string, string>
-                    {
-                        ["BgBase"] = "#112233",
-                    },
-                };
+                    ["BgBase"] = "#112233",
+                },
+            };
 
-                var resolved = ThemeApplicationService.ResolveEffectiveTheme(settings);
-                ThemeApplicationService.InvalidateApplyCache();
-                var applied = ThemeApplicationService.ApplyToWpf(resolved);
-                Assert.True(applied);
+            var resolved = ThemeApplicationService.ResolveEffectiveTheme(settings);
+            ThemeApplicationService.InvalidateApplyCache();
+            var applied = ThemeApplicationService.ApplyToWpf(resolved);
+            Assert.True(applied);
 
-                var brush = app.Resources["BgBaseBrush"] as SolidColorBrush;
-                Assert.NotNull(brush);
-                Assert.Equal("#FF112233", brush.Color.ToString());
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        })
-        {
-            IsBackground = true,
-        };
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join(TimeSpan.FromSeconds(15));
-        if (failure is not null)
-            throw failure;
+            var brush = app.Resources["BgBaseBrush"] as SolidColorBrush;
+            Assert.NotNull(brush);
+            Assert.Equal("#FF112233", brush.Color.ToString());
+        });
     }
 
     private static IEnumerable<string> ExtractCssVariables(string css)

@@ -86,7 +86,8 @@ public sealed class UtilityJobPromptBuilderLocalProfileTests
 
         Assert.Contains("\"entities\"", format, StringComparison.Ordinal);
         Assert.Contains("Greyford Gate", format, StringComparison.Ordinal);
-        Assert.DoesNotContain("Relationship", format, StringComparison.Ordinal);
+        Assert.Contains("Do not return labeled canon field sheets", format, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Relationship\":", format, StringComparison.Ordinal);
     }
 
     [Fact]

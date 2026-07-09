@@ -1,6 +1,7 @@
 using System.IO;
-using System.Text.Json;
+using System.Text.RegularExpressions;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.ChatGptApi.BrowserFileDelivery;
 using Microsoft.Web.WebView2.Core;
 
 namespace ChatGPTWrapper.ChatGptApi.ProjectSource;
@@ -11,10 +12,6 @@ namespace ChatGPTWrapper.ChatGptApi.ProjectSource;
 /// </summary>
 internal static class ProjectKnowledgeFileStaging
 {
-    private const string MarkAttribute = "data-cgw-project-file-input";
-    private static readonly object StagingGate = new();
-    private static List<string> ActiveStagingPaths = [];
-
     public static async Task<(bool Success, string? Error)> StageAsync(
         CoreWebView2 core,
         string fileName,
@@ -25,11 +22,11 @@ internal static class ProjectKnowledgeFileStaging
         if (content.Length == 0)
             return (false, "empty_content");
 
-        CleanupStagedFiles();
-        var stagingDir = GetStagingDirectory();
+        DomFileStagingCore.CleanupStagedFiles();
+        var stagingDir = DomFileStagingUtilities.GetStagingDirectory(DomFileInputTarget.ProjectKnowledge);
         var sanitized = SanitizeFileName(fileName);
         if (string.IsNullOrWhiteSpace(Path.GetExtension(sanitized)))
-            sanitized += GuessExtension(mimeType);
+            sanitized += DomFileStagingUtilities.GuessExtension(mimeType, DomFileInputTarget.ProjectKnowledge);
 
         var path = Path.Combine(stagingDir, $"cgw-proj-{Guid.NewGuid():N}-{sanitized}");
         try
@@ -37,38 +34,23 @@ internal static class ProjectKnowledgeFileStaging
             await File.WriteAllBytesAsync(path, content, cancellationToken);
             var fullPath = Path.GetFullPath(path);
 
-            lock (StagingGate)
-                ActiveStagingPaths = [fullPath];
+            DomFileStagingCore.TrackStagingPaths([fullPath]);
 
-            if (!await HasMarkedProjectFileInputAsync(core, cancellationToken))
+            if (!await ProjectKnowledgeFileInputPreparer.HasMarkedInputAsync(core, cancellationToken))
             {
-                CleanupStagedFiles();
+                DomFileStagingCore.CleanupStagedFiles();
                 return (false, "project_file_input_not_marked");
             }
 
-            await core.CallDevToolsProtocolMethodAsync("DOM.enable", "{}")
-                .WaitAsync(cancellationToken);
-            var rootNodeId = await GetDocumentNodeIdAsync(core, cancellationToken);
-            var inputNodeId = await QueryMarkedFileInputNodeIdAsync(core, rootNodeId, cancellationToken);
-            if (inputNodeId is null)
+            var staged = await DomFileStagingCore.StageMarkedInputAsync(
+                core,
+                ProjectKnowledgeFileInputPreparer.MarkAttribute,
+                [fullPath],
+                cancellationToken);
+            if (!staged.Success)
             {
-                CleanupStagedFiles();
-                return (false, "project_file_input_node_not_found");
-            }
-
-            await core.CallDevToolsProtocolMethodAsync(
-                "DOM.setFileInputFiles",
-                JsonSerializer.Serialize(new
-                {
-                    nodeId = inputNodeId.Value,
-                    files = new[] { fullPath },
-                }))
-                .WaitAsync(cancellationToken);
-
-            if (!await DispatchInputChangeAsync(core, cancellationToken))
-            {
-                CleanupStagedFiles();
-                return (false, "project_file_input_change_dispatch_failed");
+                DomFileStagingCore.CleanupStagedFiles();
+                return staged;
             }
 
             ProjectLinkDiagnostics.Log(
@@ -77,116 +59,15 @@ internal static class ProjectKnowledgeFileStaging
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            CleanupStagedFiles();
+            DomFileStagingCore.CleanupStagedFiles();
             return (false, ex.Message);
         }
     }
 
-    public static void CleanupStagedFiles()
-    {
-        List<string> paths;
-        lock (StagingGate)
-        {
-            paths = ActiveStagingPaths;
-            ActiveStagingPaths = [];
-        }
+    public static void CleanupStagedFiles() => DomFileStagingCore.CleanupStagedFiles();
 
-        foreach (var stagedPath in paths)
-        {
-            try { File.Delete(stagedPath); }
-            catch { /* best-effort */ }
-        }
-    }
-
-    private static async Task<bool> HasMarkedProjectFileInputAsync(
-        CoreWebView2 core,
-        CancellationToken cancellationToken) =>
-        await EvaluateBoolAsync(
-            core,
-            $$"""
-             (function(){
-               return !!document.querySelector('input[{{MarkAttribute}}="1"]');
-             })()
-             """,
-            cancellationToken);
-
-    private static async Task<bool> DispatchInputChangeAsync(
-        CoreWebView2 core,
-        CancellationToken cancellationToken) =>
-        await EvaluateBoolAsync(
-            core,
-            $$"""
-             (function(){
-               var el = document.querySelector('input[{{MarkAttribute}}="1"]');
-               if (!el) return false;
-               el.dispatchEvent(new Event('change', { bubbles: true }));
-               el.dispatchEvent(new Event('input', { bubbles: true }));
-               el.removeAttribute('{{MarkAttribute}}');
-               return true;
-             })()
-             """,
-            cancellationToken);
-
-    private static async Task<int> GetDocumentNodeIdAsync(
-        CoreWebView2 core,
-        CancellationToken cancellationToken)
-    {
-        var raw = await core.CallDevToolsProtocolMethodAsync("DOM.getDocument", "{}")
-            .WaitAsync(cancellationToken);
-        using var doc = JsonDocument.Parse(raw);
-        return doc.RootElement.GetProperty("root").GetProperty("nodeId").GetInt32();
-    }
-
-    private static async Task<int?> QueryMarkedFileInputNodeIdAsync(
-        CoreWebView2 core,
-        int rootNodeId,
-        CancellationToken cancellationToken)
-    {
-        var raw = await core.CallDevToolsProtocolMethodAsync(
-            "DOM.querySelector",
-            JsonSerializer.Serialize(new
-            {
-                nodeId = rootNodeId,
-                selector = $"input[{MarkAttribute}=\"1\"]",
-            }))
-            .WaitAsync(cancellationToken);
-
-        using var doc = JsonDocument.Parse(raw);
-        if (!doc.RootElement.TryGetProperty("nodeId", out var nodeId))
-            return null;
-
-        var id = nodeId.GetInt32();
-        return id > 0 ? id : null;
-    }
-
-    private static async Task<bool> EvaluateBoolAsync(
-        CoreWebView2 core,
-        string script,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var raw = await core.ExecuteScriptAsync(script);
-        return raw.Contains("true", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string GetStagingDirectory()
-    {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "ChatGPTWrapper",
-            "cdp-staging",
-            "project-knowledge");
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
-
-    internal static string SanitizeFileName(string? name)
-    {
-        var baseName = string.IsNullOrWhiteSpace(name) ? "source.md" : Path.GetFileName(name.Replace('\\', '/'));
-        foreach (var invalid in Path.GetInvalidFileNameChars())
-            baseName = baseName.Replace(invalid, '_');
-        return string.IsNullOrWhiteSpace(baseName) ? "source.md" : baseName;
-    }
+    internal static string SanitizeFileName(string? name) =>
+        DomFileStagingUtilities.SanitizeFileName(name, "source.md");
 
     internal static string Basename(string remoteFileName) =>
         SanitizeFileName(remoteFileName);
@@ -201,15 +82,26 @@ internal static class ProjectKnowledgeFileStaging
         return string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string GuessExtension(string mimeType) =>
-        mimeType.ToLowerInvariant() switch
-        {
-            "text/markdown" => ".md",
-            "text/plain" => ".txt",
-            "application/json" => ".json",
-            "application/pdf" => ".pdf",
-            "image/png" => ".png",
-            "image/jpeg" or "image/jpg" => ".jpg",
-            _ => ".bin",
-        };
+    internal static bool RemoteFileMatchesUploadAlias(GizmoFileRef file, string remoteFileName)
+    {
+        if (string.IsNullOrWhiteSpace(file.Name))
+            return false;
+
+        var expected = Basename(remoteFileName);
+        var actual = Basename(file.Name);
+        if (string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (actual.EndsWith("-" + expected, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return Regex.IsMatch(
+            actual,
+            $@"^cgw-(?:auto|proj|ext)-[a-f0-9]{{32}}-{Regex.Escape(expected)}$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    internal static bool RemoteFileMatchesPublicationTarget(GizmoFileRef file, string remoteFileName) =>
+        RemoteFileMatchesName(file, remoteFileName)
+        || RemoteFileMatchesUploadAlias(file, remoteFileName);
 }

@@ -45,6 +45,7 @@ internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? sto
         var settings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
         var localStory = UtilityStoryContextBuilder.BuildPreviewFromLocal(bundle, jobId);
         var laneFlags = ResolvePlayThreadFlags(bundle, localStory, settings);
+        localStory = AppendMemoryBaselineIfNeeded(bundle, jobId, localStory);
         var manifest = BuildManifest(jobId, channel, localStory, laneFlags);
 
         return new UtilityJobContextAssemblyResult
@@ -69,12 +70,15 @@ internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? sto
     {
         var settings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
         var localStory = UtilityStoryContextBuilder.BuildPreviewFromLocal(bundle, jobId);
+        var playEntry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play);
+        var threadProjection = ThreadTranscriptResolver.ResolvePlayThreadProjection(bundle);
         var (storyBuild, lore) = ApplyWorkerLoreIfNeeded(
             bundle,
             jobId,
             UtilityExecutionChannel.WorkerBackground,
             localStory,
             jobContext);
+        storyBuild = AppendMemoryBaselineIfNeeded(bundle, jobId, storyBuild);
         var laneFlags = ResolveWorkerSoloFlags(bundle, localStory, settings);
         var manifest = BuildManifest(
             jobId,
@@ -82,7 +86,8 @@ internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? sto
             storyBuild,
             laneFlags,
             lore: lore,
-            jobContext: jobContext);
+            jobContext: jobContext)
+            .WithThreadProjection(threadProjection, playEntry?.Id);
 
         return new UtilityJobContextAssemblyResult
         {
@@ -105,12 +110,17 @@ internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? sto
         CancellationToken cancellationToken = default)
     {
         var storyBuild = await BuildStoryAsync(bundle, jobId, request, cancellationToken);
+        var playEntry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play);
+        var threadProjection = request.Channel == UtilityExecutionChannel.WorkerBackground
+            ? ThreadTranscriptResolver.ResolvePlayThreadProjection(bundle)
+            : new ThreadProjectionResult();
         var (storyWithLore, lore) = ApplyWorkerLoreIfNeeded(
             bundle,
             jobId,
             request.Channel,
             storyBuild,
             request.JobContext);
+        storyWithLore = AppendMemoryBaselineIfNeeded(bundle, jobId, storyWithLore);
         var settings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
         var laneFlags = ResolveLaneFlags(bundle, request.Channel, storyBuild, settings, request.PlayPacketSnapshot);
         var manifest = BuildManifest(
@@ -121,6 +131,9 @@ internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? sto
             request.PlayPacketSnapshot,
             lore,
             request.JobContext);
+
+        if (request.Channel == UtilityExecutionChannel.WorkerBackground)
+            manifest = manifest.WithThreadProjection(threadProjection, playEntry?.Id);
 
         return new UtilityJobContextAssemblyResult
         {
@@ -345,4 +358,28 @@ internal sealed class UtilityJobContextAssembler(UtilityStoryContextBuilder? sto
         bool StoryContextHasTranscript,
         bool IncludesSummary,
         bool IncludesState);
+
+    private static UtilityStoryContextBuildResult AppendMemoryBaselineIfNeeded(
+        AdventureBundle bundle,
+        string jobId,
+        UtilityStoryContextBuildResult story)
+    {
+        if (!string.Equals(jobId, GenerationJobId.ProposeMemories, StringComparison.Ordinal))
+            return story;
+
+        var baseline = MemoryBaselineService.BuildBaselineBlock(bundle);
+        if (string.IsNullOrWhiteSpace(baseline))
+            return story;
+
+        var text = string.IsNullOrWhiteSpace(story.Text)
+            ? baseline
+            : baseline + Environment.NewLine + Environment.NewLine + story.Text;
+        return new UtilityStoryContextBuildResult
+        {
+            Text = text,
+            TranscriptSource = story.TranscriptSource,
+            TurnPairCount = story.TurnPairCount,
+            CaptureError = story.CaptureError,
+        };
+    }
 }

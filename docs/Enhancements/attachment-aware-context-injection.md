@@ -33,6 +33,7 @@ Those two channels should be **coherent**. Phase A adds a basic attachment manif
 ## Current architecture (post native-composer default)
 
 ```mermaid
+%%{init: {"sequence":{"actorMargin":58,"boxMargin":12,"messageMargin":42,"mirrorActors":false,"useMaxWidth":true,"wrap":true},"themeVariables":{"fontSize":"13px"}} }%%
 sequenceDiagram
     participant User
     participant Native as ChatGPT native composer

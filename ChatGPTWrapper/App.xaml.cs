@@ -14,6 +14,7 @@ public partial class App : Application
     {
         DiagnosticsOptions.Initialize(e.Args);
         AppDirectories.EnsureCreated();
+        WpfDiagnosticsHost.Register();
         CanonSchemaLoader.Initialize();
         DiagnosticsSession.WriteExtendedHeader(e.Args);
         DispatcherUnhandledException += OnDispatcherUnhandledException;

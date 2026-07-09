@@ -207,38 +207,15 @@ public partial class PlayPromptInjectionDialog
         SchedulePreviewRefresh();
     }
 
-    private void UtilityDeliverySettings_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!IsLoaded || _playSettingsBinding)
-            return;
-
-        if (LocalUtilityInferenceDualRunCheck is not null)
-        {
-            LocalUtilityInferenceDualRunCheck.IsEnabled = LocalUtilityInferenceCheck.IsChecked == true;
-            if (LocalUtilityInferenceCheck.IsChecked != true)
-                LocalUtilityInferenceDualRunCheck.IsChecked = false;
-        }
-
-        if (ForceUtilityWorkerDomAttachCheck is not null)
-        {
-            ForceUtilityWorkerDomAttachCheck.IsEnabled = UseEphemeralUtilityWorkerChatCheck.IsChecked == true;
-            if (UseEphemeralUtilityWorkerChatCheck.IsChecked != true)
-                ForceUtilityWorkerDomAttachCheck.IsChecked = false;
-        }
-
-        SaveUtilityDeliverySettingsTo(_bundle.Metadata.Settings);
-        TransportSettingsStore.Commit(_bundle, caller: nameof(PlayPromptInjectionDialog));
-        UpdateUtilityWorkerStatusLine();
-        UpdatePlaySettingsSaveUi();
-        NotifyTransportSettingsCommitted();
-    }
+    private void UtilityDeliverySettings_Changed(object sender, RoutedEventArgs e) =>
+        CommitTransportSettingsFromUi();
 
     private void UtilityDeliveryText_Changed(object sender, TextChangedEventArgs e)
     {
         if (!IsLoaded || _playSettingsBinding)
             return;
 
-        UpdatePlaySettingsSaveUi();
+        MarkPlaySettingsDirty();
     }
 
     private sealed class InjectionPresetComboItem(string? id, string displayName)

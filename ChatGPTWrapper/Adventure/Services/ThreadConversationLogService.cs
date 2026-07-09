@@ -2,6 +2,7 @@ using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
+using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
 
 namespace ChatGPTWrapper.Adventure.Services;
@@ -17,6 +18,14 @@ public sealed class ThreadConversationLogSyncResult
     public int SupersededCount { get; init; }
 
     public int ActiveBranchLength { get; init; }
+
+    public string? SnapshotPath { get; init; }
+
+    public Guid? IngestEventId { get; init; }
+
+    public string? RawPath { get; init; }
+
+    public string? ProjectionPath { get; init; }
 }
 
 public sealed class ThreadConversationLogDumpResult
@@ -36,20 +45,38 @@ internal static class ThreadConversationLogService
         AdventureBundle bundle,
         AdventureThreadEntry threadEntry,
         JsonElement conversationJson,
-        string captureSource)
+        string captureSource,
+        ThreadSnapshotCaptureRequest? snapshotRequest = null)
     {
         ArgumentNullException.ThrowIfNull(bundle);
         ArgumentNullException.ThrowIfNull(threadEntry);
 
+        var captureTrigger = ThreadIngestService.ResolveIngestTrigger(captureSource, snapshotRequest);
+        var preIngest = ThreadIngestService.RecordApiIngest(
+            bundle,
+            threadEntry,
+            conversationJson,
+            captureSource,
+            captureTrigger,
+            snapshotRequest?.Correlation);
+
         var branch = ConversationBranchExtractor.ExtractActiveBranch(conversationJson);
-        return SyncRollingFromBranch(bundle, threadEntry, branch, captureSource);
+        return SyncRollingFromBranch(
+            bundle,
+            threadEntry,
+            branch,
+            captureSource,
+            snapshotRequest,
+            preIngest);
     }
 
     public static ThreadConversationLogSyncResult SyncRollingFromBranch(
         AdventureBundle bundle,
         AdventureThreadEntry threadEntry,
         IReadOnlyList<ConversationBranchMessage> branch,
-        string captureSource)
+        string captureSource,
+        ThreadSnapshotCaptureRequest? snapshotRequest = null,
+        ThreadIngestResult? preIngest = null)
     {
         var adventureId = bundle.Metadata.Id;
         var threadEntryId = threadEntry.Id;
@@ -58,6 +85,24 @@ internal static class ThreadConversationLogService
             threadEntryId,
             threadEntry.Kind,
             threadEntry.ConversationId);
+
+        ThreadIngestResult? ingest = preIngest;
+        if (ingest is null && branch.Count > 0)
+        {
+            var captureTrigger = ThreadIngestService.ResolveIngestTrigger(captureSource, snapshotRequest);
+            ingest = ThreadIngestService.RecordBranchProjectionIngest(
+                bundle,
+                threadEntry,
+                branch,
+                captureSource,
+                captureTrigger,
+                snapshotRequest?.Correlation);
+            manifest = ThreadConversationLogStore.LoadOrCreateManifest(
+                adventureId,
+                threadEntryId,
+                threadEntry.Kind,
+                threadEntry.ConversationId);
+        }
 
         var existing = ThreadConversationLogStore.LoadAllEntries(adventureId, threadEntryId);
         var activeByBranchIndex = ThreadConversationLogStore.BuildActiveIndex(existing);
@@ -103,12 +148,26 @@ internal static class ThreadConversationLogService
         manifest.LastRollingSyncAt = now;
         ThreadConversationLogStore.SaveManifest(manifest);
 
+        string? snapshotPath = null;
+        if (snapshotRequest is not null)
+            snapshotPath = CaptureBranchSnapshot(
+                bundle,
+                threadEntry,
+                manifest,
+                branch,
+                captureSource,
+                snapshotRequest);
+
         return new ThreadConversationLogSyncResult
         {
             Success = true,
             AppendedCount = toAppend.Count,
             SupersededCount = supersededCount,
             ActiveBranchLength = branch.Count,
+            SnapshotPath = snapshotPath,
+            IngestEventId = ingest?.EventId,
+            RawPath = ingest?.RawPath,
+            ProjectionPath = ingest?.ProjectionPath,
         };
     }
 
@@ -116,7 +175,8 @@ internal static class ThreadConversationLogService
         AdventureBundle bundle,
         AdventureThreadEntry threadEntry,
         IReadOnlyList<TranscriptTurnPair> pairs,
-        string captureSource)
+        string captureSource,
+        ThreadSnapshotCaptureRequest? snapshotRequest = null)
     {
         var branch = new List<ConversationBranchMessage>();
         var branchIndex = 0;
@@ -152,7 +212,7 @@ internal static class ThreadConversationLogService
             }
         }
 
-        return SyncRollingFromBranch(bundle, threadEntry, branch, captureSource);
+        return SyncRollingFromBranch(bundle, threadEntry, branch, captureSource, snapshotRequest);
     }
 
     public static async Task<ThreadConversationLogSyncResult> SyncRollingFromApiAsync(
@@ -161,6 +221,7 @@ internal static class ThreadConversationLogService
         CoreWebView2 core,
         ChatGptConversationSendService conversationSend,
         string captureSource,
+        ThreadSnapshotCaptureRequest? snapshotRequest = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(threadEntry.ConversationId))
@@ -186,7 +247,7 @@ internal static class ThreadConversationLogService
             };
         }
 
-        return SyncRolling(bundle, threadEntry, json, captureSource);
+        return SyncRolling(bundle, threadEntry, json, captureSource, snapshotRequest);
     }
 
     public static async Task<ThreadConversationLogDumpResult> DumpFullConversationAsync(
@@ -265,6 +326,196 @@ internal static class ThreadConversationLogService
         bool excludeInjectedContext = true)
     {
         var active = GetActiveBranch(adventureId, threadEntryId);
+        return ToTranscriptPairsFromMessages(active, excludeUtility, excludeInjectedContext);
+    }
+
+    public static IReadOnlyList<TranscriptTurnPair> ToTranscriptPairsFromBranch(
+        IReadOnlyList<ConversationBranchMessage> branch,
+        bool excludeUtility = true,
+        bool excludeInjectedContext = true) =>
+        ToTranscriptPairsFromMessages(
+            branch.Select(BranchMessageToLogEntry).ToList(),
+            excludeUtility,
+            excludeInjectedContext);
+
+    public static ThreadBranchSnapshot BuildBranchSnapshot(
+        AdventureBundle bundle,
+        AdventureThreadEntry threadEntry,
+        ThreadConversationLogManifest manifest,
+        IReadOnlyList<ConversationBranchMessage> branch,
+        string captureSource,
+        ThreadSnapshotCaptureRequest snapshotRequest)
+    {
+        ArgumentNullException.ThrowIfNull(bundle);
+        ArgumentNullException.ThrowIfNull(threadEntry);
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(snapshotRequest);
+
+        var transcriptPairs = ToTranscriptPairsFromBranch(branch);
+        var turnIndex = 0;
+        var snapshotPairs = transcriptPairs
+            .Select(pair => new ThreadBranchSnapshotTranscriptPair
+            {
+                TurnIndex = turnIndex++,
+                PlayerText = pair.PlayerText ?? "",
+                NarratorText = pair.NarratorText ?? "",
+            })
+            .ToList();
+
+        return new ThreadBranchSnapshot
+        {
+            CapturedAt = DateTimeOffset.UtcNow,
+            CaptureTrigger = snapshotRequest.CaptureTrigger,
+            CaptureSource = captureSource,
+            AdventureId = bundle.Metadata.Id,
+            ThreadEntryId = threadEntry.Id,
+            ThreadKind = threadEntry.Kind,
+            ConversationId = threadEntry.ConversationId ?? "",
+            BranchTailNodeId = branch.Count > 0 ? branch[^1].NodeId : null,
+            BranchMessageCount = branch.Count,
+            RollingOrdinalHighWater = Math.Max(0, manifest.NextOrdinal - 1),
+            Correlation = snapshotRequest.Correlation,
+            Messages = branch.Select(msg => new ThreadBranchSnapshotMessage
+            {
+                BranchIndex = msg.BranchIndex,
+                NodeId = msg.NodeId,
+                MessageId = msg.MessageId,
+                Role = msg.Role,
+                RawText = msg.RawText,
+                DisplayText = msg.DisplayText,
+                IsUtility = msg.IsUtility,
+                IsInjectedContext = msg.IsInjectedContext,
+            }).ToList(),
+            TranscriptPairs = snapshotPairs,
+        };
+    }
+
+    public static ThreadConversationLogSnapshotResult CaptureManualBranchSnapshot(
+        AdventureBundle bundle,
+        AdventureThreadEntry threadEntry)
+    {
+        ArgumentNullException.ThrowIfNull(bundle);
+        ArgumentNullException.ThrowIfNull(threadEntry);
+
+        var active = GetActiveBranch(bundle.Metadata.Id, threadEntry.Id);
+        if (active.Count == 0)
+        {
+            return new ThreadConversationLogSnapshotResult
+            {
+                Success = false,
+                Error = "empty_active_branch",
+            };
+        }
+
+        var branch = active.Select(LogEntryToBranchMessage).ToList();
+        var manifest = ThreadConversationLogStore.LoadOrCreateManifest(
+            bundle.Metadata.Id,
+            threadEntry.Id,
+            threadEntry.Kind,
+            threadEntry.ConversationId);
+
+        var snapshotRequest = new ThreadSnapshotCaptureRequest
+        {
+            CaptureTrigger = ThreadConversationLogSnapshotTrigger.Manual,
+        };
+
+        var snapshot = BuildBranchSnapshot(
+            bundle,
+            threadEntry,
+            manifest,
+            branch,
+            ThreadConversationLogCaptureSource.Api,
+            snapshotRequest);
+
+        var relativePath = ThreadConversationLogStore.WriteBranchSnapshot(
+            bundle.Metadata.Id,
+            threadEntry.Id,
+            snapshot,
+            snapshotRequest.CaptureTrigger);
+
+        UpdateManifestAfterSnapshot(manifest, relativePath, snapshotRequest.CaptureTrigger);
+        ThreadConversationLogStore.SaveManifest(manifest);
+        ThreadConversationLogStore.ApplySnapshotRetention(
+            bundle.Metadata.Id,
+            threadEntry.Id,
+            snapshotRequest.CaptureTrigger);
+
+        return new ThreadConversationLogSnapshotResult
+        {
+            Success = true,
+            SnapshotPath = relativePath,
+            Snapshot = snapshot,
+        };
+    }
+
+    private static string? CaptureBranchSnapshot(
+        AdventureBundle bundle,
+        AdventureThreadEntry threadEntry,
+        ThreadConversationLogManifest manifest,
+        IReadOnlyList<ConversationBranchMessage> branch,
+        string captureSource,
+        ThreadSnapshotCaptureRequest snapshotRequest)
+    {
+        if (branch.Count == 0)
+            return null;
+
+        var snapshot = BuildBranchSnapshot(
+            bundle,
+            threadEntry,
+            manifest,
+            branch,
+            captureSource,
+            snapshotRequest);
+
+        var relativePath = ThreadConversationLogStore.WriteBranchSnapshot(
+            bundle.Metadata.Id,
+            threadEntry.Id,
+            snapshot,
+            snapshotRequest.CaptureTrigger);
+
+        UpdateManifestAfterSnapshot(manifest, relativePath, snapshotRequest.CaptureTrigger);
+        ThreadConversationLogStore.SaveManifest(manifest);
+        ThreadConversationLogStore.ApplySnapshotRetention(
+            bundle.Metadata.Id,
+            threadEntry.Id,
+            snapshotRequest.CaptureTrigger);
+
+        PlaySendTrace.Event(
+            "thread_snapshot_captured",
+            PlaySendCategory.Host,
+            PlaySendLevel.Info,
+            "Thread conversation snapshot captured",
+            data: new
+            {
+                trigger = snapshotRequest.CaptureTrigger,
+                path = relativePath,
+                turnId = snapshotRequest.Correlation?.TurnId,
+                flightRecordId = snapshotRequest.Correlation?.FlightRecordId,
+                messageCount = branch.Count,
+            });
+
+        return relativePath;
+    }
+
+    private static void UpdateManifestAfterSnapshot(
+        ThreadConversationLogManifest manifest,
+        string relativePath,
+        string captureTrigger)
+    {
+        manifest.SnapshotCount++;
+        manifest.LastSnapshotAt = DateTimeOffset.UtcNow;
+        manifest.LastSnapshotTrigger = captureTrigger;
+        manifest.LatestSnapshotPath = relativePath;
+
+        if (string.Equals(captureTrigger, ThreadConversationLogSnapshotTrigger.Send, StringComparison.Ordinal))
+            manifest.LatestSendSnapshotPath = relativePath;
+    }
+
+    private static IReadOnlyList<TranscriptTurnPair> ToTranscriptPairsFromMessages(
+        IReadOnlyList<ThreadConversationLogEntry> active,
+        bool excludeUtility,
+        bool excludeInjectedContext)
+    {
         var pairs = new List<TranscriptTurnPair>();
         string? pendingPlayer = null;
 
@@ -278,7 +529,11 @@ internal static class ThreadConversationLogService
 
             if (entry.Role == "user")
             {
-                pendingPlayer = entry.DisplayText ?? entry.RawText;
+                var player = entry.DisplayText ?? entry.RawText;
+                if (NarratorRevisionPrompt.IsRevisionPromptUserMessage(player))
+                    continue;
+
+                pendingPlayer = player;
                 continue;
             }
 
@@ -288,6 +543,28 @@ internal static class ThreadConversationLogService
             var narrator = entry.DisplayText ?? entry.RawText;
             if (string.IsNullOrWhiteSpace(pendingPlayer) && string.IsNullOrWhiteSpace(narrator))
                 continue;
+
+            if (!string.IsNullOrWhiteSpace(pendingPlayer))
+            {
+                pairs.Add(new TranscriptTurnPair
+                {
+                    PlayerText = pendingPlayer,
+                    NarratorText = narrator,
+                });
+                pendingPlayer = null;
+                continue;
+            }
+
+            if (pairs.Count > 0 && !string.IsNullOrWhiteSpace(narrator))
+            {
+                var last = pairs[^1];
+                pairs[^1] = new TranscriptTurnPair
+                {
+                    PlayerText = last.PlayerText,
+                    NarratorText = narrator,
+                };
+                continue;
+            }
 
             pairs.Add(new TranscriptTurnPair
             {
@@ -299,6 +576,33 @@ internal static class ThreadConversationLogService
 
         return pairs;
     }
+
+    private static ThreadConversationLogEntry BranchMessageToLogEntry(ConversationBranchMessage msg) =>
+        new()
+        {
+            NodeId = msg.NodeId,
+            MessageId = msg.MessageId,
+            BranchIndex = msg.BranchIndex,
+            Role = msg.Role,
+            RawText = msg.RawText,
+            DisplayText = msg.DisplayText,
+            IsUtility = msg.IsUtility,
+            IsInjectedContext = msg.IsInjectedContext,
+        };
+
+    private static ConversationBranchMessage LogEntryToBranchMessage(ThreadConversationLogEntry entry) =>
+        new()
+        {
+            NodeId = entry.NodeId,
+            MessageId = entry.MessageId,
+            ParentNodeId = entry.ParentNodeId,
+            BranchIndex = entry.BranchIndex,
+            Role = entry.Role,
+            RawText = entry.RawText,
+            DisplayText = entry.DisplayText,
+            IsUtility = entry.IsUtility,
+            IsInjectedContext = entry.IsInjectedContext,
+        };
 
     public static IReadOnlyDictionary<string, int> BuildOrdinalMap(
         Guid adventureId,

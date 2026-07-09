@@ -18,8 +18,9 @@ public partial class MainWindow
         else
             _shellActiveJobCount = Math.Max(0, _shellActiveJobCount - 1);
 
-        ShellJobStatusText.Visibility =
-            _shellActiveJobCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (ShellJobChip is not null)
+            ShellJobChip.Visibility =
+                _shellActiveJobCount > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateShellStatusBarVisibility()

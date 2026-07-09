@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
@@ -53,6 +54,9 @@ internal static class AdventureStore
     private static string DesignWorkspacePath(Guid id) =>
         Path.Combine(AppDirectories.AdventureDirectory(id), "design-workspace.json");
 
+    private static string EntityInternalStatePath(Guid id) =>
+        Path.Combine(AppDirectories.AdventureDirectory(id), EntityInternalStateService.FileName);
+
     private static string ContextIndexPath(Guid id) =>
         Path.Combine(AppDirectories.AdventureDirectory(id), "context-index.json");
 
@@ -66,6 +70,9 @@ internal static class AdventureStore
         {
             foreach (var dir in Directory.EnumerateDirectories(AppDirectories.AdventuresDirectory))
             {
+                if (AppDirectories.IsReservedAdventuresDirectory(Path.GetFileName(dir)))
+                    continue;
+
                 var meta = TryLoadMetadataFromDirectory(dir);
                 if (meta is null)
                     continue;
@@ -94,6 +101,44 @@ internal static class AdventureStore
         return list.OrderByDescending(a => a.LastPlayedAt).ToList();
     }
 
+    /// <summary>Lightweight dashboard row data — reads log.json only, not a full <see cref="Load"/>.</summary>
+    public readonly record struct AdventureLibraryListSummary(int AcceptedTurnCount, bool HasDesignThread);
+
+    internal static int ReadAcceptedTurnCount(Guid id)
+    {
+        lock (AdventureStoreFileLock.For(id))
+        {
+            var log = LoadJson<LogDocument>(LogPath(id));
+            return log?.Turns.Count(t => t.Status == TurnStatus.Accepted) ?? 0;
+        }
+    }
+
+    internal static AdventureLibraryListSummary ReadLibraryListSummary(AdventureMetadata meta)
+    {
+        var turnCount = ReadAcceptedTurnCount(meta.Id);
+        var hasDesignThread = meta.Status == AdventureStatus.Designing
+            && TryGetDesignConversationIdFromMetadata(meta) is { Length: > 0 };
+        return new AdventureLibraryListSummary(turnCount, hasDesignThread);
+    }
+
+    public static Dictionary<Guid, AdventureLibraryListSummary> BuildLibrarySummaries(
+        IReadOnlyList<AdventureMetadata> metas)
+    {
+        var summaries = new ConcurrentDictionary<Guid, AdventureLibraryListSummary>();
+        Parallel.ForEach(metas, meta =>
+        {
+            summaries[meta.Id] = ReadLibraryListSummary(meta);
+        });
+        return summaries.ToDictionary(kv => kv.Key, kv => kv.Value);
+    }
+
+    private static string? TryGetDesignConversationIdFromMetadata(AdventureMetadata meta)
+    {
+        var bundle = new AdventureBundle { Metadata = meta };
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        return AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Design);
+    }
+
     private static AdventureMetadata? TryLoadMetadataFromDirectory(string dir)
     {
         var metaPath = Path.Combine(dir, "adventure.json");
@@ -112,6 +157,7 @@ internal static class AdventureStore
             ScenarioSummary = scenario?.OpeningSituation ?? "",
             Status = designing ? AdventureStatus.Designing : AdventureStatus.Active,
         };
+        PlayAiToolsDefaults.ApplyNewAdventure(meta.Settings);
 
         var bundle = new AdventureBundle
         {
@@ -139,6 +185,12 @@ internal static class AdventureStore
 
     public static AdventureBundle? Load(Guid id)
     {
+        lock (AdventureStoreFileLock.For(id))
+            return LoadUnlocked(id);
+    }
+
+    private static AdventureBundle? LoadUnlocked(Guid id)
+    {
         var dir = AppDirectories.AdventureDirectory(id);
         if (!Directory.Exists(dir))
             return null;
@@ -152,7 +204,7 @@ internal static class AdventureStore
         var deprecatedPlayMigrated = AdventureMetadataMigration.MigrateDeprecatedPlaySettings(meta);
         var linkMigrated = AdventureMetadataMigration.MigrateProjectLinkFields(meta);
 
-        var manifest = LoadSourceManifest(id);
+        var manifest = LoadSourceManifestUnlocked(id);
         AdventureMetadataMigration.MigrateSourcePublishMode(meta, manifest);
         var deliveryMigrated = AdventureMetadataMigration.MigrateUtilityDeliveryMode(meta);
 
@@ -162,7 +214,7 @@ internal static class AdventureStore
         if (linkMigrated || threadRegistryMigrated || deliveryMigrated || deprecatedPlayMigrated || bindingRetired)
             WriteJson(MetadataPath(id), meta);
 
-        var entities = LoadJson<EntitiesDocument>(EntitiesPath(id)) ?? new();
+        var entities = LoadEntitiesForBundle(id);
         var entitiesMigrated = EntitiesDocumentMigration.Migrate(entities);
         var canonSchemaMigrated = CanonSchemaMigrationService.Migrate(meta);
 
@@ -188,6 +240,8 @@ internal static class AdventureStore
             ContextIndex = LoadJson<ContextIndexDocument>(ContextIndexPath(id)) ?? new(),
             DesignWorkspace = LoadJson<AdventureDesignWorkspace>(DesignWorkspacePath(id))
                 ?? new AdventureDesignWorkspace(),
+            EntityInternalState = LoadJson<EntityInternalStateDocument>(EntityInternalStatePath(id))
+                ?? new EntityInternalStateDocument(),
         };
 
         var bindingTrustMigrated = AdventureMetadataMigration.MigratePlayThreadBindingTrust(bundle);
@@ -205,14 +259,17 @@ internal static class AdventureStore
         SummaryReviewService.EnsureRevisionFields(bundle.Summary);
         SummaryReviewService.Normalize(bundle.Summary);
         var workerPinReconciled = UtilityWorkerPinService.TryReconcilePinFromCapabilities(bundle);
+        var entityStateTracked = EntityInternalStateService.EnsureAllCanonEntitiesTracked(bundle);
         var needsPersist = entitiesMigrated || canonSchemaMigrated || sourcesBootstrapped > 0 || manifestReconciled
             || loreMaterialized || sourcesPushed || queuePruned > 0 || bindingTrustMigrated || workerPinReconciled
-            || promptHistoryMigrated;
+            || promptHistoryMigrated || entityStateTracked > 0;
         if (needsPersist)
         {
             var scope = entitiesMigrated || canonSchemaMigrated || sourcesBootstrapped > 0 || manifestReconciled
                 || loreMaterialized || sourcesPushed || queuePruned > 0 || bindingTrustMigrated
                 ? AdventureSaveScope.All
+                : entityStateTracked > 0
+                    ? AdventureSaveScope.EntityInternalState
                 : promptHistoryMigrated
                     ? AdventureSaveScope.PromptHistory
                     : AdventureSaveScope.Metadata;
@@ -256,6 +313,7 @@ internal static class AdventureStore
         to.SourceManifest = CloneJson(from.SourceManifest);
         to.ContextIndex = CloneJson(from.ContextIndex);
         to.DesignWorkspace = CloneJson(from.DesignWorkspace);
+        to.EntityInternalState = CloneJson(from.EntityInternalState);
         to.ContinuationQueue = from.ContinuationQueue.ToList();
         to.CurrentSessionId = from.CurrentSessionId;
 
@@ -273,6 +331,12 @@ internal static class AdventureStore
 
     public static SourceManifest LoadSourceManifest(Guid id)
     {
+        lock (AdventureStoreFileLock.For(id))
+            return LoadSourceManifestUnlocked(id);
+    }
+
+    private static SourceManifest LoadSourceManifestUnlocked(Guid id)
+    {
         var manifest = LoadJson<SourceManifest>(SourceManifestPath(id)) ?? new();
         SourceManifestHelper.MigrateManifest(manifest);
         return manifest;
@@ -280,7 +344,8 @@ internal static class AdventureStore
 
     public static void SaveSourceManifest(Guid id, SourceManifest manifest)
     {
-        WriteJson(SourceManifestPath(id), manifest);
+        lock (AdventureStoreFileLock.For(id))
+            WriteJson(SourceManifestPath(id), manifest);
     }
 
     public static void Save(AdventureBundle bundle, bool allowLinkMetadataOverwrite = false) =>
@@ -291,6 +356,15 @@ internal static class AdventureStore
         AdventureSaveScope scope,
         bool allowLinkMetadataOverwrite = false)
     {
+        lock (AdventureStoreFileLock.For(bundle.Metadata.Id))
+            SaveUnlocked(bundle, scope, allowLinkMetadataOverwrite);
+    }
+
+    private static void SaveUnlocked(
+        AdventureBundle bundle,
+        AdventureSaveScope scope,
+        bool allowLinkMetadataOverwrite)
+    {
         ArgumentNullException.ThrowIfNull(bundle);
         if (scope == AdventureSaveScope.None)
             return;
@@ -300,11 +374,16 @@ internal static class AdventureStore
         Directory.CreateDirectory(dir);
 
         bundle.Metadata.LastPlayedAt = DateTimeOffset.UtcNow;
+        if (!allowLinkMetadataOverwrite)
+            PreserveLinkMetadataFromDisk(bundle.Metadata, id);
+
+        AdventureMetadataMigration.MigrateProjectLinkFields(bundle.Metadata);
+
         AdventureThreadRegistryService.EnsureMigrated(bundle);
         PreserveThreadRegistryFromDisk(bundle.Metadata, id);
         PreserveUtilityWorkerBindingFromDisk(bundle.Metadata, id);
-        if (!allowLinkMetadataOverwrite)
-            PreserveLinkMetadataFromDisk(bundle.Metadata, id);
+
+        PlayThreadBindingService.EnsureRegistryBoundFromLegacy(bundle);
 
         if (bundle.Metadata.SchemaVersion >= 6)
             AdventureMetadataMigration.StripLegacyThreadBindingFields(bundle.Metadata);
@@ -346,7 +425,10 @@ internal static class AdventureStore
         if (scope.HasFlag(AdventureSaveScope.Entities))
         {
             if (scope != AdventureSaveScope.Entities)
+            {
+                PreserveEntitiesCanonOnFullSave(bundle.Entities, id);
                 PreserveEntitiesReviewQueueOnFullSave(bundle.Entities, id);
+            }
             WriteJson(EntitiesPath(id), bundle.Entities);
         }
         if (scope.HasFlag(AdventureSaveScope.Cards))
@@ -366,11 +448,20 @@ internal static class AdventureStore
         if (scope.HasFlag(AdventureSaveScope.Notes))
             File.WriteAllText(NotesPath(id), bundle.Notes ?? "");
         if (scope.HasFlag(AdventureSaveScope.SourceManifest))
-            SaveSourceManifest(id, bundle.SourceManifest);
+            WriteJson(SourceManifestPath(id), bundle.SourceManifest);
         if (scope.HasFlag(AdventureSaveScope.ContextIndex))
             WriteJson(ContextIndexPath(id), bundle.ContextIndex);
         if (scope.HasFlag(AdventureSaveScope.DesignWorkspace))
             WriteJson(DesignWorkspacePath(id), bundle.DesignWorkspace);
+        if (scope.HasFlag(AdventureSaveScope.EntityInternalState))
+        {
+            if (scope != AdventureSaveScope.EntityInternalState)
+                PreserveEntityInternalStateReviewQueueOnFullSave(bundle.EntityInternalState, id);
+            WriteJson(EntityInternalStatePath(id), bundle.EntityInternalState);
+        }
+
+        if (scope.HasFlag(AdventureSaveScope.Metadata))
+            AdventureIndexDirectoryService.SyncLink(id, bundle.Metadata.Title);
     }
 
     public static void SaveSourceManifestOnly(AdventureBundle bundle) =>
@@ -384,7 +475,8 @@ internal static class AdventureStore
             | AdventureSaveScope.Cards
             | AdventureSaveScope.Summary
             | AdventureSaveScope.Continuity
-            | AdventureSaveScope.Scenario);
+            | AdventureSaveScope.Scenario
+            | AdventureSaveScope.EntityInternalState);
 
     /// <summary>
     /// Persists play-settings UI changes without overwriting structured canon
@@ -424,6 +516,9 @@ internal static class AdventureStore
 
         if (disk.Continuity.DismissedWarningHashes.Count > target.Continuity.DismissedWarningHashes.Count)
             target.Continuity.DismissedWarningHashes = CloneJson(disk.Continuity.DismissedWarningHashes);
+
+        if (disk.EntityInternalState.ReviewQueue.Count > target.EntityInternalState.ReviewQueue.Count)
+            target.EntityInternalState.ReviewQueue = CloneJson(disk.EntityInternalState.ReviewQueue);
 
         SyncUtilityWorkerCapabilitiesFromDisk(target);
     }
@@ -480,13 +575,25 @@ internal static class AdventureStore
             incoming.UtilityWorkerCapabilities = diskCaps;
     }
 
-    internal static SummaryDocument? ReadSummaryFromDisk(Guid id) =>
-        LoadJson<SummaryDocument>(SummaryPath(id));
+    internal static SummaryDocument? ReadSummaryFromDisk(Guid id)
+    {
+        lock (AdventureStoreFileLock.For(id))
+            return LoadJson<SummaryDocument>(SummaryPath(id));
+    }
 
-    internal static AdventureMetadata? ReadMetadataFromDisk(Guid id) =>
-        LoadJson<AdventureMetadata>(MetadataPath(id));
+    internal static AdventureMetadata? ReadMetadataFromDisk(Guid id)
+    {
+        lock (AdventureStoreFileLock.For(id))
+            return LoadJson<AdventureMetadata>(MetadataPath(id));
+    }
 
     internal static AdventureBundle? ReadBundleDocumentsFromDisk(Guid id)
+    {
+        lock (AdventureStoreFileLock.For(id))
+            return ReadBundleDocumentsFromDiskUnlocked(id);
+    }
+
+    private static AdventureBundle? ReadBundleDocumentsFromDiskUnlocked(Guid id)
     {
         var dir = AppDirectories.AdventureDirectory(id);
         if (!Directory.Exists(dir))
@@ -496,7 +603,7 @@ internal static class AdventureStore
         if (meta is null)
             return null;
 
-        var manifest = LoadSourceManifest(id);
+        var manifest = LoadSourceManifestUnlocked(id);
 
         var promptHistory = LoadJson<PromptHistoryDocument>(PromptHistoryPath(id)) ?? new();
         PromptHistoryMigration.Migrate(promptHistory);
@@ -509,7 +616,7 @@ internal static class AdventureStore
             Summary = LoadJson<SummaryDocument>(SummaryPath(id)) ?? new(),
             State = LoadJson<StateDocument>(StatePath(id)) ?? new(),
             Memory = LoadJson<MemoryDocument>(MemoryPath(id)) ?? new(),
-            Entities = LoadJson<EntitiesDocument>(EntitiesPath(id)) ?? new(),
+            Entities = LoadEntitiesForBundle(id),
             Cards = LoadJson<CardsDocument>(CardsPath(id)) ?? new(),
             Continuity = LoadJson<ContinuityDocument>(ContinuityPath(id)) ?? new(),
             PromptHistory = promptHistory,
@@ -520,6 +627,8 @@ internal static class AdventureStore
             ContextIndex = LoadJson<ContextIndexDocument>(ContextIndexPath(id)) ?? new(),
             DesignWorkspace = LoadJson<AdventureDesignWorkspace>(DesignWorkspacePath(id))
                 ?? new AdventureDesignWorkspace(),
+            EntityInternalState = LoadJson<EntityInternalStateDocument>(EntityInternalStatePath(id))
+                ?? new EntityInternalStateDocument(),
         };
     }
 
@@ -529,9 +638,10 @@ internal static class AdventureStore
 
     public static void Delete(Guid id)
     {
-        var dir = AppDirectories.AdventureDirectory(id);
-        if (Directory.Exists(dir))
-            Directory.Delete(dir, recursive: true);
+        AdventureIndexDirectoryService.RemoveLink(id);
+
+        foreach (var dir in ResolveAllDirectoryPaths(id))
+            TryDeleteDirectory(dir);
 
         AdventureLocationStore.Remove(id);
     }
@@ -546,6 +656,86 @@ internal static class AdventureStore
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// Every on-disk folder that may hold this adventure (registered path, canonical id folder, scan matches).
+    /// </summary>
+    internal static IEnumerable<string> ResolveAllDirectoryPaths(Guid id)
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (AdventureLocationStore.TryGet(id) is { } registered
+            && !string.IsNullOrWhiteSpace(registered))
+        {
+            paths.Add(Path.GetFullPath(registered));
+        }
+
+        paths.Add(Path.GetFullPath(Path.Combine(AppDirectories.AdventuresDirectory, id.ToString("D"))));
+
+        if (Directory.Exists(AppDirectories.AdventuresDirectory))
+        {
+            foreach (var dir in Directory.EnumerateDirectories(AppDirectories.AdventuresDirectory))
+            {
+                if (AppDirectories.IsReservedAdventuresDirectory(Path.GetFileName(dir)))
+                    continue;
+
+                var meta = TryLoadMetadataFromDirectory(dir);
+                if (meta?.Id == id)
+                    paths.Add(Path.GetFullPath(dir));
+            }
+        }
+
+        return paths;
+    }
+
+    private static void TryDeleteDirectory(string directoryPath)
+    {
+        if (!Directory.Exists(directoryPath))
+            return;
+
+        try
+        {
+            Directory.Delete(directoryPath, recursive: true);
+        }
+        catch (IOException)
+        {
+            ClearReadOnlyRecursive(directoryPath);
+            Directory.Delete(directoryPath, recursive: true);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            ClearReadOnlyRecursive(directoryPath);
+            Directory.Delete(directoryPath, recursive: true);
+        }
+    }
+
+    private static void ClearReadOnlyRecursive(string directoryPath)
+    {
+        foreach (var file in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories))
+        {
+            try
+            {
+                var attrs = File.GetAttributes(file);
+                if (attrs.HasFlag(FileAttributes.ReadOnly))
+                    File.SetAttributes(file, attrs & ~FileAttributes.ReadOnly);
+            }
+            catch
+            {
+                /* best-effort */
+            }
+        }
+
+        try
+        {
+            var dirAttrs = File.GetAttributes(directoryPath);
+            if (dirAttrs.HasFlag(FileAttributes.ReadOnly))
+                File.SetAttributes(directoryPath, dirAttrs & ~FileAttributes.ReadOnly);
+        }
+        catch
+        {
+            /* best-effort */
+        }
     }
 
     public static int SetArchivedMany(IEnumerable<Guid> ids, bool archived)
@@ -594,7 +784,9 @@ internal static class AdventureStore
             meta.LastPlayedAt = DateTimeOffset.UtcNow;
             WriteJson(Path.Combine(sourceDir, "adventure.json"), meta);
             AdventureLocationStore.Set(id, sourceDir);
-            return Load(id) ?? throw new InvalidOperationException("Failed to load registered adventure.");
+            var registered = Load(id) ?? throw new InvalidOperationException("Failed to load registered adventure.");
+            AdventureIndexDirectoryService.SyncLink(id, registered.Metadata.Title);
+            return registered;
         }
 
         meta.Id = id;
@@ -607,6 +799,7 @@ internal static class AdventureStore
         AdventureLocationStore.Remove(id);
 
         var bundle = Load(id) ?? throw new InvalidOperationException("Failed to load imported adventure.");
+        AdventureIndexDirectoryService.SyncLink(id, bundle.Metadata.Title);
         return bundle;
     }
 
@@ -643,7 +836,7 @@ internal static class AdventureStore
             if (!File.Exists(path))
                 return null;
 
-            var json = File.ReadAllText(path);
+            var json = ReadAllTextWithRetry(path);
             if (string.IsNullOrWhiteSpace(json))
                 return null;
 
@@ -653,6 +846,23 @@ internal static class AdventureStore
         {
             return null;
         }
+    }
+
+    private static string ReadAllTextWithRetry(string path, int maxAttempts = 6)
+    {
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return File.ReadAllText(path);
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                Thread.Sleep(15 * attempt);
+            }
+        }
+
+        return File.ReadAllText(path);
     }
 
     private static void PreserveThreadRegistryFromDisk(AdventureMetadata incoming, Guid id)
@@ -825,6 +1035,108 @@ internal static class AdventureStore
         incoming.ReviewQueue = CloneJson(onDisk.ReviewQueue);
     }
 
+    private const int EntitiesJsonNonEmptyMinBytes = 512;
+
+    private static EntitiesDocument LoadEntitiesForBundle(Guid id)
+    {
+        var path = EntitiesPath(id);
+        var entities = TryDeserializeEntities(path);
+        if (entities is not null && !entities.IsCanonEmpty())
+            return entities;
+
+        if (File.Exists(path) && new FileInfo(path).Length > EntitiesJsonNonEmptyMinBytes)
+        {
+            var recovered = TryRecoverEntitiesFromLatestSaveState(id);
+            if (recovered is not null)
+                return recovered;
+        }
+
+        if (entities is not null)
+            return entities;
+
+        return TryRecoverEntitiesFromLatestSaveState(id) ?? new();
+    }
+
+    private static EntitiesDocument? TryDeserializeEntities(string path)
+    {
+        if (!File.Exists(path))
+            return null;
+
+        var json = ReadAllTextWithRetry(path);
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<EntitiesDocument>(json, AdventureJson.Options);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static EntitiesDocument? TryRecoverEntitiesFromLatestSaveState(Guid id)
+    {
+        var saveStatesDir = Path.Combine(AppDirectories.AdventureDirectory(id), "save-states");
+        if (!Directory.Exists(saveStatesDir))
+            return null;
+
+        foreach (var folder in Directory.EnumerateDirectories(saveStatesDir)
+                     .OrderByDescending(Directory.GetLastWriteTimeUtc))
+        {
+            var path = Path.Combine(folder, "entities.json");
+            if (!File.Exists(path))
+                continue;
+
+            var entities = TryDeserializeEntities(path);
+            if (entities is not null && !entities.IsCanonEmpty())
+                return entities;
+        }
+
+        return null;
+    }
+
+    private static void PreserveEntitiesCanonOnFullSave(EntitiesDocument incoming, Guid id)
+    {
+        if (!incoming.IsCanonEmpty())
+            return;
+
+        var path = EntitiesPath(id);
+        if (!File.Exists(path) || new FileInfo(path).Length <= EntitiesJsonNonEmptyMinBytes)
+            return;
+
+        var onDisk = TryDeserializeEntities(path);
+        if (onDisk is null || onDisk.IsCanonEmpty())
+            onDisk = TryRecoverEntitiesFromLatestSaveState(id);
+
+        if (onDisk is null || onDisk.IsCanonEmpty())
+            return;
+
+        ReplaceEntitiesDocument(incoming, onDisk);
+    }
+
+    private static void ReplaceEntitiesDocument(EntitiesDocument target, EntitiesDocument source)
+    {
+        var clone = CloneJson(source);
+        target.SchemaVersion = clone.SchemaVersion;
+        target.Player = clone.Player;
+        target.Characters = clone.Characters;
+        target.Party = clone.Party;
+        target.Locations = clone.Locations;
+        target.Inventory = clone.Inventory;
+        target.Vehicles = clone.Vehicles;
+        target.Quests = clone.Quests;
+        target.Factions = clone.Factions;
+        target.Concepts = clone.Concepts;
+        target.Relationships = clone.Relationships;
+        target.Mysteries = clone.Mysteries;
+        target.Conflicts = clone.Conflicts;
+        target.Consequences = clone.Consequences;
+        target.CustomEntries = clone.CustomEntries;
+        target.ProposedSnapshot = clone.ProposedSnapshot;
+    }
+
     private static void PreserveEntitiesReviewQueueOnFullSave(EntitiesDocument incoming, Guid id)
     {
         if (incoming.ReviewQueue.Count > 0)
@@ -849,12 +1161,43 @@ internal static class AdventureStore
         incoming.ReviewQueue = CloneJson(onDisk.ReviewQueue);
     }
 
+    private static void PreserveEntityInternalStateReviewQueueOnFullSave(EntityInternalStateDocument incoming, Guid id)
+    {
+        if (incoming.ReviewQueue.Count > 0)
+            return;
+
+        var onDisk = LoadJson<EntityInternalStateDocument>(EntityInternalStatePath(id));
+        if (onDisk is null || onDisk.ReviewQueue.Count == 0)
+            return;
+
+        incoming.ReviewQueue = CloneJson(onDisk.ReviewQueue);
+    }
+
     private static void WriteJson<T>(string path, T value)
     {
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        File.WriteAllText(path, JsonSerializer.Serialize(value, AdventureJson.Options));
+        var json = JsonSerializer.Serialize(value, AdventureJson.Options);
+        WriteAllTextWithRetry(path, json);
+    }
+
+    private static void WriteAllTextWithRetry(string path, string contents, int maxAttempts = 6)
+    {
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                File.WriteAllText(path, contents);
+                return;
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                Thread.Sleep(15 * attempt);
+            }
+        }
+
+        File.WriteAllText(path, contents);
     }
 }

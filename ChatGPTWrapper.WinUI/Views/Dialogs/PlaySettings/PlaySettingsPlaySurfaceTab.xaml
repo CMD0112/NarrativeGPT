@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings.PlaySettingsPlaySurfaceTab"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings">
+    <StackPanel Spacing="12">
+        <local:PlaySettingsSectionCard Title="Attachments"
+                                       Hint="How files and images are described in play packets."
+                                       ScopeLabel="Chrome">
+            <StackPanel Spacing="10">
+                <ComboBox x:Name="AttachmentContextModeCombo" Header="Attachment context mode" HorizontalAlignment="Stretch" SelectionChanged="OnChanged" />
+                <TextBox x:Name="AttachmentOnlyPlaceholderBox" Header="Attachment-only placeholder" LostFocus="OnChanged" />
+                <CheckBox x:Name="InjectAttachmentGuidanceCheck" Content="Inject attachment guidance" Checked="OnChanged" Unchecked="OnChanged" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard Title="Companion layout"
+                                       Hint="Play surface chrome and companion panel defaults."
+                                       ScopeLabel="Chrome">
+            <StackPanel Spacing="10">
+                <ComboBox x:Name="PlayLayoutPresetCombo" Header="Layout preset" HorizontalAlignment="Stretch" SelectionChanged="OnChanged" />
+                <ComboBox x:Name="PlayCompanionOnEnterCombo" Header="Companion on enter" HorizontalAlignment="Stretch" SelectionChanged="OnChanged" />
+                <ComboBox x:Name="PlayCompanionDefaultTabCombo" Header="Companion default tab" HorizontalAlignment="Stretch" SelectionChanged="OnChanged" />
+                <CheckBox x:Name="PlayCompanionRememberExpandersCheck" Content="Remember companion expanders" Checked="OnChanged" Unchecked="OnChanged" />
+                <ComboBox x:Name="NarratorPanelDensityCombo" Header="Narrator panel density" HorizontalAlignment="Stretch" SelectionChanged="OnChanged" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+    </StackPanel>
+</UserControl>

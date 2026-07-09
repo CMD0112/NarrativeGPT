@@ -93,6 +93,7 @@ The first thread-canonical edit batch assumed **native ChatGPT inline edit** (`t
 ### Message flow overview
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
     subgraph userEdit [CMD-348 User message edit]
         UM[Context menu Edit message]
@@ -189,6 +190,7 @@ Goals:
 ### Dependency graph
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
     subgraph epic348 [CMD-348 User edit]
         ADR350[CMD-350 ADR]

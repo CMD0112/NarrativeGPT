@@ -1,0 +1,69 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.PlayCompanionReferencePanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:ChatGPTWrapper.WinUI.Controls"
+    xmlns:services="using:ChatGPTWrapper.Adventure.Services">
+
+    <UserControl.Resources>
+        <MenuFlyout x:Key="EntityContextMenu" Opening="EntityContextFlyout_Opening">
+            <MenuFlyoutItem Tag="Edit" Text="Edit" Click="EntityEdit_Click" />
+            <MenuFlyoutItem Tag="Delete" Text="Delete" Click="EntityDelete_Click" />
+            <MenuFlyoutSeparator />
+            <MenuFlyoutItem Tag="Pin" Text="Pin / Unpin" Click="EntityTogglePin_Click" />
+            <MenuFlyoutItem Tag="Rename" Text="Rename…" Click="EntityEdit_Click" />
+            <MenuFlyoutItem Tag="Merge" Text="Merge into…" Click="EntityMerge_Click" />
+            <MenuFlyoutItem Tag="Retire" Text="Retire…" Click="EntityRetire_Click" />
+        </MenuFlyout>
+    </UserControl.Resources>
+
+    <Grid RowSpacing="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <controls:SegmentedControl x:Name="FilterSegment"
+                                   Grid.Row="0"
+                                   SelectionChanged="FilterSegment_SelectionChanged" />
+
+        <TextBox x:Name="SearchBox"
+                 Grid.Row="1"
+                 PlaceholderText="Filter entities…"
+                 TextChanged="SearchBox_TextChanged" />
+
+        <ListView x:Name="EntityList"
+                  Grid.Row="2"
+                  IsItemClickEnabled="True"
+                  ContextFlyout="{StaticResource EntityContextMenu}"
+                  RightTapped="EntityList_RightTapped"
+                  DoubleTapped="EntityList_DoubleTapped">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="services:EntityReferenceRow">
+                    <StackPanel Spacing="2" Padding="8,6">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="{x:Bind PinGlyph}" FontSize="11" />
+                            <TextBlock Text="{x:Bind Name}"
+                                       FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{x:Bind TypeBadge}"
+                                       FontSize="{ThemeResource FontSizeHint}"
+                                       Foreground="{ThemeResource TextMutedBrush}" />
+                        </StackPanel>
+                        <TextBlock Text="{x:Bind RoleOrStatus}"
+                                   Foreground="{ThemeResource TextMutedBrush}"
+                                   FontSize="{ThemeResource FontSizeHint}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{x:Bind DescriptionSnippet}"
+                                   Foreground="{ThemeResource TextMutedBrush}"
+                                   FontSize="{ThemeResource FontSizeHint}"
+                                   TextWrapping="Wrap"
+                                   MaxHeight="40"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</UserControl>

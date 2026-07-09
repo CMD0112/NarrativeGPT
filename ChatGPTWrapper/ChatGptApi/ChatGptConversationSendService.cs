@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ChatGPTWrapper.Bridges;
+using ChatGPTWrapper.ChatGptApi.ChatFileTransport;
 using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
 
@@ -29,11 +30,72 @@ public sealed class ConversationSendResult
 /// </summary>
 public sealed class ChatGptConversationSendService
 {
+    /// <summary>
+    /// Parent id ChatGPT web uses for the first message on a client-bootstrapped thread.
+    /// </summary>
+    public const string ClientCreatedRootParentId = "client-created-root";
+
+    /// <summary>
+    /// ChatGPT web omits <c>conversation_id</c> on the first project-home send (parent
+    /// <see cref="ClientCreatedRootParentId"/>) and assigns a server id in the SSE stream.
+    /// Including an unregistered client UUID causes <c>http_403</c>.
+    /// </summary>
+    internal static bool ShouldOmitConversationIdFromFirstSend(string parentMessageId) =>
+        string.Equals(parentMessageId, ClientCreatedRootParentId, StringComparison.Ordinal);
+
     private readonly ChatGptApiBridgeInjection _bridge;
+    private ConversationSendContextStore? _contextStore;
 
     public ChatGptConversationSendService(ChatGptApiBridgeInjection bridge)
     {
         _bridge = bridge;
+    }
+
+    public void BindContextStore(ConversationSendContextStore contextStore) =>
+        _contextStore = contextStore;
+
+    private string? TryGetScopedParent(CoreWebView2 core, string conversationId)
+    {
+        if (_contextStore?.TryGet(core, conversationId, out var ctx) == true
+            && !string.IsNullOrWhiteSpace(ctx?.ParentMessageId))
+        {
+            return ctx.ParentMessageId;
+        }
+
+        return ConversationParentCache.TryGet(conversationId, out var cached) ? cached : null;
+    }
+
+    private void SyncParentCache(CoreWebView2 core, string conversationId, string parentId)
+    {
+        ConversationParentCache.Set(conversationId, parentId);
+        if (_contextStore is null)
+            return;
+
+        var ctx = _contextStore.GetOrCreate(core, conversationId);
+        ctx.ParentMessageId = parentId;
+        ctx.ParentCachedAt = DateTimeOffset.UtcNow;
+    }
+
+    private string? TryGetScopedConduit(CoreWebView2 core, string conversationId)
+    {
+        if (_contextStore?.TryGet(core, conversationId, out var ctx) == true
+            && !string.IsNullOrWhiteSpace(ctx?.ConduitToken))
+        {
+            return ctx.ConduitToken;
+        }
+
+        return ConversationConduitCache.TryGet(conversationId, out var cached) ? cached : null;
+    }
+
+    private void SyncConduitCache(CoreWebView2 core, string conversationId, string token)
+    {
+        ConversationConduitCache.Set(conversationId, token);
+        if (_contextStore is null)
+            return;
+
+        var ctx = _contextStore.GetOrCreate(core, conversationId);
+        ctx.ConduitToken = token;
+        ctx.ConduitCachedAt = DateTimeOffset.UtcNow;
     }
 
     public static void TrySeedParentCache(string conversationId, JsonElement json)
@@ -55,9 +117,8 @@ public sealed class ChatGptConversationSendService
             return "";
 
         conversationId = conversationId.Trim();
-        var parentId = Guid.NewGuid().ToString();
-        ConversationParentCache.Set(conversationId, parentId);
-        return parentId;
+        ConversationParentCache.Set(conversationId, ClientCreatedRootParentId);
+        return ClientCreatedRootParentId;
     }
 
     public async Task<string?> PrefetchParentAsync(
@@ -69,8 +130,12 @@ public sealed class ChatGptConversationSendService
             return null;
 
         conversationId = conversationId.Trim();
-        if (ConversationParentCache.IsCached(conversationId))
-            return ConversationParentCache.TryGet(conversationId, out var cached) ? cached : null;
+        if (ConversationParentCache.IsCached(conversationId)
+            || (_contextStore?.TryGet(core, conversationId, out var ctx) == true
+                && !string.IsNullOrWhiteSpace(ctx?.ParentMessageId)))
+        {
+            return TryGetScopedParent(core, conversationId);
+        }
 
         return await ResolveParentMessageIdAsync(
             core,
@@ -108,6 +173,81 @@ public sealed class ChatGptConversationSendService
             gizmoId,
             skipReadyWait: _bridge.IsWarm(core),
             cancellationToken);
+    }
+
+    public async Task<SentinelPrefetchResult> PrefetchSentinelAsync(
+        CoreWebView2 core,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var msg = await _bridge.SendAsync(
+                core,
+                new { action = "acquireConversationSentinelHeaders", fresh = true },
+                timeoutMs: 60_000,
+                cancellationToken: cancellationToken,
+                skipReadyWait: _bridge.IsWarm(core));
+
+            var (stage, detail, finalizeStatus) = ParseSentinelDiagnostic(msg.Json);
+
+            var hasHeaders = msg.Json?.TryGetProperty("headers", out var headersEl) == true
+                             && headersEl.ValueKind == JsonValueKind.Object
+                             && headersEl.EnumerateObject().Any();
+            if (!hasHeaders)
+            {
+                return new SentinelPrefetchResult
+                {
+                    Ok = false,
+                    Error = msg.Error ?? "sentinel_unavailable",
+                    Stage = stage,
+                    Detail = detail,
+                    FinalizeStatus = finalizeStatus,
+                };
+            }
+
+            var source = msg.Json?.TryGetProperty("source", out var sourceEl) == true
+                ? sourceEl.GetString()
+                : null;
+            return new SentinelPrefetchResult
+            {
+                Ok = true,
+                Source = source,
+                Stage = stage,
+                Detail = detail,
+                FinalizeStatus = finalizeStatus,
+            };
+        }
+        catch (Exception ex)
+        {
+            return new SentinelPrefetchResult
+            {
+                Ok = false,
+                Error = ex.Message,
+            };
+        }
+    }
+
+    private static (string? Stage, string? Detail, int? FinalizeStatus) ParseSentinelDiagnostic(JsonElement? json)
+    {
+        if (json?.TryGetProperty("diagnostic", out var diag) != true
+            || diag.ValueKind != JsonValueKind.Object)
+        {
+            return (null, null, null);
+        }
+
+        string? stage = diag.TryGetProperty("stage", out var stageEl) ? stageEl.GetString() : null;
+        string? detail = null;
+        if (diag.TryGetProperty("error", out var errEl))
+            detail = errEl.GetString();
+        else if (diag.TryGetProperty("source", out var srcEl))
+            detail = srcEl.GetString();
+
+        int? finalizeStatus = diag.TryGetProperty("finalizeStatus", out var finEl)
+                              && finEl.TryGetInt32(out var fin)
+            ? fin
+            : null;
+
+        return (stage, detail, finalizeStatus);
     }
 
     public async Task<bool> PingAsync(
@@ -211,6 +351,41 @@ public sealed class ChatGptConversationSendService
         if (result.Success || !IsRetryableAttachmentSendError(result.Error))
             return result;
 
+        if (string.Equals(result.Error, "http_403", StringComparison.OrdinalIgnoreCase)
+            && ConversationParentCache.TryGet(conversationId, out var cachedParent)
+            && ShouldOmitConversationIdFromFirstSend(cachedParent))
+        {
+            PlaySendTrace.Event(
+                PlaySendTraceEvents.ApiSendRetry,
+                PlaySendCategory.Bridge,
+                PlaySendLevel.Warn,
+                "Provisioning project thread before attachment send",
+                data: new { conversationId, attachmentCount = attachments.Count });
+
+            var provision = await TrySendOnceAsync(
+                core,
+                conversationId,
+                gizmoId,
+                ".",
+                attachments: null,
+                skipReadyWait: true,
+                cancellationToken);
+            if (provision.Success
+                && !string.IsNullOrWhiteSpace(provision.ConversationId))
+            {
+                ConversationParentCache.Invalidate(provision.ConversationId);
+                ConversationConduitCache.Invalidate(provision.ConversationId);
+                return await TrySendOnceAsync(
+                    core,
+                    provision.ConversationId,
+                    gizmoId,
+                    messageText,
+                    attachments,
+                    skipReadyWait: true,
+                    cancellationToken);
+            }
+        }
+
         PlaySendTrace.Event(
             PlaySendTraceEvents.ApiSendRetry,
             PlaySendCategory.Bridge,
@@ -288,15 +463,20 @@ public sealed class ChatGptConversationSendService
         if (string.IsNullOrWhiteSpace(parentId))
             return Fail("missing_parent_message_id");
 
-        var conduitToken = await ResolveConduitTokenAsync(
-            core,
-            conversationId,
-            parentId,
-            gizmoId,
-            skipReadyWait,
-            cancellationToken);
-        if (string.IsNullOrWhiteSpace(conduitToken))
-            return Fail("missing_conduit_token");
+        var isFirstProjectSend = ShouldOmitConversationIdFromFirstSend(parentId);
+        string? conduitToken = null;
+        if (!isFirstProjectSend)
+        {
+            conduitToken = await ResolveConduitTokenAsync(
+                core,
+                conversationId,
+                parentId,
+                gizmoId,
+                skipReadyWait,
+                cancellationToken);
+            if (string.IsNullOrWhiteSpace(conduitToken))
+                return Fail("missing_conduit_token");
+        }
 
         var (sendBody, sentMessageId) = attachments is { Count: > 0 }
             ? BuildSendBodyWithAttachmentsInternal(conversationId, parentId, gizmoId, messageText, attachments)
@@ -307,7 +487,14 @@ public sealed class ChatGptConversationSendService
             PlaySendCategory.Bridge,
             PlaySendLevel.Info,
             "Posting f/conversation",
-            data: new { conversationId, parentMessageId = parentId });
+            data: new { conversationId, parentMessageId = parentId, isFirstProjectSend });
+
+        var sendHeaders = new Dictionary<string, string>
+        {
+            ["accept"] = "text/event-stream",
+        };
+        if (!string.IsNullOrWhiteSpace(conduitToken))
+            sendHeaders["x-conduit-token"] = conduitToken;
 
         ApiBridgeMessage sendMsg;
         try
@@ -320,11 +507,7 @@ public sealed class ChatGptConversationSendService
                     method = "POST",
                     path = ChatGptApiEndpoints.ConversationSend,
                     body = sendBody,
-                    headers = new Dictionary<string, string>
-                    {
-                        ["x-conduit-token"] = conduitToken,
-                        ["accept"] = "text/event-stream",
-                    },
+                    headers = sendHeaders,
                 },
                 timeoutMs: 120_000,
                 cancellationToken: cancellationToken,
@@ -339,19 +522,27 @@ public sealed class ChatGptConversationSendService
 
         if (!sendMsg.Ok)
         {
+            RecordSendSampleHeaders(
+                ChatGptApiEndpoints.ConversationSend,
+                sendMsg.Status,
+                sendBody,
+                sendHeaders);
             ConversationParentCache.Invalidate(conversationId);
             ConversationConduitCache.Invalidate(conversationId);
             return Fail(sendMsg.Error ?? $"http_{sendMsg.Status}");
         }
 
         var streamResult = ExtractStreamResult(sendMsg, conversationId);
-        ConversationParentCache.Set(conversationId, sentMessageId);
-        ConversationConduitCache.Invalidate(conversationId);
+        var effectiveConversationId = ResolveEffectiveConversationId(sendMsg, conversationId);
+        ConversationParentCache.Set(effectiveConversationId, sentMessageId);
+        ConversationConduitCache.Invalidate(effectiveConversationId);
+        if (!string.Equals(effectiveConversationId, conversationId, StringComparison.OrdinalIgnoreCase))
+            ConversationConduitCache.Invalidate(conversationId);
 
         if (!string.IsNullOrWhiteSpace(streamResult.AssistantText))
         {
             ConversationCaptureCache.Store(
-                conversationId,
+                effectiveConversationId,
                 sentMessageId,
                 streamResult.AssistantText,
                 streamResult.AssistantMessageId,
@@ -366,7 +557,8 @@ public sealed class ChatGptConversationSendService
             outcome: "ok",
             data: new
             {
-                conversationId,
+                conversationId = effectiveConversationId,
+                clientConversationId = conversationId,
                 parentMessageId = parentId,
                 sentMessageId,
                 streamComplete = streamResult.StreamComplete,
@@ -376,12 +568,20 @@ public sealed class ChatGptConversationSendService
         return new ConversationSendResult
         {
             Success = true,
-            ConversationId = conversationId,
+            ConversationId = effectiveConversationId,
             ParentMessageId = sentMessageId,
             AssistantText = streamResult.AssistantText,
             AssistantMessageId = streamResult.AssistantMessageId,
             StreamComplete = streamResult.StreamComplete,
         };
+    }
+
+    private static string ResolveEffectiveConversationId(ApiBridgeMessage sendMsg, string clientConversationId)
+    {
+        if (!string.IsNullOrWhiteSpace(sendMsg.ConversationId))
+            return sendMsg.ConversationId.Trim();
+
+        return clientConversationId;
     }
 
     public async Task<ConversationFetchResult> FetchConversationAsync(
@@ -484,8 +684,78 @@ public sealed class ChatGptConversationSendService
         return new ConversationHideResult { Success = true, ConversationId = conversationId };
     }
 
+    /// <summary>Soft-deletes a chat (PATCH with <c>is_visible: false</c>).</summary>
+    public Task<ConversationHideResult> DeleteConversationAsync(
+        CoreWebView2 core,
+        string conversationId,
+        CancellationToken cancellationToken = default) =>
+        HideConversationAsync(core, conversationId, cancellationToken);
+
     internal static object BuildHideConversationBody() =>
         new Dictionary<string, object?> { ["is_visible"] = false };
+
+    public async Task<ConversationRenameResult> RenameConversationAsync(
+        CoreWebView2 core,
+        string conversationId,
+        string title,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId))
+            return new ConversationRenameResult { Success = false, Error = "missing_conversation_id" };
+
+        if (string.IsNullOrWhiteSpace(title))
+            return new ConversationRenameResult { Success = false, Error = "missing_title" };
+
+        conversationId = conversationId.Trim();
+        title = title.Trim();
+        var skipReadyWait = _bridge.IsWarm(core);
+
+        ApiBridgeMessage msg;
+        try
+        {
+            msg = await _bridge.SendAsync(
+                core,
+                new
+                {
+                    action = "apiRequest",
+                    method = "PATCH",
+                    path = ChatGptApiEndpoints.ConversationGet(conversationId),
+                    body = BuildRenameConversationBody(title),
+                },
+                timeoutMs: 15_000,
+                cancellationToken: cancellationToken,
+                skipReadyWait: skipReadyWait);
+        }
+        catch (Exception ex)
+        {
+            return new ConversationRenameResult
+            {
+                Success = false,
+                Error = ex.Message,
+                ConversationId = conversationId,
+            };
+        }
+
+        if (!msg.Ok || msg.Status is < 200 or >= 300)
+        {
+            return new ConversationRenameResult
+            {
+                Success = false,
+                Error = msg.Error ?? $"http_{msg.Status}",
+                ConversationId = conversationId,
+            };
+        }
+
+        return new ConversationRenameResult
+        {
+            Success = true,
+            ConversationId = conversationId,
+            Title = title,
+        };
+    }
+
+    internal static object BuildRenameConversationBody(string title) =>
+        new Dictionary<string, object?> { ["title"] = title };
 
     public async Task<AssistantCaptureResult> CaptureAssistantViaApiAsync(
         CoreWebView2 core,
@@ -706,7 +976,6 @@ public sealed class ChatGptConversationSendService
         var body = new Dictionary<string, object?>
         {
             ["action"] = "next",
-            ["conversation_id"] = conversationId,
             ["parent_message_id"] = parentMessageId,
             ["model"] = "auto",
             ["timezone_offset_min"] = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes,
@@ -725,20 +994,10 @@ public sealed class ChatGptConversationSendService
             },
         };
 
+        ApplyConversationIdToSendBody(body, conversationId, parentMessageId);
+
         if (!string.IsNullOrWhiteSpace(gizmoId))
-        {
-            body["gizmo_id"] = gizmoId;
-            body["conversation_mode"] = new Dictionary<string, object?>
-            {
-                ["kind"] = "gizmo_interaction",
-                ["gizmo_id"] = gizmoId,
-            };
-            body["client_prepare_state"] = "sent";
-            body["supports_buffering"] = true;
-            body["supported_encodings"] = new[] { "v1" };
-            body["enable_message_followups"] = true;
-            body["system_hints"] = Array.Empty<string>();
-        }
+            ApplyGizmoSendFields(body, gizmoId, parentMessageId);
 
         return (body, messageId);
     }
@@ -780,7 +1039,6 @@ public sealed class ChatGptConversationSendService
         var body = new Dictionary<string, object?>
         {
             ["action"] = "next",
-            ["conversation_id"] = conversationId,
             ["parent_message_id"] = parentMessageId,
             ["model"] = "auto",
             ["timezone_offset_min"] = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes,
@@ -794,7 +1052,8 @@ public sealed class ChatGptConversationSendService
             },
         };
 
-        ApplyGizmoSendFields(body, gizmoId);
+        ApplyConversationIdToSendBody(body, conversationId, parentMessageId);
+        ApplyGizmoSendFields(body, gizmoId, parentMessageId);
         ApplyAttachmentsToUserMessage(body, messageText, attachments);
         return (body, messageId);
     }
@@ -814,6 +1073,12 @@ public sealed class ChatGptConversationSendService
             gizmoId,
             messageText);
 
+        if (template.TryGetProperty("client_prepare_state", out var prepareState)
+            && prepareState.ValueKind == JsonValueKind.String)
+        {
+            body["client_prepare_state"] = prepareState.GetString();
+        }
+
         ApplyAttachmentsToUserMessage(body, messageText, attachments);
         return (body, messageId);
     }
@@ -831,11 +1096,27 @@ public sealed class ChatGptConversationSendService
             return;
         }
 
-        firstMessage["content"] = new Dictionary<string, object?>
+        var useDocumentTextShape = attachments.All(
+            a => !a.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase));
+
+        if (useDocumentTextShape)
         {
-            ["content_type"] = "multimodal_text",
-            ["parts"] = BuildAttachmentContentParts(messageText, attachments),
-        };
+            firstMessage["content"] = new Dictionary<string, object?>
+            {
+                ["content_type"] = "text",
+                ["parts"] = string.IsNullOrWhiteSpace(messageText)
+                    ? Array.Empty<object>()
+                    : new object[] { messageText },
+            };
+        }
+        else
+        {
+            firstMessage["content"] = new Dictionary<string, object?>
+            {
+                ["content_type"] = "multimodal_text",
+                ["parts"] = BuildAttachmentContentParts(messageText, attachments),
+            };
+        }
 
         firstMessage["create_time"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
 
@@ -844,7 +1125,7 @@ public sealed class ChatGptConversationSendService
             ? new Dictionary<string, object?>(existingMetadataDict)
             : BuildDefaultUserMessageMetadata();
 
-        metadata["attachments"] = BuildAttachmentMetadata(attachments);
+        metadata["attachments"] = BuildAttachmentMetadata(attachments, useDocumentTextShape);
         firstMessage["metadata"] = metadata;
     }
 
@@ -862,14 +1143,35 @@ public sealed class ChatGptConversationSendService
         return parts.ToArray();
     }
 
-    private static object[] BuildAttachmentMetadata(IReadOnlyList<ChatAttachmentRef> attachments) =>
+    private static object[] BuildAttachmentMetadata(
+        IReadOnlyList<ChatAttachmentRef> attachments,
+        bool browserDocumentShape = false) =>
         attachments
-            .Select(a => (object)new Dictionary<string, object?>
+            .Select(a =>
             {
-                ["id"] = a.FileId,
-                ["name"] = a.FileName,
-                ["mime_type"] = a.MimeType,
-                ["size"] = a.SizeBytes,
+                if (browserDocumentShape)
+                {
+                    var entry = new Dictionary<string, object?>
+                    {
+                        ["id"] = a.FileId,
+                        ["size"] = a.SizeBytes,
+                        ["name"] = a.FileName,
+                        ["source"] = "local",
+                        ["is_big_paste"] = false,
+                    };
+                    if (a.FileTokenSize is > 0)
+                        entry["file_token_size"] = a.FileTokenSize.Value;
+
+                    return (object)entry;
+                }
+
+                return new Dictionary<string, object?>
+                {
+                    ["id"] = a.FileId,
+                    ["name"] = a.FileName,
+                    ["mime_type"] = a.MimeType,
+                    ["size"] = a.SizeBytes,
+                };
             })
             .ToArray();
 
@@ -914,22 +1216,44 @@ public sealed class ChatGptConversationSendService
         };
     }
 
-    private static void ApplyGizmoSendFields(Dictionary<string, object?> body, string? gizmoId)
+    private static void ApplyConversationIdToSendBody(
+        Dictionary<string, object?> body,
+        string conversationId,
+        string parentMessageId)
+    {
+        if (ShouldOmitConversationIdFromFirstSend(parentMessageId))
+            body.Remove("conversation_id");
+        else
+            body["conversation_id"] = conversationId;
+    }
+
+    private static void ApplyGizmoSendFields(
+        Dictionary<string, object?> body,
+        string? gizmoId,
+        string parentMessageId)
     {
         if (string.IsNullOrWhiteSpace(gizmoId))
             return;
 
-        body["gizmo_id"] = gizmoId;
         body["conversation_mode"] = new Dictionary<string, object?>
         {
             ["kind"] = "gizmo_interaction",
             ["gizmo_id"] = gizmoId,
         };
-        body["client_prepare_state"] = "sent";
         body["supports_buffering"] = true;
         body["supported_encodings"] = new[] { "v1" };
         body["enable_message_followups"] = true;
         body["system_hints"] = Array.Empty<string>();
+
+        if (ShouldOmitConversationIdFromFirstSend(parentMessageId))
+        {
+            body.Remove("gizmo_id");
+            body["client_prepare_state"] = "none";
+            return;
+        }
+
+        body["gizmo_id"] = gizmoId;
+        body["client_prepare_state"] = "sent";
     }
 
     internal static (Dictionary<string, object?> Body, string MessageId) MergeSendBodyFromTemplate(
@@ -943,23 +1267,15 @@ public sealed class ChatGptConversationSendService
                    ?? new Dictionary<string, object?>();
 
         body["action"] = "next";
-        body["conversation_id"] = conversationId;
         body["parent_message_id"] = parentMessageId;
+        ApplyConversationIdToSendBody(body, conversationId, parentMessageId);
         body["model"] = body.GetValueOrDefault("model") ?? "auto";
         body["timezone_offset_min"] = body.GetValueOrDefault("timezone_offset_min")
                                       ?? (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes;
-        body["client_prepare_state"] = "sent";
         body.Remove("conduit_token");
 
         if (!string.IsNullOrWhiteSpace(gizmoId))
-        {
-            body["gizmo_id"] = gizmoId;
-            body["conversation_mode"] = new Dictionary<string, object?>
-            {
-                ["kind"] = "gizmo_interaction",
-                ["gizmo_id"] = gizmoId,
-            };
-        }
+            ApplyGizmoSendFields(body, gizmoId, parentMessageId);
 
         var messageId = Guid.NewGuid().ToString();
         body["messages"] = new object[]
@@ -1044,8 +1360,9 @@ public sealed class ChatGptConversationSendService
         bool skipReadyWait,
         CancellationToken cancellationToken)
     {
-        if (ConversationConduitCache.TryGet(conversationId, out var cached))
-            return cached;
+        var scoped = TryGetScopedConduit(core, conversationId);
+        if (!string.IsNullOrWhiteSpace(scoped))
+            return scoped;
 
         return await FetchConduitTokenAsync(
             core,
@@ -1095,13 +1412,21 @@ public sealed class ChatGptConversationSendService
         }
 
         if (!msg.Ok || msg.Json is not { } json)
+        {
+            RecordSendSampleHeaders(
+                ChatGptApiEndpoints.ConversationPrepare,
+                msg.Status,
+                prepareBody,
+                declaredHeaders: null);
             return null;
+        }
 
         var token = ExtractConduitToken(json);
         if (string.IsNullOrWhiteSpace(token))
             return null;
 
         ConversationConduitCache.Set(conversationId, token);
+        SyncConduitCache(core, conversationId, token);
         return token;
     }
 
@@ -1111,12 +1436,13 @@ public sealed class ChatGptConversationSendService
         CancellationToken cancellationToken,
         bool skipReadyWait)
     {
-        if (ConversationParentCache.TryGet(conversationId, out var cached))
-            return cached;
+        var scoped = TryGetScopedParent(core, conversationId);
+        if (!string.IsNullOrWhiteSpace(scoped))
+            return scoped;
 
         var fetched = await GetCurrentNodeAsync(core, conversationId, cancellationToken, skipReadyWait);
         if (!string.IsNullOrWhiteSpace(fetched))
-            ConversationParentCache.Set(conversationId, fetched);
+            SyncParentCache(core, conversationId, fetched);
 
         return fetched;
     }
@@ -1140,11 +1466,11 @@ public sealed class ChatGptConversationSendService
         }
         catch
         {
-            return null;
+            return BootstrapNewConversationParent(conversationId);
         }
 
         if (!msg.Ok || msg.Json is not { } json)
-            return null;
+            return BootstrapNewConversationParent(conversationId);
 
         return ResolveCurrentNodeOrBootstrap(conversationId, json);
     }
@@ -1198,6 +1524,28 @@ public sealed class ChatGptConversationSendService
 
     private static ConversationSendResult Fail(string error) =>
         new() { Success = false, Error = error };
+
+    private static void RecordSendSampleHeaders(
+        string path,
+        int? status,
+        object sendBody,
+        IReadOnlyDictionary<string, string>? declaredHeaders)
+    {
+        try
+        {
+            var bodyJson = JsonSerializer.Serialize(sendBody);
+            ChatGptApiSendSampleCapture.AnnotateBridgeDeclaredHeaders(
+                "POST",
+                path,
+                status,
+                bodyJson,
+                declaredHeaders);
+        }
+        catch
+        {
+            /* diagnostics only */
+        }
+    }
 }
 
 public sealed class ConversationHideResult
@@ -1207,6 +1555,17 @@ public sealed class ConversationHideResult
     public string? Error { get; init; }
 
     public string? ConversationId { get; init; }
+}
+
+public sealed class ConversationRenameResult
+{
+    public bool Success { get; init; }
+
+    public string? Error { get; init; }
+
+    public string? ConversationId { get; init; }
+
+    public string? Title { get; init; }
 }
 
 public sealed class AssistantCaptureResult

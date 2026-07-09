@@ -41,7 +41,16 @@ public partial class MainWindow
             e.AssistantDomTurnId);
 
         AdventureStore.Save(bundle);
-        _ = SyncActiveThreadLogAsync(adventureId, AdventureThreadKind.Play, ThreadConversationLogCaptureSource.Invalidation);
+        _ = SyncActiveThreadLogAsync(
+            adventureId,
+            AdventureThreadKind.Play,
+            ThreadConversationLogCaptureSource.Invalidation,
+            snapshotTrigger: ThreadConversationLogSnapshotTrigger.Invalidation,
+            snapshotCorrelation: new ThreadSnapshotCorrelation
+            {
+                InvalidationReason = e.Reason,
+            });
+        _ = ApplyThreadOrdinalMapToPlayTabAsync();
     }
 
     private async Task ApplyThreadOrdinalMapToPlayTabAsync()

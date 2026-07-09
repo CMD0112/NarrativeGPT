@@ -88,7 +88,19 @@ internal static class AdventureDesignSourcePromptService
             "Narrator scales reference",
             "Preset definitions for length, detail, tone, difficulty, violence — auto-generated; upload to Project Files",
             AdventureDesignStep.Sources),
+        new(
+            SectionSchema.EntityStateFormatFile,
+            "Entity state format reference",
+            "Mutable play-state field paths for entity-state.json — auto-generated; upload to Project Files",
+            AdventureDesignStep.Sources),
     ];
+
+    public static bool ExportReferenceFiles(AdventureBundle bundle, SourceExportMode mode = SourceExportMode.IfStale) =>
+        ProjectSourceExportService.ExportReferenceFiles(bundle, mode);
+
+    public static bool AnyReferenceFilesMissing(AdventureBundle bundle) =>
+        ReferenceDefinitions.Any(def =>
+            !File.Exists(AdventureSourceFileService.ResolveAbsolutePath(bundle, def.RelativePath)));
 
     public static IReadOnlyList<string> PromptPipelineOrder { get; } =
     [
@@ -689,8 +701,8 @@ internal static class AdventureDesignSourcePromptService
         return $"""
             **Required sections**
             - `## player` — name, background, appearance, personality, abilities, weaknesses, goals (plain lines or bullets)
-            - `## party` — optional companions (### entries with Id)
-            - `## npcs` — important non-player characters (### entries with Id, Aliases, optional > Flavor quote)
+            - `## party` — optional companions (### entries with Id; Condition, Relationship, Attitude, Goals, Personality, Abilities, Weaknesses)
+            - `## npcs` — important non-player characters (### entries with Id, Aliases, Role, Relationship, Motives, Personality, Author guidance, optional > Flavor quote)
 
             **NPC entry example**
             ```
@@ -700,8 +712,23 @@ internal static class AdventureDesignSourcePromptService
             Role: …
             Relationship: …
             Motives: …
+            Personality: …
+            Author guidance: …
 
             > Flavor: optional voice line
+            ```
+
+            **Party entry example**
+            ```
+            ### Companion Name
+            Id: companion-slug
+            Condition: …
+            Relationship: …
+            Attitude: …
+            Goals: …
+            Personality: …
+            Abilities: …
+            Weaknesses: …
             ```
 
             **Content rules**

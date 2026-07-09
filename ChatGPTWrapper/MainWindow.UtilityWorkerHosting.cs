@@ -23,16 +23,20 @@ public partial class MainWindow
     private int _utilityWorkerDomSendInFlight;
 
     async Task IUtilityWorkerHost.EnsureWorkerWebViewBackgroundHostedAsync(
-        WebView2 workerWebView,
+        object workerWebView,
         bool apiOnlyWarm,
         CancellationToken cancellationToken) =>
-        await EnsureUtilityWorkerBackgroundHostedAsync(workerWebView, apiOnlyWarm, cancellationToken);
+        await EnsureUtilityWorkerBackgroundHostedAsync((WebView2)workerWebView, apiOnlyWarm, cancellationToken);
 
     async Task<T> IUtilityWorkerHost.WithUtilityWebViewActivatedAsync<T>(
-        CoreWebView2 workerCore,
+        object workerCore,
         Func<Task<T>> action,
         CancellationToken cancellationToken) =>
-        await WithUtilityWebViewActivatedAsync(workerCore, action, cancellationToken);
+        await WithUtilityWebViewActivatedAsync(
+            UtilityWebViewBridge.AsCoreWebView2(workerCore)
+            ?? throw new InvalidOperationException("Utility worker core is not ready."),
+            action,
+            cancellationToken);
 
     IDisposable IUtilityWorkerHost.BeginDomAttachmentSend() => new UtilityWorkerDomSendScope(this);
 
@@ -287,7 +291,12 @@ public partial class MainWindow
     {
         // DOM/CDP runs on the off-screen UtilityWorkerBackgroundHost WebView — never switch tabs.
         cancellationToken.ThrowIfCancellationRequested();
-        return await action();
+        if (Dispatcher.CheckAccess())
+            return await action();
+
+        return await Dispatcher.InvokeAsync(action)
+            .Task.Unwrap()
+            .WaitAsync(cancellationToken);
     }
 
     private void ParkUtilityWorkerWebView(WebView2 workerWebView, TabItem tab)

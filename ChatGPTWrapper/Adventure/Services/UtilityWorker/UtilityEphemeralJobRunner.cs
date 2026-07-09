@@ -41,6 +41,9 @@ internal static class UtilityEphemeralJobRunner
             };
         }
         var context = jobContext ?? UtilityWorkerOrchestrator.BuildJobContext(bundle, entry);
+        context.UtilityRunId ??= entry.RunId;
+        ApplySourceIoInputPath(bundle, entry, context);
+        UtilityJobLoggingHooks.BeforeDispatch(bundle, entry.JobId, context);
         if (entry.State == UtilityJobRunState.Queued
             && (jobContext is null || string.IsNullOrWhiteSpace(context.StoryContextBlock)))
         {
@@ -52,7 +55,9 @@ internal static class UtilityEphemeralJobRunner
             }
         }
         LocalUtilityInferenceLegResult localLeg = new();
-        var hasWorkerAttachments = LocalUtilityInferencePolicy.HasStagedWorkerAttachments(context, entry);
+        var usesSourceFileIo = UtilitySourceFileIoCatalog.UsesSourceFileIo(entry.JobId);
+        var hasWorkerAttachments = !usesSourceFileIo
+            && LocalUtilityInferencePolicy.HasStagedWorkerAttachments(context, entry);
         if (!skipLocalLeg && !hasWorkerAttachments && entry.State == UtilityJobRunState.Queued)
         {
             var workerConversationId = UtilityWorkerSession.GetConversationId(bundle);
@@ -119,6 +124,50 @@ internal static class UtilityEphemeralJobRunner
                 RanOnUtilityWorker = true,
             };
         }
+
+        if (usesSourceFileIo)
+        {
+            var alreadyPublished = entry.SourceInputsPublishedAt is not null
+                || UtilitySourceFileIoPublishService.IsPublishComplete(
+                    bundle.Metadata.Id,
+                    entry.RunId,
+                    entry.JobId,
+                    bundle);
+
+            if (!alreadyPublished)
+            {
+                workerHost?.SetStatus($"{entry.JobId}: publishing job input to Project sources…");
+                var publish = await UtilitySourceFileIoPublishService.PublishJobInputsAsync(
+                    projectApi,
+                    workerCore,
+                    bundle,
+                    entry.JobId,
+                    entry.RunId,
+                    progress: workerHost is not null ? new Progress<string>(workerHost.SetStatus) : null,
+                    cancellationToken);
+                if (!publish.Success)
+                {
+                    return new GenerationJobResult
+                    {
+                        Success = false,
+                        Error = publish.Error ?? "source_publish_failed",
+                        RanOnUtilityWorker = true,
+                    };
+                }
+
+                entry.SourceInputsPublishedAt = DateTimeOffset.UtcNow;
+                if (persistToOutbox)
+                {
+                    UtilityOutboxService.Update(bundle, entry);
+                    AdventureStore.Save(bundle);
+                }
+            }
+            else
+            {
+                workerHost?.SetStatus($"{entry.JobId}: project sources ready…");
+            }
+        }
+
         string wrapped;
         if (attachmentPacket is not null)
         {
@@ -228,7 +277,8 @@ internal static class UtilityEphemeralJobRunner
         if (!ephemeralResult.Success
             && (attachmentPacket is not null
                 || UtilityWorkerPinService.HasWorkerPin(bundle))
-            && UtilityWorkerCapabilityGate.IsProductionReady(bundle))
+            && UtilityWorkerCapabilityGate.IsProductionReady(bundle)
+            && !UtilityWorkerTransitionCatalog.BlocksPinnedWorkerFallback(entry.JobId))
         {
             var failureError = FormatEphemeralFailure(ephemeralResult);
             var logEvent = attachmentPacket is not null
@@ -284,6 +334,12 @@ internal static class UtilityEphemeralJobRunner
             applyError,
             context);
         var pending = ToPendingInjection(entry);
+        UtilityJobLoggingHooks.RecordEphemeralJobCapture(
+            bundle,
+            entry,
+            context,
+            ephemeralResult,
+            wrapped);
         UtilityJobResultStore.SaveRun(
             bundle,
             pending,
@@ -298,7 +354,8 @@ internal static class UtilityEphemeralJobRunner
             ephemeralResult.StreamComplete,
             entry.PushedAt,
             context.UtilityContextManifest?.ToRecord(),
-            context.DualRunGroupId);
+            context.DualRunGroupId,
+            context);
         UtilityParseLogService.Append(
             bundle,
             entry.JobId,
@@ -331,6 +388,17 @@ internal static class UtilityEphemeralJobRunner
             if (persistToOutbox)
                 UtilityOutboxService.RemoveCompleted(bundle, entry.RunId);
             UtilityJobAttachmentStaging.Cleanup(bundle.Metadata.Id, entry.RunId);
+            if (projectApi is not null)
+            {
+                await UtilitySourceFileLifecycleService.CompleteJobAsync(
+                    projectApi,
+                    workerCore,
+                    bundle,
+                    entry.JobId,
+                    entry.RunId,
+                    jobSucceeded: true,
+                    cancellationToken);
+            }
         }
         else
         {
@@ -340,20 +408,21 @@ internal static class UtilityEphemeralJobRunner
             if (persistToOutbox)
                 UtilityOutboxService.Update(bundle, entry);
             UtilityJobAttachmentStaging.Cleanup(bundle.Metadata.Id, entry.RunId);
+            if (projectApi is not null)
+            {
+                await UtilitySourceFileLifecycleService.CompleteJobAsync(
+                    projectApi,
+                    workerCore,
+                    bundle,
+                    entry.JobId,
+                    entry.RunId,
+                    jobSucceeded: false,
+                    cancellationToken);
+            }
         }
         AdventureStore.Save(bundle);
         if (applyResult.ProposalCount > 0)
             AdventureStore.SaveReviewDomains(bundle);
-        var workerEntry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.UtilityWorker);
-        if (workerEntry is not null && !string.IsNullOrWhiteSpace(workerEntry.ConversationId))
-        {
-            _ = await ThreadConversationLogService.SyncRollingFromApiAsync(
-                bundle,
-                workerEntry,
-                workerCore,
-                conversationSend,
-                ThreadConversationLogCaptureSource.Send);
-        }
         if (localLeg.Attempted && LocalUtilityInferencePolicy.IsDualRun(bundle))
             return LocalUtilityInferenceLegRunner.MergeDualRunResults(localLeg.ApplyResult, remoteResult);
         return remoteResult;
@@ -391,10 +460,24 @@ internal static class UtilityEphemeralJobRunner
             {
                 Success = false,
                 SkippedReason = "worker_not_ready",
-                Error = "ephemeral_attachment_requires_pinned_worker",
+                Error = UtilityWorkerTransitionCatalog.BlocksPinnedWorkerFallback(entry.JobId)
+                    ? "ephemeral_required_for_transitioned_job"
+                    : "ephemeral_attachment_requires_pinned_worker",
                 RanOnUtilityWorker = true,
             };
         }
+
+        if (UtilityWorkerTransitionCatalog.BlocksPinnedWorkerFallback(entry.JobId))
+        {
+            return new GenerationJobResult
+            {
+                Success = false,
+                SkippedReason = "worker_not_ready",
+                Error = "ephemeral_required_for_transitioned_job",
+                RanOnUtilityWorker = true,
+            };
+        }
+
         return await runLegacyEntryAsync(
             bundle,
             entry,
@@ -508,4 +591,32 @@ internal static class UtilityEphemeralJobRunner
             CardId = entry.CardId,
             QueuedAt = entry.QueuedAt,
         };
+
+    internal static void ApplySourceIoInputPath(
+        AdventureBundle bundle,
+        UtilityOutboxEntry entry,
+        GenerationJobContext context)
+    {
+        if (!UtilitySourceFileIoCatalog.UsesSourceFileIo(entry.JobId))
+            return;
+
+        context.SourceIoInputPath = entry.JobId switch
+        {
+            var id when string.Equals(id, GenerationJobId.ProposeEntitiesFile, StringComparison.OrdinalIgnoreCase) =>
+                EntitiesFileRevisionService.BuildCanonicalInputRemotePath(bundle, entry.RunId),
+            var id when string.Equals(id, GenerationJobId.ProposeSourceEdits, StringComparison.OrdinalIgnoreCase) =>
+                SourceFileRevisionService.BuildCanonicalInputRemotePath(
+                    bundle,
+                    entry.RunId,
+                    SectionSchema.WorldFile),
+            var id when string.Equals(id, GenerationJobId.ExtractEntities, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(id, GenerationJobId.ExpandEntity, StringComparison.OrdinalIgnoreCase) =>
+                EntityExtractionService.BuildCanonicalInputRemotePath(
+                    bundle,
+                    entry.JobId,
+                    entry.RunId,
+                    SourceJsonImportService.EntitiesJsonFileName),
+            _ => null,
+        };
+    }
 }

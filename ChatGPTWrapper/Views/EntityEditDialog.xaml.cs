@@ -40,6 +40,21 @@ public partial class EntityEditDialog : ShellDialogWindow
         FormHost.ShowGroupedSections = true;
         FormHost.SetComposerInsert(callbacks?.InsertIntoComposer);
         FormHost.LoadModel(model, callbacks);
+        if (!model.IsNew)
+        {
+            InternalStateHost.Load(
+                bundle,
+                model.Id,
+                category,
+                EntityEditMapper.KindForCategory(category),
+                model.Name);
+        }
+        else
+        {
+            InternalTab.IsEnabled = false;
+            InternalTab.ToolTip = "Save the entity profile first to edit internal state.";
+        }
+
         Workspace.LoadModel(bundle, model, category, callbacks);
         MountContextTabs();
 
@@ -115,34 +130,68 @@ public partial class EntityEditDialog : ShellDialogWindow
 
     private void UpdateHeaderStateSkim(EntityEditModel model)
     {
-        if (!string.Equals(_category, "Player", StringComparison.OrdinalIgnoreCase) || model.IsNew)
+        if (model.IsNew)
         {
             HeaderStatePanel.Visibility = Visibility.Collapsed;
             return;
         }
 
-        var location = _bundle.State.CurrentLocation?.Trim();
-        var condition = _bundle.State.PlayerCondition?.Trim();
-        if (string.IsNullOrWhiteSpace(location) && string.IsNullOrWhiteSpace(condition))
+        var kindId = EntityInternalStateService.ResolveKindIdForCategory(
+            _category,
+            EntityEditMapper.KindForCategory(_category));
+        var record = EntityInternalStateService.TryGet(_bundle, kindId, model.Id);
+        var state = record is not null
+            ? EntityInternalStateService.GetStateObject(record, kindId)
+            : null;
+
+        var internalSummary = state is not null
+            ? EntityInternalStateSummary.Build(kindId, state)
+            : "";
+
+        if (string.Equals(_category, "Player", StringComparison.OrdinalIgnoreCase))
+        {
+            var location = _bundle.State.CurrentLocation?.Trim();
+            var condition = _bundle.State.PlayerCondition?.Trim();
+            var sessionParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(location))
+                sessionParts.Add($"Session location: {location}");
+            if (!string.IsNullOrWhiteSpace(condition))
+                sessionParts.Add($"Session condition: {condition}");
+            if (!string.IsNullOrWhiteSpace(internalSummary))
+                sessionParts.Add(internalSummary);
+
+            if (sessionParts.Count == 0)
+            {
+                HeaderStatePanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            HeaderStateSkim.Text = string.Join(" · ", sessionParts);
+            HeaderStatePanel.Visibility = Visibility.Visible;
+            HeaderStateLink.Text = "Edit internal state →";
+            HeaderStateLink.Visibility = Visibility.Visible;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(internalSummary))
         {
             HeaderStatePanel.Visibility = Visibility.Collapsed;
             return;
         }
 
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(location))
-            parts.Add($"Location: {location}");
-        if (!string.IsNullOrWhiteSpace(condition))
-            parts.Add($"Condition: {condition}");
-        HeaderStateSkim.Text = string.Join(" · ", parts);
+        HeaderStateSkim.Text = internalSummary;
         HeaderStatePanel.Visibility = Visibility.Visible;
-        HeaderStateLink.Visibility = _callbacks?.OpenStateTab is null
-            ? Visibility.Collapsed
-            : Visibility.Visible;
+        HeaderStateLink.Text = "Edit internal state →";
+        HeaderStateLink.Visibility = Visibility.Visible;
     }
 
-    private void HeaderStateLink_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
-        _callbacks?.OpenStateTab?.Invoke();
+    private void HeaderStateLink_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (_callbacks?.OpenStateTab is not null)
+            _callbacks.OpenStateTab.Invoke();
+        else
+            DialogTabs.SelectedItem = InternalTab;
+    }
 
     private void MountContextTabs()
     {

@@ -66,6 +66,7 @@ internal static class SettingsMergeService
         && left.UtilityExecutionPolicy == right.UtilityExecutionPolicy
         && left.AutoSpillToWorker == right.AutoSpillToWorker
         && left.UseEphemeralUtilityWorkerChat == right.UseEphemeralUtilityWorkerChat
+        && left.MaxParallelUtilityWorkerJobs == right.MaxParallelUtilityWorkerJobs
         && left.ForceUtilityWorkerDomAttach == right.ForceUtilityWorkerDomAttach
         && left.LocalUtilityInference.Enabled == right.LocalUtilityInference.Enabled
         && left.LocalUtilityInference.DualRun == right.LocalUtilityInference.DualRun

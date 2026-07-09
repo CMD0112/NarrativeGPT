@@ -6,8 +6,6 @@
     <Button x:Name="ChipButton"
             Style="{StaticResource StatusChipButtonStyle}"
             Click="ChipButton_Click"
-            Padding="8,4"
-            MinHeight="28"
             Cursor="Hand">
         <StackPanel Orientation="Horizontal">
             <TextBlock x:Name="LabelText"

@@ -124,6 +124,12 @@ public partial class MainWindow
             case ShellShortcutCatalog.ShowShortcuts:
                 ShowKeyboardShortcutsDialog();
                 break;
+            case ShellShortcutCatalog.ReviewAcceptProposal:
+                _playView?.TryAcceptReviewFromShortcut();
+                break;
+            case ShellShortcutCatalog.ReviewDismissProposal:
+                _playView?.TryDismissReviewFromShortcut();
+                break;
         }
     }
 

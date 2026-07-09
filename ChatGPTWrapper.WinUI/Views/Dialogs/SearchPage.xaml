@@ -1,0 +1,36 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.SearchPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <AutoSuggestBox x:Name="QueryBox"
+                        PlaceholderText="Search log, summary, memory, cards, characters…"
+                        QueryIcon="Find"
+                        TextChanged="QueryBox_TextChanged" />
+
+        <ListView x:Name="ResultsList"
+                  Grid.Row="1"
+                  SelectionMode="None"
+                  IsItemClickEnabled="False">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Spacing="4" Padding="0,6">
+                        <TextBlock Text="{Binding Category}"
+                                   Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                        <TextBlock Text="{Binding Title}"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Snippet}"
+                                   Style="{ThemeResource ShellSectionHintStyle}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</UserControl>

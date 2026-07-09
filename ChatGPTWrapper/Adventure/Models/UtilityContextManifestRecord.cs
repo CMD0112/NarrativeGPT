@@ -23,6 +23,16 @@ public sealed class UtilityContextManifestRecord
 
     public List<string> AttachmentFileNames { get; set; } = [];
 
+    public string? ThreadProjectionSource { get; set; }
+
+    public Guid? ThreadEntryId { get; set; }
+
+    public Guid? ThreadIngestEventId { get; set; }
+
+    public string? ThreadRawPath { get; set; }
+
+    public string? ThreadProjectionPath { get; set; }
+
     public string FormatSummary()
     {
         var laneLabel = FormatLaneLabel(Lane);

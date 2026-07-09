@@ -17,6 +17,9 @@ internal static class EntitiesDocumentMigration
         if (EntitiesCanonHygieneService.Apply(entities))
             changed = true;
 
+        if (EntitiesStructuredFieldMigrationService.Migrate(entities))
+            changed = true;
+
         return changed;
     }
 }
@@ -59,5 +62,19 @@ internal static class EntitiesDocumentMigrationExtensions
 
         foreach (var entry in entities.Consequences)
             entry.ExtendedFields ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in entities.Inventory)
+        {
+            entry.ExtendedFields ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            entry.Tags ??= [];
+        }
+
+        entities.Vehicles ??= [];
+        foreach (var entry in entities.Vehicles)
+        {
+            entry.ExtendedFields ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            entry.Tags ??= [];
+            entry.Aliases ??= [];
+        }
     }
 }

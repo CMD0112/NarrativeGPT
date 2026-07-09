@@ -83,11 +83,32 @@ public sealed class UtilityEphemeralAttachmentSendServiceTests
         Assert.True(UtilityEphemeralAttachmentSendService.RequiresDomHost(packet));
     }
 
-    private static UtilityOutboxEntry CreateEntry() =>
+    [Fact]
+    public void TryPrepare_skips_dom_attach_for_source_file_io_jobs()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle();
+        bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat = true;
+        bundle.Metadata.Settings.ForceUtilityWorkerDomAttach = true;
+        var entry = CreateEntry(GenerationJobId.ExtractEntities);
+        var staged = StageJson(bundle.Metadata.Id, entry.RunId);
+        var context = new GenerationJobContext
+        {
+            JobAttachments = UtilityJobAttachmentStaging.ToAttachmentContext(bundle.Metadata.Id, staged),
+        };
+        entry.Attachments = staged.ToList();
+
+        var prepared = UtilityEphemeralAttachmentSendService.TryPrepare(bundle, entry, context);
+
+        Assert.Null(prepared);
+
+        UtilityJobAttachmentStaging.Cleanup(bundle.Metadata.Id, entry.RunId);
+    }
+
+    private static UtilityOutboxEntry CreateEntry(string jobId = GenerationJobId.UtilityWorkerPing) =>
         new()
         {
             RunId = Guid.NewGuid(),
-            JobId = GenerationJobId.UtilityWorkerPing,
+            JobId = jobId,
             Channel = UtilityExecutionChannel.ManualBackground,
             State = UtilityJobRunState.Queued,
             QueuedAt = DateTimeOffset.UtcNow,

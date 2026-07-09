@@ -6,6 +6,7 @@ using System.Windows.Media;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Services.PlayLayout;
+using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Views;
 
@@ -19,7 +20,13 @@ public partial class EntityReferencePanel : UserControl
 
     public event EventHandler? SuggestEntitiesWithAttachmentsRequested;
 
+    public event EventHandler? ProposeEntitiesFileRequested;
+
     public event EventHandler<EntityReferenceRow>? ExpandEntityRequested;
+
+    public event EventHandler<IReadOnlyList<EntityReferenceRow>>? ProposeEntityStateRequested;
+
+    public event EventHandler<IReadOnlyList<EntityReferenceRow>>? ProposeCanonEvolutionRequested;
 
     private AdventureBundle? _bundle;
     private EntityReferencePanelOptions _options = new();
@@ -47,6 +54,9 @@ public partial class EntityReferencePanel : UserControl
 
     public EntityReferenceRow? SelectedRow => EntityList.SelectedItem as EntityReferenceRow;
 
+    public IReadOnlyList<EntityReferenceRow> SelectedRows =>
+        EntityList.SelectedItems.Cast<EntityReferenceRow>().ToList();
+
     public string CurrentFilter => _entityFilter;
 
     public MenuItem PinMenuItem => PinEntityMenuItem;
@@ -66,7 +76,9 @@ public partial class EntityReferencePanel : UserControl
         EntityRowPinMenuItem.Visibility = options.ShowPinToggle ? Visibility.Visible : Visibility.Collapsed;
         SuggestEntitiesMenuItem.Visibility = options.ShowAiActions ? Visibility.Visible : Visibility.Collapsed;
         SuggestEntitiesWithAttachmentsMenuItem.Visibility = options.ShowAiActions ? Visibility.Visible : Visibility.Collapsed;
+        ProposeEntitiesFileMenuItem.Visibility = options.ShowDesignFileAiActions ? Visibility.Visible : Visibility.Collapsed;
         ExpandEntityMenuItem.Visibility = options.ShowAiActions ? Visibility.Visible : Visibility.Collapsed;
+        ProposeEntityStateMenuItem.Visibility = options.ShowAiActions ? Visibility.Visible : Visibility.Collapsed;
         EntityMoreMenu.Visibility = options.ShowMoreMenu && (options.ShowPinToggle || options.ShowAiActions)
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -114,6 +126,8 @@ public partial class EntityReferencePanel : UserControl
     public void LoadBundle(AdventureBundle bundle)
     {
         _bundle = bundle;
+        if (EntityInternalStateService.EnsureAllCanonEntitiesTracked(bundle) > 0)
+            AdventureStore.Save(bundle, AdventureSaveScope.EntityInternalState);
         CloseInlineEdit();
         RefreshList();
     }
@@ -192,8 +206,7 @@ public partial class EntityReferencePanel : UserControl
 
     private void UpdateEmptyState(int count)
     {
-        var compact = _layoutCapabilities.UseCompactEntityMore
-                      || _layoutCapabilities.UseShellHeaderFlyouts;
+        var compact = _layoutCapabilities.UseCompactEntityMore;
         var label = EntityReferenceRowBuilder.FilterDisplayLabel(_entityFilter, compact);
         EmptyStateText.Text = string.IsNullOrWhiteSpace(_searchText)
             ? $"No entities in {label}"
@@ -291,8 +304,13 @@ public partial class EntityReferencePanel : UserControl
         {
             SuggestEntitiesMenuItem.IsEnabled = hasLinkedProject && hasRecentExchange;
             SuggestEntitiesWithAttachmentsMenuItem.IsEnabled = hasLinkedProject && hasRecentExchange;
-            ExpandEntityMenuItem.IsEnabled = hasLinkedProject && SelectedRow is not null;
+            ExpandEntityMenuItem.IsEnabled = hasLinkedProject && SelectedRows.Count > 0;
+            ProposeEntityStateMenuItem.IsEnabled = hasLinkedProject && SelectedRows.Count > 0;
+            ProposeCanonEvolutionMenuItem.IsEnabled = hasLinkedProject && SelectedRows.Count > 0;
         }
+
+        if (_options.ShowDesignFileAiActions)
+            ProposeEntitiesFileMenuItem.IsEnabled = hasLinkedProject && hasRecentExchange;
 
         if (_options.ShowPinToggle)
         {
@@ -397,6 +415,7 @@ public partial class EntityReferencePanel : UserControl
         if (!EntityReferenceEditService.TryFinishEntityEditorSave(
                 _bundle,
                 form!,
+                null,
                 _activeEditModel,
                 deleted,
                 _activeEditCategory,
@@ -440,8 +459,7 @@ public partial class EntityReferencePanel : UserControl
     private void BuildEntityFilterPills()
     {
         EntityFilterPanel.Children.Clear();
-        var compact = _layoutCapabilities.UseCompactEntityMore
-                      || _layoutCapabilities.UseShellHeaderFlyouts;
+        var compact = _layoutCapabilities.UseCompactEntityMore;
 
         foreach (var filter in _filters)
         {
@@ -543,10 +561,29 @@ public partial class EntityReferencePanel : UserControl
     private void SuggestEntitiesWithAttachments_Click(object sender, RoutedEventArgs e) =>
         SuggestEntitiesWithAttachmentsRequested?.Invoke(this, EventArgs.Empty);
 
+    private void ProposeEntitiesFile_Click(object sender, RoutedEventArgs e) =>
+        ProposeEntitiesFileRequested?.Invoke(this, EventArgs.Empty);
+
     private void ExpandEntity_Click(object sender, RoutedEventArgs e)
     {
-        if (SelectedRow is { } row)
+        foreach (var row in SelectedRows)
             ExpandEntityRequested?.Invoke(this, row);
+    }
+
+    private void ProposeEntityState_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedRows.Count == 0)
+            return;
+
+        ProposeEntityStateRequested?.Invoke(this, SelectedRows);
+    }
+
+    private void ProposeCanonEvolution_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedRows.Count == 0)
+            return;
+
+        ProposeCanonEvolutionRequested?.Invoke(this, SelectedRows);
     }
 
     private void RenameEntity_Click(object sender, RoutedEventArgs e)

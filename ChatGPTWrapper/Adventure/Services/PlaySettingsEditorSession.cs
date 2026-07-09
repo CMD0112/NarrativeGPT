@@ -5,7 +5,8 @@ namespace ChatGPTWrapper.Adventure.Services;
 
 /// <summary>
 /// Owns the Play Settings dialog working copy, commit path, and safe reload rules.
-/// Background job refreshes must not wipe unsaved AI Tools / utility delivery edits.
+/// Dirty detection uses <see cref="PlaySettingsEditorBaseline"/> in the dialog — always flush UI to the
+/// working bundle before comparing to the last persisted snapshot.
 /// </summary>
 public sealed class PlaySettingsEditorSession
 {

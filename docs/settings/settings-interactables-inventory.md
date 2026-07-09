@@ -174,7 +174,7 @@ Master catalog of user-facing settings, toggles, menus, dialogs, and in-session 
 | **Injection** (cockpit) | Live preview control | — | send | active |
 | Narrator scene profiles | Session cockpit | in-panel | session overrides | session | active |
 | Narrator inherit/preset combos | Session cockpit | in-panel | session/adventure/send | send/session | active |
-| Advanced… (narrator) | Session cockpit | NarratorAdvancedDialog | turn overrides | send | duplicate |
+| Advanced narrator UI | Play settings → **Injection** tab (`NarratorBehaviorPanel`) | turn overrides | send | canonical |
 | AI tools (Process, Memories, etc.) | Session cockpit | generation jobs | — | session | active |
 | Reviews expander | Session cockpit | Play settings tabs | — | session | active |
 | Reference / Warnings / State / Notes tabs | Side panel | tab hosts | `playTabPlacement` | adventure | active |

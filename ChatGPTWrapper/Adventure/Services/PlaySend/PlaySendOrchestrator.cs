@@ -64,7 +64,9 @@ internal sealed class PlaySendOrchestrator
         traceScope = PlaySendTrace.BeginSend(
             adventureId,
             composeText,
-            composeInjection?.WebView.CoreWebView2?.Source);
+            composeInjection?.CoreWebView is not null
+                ? PlayWebViewCoreBridge.GetSource(composeInjection.CoreWebView)
+                : null);
 
         if (!await host.TryAcquireSendGateAsync())
         {
@@ -99,12 +101,14 @@ internal sealed class PlaySendOrchestrator
                 return new PlaySendResult(PlaySendOutcome.Failed, "bundle_missing");
             }
 
-            var sendWebView = composeInjection?.WebView ?? host.PlayWebView;
+            var sendTabHost = composeInjection?.TabHost ?? host.ActivePlayTabHost;
             PlayTabCapabilities capabilities;
-            if (sendWebView is not null)
+            if (sendTabHost is not null)
             {
-                capabilities = host.ResolveCapabilities(bundle, sendWebView);
-                PlaySendTraceMapper.LogCapabilities(capabilities, sendWebView.CoreWebView2?.Source);
+                capabilities = host.ResolveCapabilities(bundle, sendTabHost);
+                PlaySendTraceMapper.LogCapabilities(
+                    capabilities,
+                    PlayWebViewCoreBridge.GetSource(host.TabRegistry.GetCoreWebView(sendTabHost)));
 
                 var preflight = PlaySendPreflight.Evaluate(capabilities, host.ArtifactStore);
                 if (!preflight.CanProceed)
@@ -198,8 +202,8 @@ internal sealed class PlaySendOrchestrator
             TurnRecord? turn = null;
             try
             {
-                if (composeInjection?.WebView is { } composeTab)
-                    host.PlayWebView = composeTab;
+                if (composeInjection?.TabHost is { } composeTab)
+                    host.ActivePlayTabHost = composeTab;
 
                 await host.EnsurePlayWebViewReadyAsync(
                     adventureId,
@@ -207,8 +211,11 @@ internal sealed class PlaySendOrchestrator
                     prepareContext: false,
                     navigateToBrowseTarget: false);
 
-                var playWebView = composeInjection?.WebView ?? host.PlayWebView;
-                if (playWebView?.CoreWebView2 is not { } core)
+                var playTabHost = composeInjection?.TabHost ?? host.ActivePlayTabHost;
+                var coreObj = playTabHost is not null
+                    ? host.TabRegistry.GetCoreWebView(playTabHost)
+                    : null;
+                if (coreObj is null)
                 {
                     host.SetComposeStatus("Pin a ChatGPT tab for this adventure first.", composeInjection);
                     host.ShowSendError(
@@ -218,10 +225,11 @@ internal sealed class PlaySendOrchestrator
                     return new PlaySendResult(PlaySendOutcome.Failed, "no_webview");
                 }
 
-                capabilities = host.ResolveCapabilities(bundle, playWebView);
-                PlaySendTraceMapper.LogCapabilities(capabilities, core.Source);
+                var core = (CoreWebView2)coreObj;
+                capabilities = host.ResolveCapabilities(bundle, playTabHost!);
+                PlaySendTraceMapper.LogCapabilities(capabilities, PlayWebViewCoreBridge.GetSource(coreObj));
 
-                var turnService = host.GetOrCreateTurnService(playWebView);
+                var turnService = host.GetOrCreateTurnService(playTabHost!);
                 if (turnService is null)
                 {
                     host.SetComposeStatus("Adventure bridge is not ready.", composeInjection);
@@ -232,7 +240,7 @@ internal sealed class PlaySendOrchestrator
                     return new PlaySendResult(PlaySendOutcome.Failed, "turn_service_missing");
                 }
 
-                host.PlayWebView = playWebView;
+                host.ActivePlayTabHost = playTabHost;
                 host.SetComposeStatus("Sending to ChatGPT…", composeInjection);
 
                 bundle = AdventureStore.Load(adventureId) ?? bundle;
@@ -455,7 +463,7 @@ internal sealed class PlaySendOrchestrator
                 host.OnSendSucceeded(new PlaySendSuccessRequest(
                     adventureId,
                     bundle,
-                    playWebView,
+                    playTabHost!,
                     composeInjection,
                     successStatus,
                     prepared.MergedText.Length));

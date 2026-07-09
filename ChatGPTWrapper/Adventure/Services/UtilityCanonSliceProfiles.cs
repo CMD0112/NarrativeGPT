@@ -33,7 +33,10 @@ internal static class UtilityCanonSliceProfiles
                 MaxInlineExcerptChars = 900,
                 PreferInlineForTargetEntity = true,
             },
-            GenerationJobId.ExtractEntities or GenerationJobId.ProposeMemories => new()
+            GenerationJobId.ExtractEntities
+                or GenerationJobId.ProposeEntitiesFile
+                or GenerationJobId.ProposeMemories
+                or GenerationJobId.UpdateState => new()
             {
                 AllowInline = true,
                 MaxInlineExcerptChars = 400,

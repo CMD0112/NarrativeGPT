@@ -12,6 +12,10 @@ internal static class UtilityWorkerCapabilityGate
 
     public static bool IsProductionReady(AdventureBundle bundle) => IsGreen(bundle);
 
+    /// <summary>DOM composer attach only needs a warm worker host — not API attach transport.</summary>
+    public static bool IsDomAttachReady(AdventureBundle bundle) =>
+        bundle.Metadata.UtilityWorkerCapabilities is { HostReady: true };
+
     public static async Task<UtilityWorkerCapabilities> ProbeAsync(
         CoreWebView2 workerCore,
         AdventureBundle bundle,

@@ -6,6 +6,9 @@ public sealed class EntityReferencePanelOptions
 
     public bool ShowAiActions { get; init; } = true;
 
+    /// <summary>Design-only file jobs (e.g. propose_entities_file) — hidden in play Reference panel.</summary>
+    public bool ShowDesignFileAiActions { get; init; }
+
     public bool ShowMoreMenu { get; init; } = true;
 
     public IReadOnlyList<string>? CategoryFilters { get; init; }

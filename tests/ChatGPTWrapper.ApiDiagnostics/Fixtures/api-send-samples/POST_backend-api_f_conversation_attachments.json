@@ -1,0 +1,73 @@
+{
+  "capturedAt": "2026-07-02T03:30:00+00:00",
+  "method": "POST",
+  "path": "/backend-api/f/conversation",
+  "status": 200,
+  "source": "browser-har-attachment-send-golden",
+  "requestHeaders": {
+    "openai-sentinel-chat-requirements-token": "[REDACTED]",
+    "openai-sentinel-proof-token": "[REDACTED]",
+    "openai-sentinel-turnstile-token": "[REDACTED]",
+    "x-conduit-token": "[REDACTED]",
+    "oai-echo-logs": "[REDACTED]"
+  },
+  "requestBody": {
+    "action": "next",
+    "messages": [
+      {
+        "id": "06dca926-5123-460d-9cad-aeb6de632ab3",
+        "author": {
+          "role": "user"
+        },
+        "create_time": 1782962038.553,
+        "content": {
+          "content_type": "text",
+          "parts": [
+            "Attachment send"
+          ]
+        },
+        "metadata": {
+          "attachments": [
+            {
+              "id": "file_00000000cb1871f58fc8e1b18c9875f5",
+              "size": 9801,
+              "name": "lexicon (1).md",
+              "file_token_size": 2280,
+              "source": "local",
+              "is_big_paste": false
+            }
+          ],
+          "selected_sources": [],
+          "serialization_metadata": {
+            "custom_symbol_offsets": []
+          }
+        }
+      }
+    ],
+    "conversation_id": "6a45badd-b010-83ea-98f5-c5f1d4b3e383",
+    "parent_message_id": "919d1d4a-3eb2-4764-acf0-0efdf2c1a0ee",
+    "model": "gpt-5-5-thinking",
+    "client_prepare_state": "none",
+    "timezone_offset_min": 240,
+    "timezone": "America/New_York",
+    "conversation_mode": {
+      "kind": "gizmo_interaction",
+      "gizmo_id": "g-p-6a2c6cd152e08191b018455b5712bd5e"
+    },
+    "enable_message_followups": true,
+    "system_hints": [],
+    "supports_buffering": true,
+    "supported_encodings": [
+      "v1"
+    ],
+    "client_contextual_info": {
+      "app_name": "chatgpt.com",
+      "has_web_push_capabilities": true,
+      "web_push_notification_permission": "default"
+    },
+    "paragen_cot_summary_display_override": "allow",
+    "force_parallel_switch": "auto",
+    "thinking_effort": "extended"
+  },
+  "responseBodyPreview": "event: delta_encoding\ndata: \"v1\"\n\ndata: [DONE]\n\n"
+}

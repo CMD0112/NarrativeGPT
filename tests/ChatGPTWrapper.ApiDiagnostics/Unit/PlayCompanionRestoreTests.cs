@@ -131,4 +131,26 @@ public sealed class PlayCompanionRestoreTests
         Assert.True(found);
         Assert.True(expanded);
     }
+
+    [Fact]
+    public void PersistExpander_StateAllFields_round_trips()
+    {
+        var settings = new AdventureSettings();
+        var chrome = new PlaySurfaceChromeDefaults { PlayCompanionRememberExpanders = true };
+
+        PlayCompanionRestoreService.PersistExpander(
+            settings,
+            PlayCompanionRestoreService.StateAllFieldsExpanderKey,
+            isExpanded: true);
+
+        var found = PlayCompanionRestoreService.TryGetExpanderState(
+            settings,
+            chrome,
+            PlayCompanionRestoreService.StateAllFieldsExpanderKey,
+            defaultExpanded: false,
+            out var expanded);
+
+        Assert.True(found);
+        Assert.True(expanded);
+    }
 }

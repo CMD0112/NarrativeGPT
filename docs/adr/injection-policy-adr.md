@@ -78,6 +78,7 @@ Authors modify behavior **on the fly** without re-uploading sources or editing C
 ## Assembly pipeline
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
     subgraph inputs [Inputs]
         PI[Project instructions]

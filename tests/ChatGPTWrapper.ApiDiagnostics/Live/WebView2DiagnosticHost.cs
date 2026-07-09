@@ -30,9 +30,40 @@ public sealed class WebView2DiagnosticHost : IAsyncDisposable
         if (_uiThread is not null)
             return;
 
+        if (System.Windows.Application.Current is not null)
+        {
+            _dispatcher = System.Windows.Application.Current.Dispatcher;
+            await RunOnUiAsync(async () =>
+            {
+                AppDirectories.EnsureCreated();
+                var env = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: AppDirectories.WebView2UserDataDirectory);
+                _webView = new WebView2();
+                _window = new Window
+                {
+                    Title = "ChatGPT API Diagnostics",
+                    Width = 960,
+                    Height = 720,
+                    ShowInTaskbar = false,
+                    WindowState = WindowState.Minimized,
+                };
+                _window.Content = _webView;
+                _window.Show();
+                await _webView.EnsureCoreWebView2Async(env);
+                _bridge = new ChatGptApiBridgeInjection(_webView);
+                _bridge.Register();
+            }, cancellationToken);
+            return;
+        }
+
         _uiThread = new Thread(() =>
         {
-            _app = new System.Windows.Application();
+            if (System.Windows.Application.Current is null)
+                _app = new System.Windows.Application();
+            else
+                _app = System.Windows.Application.Current;
+
             _dispatcher = _app.Dispatcher;
             _window = new Window
             {
@@ -87,7 +118,8 @@ public sealed class WebView2DiagnosticHost : IAsyncDisposable
             {
                 _webView?.Dispose();
                 _window?.Close();
-                _app?.Shutdown();
+                if (_uiThread is not null)
+                    _app?.Shutdown();
             });
         }
         catch

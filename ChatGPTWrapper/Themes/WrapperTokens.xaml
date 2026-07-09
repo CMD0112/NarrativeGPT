@@ -78,5 +78,12 @@
     <SolidColorBrush x:Key="ContextMenuBackground" Color="#1E1E22"/>
     <SolidColorBrush x:Key="ContextMenuForeground" Color="#EDEDF0"/>
     <SolidColorBrush x:Key="MenuPopupBrush" Color="#1E1E22"/>
+    <Thickness x:Key="SegmentButtonPadding">14,6</Thickness>
+    <Thickness x:Key="CommandBarSecondaryPadding">12,6</Thickness>
+    <Thickness x:Key="StatusChipPadding">8,4</Thickness>
+    <Thickness x:Key="ActionListRowPadding">10,8</Thickness>
+    <Thickness x:Key="ActionListRowMargin">0,0,0,6</Thickness>
+    <Thickness x:Key="ShellIconLabelGap">0,0,6,0</Thickness>
+    <Visibility x:Key="ShellIconLabelVisibility" xmlns="clr-namespace:System.Windows;assembly=PresentationCore">Visible</Visibility>
 
 </ResourceDictionary>

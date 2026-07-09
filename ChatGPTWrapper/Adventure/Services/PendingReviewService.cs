@@ -28,8 +28,13 @@ internal sealed class PendingReviewCounts
 
     public int ContinuityWarnings { get; init; }
 
+    public int EntityState { get; init; }
+
+    public int CanonEvolution { get; init; }
+
     public int Total =>
-        Entities + Memories + Summary + Cards + SourceEdits + JsonImports + ContinuityWarnings;
+        Entities + Memories + Summary + Cards + SourceEdits + JsonImports + ContinuityWarnings
+        + EntityState + CanonEvolution;
 }
 
 internal static class PendingReviewService
@@ -47,6 +52,8 @@ internal static class PendingReviewService
             SourceEdits = bundle.Scenario.SourceEditReviewQueue.Count,
             JsonImports = bundle.Scenario.JsonImportReviewQueue.Count,
             ContinuityWarnings = ContinuityWarningDismissalService.FilterActive(bundle.Continuity).Count,
+            EntityState = bundle.EntityInternalState.ReviewQueue.Count,
+            CanonEvolution = bundle.Entities.CanonEvolutionReviewQueue.Count,
         };
     }
 
@@ -72,6 +79,10 @@ internal static class PendingReviewService
             parts.Add($"{counts.JsonImports} JSON import{(counts.JsonImports == 1 ? "" : "s")}");
         if (counts.ContinuityWarnings > 0)
             parts.Add($"{counts.ContinuityWarnings} continuity warning{(counts.ContinuityWarnings == 1 ? "" : "s")}");
+        if (counts.EntityState > 0)
+            parts.Add($"{counts.EntityState} entity state");
+        if (counts.CanonEvolution > 0)
+            parts.Add($"{counts.CanonEvolution} canon evolution{(counts.CanonEvolution == 1 ? "" : "s")}");
 
         return counts.Total == 1
             ? "1 proposal awaiting review"
@@ -82,12 +93,16 @@ internal static class PendingReviewService
     {
         GenerationJobId.ProcessTurn => PendingReviewDestination.ReferencePanel,
         GenerationJobId.ExtractEntities or GenerationJobId.ExpandEntity => PendingReviewDestination.ReferencePanel,
+        GenerationJobId.ProposeEntitiesFile => PendingReviewDestination.ReferencePanel,
         GenerationJobId.ProposeMemories => PendingReviewDestination.MemoryCardsSettings,
+        GenerationJobId.UpdateState => PendingReviewDestination.WorldSettings,
         GenerationJobId.UpdateSummary => PendingReviewDestination.WorldSettings,
         GenerationJobId.BootstrapLore or GenerationJobId.ExpandStoryCard => PendingReviewDestination.MemoryCardsSettings,
         GenerationJobId.ProposeSourceEdits => PendingReviewDestination.SourcesSettings,
         GenerationJobId.ProposeJsonImport => PendingReviewDestination.SourcesSettings,
         GenerationJobId.ContinuityCheck => PendingReviewDestination.WarningsTab,
+        GenerationJobId.ProposeEntityState => PendingReviewDestination.ReferencePanel,
+        GenerationJobId.ProposeCanonEvolution => PendingReviewDestination.ReferencePanel,
         _ => PendingReviewDestination.WorldSettings,
     };
 

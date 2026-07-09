@@ -150,6 +150,21 @@ public sealed class TransportSettingsPersistenceTests : IClassFixture<FileLockAw
     }
 
     [Fact]
+    public void Commit_persists_MaxParallelUtilityWorkerJobs()
+    {
+        var bundle = AdventureStore.CreateNew("Parallel worker setting");
+        AdventureStore.Save(bundle);
+
+        bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat = true;
+        bundle.Metadata.Settings.MaxParallelUtilityWorkerJobs = 3;
+        TransportSettingsStore.Commit(bundle, caller: "test");
+
+        var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
+        Assert.True(reloaded.Metadata.Settings.UseEphemeralUtilityWorkerChat);
+        Assert.Equal(3, reloaded.Metadata.Settings.MaxParallelUtilityWorkerJobs);
+    }
+
+    [Fact]
     public void Commit_persists_UseEphemeralUtilityWorkerChat()
     {
         var bundle = AdventureStore.CreateNew("Ephemeral worker setting");

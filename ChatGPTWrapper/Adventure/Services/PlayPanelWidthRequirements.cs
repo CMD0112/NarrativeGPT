@@ -121,7 +121,7 @@ public static class PlayPanelWidthRequirements
         requirements.Add(new(
             "shell.header",
             PlayResponsiveTiers.ShellHeaderFullChrome,
-            "Inline narrator and AI tools"));
+            "Inline narrator and utility jobs"));
 
         requirements.Add(new(
             "shell.footer",

@@ -9,8 +9,8 @@ public sealed class ProjectSourceUploadServiceTests
     [Theory]
     [InlineData("scenario.md", "text/markdown")]
     [InlineData("world.MD", "text/markdown")]
-    [InlineData("notes.txt", "application/octet-stream")]
-    [InlineData("data.json", "application/octet-stream")]
+    [InlineData("notes.txt", "text/plain")]
+    [InlineData("data.json", "application/json")]
     public void ResolveMimeType_maps_markdown_and_binary(string path, string expectedMime)
     {
         Assert.Equal(expectedMime, ProjectSourceUploadService.ResolveMimeType(path));

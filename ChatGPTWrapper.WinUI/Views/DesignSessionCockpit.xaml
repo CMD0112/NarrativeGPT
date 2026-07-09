@@ -1,0 +1,69 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.DesignSessionCockpit"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    HorizontalAlignment="Stretch">
+
+    <Border Style="{ThemeResource ShellCardStyle}" HorizontalAlignment="Stretch">
+        <StackPanel Spacing="{ThemeResource SpaceSm}">
+            <Border x:Name="LinkProjectBanner"
+                    Background="{ThemeResource AccentSubtleBrush}"
+                    BorderBrush="{ThemeResource AccentPrimaryBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{ThemeResource RadiusControl}"
+                    Padding="{ThemeResource SpaceSmPadding}"
+                    Visibility="Collapsed">
+                <Grid ColumnSpacing="{ThemeResource SpaceSm}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="120" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{ThemeResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Text="Link a ChatGPT Project to send design briefs and extract proposals." />
+                    <Button Grid.Column="1"
+                            Content="Link project"
+                            Style="{ThemeResource ShellPrimaryButtonStyle}"
+                            VerticalAlignment="Center"
+                            Click="LinkProject_Click" />
+                </Grid>
+            </Border>
+
+            <TextBlock x:Name="DraftModeBanner"
+                       Style="{ThemeResource ShellSectionHintStyle}"
+                       TextWrapping="Wrap"
+                       Visibility="Collapsed" />
+
+            <HyperlinkButton x:Name="ThreadStatusLink"
+                             Content="Thread status"
+                             Click="ThreadStatusLink_Click"
+                             Padding="0"
+                             HorizontalAlignment="Left" />
+
+            <Expander x:Name="BriefNoteExpander" Header="Brief note (optional)" IsExpanded="False">
+                <TextBox x:Name="BriefNoteBox"
+                         PlaceholderText="Optional note included with Send step brief"
+                         TextWrapping="Wrap"
+                         AcceptsReturn="True"
+                         MinHeight="56" />
+            </Expander>
+
+            <Grid ColumnSpacing="{ThemeResource SpaceSm}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="SendStepBriefButton"
+                        Content="Send step brief"
+                        Style="{ThemeResource ShellPrimaryButtonStyle}"
+                        HorizontalAlignment="Stretch"
+                        Click="SendStepBrief_Click" />
+                <Button Grid.Column="1"
+                        x:Name="ExtractButton"
+                        Content="Extract proposals"
+                        Style="{ThemeResource ShellGhostButtonStyle}"
+                        Click="Extract_Click" />
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>

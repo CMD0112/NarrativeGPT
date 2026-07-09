@@ -130,6 +130,28 @@ The text report highlights the **first failing step** and suggested next actions
 
 The optional `BridgeScriptJson.cs` extraction in the main app can stay; it is independent of this project.
 
+## Project source download (live)
+
+Tests **project-scoped** source downloads (`/backend-api/files/download/…?gizmo_id=…`) — the same path publication verify uses. Compares against the general `DownloadFileAsync` ladder per file.
+
+```powershell
+# Sign in via main app first (shared WebView profile)
+$env:CGW_DOWNLOAD_GIZMO_ID = "g-p-your-project-id"   # optional
+$env:CGW_DOWNLOAD_FILE_ID = "file_00000000…"         # optional single file
+$env:CGW_DOWNLOAD_MAX = "3"                          # default 3
+$env:CGW_DOWNLOAD_STUB_WAIT_SECONDS = "45"           # retry while blob is stub JSON
+
+.\tests\ChatGPTWrapper.ApiDiagnostics\scripts\run-source-download-diagnostics.ps1
+.\tests\ChatGPTWrapper.ApiDiagnostics\scripts\run-source-download-diagnostics.ps1 -Open
+```
+
+Reports:
+
+- `%LocalAppData%\ChatGPTWrapper\project-source-download-report.txt`
+- `%LocalAppData%\ChatGPTWrapper\project-source-download-report.json`
+
+Each listed file runs two steps: `download_project_scoped_*` (with stub retry) and `download_general_*`.
+
 ## Source sync performance
 
 Report-only timing suite for project source **find**, **download**, **read**, **modify**, and **upload** operations. Tests always pass; results are written for analysis (no speed thresholds).

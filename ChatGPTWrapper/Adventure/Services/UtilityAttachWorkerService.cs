@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Threading;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services.UtilityWorker;
 using ChatGPTWrapper.ChatGptApi;
@@ -18,7 +19,6 @@ internal sealed class UtilityAttachWorkerHost : IAsyncDisposable
 
     private readonly TaskCompletionSource _uiReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Thread? _uiThread;
-    private System.Windows.Application? _app;
     private Window? _window;
     private WebView2? _webView;
     private ChatGptAdventureBridgeInjection? _adventureBridge;
@@ -56,7 +56,7 @@ internal sealed class UtilityAttachWorkerHost : IAsyncDisposable
     {
         _uiThread = new Thread(() =>
         {
-            _app = new System.Windows.Application();
+            // Secondary STA thread: use Dispatcher.Run() — never new Application() (one per AppDomain).
             _window = new Window
             {
                 Title = "CGW Attach Worker",
@@ -73,7 +73,7 @@ internal sealed class UtilityAttachWorkerHost : IAsyncDisposable
             _window.Content = _webView;
             _window.Show();
             _uiReady.TrySetResult();
-            _app.Run();
+            Dispatcher.Run();
         })
         {
             IsBackground = true,
@@ -118,7 +118,8 @@ internal sealed class UtilityAttachWorkerHost : IAsyncDisposable
         {
             await _window.Dispatcher.InvokeAsync(() =>
             {
-                _app?.Shutdown();
+                _window.Close();
+                Dispatcher.CurrentDispatcher.InvokeShutdown();
             });
         }
         catch
@@ -154,13 +155,14 @@ internal static class UtilityAttachWorkerService
         try
         {
             var host = await UtilityAttachWorkerHost.EnsureAsync(cancellationToken);
-            var core = host.Core
-                       ?? throw new InvalidOperationException("Attach worker WebView not ready.");
-
-            await WebViewCookieSync.CopyChatGptCookiesAsync(cookieSourceCore, core, cancellationToken);
 
             return await host.RunOnUiAsync(async () =>
             {
+                var core = host.Core
+                           ?? throw new InvalidOperationException("Attach worker WebView not ready.");
+
+                await WebViewCookieSync.CopyChatGptCookiesAsync(cookieSourceCore, core, cancellationToken);
+
                 await ChatGptAdventureBridgeInjection.ApplyUtilityWorkerTabVisibilityAsync(core);
                 return await host.TurnService.SubmitUtilityJobWithAttachmentsAsync(
                     core,

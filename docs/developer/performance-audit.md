@@ -24,6 +24,7 @@ The app is a **WPF + WebView2 shell** with **no HTTP server** and **JSON-on-disk
 ## Architecture: where time goes
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart TB
     subgraph hot [Hot paths]
         PS[Play send]
@@ -352,6 +353,7 @@ Use `PlaySendTraceRunId` and turn ids for cross-tier lookup instead of duplicati
 ### Recommended capture policy (max perf, zero capture loss)
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
     subgraph capture [Capture - synchronous, complete]
         EVT[Every event / field]

@@ -93,6 +93,7 @@ public sealed class AttachmentSendPolicyTests
     {
         var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
         bundle.Metadata.Settings.UseSectionInjection = false;
+        bundle.Metadata.Settings.ForceInlineLore = true;
         AdventureTestData.WriteLocalSources(bundle);
         try
         {

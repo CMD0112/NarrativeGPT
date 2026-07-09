@@ -10,6 +10,8 @@ public sealed record PlayLayoutCapabilities
     public bool ShowFullBackLabel { get; init; }
     public bool ShowFullPlaySettingsLabel { get; init; }
     public bool ShowIntermediatePlaySettingsLabel { get; init; }
+    /// <summary>Retired — unified session chrome replaced header flyouts (CMD-421).</summary>
+    [Obsolete("Unified session chrome retired flyout menus.")]
     public bool UseShellHeaderFlyouts { get; init; }
     public bool UseUnifiedSessionChrome { get; init; } = true;
     public bool UseFullFooterLabels { get; init; }
@@ -39,7 +41,6 @@ public sealed record PlayLayoutCapabilities
             ShowIntermediatePlaySettingsLabel = w >= PlayResponsiveTiers.ShellBackFull,
             ShowFullPlaySettingsLabel = w >= PlayResponsiveTiers.ShellPlaySettingsFull,
             UseUnifiedSessionChrome = true,
-            UseShellHeaderFlyouts = false,
             UseFullFooterLabels = w >= PlayResponsiveTiers.ShellHeaderFullChrome,
             UseCompactFooterMore = w < PlayResponsiveTiers.ShellFooterFullChrome,
             UseCompactEntityMore = w < PlayResponsiveTiers.ShellFooterFullChrome,

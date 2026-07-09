@@ -1,7 +1,5 @@
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.ChatGptApi;
-using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.Wpf;
 
 namespace ChatGPTWrapper.Adventure.Services.UtilityWorker;
 
@@ -15,42 +13,31 @@ internal interface IUtilityWorkerHost
 
     ChatGptProjectApiService? ProjectApi { get; }
 
-    AdventureTurnService GetTurnService(WebView2 webView);
+    AdventureTurnService GetTurnService(object webView);
 
-    void RegisterWorkerTab(WebView2 webView);
+    void RegisterWorkerTab(object webView);
 
-    Task<WebView2?> ResolveWorkerWebViewAsync(AdventureBundle bundle, CancellationToken cancellationToken = default);
+    Task<object?> ResolveWorkerWebViewAsync(AdventureBundle bundle, CancellationToken cancellationToken = default);
 
-    Task<WebView2?> EnsureWorkerTabReadyAsync(AdventureBundle bundle, CancellationToken cancellationToken = default);
+    Task<object?> EnsureWorkerTabReadyAsync(AdventureBundle bundle, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Keeps the worker WebView in an off-screen host so API work continues while play tab stays selected.
-    /// When <paramref name="apiOnlyWarm"/> is true, only the HTTP bridge is warmed (production drain path).
-    /// </summary>
     Task EnsureWorkerWebViewBackgroundHostedAsync(
-        WebView2 workerWebView,
+        object workerWebView,
         bool apiOnlyWarm = false,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Runs worker DOM work on the shadow-compositor hosted WebView without switching the user's selected tab.
-    /// </summary>
     Task<T> WithUtilityWebViewActivatedAsync<T>(
-        CoreWebView2 workerCore,
+        object workerCore,
         Func<Task<T>> action,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Prevents parking churn and activates shadow compositor hosting during DOM attachment sends.</summary>
     IDisposable BeginDomAttachmentSend();
 
-    /// <summary>
-    /// Legacy: unparks the utility tab for visible composer attach. Prefer <see cref="BeginDomAttachmentSend"/>.
-    /// </summary>
     Task<T> WithUtilityComposerVisibleAsync<T>(
         Func<Task<T>> action,
         CancellationToken cancellationToken = default);
 
-    WebView2? GetPlayWebView();
+    object? GetPlayWebView();
 
     void SetStatus(string message);
 
@@ -58,10 +45,14 @@ internal interface IUtilityWorkerHost
 
     void RefreshPlayJobButtons();
 
-    /// <summary>Opens project composer on the worker WebView for ephemeral per-job chats.</summary>
     Task<string?> TryCreateEphemeralConversationViaUiAsync(
         AdventureBundle bundle,
-        CoreWebView2 core,
+        object core,
+        CancellationToken cancellationToken = default);
+
+    object? GetWorkerCookieSource();
+
+    Task<IReadOnlyList<object>> GetWorkerChatGptCookiesAsync(
         CancellationToken cancellationToken = default);
 }
 

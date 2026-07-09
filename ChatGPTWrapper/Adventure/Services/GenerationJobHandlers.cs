@@ -51,6 +51,12 @@ internal sealed class GenerationJobContext
 
     public Guid? UtilityRunId { get; set; }
 
+    /// <summary>Targets for <see cref="GenerationJobId.ProposeEntityState"/>.</summary>
+    public IReadOnlyList<EntityReferenceRow>? EntityStateTargets { get; init; }
+
+    /// <summary>Reference panel category filter when proposing entity state.</summary>
+    public string? EntityCategoryFilter { get; init; }
+
     /// <summary>Links paired runs when dual-run compare mode is active.</summary>
     public Guid? DualRunGroupId { get; set; }
 
@@ -65,6 +71,20 @@ internal sealed class GenerationJobContext
 
     /// <summary>Author instructions for staged reference files (appended to job packet, not the main job body).</summary>
     public string? AttachmentReferenceNote { get; init; }
+
+    public Guid? PlayThreadIngestEventId { get; set; }
+
+    public Guid? PlayThreadEntryId { get; set; }
+
+    public string? PlayThreadRawPath { get; set; }
+
+    public string? PlayThreadProjectionPath { get; set; }
+
+    public string? ContextProjectionPath { get; set; }
+
+    public string? SourceIoInputPath { get; set; }
+
+    public string? EphemeralCapturePath { get; set; }
 }
 
 internal sealed class GenerationJobResult
@@ -135,15 +155,49 @@ internal static class GenerationJobHandlers
             GenerationJobId.ProcessTurn =>
                 BuildProcessTurnPrompt(bundle, context),
             GenerationJobId.ExtractEntities when context.Scope is { } extractScope =>
-                EntityExtractionService.BuildScopedExtractionPrompt(bundle, extractScope),
+                EntityExtractionService.BuildScopedExtractionPrompt(
+                    bundle,
+                    extractScope,
+                    context.UtilityRunId),
             GenerationJobId.ExtractEntities when context.Turn is { } turn =>
-                EntityExtractionService.BuildExtractionPrompt(bundle, turn),
+                EntityExtractionService.BuildExtractionPrompt(bundle, turn, context.UtilityRunId),
+            GenerationJobId.ProposeEntitiesFile when context.Scope is { } fileScope =>
+                EntitiesFileRevisionService.BuildRevisionPrompt(
+                    bundle,
+                    fileScope,
+                    context.UtilityRunId ?? Guid.NewGuid()),
+            GenerationJobId.ProposeEntitiesFile =>
+                EntitiesFileRevisionService.BuildRevisionPrompt(
+                    bundle,
+                    context.Scope,
+                    context.UtilityRunId ?? Guid.NewGuid()),
             GenerationJobId.ExpandEntity when context.EntityId is { } entityId =>
-                EntityExtractionService.BuildExpandEntityPrompt(bundle, context.EntityKind ?? "Characters", entityId),
+                EntityExtractionService.BuildExpandEntityPrompt(
+                    bundle,
+                    context.EntityKind ?? "Characters",
+                    entityId,
+                    context.UtilityRunId),
             GenerationJobId.ProposeMemories when context.Scope is { } memScope =>
                 BuildScopedMemoryProposalPrompt(bundle, memScope, UtilityStoryContextDedup.ShouldOmitTurnSlices(context)),
             GenerationJobId.ProposeMemories when context.Turn is { } memTurn =>
                 BuildMemoryProposalPrompt(bundle, memTurn, UtilityStoryContextDedup.ShouldOmitTurnSlices(context)),
+            GenerationJobId.UpdateState =>
+                StateUpdateService.BuildPrompt(bundle, context.Scope, UtilityStoryContextDedup.ShouldOmitTurnSlices(context)),
+            GenerationJobId.ProposeEntityState =>
+                EntityInternalStateProposalService.BuildPrompt(
+                    bundle,
+                    ResolveEntityStateTargets(bundle, context),
+                    context.EntityCategoryFilter ?? "",
+                    context.Scope ?? BuildScopeFromTurn(context.Turn),
+                    context.UtilityRunId,
+                    UtilityStoryContextDedup.ShouldOmitTurnSlices(context)),
+            GenerationJobId.ProposeCanonEvolution =>
+                EntityCanonEvolutionProposalService.BuildPrompt(
+                    bundle,
+                    ResolveEntityStateTargets(bundle, context),
+                    context.EntityCategoryFilter ?? "",
+                    context.Scope ?? BuildScopeFromTurn(context.Turn),
+                    context.UtilityRunId),
             GenerationJobId.UpdateSummary =>
                 RecapService.BuildSummaryUpdatePrompt(bundle, UtilityStoryContextDedup.ShouldOmitTurnSlices(context)),
             GenerationJobId.BootstrapLore =>
@@ -156,6 +210,31 @@ internal static class GenerationJobHandlers
                 BuildExpandSectionPrompt(bundle, sectionEntityId),
             GenerationJobId.ContinuityCheck =>
                 BuildContinuityCheckPrompt(bundle, context),
+            GenerationJobId.ResolveContinuityWarning =>
+                """
+                === RESOLVE CONTINUITY WARNING JOB ===
+                Return JSON object with optional keys:
+                entities: { updates: [...] }
+                state: { location, objectives, objectivesRemove, flags, time, rationale }
+                Include only the sections needed to resolve the selected warning.
+                """,
+            GenerationJobId.AuditCanon =>
+                """
+                === CANON AUDIT JOB ===
+                Return JSON object: { "warnings": [ { "message": string, "severity": "info|warning|high", "category": string, "refs": string[] } ] }.
+                """,
+            GenerationJobId.RefreshContextIndex =>
+                """
+                === CONTEXT INDEX REFRESH JOB ===
+                This job is rule-based in the wrapper. Return {}.
+                """,
+            GenerationJobId.ProposeSourceEdits when context.UtilityRunId is { } sourceEditRunId
+                && UtilitySourceFileIoCatalog.UsesSourceFileIo(GenerationJobId.ProposeSourceEdits)
+                && !context.ForLocalInference =>
+                SourceFileRevisionService.BuildRevisionPrompt(
+                    bundle,
+                    context.UserPrompt ?? "",
+                    sourceEditRunId),
             GenerationJobId.ProposeSourceEdits =>
                 SourceEditService.BuildSourceEditPrompt(bundle, context.UserPrompt ?? "", context.ForLocalInference),
             GenerationJobId.ProposeJsonImport =>
@@ -292,13 +371,20 @@ internal static class GenerationJobHandlers
         {
             GenerationJobId.ProcessTurn => ApplyProcessTurn(bundle, responseText, context),
             GenerationJobId.ExtractEntities or GenerationJobId.ExpandEntity => ApplyExtractEntities(bundle, responseText, context),
+            GenerationJobId.ProposeEntitiesFile => ApplyProposeEntitiesFile(bundle, responseText, context),
             GenerationJobId.ProposeMemories => ApplyProposeMemories(bundle, responseText, context),
+            GenerationJobId.ProposeEntityState => ApplyProposeEntityState(bundle, responseText, context),
+            GenerationJobId.ProposeCanonEvolution => ApplyProposeCanonEvolution(bundle, responseText, context),
+            GenerationJobId.UpdateState => ApplyUpdateState(bundle, responseText, context),
             GenerationJobId.UpdateSummary => ApplyUpdateSummary(bundle, responseText, context),
             GenerationJobId.BootstrapLore => ApplyBootstrapLore(bundle, responseText, context),
             GenerationJobId.BootstrapSections => ApplySectionBootstrap(bundle, responseText, context),
             GenerationJobId.ExpandStoryCard => ApplyExpandCard(bundle, responseText, context),
             GenerationJobId.ExpandSection => ApplySectionBootstrap(bundle, responseText, context),
             GenerationJobId.ContinuityCheck => ApplyContinuityCheck(bundle, responseText, context),
+            GenerationJobId.ResolveContinuityWarning => ApplyResolveContinuityWarning(bundle, responseText, context),
+            GenerationJobId.AuditCanon => ApplyAuditCanon(bundle, responseText, context),
+            GenerationJobId.RefreshContextIndex => ApplyRefreshContextIndex(bundle, context),
             GenerationJobId.ProposeSourceEdits => ApplyProposeSourceEdits(bundle, responseText),
             GenerationJobId.ProposeJsonImport => ApplyProposeJsonImport(bundle, responseText),
             GenerationJobId.DraftFramework =>
@@ -342,18 +428,26 @@ internal static class GenerationJobHandlers
     public static bool ExpectsJsonObjectResponse(string jobId) => jobId switch
     {
         GenerationJobId.ProcessTurn => true,
+        GenerationJobId.ExtractEntities => true,
+        GenerationJobId.ProposeMemories => true,
+        GenerationJobId.ProposeEntityState => true,
+        GenerationJobId.ProposeCanonEvolution => true,
+        GenerationJobId.UpdateState => true,
         GenerationJobId.DesignExtractStep => true,
         GenerationJobId.ProposeJsonImport => true,
+        GenerationJobId.ProposeEntitiesFile => true,
         GenerationJobId.UtilityWorkerPing => true,
         GenerationJobId.ContinuityCheck => true,
+        GenerationJobId.ResolveContinuityWarning => true,
+        GenerationJobId.AuditCanon => true,
+        GenerationJobId.RefreshContextIndex => true,
         _ => false,
     };
 
     public static bool ExpectsJsonArrayResponse(string jobId) => jobId switch
     {
-        GenerationJobId.ExtractEntities
-            or GenerationJobId.ExpandEntity
-            or GenerationJobId.ProposeMemories
+        GenerationJobId.ExpandEntity
+            
             or GenerationJobId.BootstrapLore
             or GenerationJobId.ExpandStoryCard
             or GenerationJobId.BootstrapSections
@@ -377,8 +471,14 @@ internal static class GenerationJobHandlers
 
         if (ExpectsJsonObjectResponse(jobId))
         {
+            if (string.Equals(jobId, GenerationJobId.ExtractEntities, StringComparison.Ordinal))
+                return IsParseableExtractEntitiesResponse(responseText);
+            if (string.Equals(jobId, GenerationJobId.ProposeMemories, StringComparison.Ordinal))
+                return IsParseableMemoryResponse(responseText);
             if (string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
                 return SourceJsonImportService.IsParseableResponse(responseText);
+            if (string.Equals(jobId, GenerationJobId.ProposeEntitiesFile, StringComparison.Ordinal))
+                return EntitiesFileRevisionService.IsParseableResponse(responseText);
             if (string.Equals(jobId, GenerationJobId.UtilityWorkerPing, StringComparison.OrdinalIgnoreCase))
                 return IsSettledWorkerPingResponse(responseText);
             return !string.IsNullOrWhiteSpace(EntityExtractionService.TryNormalizeJsonObjectResponse(responseText));
@@ -410,14 +510,26 @@ internal static class GenerationJobHandlers
         {
             if (string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
                 return SourceJsonImportService.IsSettledResponse(responseText, streamComplete);
+            if (string.Equals(jobId, GenerationJobId.ProposeEntitiesFile, StringComparison.Ordinal))
+                return EntitiesFileRevisionService.IsSettledResponse(responseText, streamComplete);
             if (string.Equals(jobId, GenerationJobId.UtilityWorkerPing, StringComparison.OrdinalIgnoreCase))
                 return IsSettledWorkerPingResponse(responseText);
             if (string.Equals(jobId, GenerationJobId.ContinuityCheck, StringComparison.Ordinal))
                 return IsSettledContinuityCheckResponse(responseText, streamComplete);
+            if (string.Equals(jobId, GenerationJobId.ExtractEntities, StringComparison.Ordinal))
+                return IsSettledExtractEntitiesResponse(responseText, streamComplete);
+            if (string.Equals(jobId, GenerationJobId.ProposeMemories, StringComparison.Ordinal))
+                return IsSettledMemoryResponse(responseText, streamComplete);
+            if (string.Equals(jobId, GenerationJobId.UpdateState, StringComparison.Ordinal))
+                return IsSettledStateUpdateResponse(responseText, streamComplete);
             return IsSettledProcessTurnResponse(responseText, streamComplete);
         }
 
         if (HasActionableJobProposals(jobId, responseText))
+            return true;
+
+        if (string.Equals(jobId, GenerationJobId.ProposeSourceEdits, StringComparison.Ordinal)
+            && SourceFileRevisionService.IsSettledResponse(responseText, streamComplete))
             return true;
 
         return streamComplete && IsEmptyJsonArrayResponse(responseText);
@@ -491,9 +603,7 @@ internal static class GenerationJobHandlers
         if (context.ProcessTurnIncludeMemories)
             tasks.Add("- memories: event proposals for the scoped exchange");
         if (context.ProcessTurnIncludeEntities)
-            tasks.Add("- entities: world-model proposals for the scoped exchange");
-        if (context.ProcessTurnIncludeSummary)
-            tasks.Add("- summary: updated rolling digest (plain string)");
+            tasks.Add("- entities: object with extractions[] and updates[] world-model proposals");
 
         var scopeBlock = context.Scope is { } scope
             ? UtilityTranscriptScopeService.FormatScopeBlock(scope)
@@ -527,8 +637,12 @@ internal static class GenerationJobHandlers
 
         return $"""
             === MEMORY PROPOSAL JOB ===
-            Return JSON array of event objects: text, tags, pinned, anchor object (pairOffset, playerHint), optional outcome.
+            Return JSON object with:
+            - events: array of event objects (text, tags, pinned, anchor object, optional outcome)
+            - links: array of optional memory links (fromMemoryId/fromMemoryText, toMemoryId/toMemoryText, relation, notes)
             Record discrete events only — not entity definitions or rolling digest.
+
+            {MemoryBaselineService.BuildBaselineBlock(bundle)}
 
             {scopeBlock}
             {exchange}
@@ -642,7 +756,16 @@ internal static class GenerationJobHandlers
         {
             """
             === CONTINUITY CHECK JOB ===
-            Return JSON object with a warnings array; each warning has message and severity fields.
+            Return JSON object:
+            {
+              "warnings": [
+                { "message": string, "severity": "info|warning|high", "category": string, "refs": string[] }
+              ]
+            }
+            """,
+            $"""
+            === CONTINUITY BRIEF ===
+            {ContinuityBriefBuilder.BuildBriefJson(bundle, context)}
             """,
         };
 
@@ -720,9 +843,26 @@ internal static class GenerationJobHandlers
         };
     }
 
+    private static GenerationJobResult ApplyProposeEntitiesFile(
+        AdventureBundle bundle,
+        string responseText,
+        GenerationJobContext? context = null)
+    {
+        var count = EntitiesFileRevisionService.ParseAndEnqueue(bundle, responseText, context);
+        return new GenerationJobResult
+        {
+            Success = true,
+            ProposalCount = count,
+            Error = count == 0 && !EntitiesFileRevisionService.HasProposedSnapshot(bundle.Entities)
+                ? "no_proposals_parsed"
+                : null,
+        };
+    }
+
     private static GenerationJobResult ApplyExtractEntities(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
-        var proposals = EntityExtractionService.ParseExtractionResponse(responseText);
+        var dual = EntityExtractionService.ParseDualSectionResponse(responseText);
+        var proposals = dual.Extractions.Concat(dual.Updates).ToList();
         foreach (var proposal in proposals)
             UtilityProposalInferenceTagging.TagEntity(proposal, context);
 
@@ -735,6 +875,28 @@ internal static class GenerationJobHandlers
             ProposalCount = proposals.Count,
             ProposalIds = proposals.Select(p => p.Id).ToList(),
             Error = proposals.Count == 0 ? "no_proposals_parsed" : null,
+        };
+    }
+
+    private static GenerationJobResult ApplyProposeEntityState(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
+    {
+        var count = EntityInternalStateProposalService.ApplyPatches(bundle, responseText, context);
+        return new GenerationJobResult
+        {
+            Success = true,
+            ProposalCount = count,
+            Error = count == 0 ? "no_proposals_parsed" : null,
+        };
+    }
+
+    private static GenerationJobResult ApplyProposeCanonEvolution(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
+    {
+        var count = EntityCanonEvolutionProposalService.ApplyEvolutions(bundle, responseText, context);
+        return new GenerationJobResult
+        {
+            Success = true,
+            ProposalCount = count,
+            Error = count == 0 ? "no_proposals_parsed" : null,
         };
     }
 
@@ -751,36 +913,96 @@ internal static class GenerationJobHandlers
 
     private static int ApplyMemoryArray(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
-        var normalized = EntityExtractionService.TryNormalizeJsonArrayResponse(responseText);
+        var normalized = EntityExtractionService.TryNormalizeJsonResponse(responseText);
         if (string.IsNullOrWhiteSpace(normalized))
             return 0;
 
         try
         {
             using var doc = JsonDocument.Parse(normalized);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            var root = doc.RootElement;
+            JsonElement eventsArray;
+            JsonElement linksArray;
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                eventsArray = root;
+                linksArray = default;
+            }
+            else if (root.ValueKind == JsonValueKind.Object)
+            {
+                eventsArray = root.TryGetProperty("events", out var eventsEl) && eventsEl.ValueKind == JsonValueKind.Array
+                    ? eventsEl
+                    : root.TryGetProperty("memories", out var legacyMemories) && legacyMemories.ValueKind == JsonValueKind.Array
+                        ? legacyMemories
+                        : default;
+                linksArray = root.TryGetProperty("links", out var linksEl) && linksEl.ValueKind == JsonValueKind.Array
+                    ? linksEl
+                    : default;
+            }
+            else
+            {
                 return 0;
+            }
 
             var count = 0;
-            foreach (var element in JsonElementParsing.EnumerateObjectElements(doc.RootElement))
+            if (eventsArray.ValueKind == JsonValueKind.Array)
             {
-                var entry = ParseMemoryEntry(element);
-                if (entry is null)
-                    continue;
+                foreach (var element in JsonElementParsing.EnumerateObjectElements(eventsArray))
+                {
+                    var entry = ParseMemoryEntry(element);
+                    if (entry is null)
+                        continue;
 
-                if (UtilityTranscriptScopeService.IsDuplicateMemory(bundle.Memory, entry, context))
-                    continue;
+                    if (UtilityTranscriptScopeService.IsDuplicateMemory(bundle.Memory, entry, context))
+                        continue;
 
-                UtilityProposalInferenceTagging.TagMemory(entry, context);
-                bundle.Memory.ReviewQueue.Add(entry);
-                count++;
+                    UtilityProposalInferenceTagging.TagMemory(entry, context);
+                    bundle.Memory.ReviewQueue.Add(entry);
+                    count++;
+                }
             }
+
+            if (linksArray.ValueKind == JsonValueKind.Array)
+                ApplyMemoryLinks(bundle, linksArray, context);
 
             return count;
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
             return 0;
+        }
+    }
+
+    private static void ApplyMemoryLinks(AdventureBundle bundle, JsonElement linksArray, GenerationJobContext? context)
+    {
+        foreach (var link in JsonElementParsing.EnumerateObjectElements(linksArray))
+        {
+            var relation = JsonElementParsing.GetStringProperty(link, "relation") ?? "related";
+            var fromMemoryId = JsonElementParsing.GetStringProperty(link, "fromMemoryId");
+            var toMemoryId = JsonElementParsing.GetStringProperty(link, "toMemoryId");
+            var fromMemoryText = JsonElementParsing.GetStringProperty(link, "fromMemoryText");
+            var toMemoryText = JsonElementParsing.GetStringProperty(link, "toMemoryText");
+            var notes = JsonElementParsing.GetStringProperty(link, "notes");
+
+            if (string.IsNullOrWhiteSpace(fromMemoryId)
+                && string.IsNullOrWhiteSpace(fromMemoryText)
+                && string.IsNullOrWhiteSpace(toMemoryId)
+                && string.IsNullOrWhiteSpace(toMemoryText))
+            {
+                continue;
+            }
+
+            bundle.Memory.Links.Add(new MemoryLinkEntry
+            {
+                FromMemoryId = Guid.TryParse(fromMemoryId, out var fromId) ? fromId : null,
+                ToMemoryId = Guid.TryParse(toMemoryId, out var toId) ? toId : null,
+                FromMemoryText = fromMemoryText,
+                ToMemoryText = toMemoryText,
+                Relation = relation,
+                Notes = notes,
+                InferenceSource = context?.InferenceSource,
+                UtilityRunId = context?.UtilityRunId,
+            });
         }
     }
 
@@ -837,24 +1059,16 @@ internal static class GenerationJobHandlers
 
             if (root.TryGetProperty("entities", out var entities))
             {
-                var entJson = entities.ValueKind == JsonValueKind.Array ? entities.GetRawText() : "[]";
-                var proposals = EntityExtractionService.ParseExtractionResponse(entJson);
+                var entJson = entities.ValueKind is JsonValueKind.Array or JsonValueKind.Object
+                    ? entities.GetRawText()
+                    : "{}";
+                var dual = EntityExtractionService.ParseDualSectionResponse(entJson);
+                var proposals = dual.Extractions.Concat(dual.Updates).ToList();
                 foreach (var proposal in proposals)
                     UtilityProposalInferenceTagging.TagEntity(proposal, context);
                 if (proposals.Count > 0)
                     EntityExtractionService.EnqueueProposals(bundle.Entities, proposals);
                 total += proposals.Count;
-            }
-
-            if (root.TryGetProperty("summary", out var summaryEl)
-                && summaryEl.ValueKind == JsonValueKind.String)
-            {
-                var summaryText = summaryEl.GetString()?.Trim() ?? "";
-                if (!string.IsNullOrWhiteSpace(summaryText))
-                {
-                    SummaryReviewService.QueueProposal(bundle, summaryText, context);
-                    total++;
-                }
             }
 
             return new GenerationJobResult
@@ -886,21 +1100,17 @@ internal static class GenerationJobHandlers
             var hasMemories = root.TryGetProperty("memories", out var mem)
                               && mem.ValueKind == JsonValueKind.Array;
             var hasEntities = root.TryGetProperty("entities", out var ent)
-                              && ent.ValueKind == JsonValueKind.Array;
-            var hasSummary = root.TryGetProperty("summary", out var sum)
-                             && sum.ValueKind == JsonValueKind.String;
+                              && ent.ValueKind is JsonValueKind.Array or JsonValueKind.Object;
 
-            if (!hasMemories && !hasEntities && !hasSummary)
+            if (!hasMemories && !hasEntities)
                 return false;
 
             if (hasMemories && HasActionableMemoryArray(mem.GetRawText()))
                 return true;
             if (hasEntities && HasActionableEntityArray(ent.GetRawText()))
                 return true;
-            if (hasSummary && !string.IsNullOrWhiteSpace(sum.GetString()))
-                return true;
 
-            return streamComplete && (hasMemories || hasEntities || hasSummary);
+            return streamComplete && (hasMemories || hasEntities);
         }
         catch (JsonException)
         {
@@ -926,7 +1136,7 @@ internal static class GenerationJobHandlers
                     return true;
             }
 
-            return doc.RootElement.GetArrayLength() == 0;
+            return false;
         }
         catch (JsonException)
         {
@@ -935,8 +1145,35 @@ internal static class GenerationJobHandlers
     }
 
     private static bool HasActionableEntityArray(string json) =>
-        EntityExtractionService.ParseExtractionResponse(json).Count > 0
-        || IsEmptyArrayJson(json);
+        EntityExtractionService.ParseDualSectionResponse(json).Extractions.Count > 0
+        || EntityExtractionService.ParseDualSectionResponse(json).Updates.Count > 0
+        || IsEmptyArrayJson(json)
+        || IsEmptyObjectEntitySections(json);
+
+    private static bool IsEmptyObjectEntitySections(string json)
+    {
+        var normalized = EntityExtractionService.TryNormalizeJsonObjectResponse(json);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+            var hasExtractions = doc.RootElement.TryGetProperty("extractions", out var ex)
+                                 && ex.ValueKind == JsonValueKind.Array
+                                 && ex.GetArrayLength() == 0;
+            var hasUpdates = doc.RootElement.TryGetProperty("updates", out var up)
+                             && up.ValueKind == JsonValueKind.Array
+                             && up.GetArrayLength() == 0;
+            return hasExtractions || hasUpdates;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     private static bool IsEmptyArrayJson(string json)
     {
@@ -971,6 +1208,16 @@ internal static class GenerationJobHandlers
             return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "no_proposals_parsed" };
 
         SummaryReviewService.QueueProposal(bundle, text, context);
+        return new GenerationJobResult { Success = true, ProposalCount = 1 };
+    }
+
+    private static GenerationJobResult ApplyUpdateState(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
+    {
+        var proposal = StateUpdateService.ParseResponse(responseText, context);
+        if (proposal is null)
+            return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "no_proposals_parsed" };
+
+        bundle.State.ReviewQueue.Add(proposal);
         return new GenerationJobResult { Success = true, ProposalCount = 1 };
     }
 
@@ -1082,6 +1329,10 @@ internal static class GenerationJobHandlers
 
     private static GenerationJobResult ApplyProposeSourceEdits(AdventureBundle bundle, string responseText)
     {
+        var extracted = SourceFileRevisionService.TryExtractProposalsJson(responseText);
+        if (!string.IsNullOrWhiteSpace(extracted))
+            responseText = extracted;
+
         var normalized = EntityExtractionService.TryNormalizeJsonResponse(responseText);
         if (string.IsNullOrWhiteSpace(normalized))
             return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "no_proposals_parsed" };
@@ -1150,6 +1401,149 @@ internal static class GenerationJobHandlers
         }
     }
 
+    private static bool IsSettledExtractEntitiesResponse(string responseText, bool streamComplete)
+    {
+        var parsed = EntityExtractionService.ParseDualSectionResponse(responseText);
+        if (parsed.Extractions.Count > 0 || parsed.Updates.Count > 0)
+            return true;
+
+        var normalizedArray = EntityExtractionService.TryNormalizeJsonArrayResponse(responseText);
+        if (!string.IsNullOrWhiteSpace(normalizedArray))
+        {
+            try
+            {
+                using var arrayDoc = JsonDocument.Parse(normalizedArray);
+                if (arrayDoc.RootElement.ValueKind == JsonValueKind.Array)
+                    return streamComplete;
+            }
+            catch (JsonException)
+            {
+                /* continue */
+            }
+        }
+
+        var normalized = EntityExtractionService.TryNormalizeJsonObjectResponse(responseText);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+
+            var hasEx = doc.RootElement.TryGetProperty("extractions", out var ex) && ex.ValueKind == JsonValueKind.Array;
+            var hasUp = doc.RootElement.TryGetProperty("updates", out var up) && up.ValueKind == JsonValueKind.Array;
+            return streamComplete && (hasEx || hasUp);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsParseableExtractEntitiesResponse(string responseText)
+    {
+        var normalized = EntityExtractionService.TryNormalizeJsonResponse(responseText);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                return true;
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+
+            var hasEx = doc.RootElement.TryGetProperty("extractions", out var ex) && ex.ValueKind == JsonValueKind.Array;
+            var hasUp = doc.RootElement.TryGetProperty("updates", out var up) && up.ValueKind == JsonValueKind.Array;
+            return hasEx || hasUp;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsSettledStateUpdateResponse(string responseText, bool streamComplete)
+    {
+        var proposal = StateUpdateService.ParseResponse(responseText);
+        if (proposal is not null)
+            return true;
+
+        var normalized = EntityExtractionService.TryNormalizeJsonObjectResponse(responseText);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            return streamComplete && doc.RootElement.ValueKind == JsonValueKind.Object;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsParseableMemoryResponse(string responseText)
+    {
+        var normalized = EntityExtractionService.TryNormalizeJsonResponse(responseText);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                return true;
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+
+            var hasEvents = doc.RootElement.TryGetProperty("events", out var events)
+                            && events.ValueKind == JsonValueKind.Array;
+            var hasMemories = doc.RootElement.TryGetProperty("memories", out var memories)
+                              && memories.ValueKind == JsonValueKind.Array;
+            return hasEvents || hasMemories;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsSettledMemoryResponse(string responseText, bool streamComplete)
+    {
+        var normalized = EntityExtractionService.TryNormalizeJsonResponse(responseText);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                return streamComplete || HasActionableMemoryArray(doc.RootElement.GetRawText());
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+
+            var events = doc.RootElement.TryGetProperty("events", out var eventsEl) && eventsEl.ValueKind == JsonValueKind.Array
+                ? eventsEl
+                : doc.RootElement.TryGetProperty("memories", out var memoriesEl) && memoriesEl.ValueKind == JsonValueKind.Array
+                    ? memoriesEl
+                    : default;
+            if (events.ValueKind != JsonValueKind.Array)
+                return streamComplete;
+            if (HasActionableMemoryArray(events.GetRawText()))
+                return true;
+            return streamComplete;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     private static GenerationJobResult ApplyContinuityCheck(AdventureBundle bundle, string responseText, GenerationJobContext? context = null)
     {
         bundle.Continuity.Warnings.Clear();
@@ -1163,6 +1557,21 @@ internal static class GenerationJobHandlers
                 Message = local.Message,
                 Severity = local.Severity,
                 Source = "local",
+                Category = "local-heuristic",
+            });
+        }
+
+        foreach (var crossLayer in EntityCanonStateOverlapService.AnalyzeCrossLayer(bundle))
+        {
+            if (ContinuityWarningDismissalService.IsDismissed(bundle.Continuity, crossLayer.Message))
+                continue;
+
+            bundle.Continuity.Warnings.Add(new ContinuityWarningEntry
+            {
+                Message = crossLayer.Message,
+                Severity = crossLayer.Severity,
+                Source = "local",
+                Category = "canon-state-divergence",
             });
         }
 
@@ -1182,6 +1591,8 @@ internal static class GenerationJobHandlers
                             continue;
 
                         var severity = JsonElementParsing.GetStringProperty(w, "severity") ?? "warning";
+                        var category = JsonElementParsing.GetStringProperty(w, "category") ?? "general";
+                        var refs = ParseStringArrayProperty(w, "refs");
                         if (ContinuityWarningDismissalService.IsDismissed(bundle.Continuity, message))
                             continue;
 
@@ -1190,6 +1601,8 @@ internal static class GenerationJobHandlers
                             Message = message,
                             Severity = severity,
                             Source = context?.InferenceSource ?? "ai",
+                            Category = category,
+                            Refs = refs,
                         });
                     }
                 }
@@ -1201,10 +1614,105 @@ internal static class GenerationJobHandlers
         }
 
         bundle.Continuity.LastCheckedAt = DateTimeOffset.UtcNow;
+        if (context?.Turn is { } turn)
+            bundle.Continuity.LastCheckedTurnIndex = turn.Index;
         return new GenerationJobResult
         {
             Success = true,
             ProposalCount = bundle.Continuity.Warnings.Count,
+        };
+    }
+
+    private static GenerationJobResult ApplyResolveContinuityWarning(
+        AdventureBundle bundle,
+        string responseText,
+        GenerationJobContext? context = null)
+    {
+        var total = 0;
+        var normalized = EntityExtractionService.TryNormalizeJsonObjectResponse(responseText);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "no_proposals_parsed" };
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("entities", out var entitiesSection))
+            {
+                JsonElement updates;
+                if (entitiesSection.ValueKind == JsonValueKind.Object
+                    && entitiesSection.TryGetProperty("updates", out updates)
+                    && updates.ValueKind == JsonValueKind.Array)
+                {
+                    var parsed = EntityExtractionService.ParseDualSectionResponse(
+                        "{\"updates\":" + updates.GetRawText() + "}");
+                    foreach (var proposal in parsed.Updates)
+                        UtilityProposalInferenceTagging.TagEntity(proposal, context);
+                    EntityExtractionService.EnqueueProposals(bundle.Entities, parsed.Updates);
+                    total += parsed.Updates.Count;
+                }
+            }
+
+            if (root.TryGetProperty("state", out var stateSection)
+                && stateSection.ValueKind == JsonValueKind.Object)
+            {
+                var stateProposal = StateUpdateService.ParseResponse(stateSection.GetRawText(), context);
+                if (stateProposal is not null)
+                {
+                    bundle.State.ReviewQueue.Add(stateProposal);
+                    total++;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "parse_failed" };
+        }
+
+        return new GenerationJobResult
+        {
+            Success = true,
+            ProposalCount = total,
+            Error = total == 0 ? "no_proposals_parsed" : null,
+        };
+    }
+
+    private static GenerationJobResult ApplyAuditCanon(
+        AdventureBundle bundle,
+        string responseText,
+        GenerationJobContext? context = null)
+    {
+        var normalized = EntityExtractionService.TryNormalizeJsonObjectResponse(responseText);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "no_proposals_parsed" };
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            if (!doc.RootElement.TryGetProperty("warnings", out var warnings)
+                || warnings.ValueKind != JsonValueKind.Array)
+            {
+                return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "no_proposals_parsed" };
+            }
+
+            var count = JsonElementParsing.EnumerateObjectElements(warnings).Count();
+            return new GenerationJobResult { Success = true, ProposalCount = count };
+        }
+        catch (JsonException)
+        {
+            return new GenerationJobResult { Success = true, ProposalCount = 0, Error = "parse_failed" };
+        }
+    }
+
+    private static GenerationJobResult ApplyRefreshContextIndex(
+        AdventureBundle bundle,
+        GenerationJobContext? context = null)
+    {
+        var count = ContextIndexRefreshService.RefreshFromEntities(bundle);
+        return new GenerationJobResult
+        {
+            Success = true,
+            ProposalCount = count,
         };
     }
 
@@ -1383,5 +1891,30 @@ internal static class GenerationJobHandlers
         {
             return false;
         }
+    }
+
+    private static IReadOnlyList<EntityReferenceRow> ResolveEntityStateTargets(
+        AdventureBundle bundle,
+        GenerationJobContext context) =>
+        context.EntityStateTargets is { Count: > 0 } explicitTargets
+            ? explicitTargets
+            : EntityStateJobTargetSelector.SelectPlayTrackedTargets(bundle);
+
+    private static UtilityTranscriptScope? BuildScopeFromTurn(TurnRecord? turn)
+    {
+        if (turn is null)
+            return null;
+
+        var pair = new TranscriptTurnPair
+        {
+            TurnIndex = turn.Index,
+            PlayerText = turn.PlayerText,
+            NarratorText = turn.NarratorText ?? "",
+        };
+        return new UtilityTranscriptScope
+        {
+            TargetPair = pair,
+            Anchor = UtilityTranscriptScopeService.BuildAnchor(pair, pairOffset: 0),
+        };
     }
 }

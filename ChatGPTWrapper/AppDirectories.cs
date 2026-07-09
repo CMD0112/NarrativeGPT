@@ -1,4 +1,5 @@
 using System.IO;
+using ChatGPTWrapper.Adventure;
 using ChatGPTWrapper.Shell;
 
 namespace ChatGPTWrapper;
@@ -29,10 +30,24 @@ internal static class AppDirectories
 
     public static string WebView2AttachWorkerUserDataDirectory => Path.Combine(Root, "WebView2UserData-AttachWorker");
 
+    public static string WebView2ParallelWorkerSlotDirectory(int slotId) =>
+        Path.Combine(Root, $"WebView2UserData-ParallelWorker-{slotId}");
+
+    public static string AutomationBrowserUserDataDirectory => Path.Combine(Root, "AutomationBrowser");
+
     public static string DefaultAdventuresDirectory => Path.Combine(Root, "adventures");
 
     public static string AdventuresDirectory =>
         _adventuresDirectoryOverride ?? DefaultAdventuresDirectory;
+
+    /// <summary>Sorts first by name in Explorer; holds title symlinks to adventure folders.</summary>
+    public const string AdventuresIndexDirectoryName = "! Adventures";
+
+    public static string AdventuresIndexDirectory =>
+        Path.Combine(AdventuresDirectory, AdventuresIndexDirectoryName);
+
+    public static bool IsReservedAdventuresDirectory(string directoryName) =>
+        string.Equals(directoryName, AdventuresIndexDirectoryName, StringComparison.OrdinalIgnoreCase);
 
     public static string LibrariesDirectory => Path.Combine(Root, "libraries");
 
@@ -71,7 +86,9 @@ internal static class AppDirectories
         Directory.CreateDirectory(StylesDirectory);
         Directory.CreateDirectory(WebView2UserDataDirectory);
         Directory.CreateDirectory(WebView2AttachWorkerUserDataDirectory);
+        Directory.CreateDirectory(AutomationBrowserUserDataDirectory);
         Directory.CreateDirectory(AdventuresDirectory);
+        Adventure.Stores.AdventureIndexDirectoryService.EnsureDirectory();
         Directory.CreateDirectory(LibrariesDirectory);
         Directory.CreateDirectory(BackupsDirectory);
         Directory.CreateDirectory(Path.Combine(LibrariesDirectory, "scenarios"));
@@ -90,6 +107,8 @@ internal static class AppDirectories
         WrapperSettingsStore.Initialize();
         DialogLayoutStore.Initialize();
         AdventureLocationStore.Initialize();
+        AdventureRootPaths.AdventureDirectoryResolver = AdventureDirectory;
         _initializedConfigRoot = configRoot;
+        Adventure.Stores.AdventureIndexDirectoryService.RebuildAll();
     }
 }

@@ -145,7 +145,7 @@ See [adventure-thread-registry.md](adventure-thread-registry.md).
 - `RunOnceAsync` — create → navigate → send → capture → delete
 - API-first create via `ChatGptProjectApiService.CreateProjectConversationDetailedAsync`
 - DOM send from project home when `DomComposerReady`; API+SSE when server conversation id exists
-- `HideConversationAsync` soft-delete after capture
+- `HideConversationAsync` / `DeleteConversationAsync` soft-delete after capture
 - Entry: `MainWindow.RunEphemeralProjectChatAsync`
 
 See [ephemeral-project-chat.md](../developer/ephemeral-project-chat.md).
@@ -254,6 +254,23 @@ Link/unlink projects, `EnsureSessionAsync`, returns `ProjectBindingResult`.
 ### ProjectSourceSyncService
 
 **Public API** for apply sync plan, pull/push files. Returns `ProjectSourceSyncResult`.
+
+Batch push (`ExecutePushReplacePhaseAsync`) uses `ProjectPublicationProfile.BatchSync` — API-first lane order. Does not call Snorlax detail upsert through publication lanes.
+
+### ProjectFilePublicationService
+
+**Publication lab** state machine (`CMD-428`). Single verify gate: project-scoped download + byte match.
+
+| Profile | Lane order (Snorlax) | Entry |
+|---------|----------------------|-------|
+| `Lab` | BrowserNative → Library → Register+ProjectFiles | `SourceSyncDialog` test upload |
+| `BatchSync` | Register+ProjectFiles → Library → BrowserNative | `ProjectSourceUploadService.ExecutePushReplacePhaseAsync` |
+
+Shared kernel: `ChatGptApi/BrowserFileDelivery/` (CDP staging, compositor scope). Manual publish via Source Manager remains authoritative.
+
+### ProjectSourceUploadService
+
+Direct lab publish (`PublishLocalFileAsync`) and batch push phase (`ExecutePushReplacePhaseAsync`). Manifest updates only when `ProjectPublicationOutcome.Verified`.
 
 ### ProjectFileSyncOrchestrator
 
@@ -396,7 +413,7 @@ Build `ContinuityWarning` list for continuity check job and UI.
 | Method group | Examples |
 |--------------|----------|
 | Session | `GetSessionAsync`, `PrepareForApiAsync` |
-| Projects | `ListProjectsAsync`, `UpsertProjectAsync`, `GetGizmoDetailAsync` |
+| Projects | `ListProjectsAsync`, `UpsertProjectAsync`, `GetGizmoDetailAsync`, `GetProjectSettingsAsync`, `UpdateProjectSettingsAsync` |
 | Conversations | `CreateProjectConversationDetailedAsync`, `ListProjectConversationsAsync` |
 | Files | `GetProjectFilesAsync`, `UploadProjectFileAsync`, `DownloadFileAsync`, `DeleteProjectFileAsync` |
 | Attach | `AttachProjectFilesViaUpsertAsync`, `DetachProjectFilesViaUpsertAsync` |
@@ -412,6 +429,8 @@ Conversation send via `/backend-api/f/conversation` with parent/conduit caching.
 | `PrefetchParentAsync` | Cache parent message id |
 | `PrefetchConduitAsync` | Cache conduit JWT |
 | `PingAsync` | Bridge health |
+| `HideConversationAsync` / `DeleteConversationAsync` | Soft-delete chat (`is_visible: false`) |
+| `RenameConversationAsync` | PATCH conversation title |
 | Send methods | Build body, stream parse, return `ConversationSendResult` |
 
 ### ChatGptSessionHost
@@ -485,6 +504,7 @@ Renders state tables for packets and UI.
 ## Call graph (simplified)
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":42,"rankSpacing":48,"padding":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart TB
     MW[MainWindow]
     ATS[AdventureTurnService]

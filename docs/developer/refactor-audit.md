@@ -39,6 +39,7 @@ The codebase is **feature-rich and actively evolving**, with recent work concent
 ## Architecture: where complexity concentrates
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
     subgraph mega [Mega-files]
         API[ChatGptProjectApiService<br/>~4709 lines]
@@ -455,6 +456,7 @@ No `TODO`/`FIXME`/`HACK` markers were found in `.cs` or `.js` — debt is carrie
 ## Recommended priority order
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TD
     subgraph quick [Quick wins - low risk]
         A1[Delete IsolatedAppRootFixture]
@@ -465,8 +467,8 @@ flowchart TD
     end
 
     subgraph medium [Medium effort - high leverage]
-        B1[Route InjectionPreview through PlayPacketPrepareSession]
-        B2[Finish CMD-396 legacy utility path retirement]
+        B1[Route InjectionPreview<br/>through PlayPacketPrepareSession]
+        B2[Finish CMD-396 legacy<br/>utility path retirement]
         B3[Shared thread-pin / rotation base]
         B4[Unified bridge error formatter]
         B5[Flight DTO mapping consolidation]

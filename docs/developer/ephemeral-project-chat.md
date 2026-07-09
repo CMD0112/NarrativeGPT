@@ -19,6 +19,7 @@ One-shot linked-project chat: **create → send → capture → delete** without
 This workflow is **intentionally separate** from generation jobs when used via `MainWindow.RunEphemeralProjectChatAsync`. The optional adventure setting **`UseEphemeralUtilityWorkerChat`** (Play settings → AI Tools → Delivery & visibility) reuses the same service for utility worker setup and per-job sends — see [Utility worker ephemeral mode](#utility-worker-ephemeral-mode-cmd-412) below.
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
     subgraph phases [EphemeralProjectChatService.RunOnceAsync]
         C[Create]
@@ -139,11 +140,14 @@ No dedicated UI button yet — callable from diagnostics or shell code.
 
 ## API additions
 
-| Endpoint | Method | Service method |
-|----------|--------|----------------|
-| `/backend-api/conversation/{id}` | PATCH `{ is_visible: false }` | `HideConversationAsync` |
+| Endpoint | Method | Body | Service method |
+|----------|--------|------|----------------|
+| `/backend-api/conversation/{id}` | PATCH | `{ "is_visible": false }` | `HideConversationAsync`, `DeleteConversationAsync` |
+| `/backend-api/conversation/{id}` | PATCH | `{ "title": "…" }` | `RenameConversationAsync` |
 
-Defined in `ChatGptApiEndpoints.ConversationHide`.
+`ConversationHide` in `ChatGptApiEndpoints` aliases the same path as `ConversationGet`.
+
+Project settings (not used by ephemeral flow): `GET` / `PATCH` `/backend-api/projects/{gizmoId}` — see [chatgpt-api-integration.md](chatgpt-api-integration.md#project-settings-ui-api).
 
 ---
 
@@ -155,7 +159,7 @@ Defined in `ChatGptApiEndpoints.ConversationHide`.
 dotnet test tests/ChatGPTWrapper.ApiDiagnostics --filter "FullyQualifiedName~EphemeralProjectChatServiceTests"
 ```
 
-Covers create acceptance rules, DOM send routing, hide body, ephemeral DOM normalization.
+Covers create acceptance rules, DOM send routing, hide/rename/settings PATCH body builders, ephemeral DOM normalization.
 
 ### Live
 
@@ -229,7 +233,9 @@ Per-adventure setting **`UseEphemeralUtilityWorkerChat`** (default **off**). Whe
 
 When disabled, all utility worker behavior matches the legacy pinned lane.
 
-**UI:** Play settings → **AI Tools** → **Delivery & visibility** — “Use ephemeral project chats for utility worker (experimental)” and “Force DOM composer attach for reference files (testing)”.
+**UI:** Play settings → **AI Tools** → **Delivery & visibility** — “Use ephemeral project chats for utility worker (recommended)” and “Force DOM composer attach for staged reference files (manual runs only)”.
+
+**File revision jobs** (`propose_entities_file` / Revise entities.json) always use ephemeral utility chats and the [utility source file I/O](../Enhancements/utility-source-file-io.md) pathway (publish → TASK-SCOPED pointer → delimited scrape → delete thread + source), independent of the ephemeral checkbox. See `UtilitySourceFileIoCatalog`.
 
 **Policy:** `UtilityEphemeralWorkerPolicy` — `IsWorkerLaneAvailable` (linked project when ephemeral ON; green caps when OFF), `RequiresWorkerPin` (false when ephemeral ON).
 

@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.SourceSyncPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid RowSpacing="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="160" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   TextWrapping="WrapWholeWords"
+                   Style="{ThemeResource ShellSectionHintStyle}"
+                   Text="Publication lab (diagnostics) — choose headless DOM upload or pure backend-api upload. Manual publish via Source Manager remains authoritative." />
+
+        <TextBlock x:Name="RemoteBanner"
+                   Grid.Row="1"
+                   TextWrapping="WrapWholeWords"
+                   Style="{ThemeResource ShellSectionHintStyle}"
+                   Visibility="Collapsed" />
+
+        <TextBlock x:Name="StatusLine"
+                   Grid.Row="2"
+                   TextWrapping="WrapWholeWords"
+                   Style="{ThemeResource ShellSectionHintStyle}" />
+
+        <ListView x:Name="FilesList"
+                  Grid.Row="3"
+                  SelectionMode="Single"
+                  IsItemClickEnabled="False">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnSpacing="8" Padding="0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="64" />
+                            <ColumnDefinition Width="64" />
+                            <ColumnDefinition Width="120" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Column="1" Text="{Binding StateLabel}" Style="{ThemeResource ShellSectionHintStyle}" />
+                        <TextBlock Grid.Column="2" Text="{Binding LocalHashShort}" Style="{ThemeResource ShellSectionHintStyle}" />
+                        <TextBlock Grid.Column="3" Text="{Binding RemoteHashShort}" Style="{ThemeResource ShellSectionHintStyle}" />
+                        <ComboBox Grid.Column="4"
+                                  ItemsSource="{Binding AvailableActionOptions}"
+                                  DisplayMemberPath="Label"
+                                  SelectedItem="{Binding SelectedActionOption, Mode=TwoWay}" />
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <ListView x:Name="PublicationAttemptList"
+                  Grid.Row="4"
+                  MaxHeight="72"
+                  Visibility="Collapsed" />
+
+        <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="8">
+                <TextBlock x:Name="CapabilitiesHint"
+                           FontSize="11"
+                           TextWrapping="WrapWholeWords"
+                           Style="{ThemeResource ShellSectionHintStyle}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Resolve" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button x:Name="KeepLocalButton" Content="Keep local" Click="KeepLocal_Click" />
+                    <Button x:Name="KeepRemoteButton" Content="Keep remote" Click="KeepRemote_Click" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Folder" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button Content="Open sources folder" Click="OpenFolder_Click" />
+                    <Button Content="Preview file" Click="Preview_Click" />
+                    <Button Content="Open logs folder" Click="OpenLogs_Click" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Upload via" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+                    <ComboBox x:Name="UploadMethodCombo" MinWidth="220" SelectionChanged="UploadMethodCombo_SelectionChanged" />
+                    <Button x:Name="PublishSelectedButton" Content="Publish selected file" Click="PublishSelected_Click" />
+                    <Button x:Name="UploadTestFileButton" Content="Upload test file…" Click="UploadTestFile_Click" />
+                    <Button x:Name="CancelPublishButton" Content="Cancel publish" Click="CancelPublish_Click" IsEnabled="False" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Plan" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button x:Name="RefreshButton" Content="Refresh plan" Click="Refresh_Click" />
+                    <Button x:Name="ReconcileDuplicatesButton" Content="Reconcile duplicates…" Click="ReconcileDuplicates_Click" />
+                    <Button x:Name="DeleteRemoteButton" Content="Delete remote file" Click="DeleteRemote_Click" />
+                    <Button Content="Clear remote bindings" Click="ClearBindings_Click" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <Button x:Name="ApplySafeButton" Content="Apply safe" Click="ApplySafe_Click" />
+                    <Button x:Name="ApplyAllButton" Content="Apply all" Style="{ThemeResource ShellPrimaryButtonStyle}" Click="ApplyAll_Click" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

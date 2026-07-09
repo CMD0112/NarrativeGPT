@@ -2,6 +2,71 @@
 
 WPF views, dialogs, and shell structure. Play view deep-dive: [adventure-panel.md §3–5](../user/adventure-panel.md).
 
+**Cross-surface alignment:** [wrapper-ui-paradigm.md](wrapper-ui-paradigm.md) — layout paradigms (shell, companion, hub, workbench), principles, component kit, surface matrix. **Full inventory:** [ui-surface-catalog.md](ui-surface-catalog.md). **Paradigm QA matrix:** [ui-paradigm-qa-matrix.md](../developer/ui-paradigm-qa-matrix.md). Workbench layout detail: [§ Workbench paradigm](#workbench-paradigm-t3t4) below and [play-settings-ui-roadmap.md §3–5](../plans/play-settings-ui-roadmap.md).
+
+WinUI shell (CMD-478 migration): `ChatGPTWrapper.WinUI/` — `NavigationView` (Browse / Adventures), `SessionTopBar`, `ViewCommandBar`, `ChatTabHost`, native `AdventureDashboardPage`. Shared controls mirror WPF: `Controls/SegmentedControl`, `StatusChip`, `ActionListRow`, `ScopeBadgeView` (theme tokens via `Themes/WrapperTokens.xaml`).
+
+---
+
+## Workbench paradigm (T3/T4)
+
+Normative layout for multi-section editors (Play settings, Format, Review, Preferences children, Entity edit). Reference implementation: `ChatGPTWrapper.WinUI/Views/Dialogs/PlaySettings/PlaySettingsWorkbenchPage.xaml`. Canon: [wrapper-ui-paradigm.md § Workbench](wrapper-ui-paradigm.md#workbench-layout-paradigm).
+
+### Layout regions
+
+```
+┌ Header ─────────────────────────────────────────────┐
+│ Title · context chips · dirty badge               │
+├ Nav rail ─┬─ Content scroll host ─────────────────┤
+│ [filter]  │  Section title · ScopeBadgeView       │
+│ Group     │  ┌ ShellSectionCard ────────────────┐ │
+│  • item   │  │ Title · scope · hint              │ │
+│  • item   │  │ body                              │ │
+│ Advanced  │  └───────────────────────────────────┘ │
+├ Footer ───┴───────────────────────────────────────┤
+│ Save status · edit count · Save / Cancel          │
+└───────────────────────────────────────────────────┘
+```
+
+| Region | Component (today → target) | Contract |
+|--------|---------------------------|----------|
+| Header | `PlaySettingsWorkbenchPage` header strip → `ShellWorkbenchPage` | Adventure/context line; unsaved badge when dirty |
+| Nav | `ListView` + `PlaySettingsNavItem` → `ShellNavItem` | Group headers; scope badge per item; filter at 5+ sections |
+| Body | `ScrollViewer` + tab `UserControl` hosts | One section visible; `ShellSectionCard` per settings group |
+| Footer | Inline status bar → `WorkbenchStatusBar` | Save status icon, edit summary, explicit Save/Cancel ([P6](wrapper-ui-paradigm.md#p6--explicit-save-model-workbenches--editors)) |
+
+### Footer save model
+
+| State | UX |
+|-------|-----|
+| Clean | Muted save line; Save disabled or hidden per surface policy |
+| Dirty | Header **Unsaved** badge + footer edit count |
+| Save | Persists staged model; clears dirty |
+| Cancel / close | Confirm when dirty ([CMD-570](https://linear.app/cmd0112/issue/CMD-570)) |
+| Drill-down | Footer hyperlinks jump to owning nav section |
+
+Keyboard: Ctrl+S → Save, Esc → Cancel when shell kit wired ([CMD-620](https://linear.app/cmd0112/issue/CMD-620)).
+
+### Responsive breakpoints
+
+From `PlaySettingsWorkbenchLayout` ([CMD-623](https://linear.app/cmd0112/issue/CMD-623)):
+
+| Width | Nav | Content |
+|-------|-----|---------|
+| ≥ 1200px | Fixed rail (~232px) | Full section cards; card-grid tabs use two columns |
+| 960–1199px | Fixed rail (min 200px) | Single-column cards |
+| &lt; 960px | Collapsible / overlay rail | Stacked cards; reduced horizontal padding |
+
+Test at **1280×720** and **1920×1080** before marking a workbench aligned ([ui-paradigm-qa-matrix.md](../developer/ui-paradigm-qa-matrix.md)).
+
+### Scope badges
+
+Use `ScopeBadgeView` with semantic tokens (`ScopeBadge*BackgroundBrush` / `ScopeBadge*ForegroundBrush` in WinUI `WrapperTokens.xaml`). Do not use plain `ShellBadgeStyle` for scope labels on workbench surfaces.
+
+### Deep links
+
+Entry points pass a **tab/section enum** — e.g. `ShowPlaySettingsAsync(..., PlaySettingsTab.World)`. Hubs open workbench sections; they do not duplicate full forms ([P1](wrapper-ui-paradigm.md#p1--one-intent-one-primary-home)).
+
 ---
 
 ## MainWindow
@@ -33,7 +98,7 @@ WPF views, dialogs, and shell structure. Play view deep-dive: [adventure-panel.m
 ### Toolbar controls (Browse)
 
 - Mode segments: **Browse** / **Adventures** via `SegmentedControl` (`AppModeSegment`); Play/Design session toggle in shell context (`ShellSessionModeSegment`)
-- **View** menu: Native / Continuous / Weave transcript modes; **Format…** (transcript typography — no toolbar Format button)
+- **View** menu: Native / Continuous / Weave transcript modes via `TranscriptModeSegment`; **Format…** (transcript typography — no toolbar Format button)
 - **⋯** overflow menu: **Preferences…** → `PreferencesHubDialog`
 - Tab strip: new tab, close tab
 
@@ -258,6 +323,28 @@ All wrapper modal dialogs use **`ShellDialogWindow`** (`ChatGPTWrapper/Shell/She
 
 **Layout key:** `protected virtual string LayoutKey => GetType().Name` unless overridden.
 
+### WinUI dialog viewport sizing (CMD-565)
+
+WinUI Tier 2–4 workbenches use **`WinUiShellDialogWindow`** / **`WinUiShellDialogHostWindow`** (`ChatGPTWrapper.WinUI/Shell/`) instead of `ContentDialog`.
+
+| Concern | WPF | WinUI |
+|---------|-----|-------|
+| Shell base | `ShellDialogWindow` | `WinUiShellDialogWindow` |
+| Scroll host | `ShellFormScrollViewerStyle` in `Grid` `*` row | `WinUiShellDialogHostWindow` body `ScrollViewer` (`VerticalScrollMode=Enabled`) |
+| Open layout | `DialogViewportLayout.ApplyOpenLayout` | `WinUiDialogViewportLayout.ApplyOpenLayout` via `AppWindow.MoveAndResize` |
+| Persist | `DialogLayoutStore` (shared) | Same store; keys unchanged (e.g. `ContinuousViewFormatDialog`) |
+| **Open design size** | XAML `Width`/`Height` defaults | `WorkbenchViewportDesign` — work-area ratio + tier clamps; see [wrapper-ui-paradigm.md § Workbench open viewport](reference/wrapper-ui-paradigm.md) |
+| Modal owner | WPF `Owner` + `ShowDialog` | `EnableWindow(owner, false)` + `GWL_HWNDPARENT` |
+| Min size | `Window.MinWidth` / `MinHeight` | `Reclamp` on `AppWindow.Changed` (SDK 1.6 has no `PreferredMinimum*`) |
+
+**Routing:** `WinUiDialogService.ShowWorkbenchAsync` for T2–T4; T1 confirm/prompt/rename stay on `ContentDialog` via `WinUiDialogHelper`.
+
+**Footer contract:** Save/Cancel or Close buttons live in the host window footer row — not duplicated in page XAML.
+
+**Opt-out flags:** same semantics as WPF (`PersistLayout`, `LayoutKey` override, design size capture).
+
+**Related:** [winui-dialog-redesign-strategy.md](../plans/winui-dialog-redesign-strategy.md) · [CMD-565](https://linear.app/cmd0112/issue/CMD-565)
+
 **Opt-out flags:**
 
 | Flag | Default | Use when |
@@ -401,11 +488,14 @@ Theme code lives in `ChatGPTWrapper/Theme/` (`ThemeSettings`, `ThemeTokenCatalog
 |---------|---------|---------|
 | `SegmentedControl` | Single-selection mode toggle (replaces `ModeButtonStyle` clusters) | `ItemsSource`, `SelectedIndex`, `SelectedTag`, `SelectionChanged` |
 | `StatusChip` | Clickable status badge (review count, link attention, running job) | `Label`, `Count`, `Kind`, `Click` |
-| `ActionListRow` | Scannable list action with Run affordance | `Title`, `Hint`, `RunCommand`, `IsEnabled`, `DisabledReason` |
+| `ScopeBadgeView` | Semantic scope label badge (P2) | `ScopeLabel` — maps to `ScopeBadge*Brush` tokens |
+| `ActionListRow` | Scannable list action with Run affordance | `Title`, `Hint`, `RunCommand`, `RowEnabled`, `DisabledReason`, optional `LeadingIcon` |
 
 Supporting styles: `StatusChipButtonStyle`, `ActionListRowBorderStyle`, `ShellIconButtonStyle`, `ShellIconLabelButtonStyle` in `WrapperControls.xaml`. Icon glyphs in `WrapperIcons.xaml` (Segoe MDL2 Assets).
 
-**Icon tier rules (CMD-422):** Shell View/⋯/Focus = icon-only + tooltip; play header primaries = `ShellIconLabelButtonStyle` (labels hidden at Compact density); companion tabs = icon+label; AI action rows = text-primary.
+**Icon tier rules (CMD-422):** Shell View/⋯/Focus = icon-only + tooltip; play footer = `ShellIconLabelButtonStyle` (labels hidden at Compact density); companion tabs = icon+label; AI action rows = text-primary (optional `LeadingIcon`).
+
+**Companion expander persistence (CMD-418):** `PlayCompanionRestoreService.StateAllFieldsExpanderKey` (`StateAllFields`) restores State tab “All fields” expander when **Remember cockpit section** is enabled on Play surface tab.
 
 ### Shell layout primitives (`WrapperControls.xaml`)
 

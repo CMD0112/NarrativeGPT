@@ -46,6 +46,7 @@ Root cause: **three incompatible ChatGPT surfaces** (register+PUT, project-files
 ## Architecture
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
   subgraph kernel [Browser file delivery kernel — shared]
     Payload[DomAttachmentPayload]
@@ -61,7 +62,7 @@ flowchart TB
     UWVerify[Send / composer chips observed]
   end
 
-  subgraph publication [Publication lab — project knowledge]
+  subgraph publication [Publication lab<br/>— project knowledge]
     PubClass[ProjectPublicationLaneRegistry]
     PubLanes[Browser native | Library | Register+project-files]
     PubVerify[ProjectSourceIntegrityVerifier]
@@ -122,8 +123,7 @@ stateDiagram-v2
   Proving --> Attempting: proof failed, lanes remain
   Attempting --> Failed: all lanes exhausted
   Published --> [*]
-  Failed --> [*]
-```
+  Failed --> [*]```
 
 ### `ProjectFilePublicationRun` (per file)
 

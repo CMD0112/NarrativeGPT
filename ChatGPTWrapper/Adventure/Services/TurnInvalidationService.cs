@@ -29,9 +29,6 @@ internal static class TurnInvalidationService
         return idx >= 0 && accepted.Count > 0 ? accepted[idx] : null;
     }
 
-    /// <summary>
-    /// Legacy invalidation handler — thread log rolling sync captures edits from the live API branch.
-    /// </summary>
     public static void HandleDomTurnInvalidated(
         AdventureBundle bundle,
         int? logTurnIndex,
@@ -43,14 +40,38 @@ internal static class TurnInvalidationService
         string? revisionPromptText = null,
         string? assistantDomTurnId = null)
     {
-        _ = bundle;
-        _ = logTurnIndex;
-        _ = domTurnId;
-        _ = reason;
-        _ = revisedText;
-        _ = editRole;
-        _ = revisionGroupId;
-        _ = revisionPromptText;
-        _ = assistantDomTurnId;
+        ArgumentNullException.ThrowIfNull(bundle);
+
+        if (!string.Equals(reason, "composer_revision", StringComparison.Ordinal))
+            return;
+
+        if (!string.Equals(editRole, "assistant", StringComparison.Ordinal))
+            return;
+
+        var resolvedLogTurnIndex = logTurnIndex;
+        if (resolvedLogTurnIndex is null or < 0)
+        {
+            var turn = ResolveTurn(bundle, logTurnIndex, domTurnId);
+            if (turn is not null)
+            {
+                var turns = PlayTurnScopeService.GetPacketContextTurns(bundle);
+                for (var i = 0; i < turns.Count; i++)
+                {
+                    if (turns[i].Id == turn.Id)
+                    {
+                        resolvedLogTurnIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        ThreadMetadataService.RecordNarratorComposerRevision(
+            bundle,
+            resolvedLogTurnIndex,
+            revisionGroupId,
+            revisionPromptText,
+            assistantDomTurnId ?? domTurnId,
+            revisedText);
     }
 }

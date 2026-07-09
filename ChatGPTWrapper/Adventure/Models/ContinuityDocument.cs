@@ -9,6 +9,9 @@ public sealed class ContinuityDocument
     public List<string> DismissedWarningHashes { get; set; } = [];
 
     public DateTimeOffset? LastCheckedAt { get; set; }
+
+    /// <summary>Turn index of the last auto/manual continuity check (debounce gate).</summary>
+    public int? LastCheckedTurnIndex { get; set; }
 }
 
 public sealed class ContinuityWarningEntry
@@ -20,6 +23,10 @@ public sealed class ContinuityWarningEntry
     public string Severity { get; set; } = "warning";
 
     public string Source { get; set; } = "local";
+
+    public string Category { get; set; } = "general";
+
+    public List<string> Refs { get; set; } = [];
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

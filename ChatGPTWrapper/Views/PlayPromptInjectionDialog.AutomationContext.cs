@@ -9,7 +9,7 @@ public partial class PlayPromptInjectionDialog
 {
     private static readonly IReadOnlyList<LookbackAnchorChoice> LookbackAnchorChoices =
         Enum.GetValues<UtilityLookbackAnchor>()
-            .Select(anchor => new LookbackAnchorChoice(anchor, UtilityStoryContextDefaults.FormatLookbackAnchor(anchor)))
+            .Select(anchor => new LookbackAnchorChoice(anchor, UtilityStoryContextDefaults.FormatTranscriptScope(anchor)))
             .ToList();
 
     private bool _suppressAutomationContextEvents;
@@ -54,13 +54,14 @@ public partial class PlayPromptInjectionDialog
         return new AutomationContextRowViewModel
         {
             JobId = spec.JobId,
+            Layer = UtilityStoryContextDefaults.GetAutomationLayer(spec.JobId),
             Label = spec.Label,
             TurnPairs = effective.MaxTurnPairs,
             DefaultTurnPairs = jobDefaults.MaxTurnPairs,
-            Lookback = effective.LookbackAnchor,
-            DefaultLookback = jobDefaults.LookbackAnchor,
-            DefaultLookbackLabel = UtilityStoryContextDefaults.FormatLookbackAnchor(jobDefaults.LookbackAnchor),
-            LookbackChoices = LookbackAnchorChoices,
+            Scope = effective.LookbackAnchor,
+            DefaultScope = jobDefaults.LookbackAnchor,
+            DefaultScopeLabel = UtilityStoryContextDefaults.FormatTranscriptScope(jobDefaults.LookbackAnchor),
+            ScopeChoices = LookbackAnchorChoices,
             HasOverride = UtilityStoryContextDefaults.UsesJobOverride(_bundle, spec.JobId),
         };
     }
@@ -78,9 +79,9 @@ public partial class PlayPromptInjectionDialog
     {
         var jobDefaults = UtilityStoryContextDefaults.GetJobProfileDefaults(row.JobId);
         var turnPairs = Math.Max(0, row.TurnPairs);
-        var lookback = row.Lookback;
+        var scope = row.Scope;
 
-        if (turnPairs == jobDefaults.MaxTurnPairs && lookback == jobDefaults.LookbackAnchor)
+        if (turnPairs == jobDefaults.MaxTurnPairs && scope == jobDefaults.LookbackAnchor)
         {
             UtilityStoryContextDefaults.ClearJobOverride(target, row.JobId);
             row.HasOverride = false;
@@ -89,7 +90,7 @@ public partial class PlayPromptInjectionDialog
 
         var settings = UtilityStoryContextDefaults.GetEditableBase(target, row.JobId);
         settings.MaxTurnPairs = turnPairs;
-        settings.LookbackAnchor = lookback;
+        settings.LookbackAnchor = scope;
         UtilityStoryContextSettingsService.SetJobOverride(target, row.JobId, settings);
         row.HasOverride = true;
     }
@@ -106,7 +107,7 @@ public partial class PlayPromptInjectionDialog
 
         var effective = UtilityStoryContextDefaults.GetEffective(_bundle, jobId);
         row.TurnPairs = effective.MaxTurnPairs;
-        row.Lookback = effective.LookbackAnchor;
+        row.Scope = effective.LookbackAnchor;
         row.HasOverride = false;
         AutomationContextGrid.Items.Refresh();
 
@@ -165,27 +166,12 @@ public partial class PlayPromptInjectionDialog
             return;
 
         if (combo.SelectedValue is UtilityLookbackAnchor anchor)
-            row.Lookback = anchor;
+            row.Scope = anchor;
 
         if (string.Equals(_selectedAiActionJobId, row.JobId, StringComparison.OrdinalIgnoreCase))
             BindStoryContextPanel(row.JobId);
 
         MarkPlaySettingsDirty();
-    }
-
-    private bool HasAutomationContextChanges()
-    {
-        if (!IsLoaded || AutomationContextGrid.ItemsSource is not IEnumerable<AutomationContextRowViewModel> rows)
-            return false;
-
-        foreach (var row in rows)
-        {
-            var effective = UtilityStoryContextDefaults.GetEffective(_bundle, row.JobId);
-            if (row.TurnPairs != effective.MaxTurnPairs || row.Lookback != effective.LookbackAnchor)
-                return true;
-        }
-
-        return false;
     }
 
     private sealed class LookbackAnchorChoice(UtilityLookbackAnchor anchor, string label)
@@ -199,19 +185,21 @@ public partial class PlayPromptInjectionDialog
     {
         public required string JobId { get; init; }
 
+        public required string Layer { get; init; }
+
         public required string Label { get; init; }
 
         public int TurnPairs { get; set; }
 
         public int DefaultTurnPairs { get; init; }
 
-        public UtilityLookbackAnchor Lookback { get; set; }
+        public UtilityLookbackAnchor Scope { get; set; }
 
-        public UtilityLookbackAnchor DefaultLookback { get; init; }
+        public UtilityLookbackAnchor DefaultScope { get; init; }
 
-        public required string DefaultLookbackLabel { get; init; }
+        public required string DefaultScopeLabel { get; init; }
 
-        public required IReadOnlyList<LookbackAnchorChoice> LookbackChoices { get; init; }
+        public required IReadOnlyList<LookbackAnchorChoice> ScopeChoices { get; init; }
 
         public bool HasOverride { get; set; }
     }

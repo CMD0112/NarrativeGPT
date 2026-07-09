@@ -83,6 +83,9 @@
   }
 
   var REVISION_PROMPT_PREFIX = "For play turn ";
+  var REVISION_PROMPT_MARKER =
+    "disregard your prior assistant reply for this turn";
+  var INVALIDATION_MARKER_RE = /\[\[cgw:invalidation[^\]]*\]\]\s*/gi;
   var REVISION_HIDE_STORAGE_PREFIX = "cgw-revision-hide:";
   var UTILITY_HIDE_STORAGE_PREFIX = "cgw-utility-hide:";
   var UTILITY_TAG_MARKER = "[[cgw:utility";
@@ -259,6 +262,62 @@
     if (k && k.bus && typeof k.bus.diagnosticsLog === "function") {
       k.bus.diagnosticsLog("debug", eventName, message, data, "continuous-view", "navigation");
     }
+  }
+
+  function diagRevisionHide(message, data) {
+    diagScroll("revision_hide", message, data);
+  }
+
+  function isIncompleteNarratorCapture(text) {
+    if (!text || !String(text).trim()) return true;
+    var normalized = String(text).trim().toLowerCase();
+    return (
+      normalized === "thinking" ||
+      normalized.indexOf("thought for") === 0 ||
+      normalized === "show more" ||
+      normalized.indexOf("show more ") === 0
+    );
+  }
+
+  function findPrecedingAssistantWrap(turns, currentTurn) {
+    if (!turns || !turns.length || !currentTurn) return null;
+    var ordered = turns.slice().sort(compareTurnRootsDocumentOrder);
+    var idx = -1;
+    var i;
+    for (i = 0; i < ordered.length; i++) {
+      if (ordered[i] === currentTurn) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx < 0) return null;
+    for (i = idx - 1; i >= 0; i--) {
+      if (getTurnRole(ordered[i]) === "assistant") {
+        return turnWrapper(ordered[i]);
+      }
+    }
+    return null;
+  }
+
+  function matchesStoredRevisionPrompt(text) {
+    if (!text) return false;
+    var normalized = stripInvalidationMarkers(text).trim();
+    if (!normalized) return false;
+    var queue = globalThis.__cgwRevisionHideQueue || [];
+    for (var i = 0; i < queue.length; i++) {
+      var stored = queue[i].revisionPrompt;
+      if (!stored) continue;
+      stored = stripInvalidationMarkers(stored).trim();
+      if (!stored) continue;
+      if (normalized === stored) return true;
+      if (
+        normalized.indexOf(REVISION_PROMPT_MARKER) >= 0 &&
+        stored.indexOf(REVISION_PROMPT_MARKER) >= 0
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function diagScrollSkip(reason, data) {
@@ -2550,15 +2609,43 @@
     }
   }
 
-  function recordRevisionHide(assistantTurnId) {
-    if (!globalThis.__cgwHideAssistantEditArtifacts || !assistantTurnId) return;
+  function stripInvalidationMarkers(text) {
+    return String(text || "").replace(INVALIDATION_MARKER_RE, "").trimStart();
+  }
+
+  function isRevisionPromptText(text) {
+    if (!text) return false;
+    var stripped = stripInvalidationMarkers(text);
+    if (stripped.indexOf(REVISION_PROMPT_PREFIX) === 0) return true;
+    return stripped.indexOf(REVISION_PROMPT_MARKER) >= 0;
+  }
+
+  function isRevisionPromptTurn(wrap, role, blocks) {
+    if (role !== "user") return false;
+    if (isRevisionPromptText(blocksPlainText(blocks))) return true;
+    if (isRevisionPromptText(readTurnBubbleText(wrap, role))) return true;
+    return matchesStoredRevisionPrompt(blocksPlainText(blocks)) ||
+      matchesStoredRevisionPrompt(readTurnBubbleText(wrap, role));
+  }
+
+  function recordRevisionHide(assistantTurnId, revisionPrompt) {
+    if (!assistantTurnId) return;
     var queue = globalThis.__cgwRevisionHideQueue || [];
     queue.push({
       assistantTurnId: String(assistantTurnId),
       promptPrefix: REVISION_PROMPT_PREFIX,
+      revisionPrompt: revisionPrompt || null,
     });
     globalThis.__cgwRevisionHideQueue = queue;
+    globalThis.__cgwRevisionHideGeneration =
+      (globalThis.__cgwRevisionHideGeneration || 0) + 1;
     persistRevisionHideQueue();
+    delete globalThis.__cgwContinuousViewFingerprint;
+    delete globalThis.__cgwWeaveViewFingerprint;
+    diagRevisionHide("record_revision_hide", {
+      assistantTurnId: String(assistantTurnId),
+      queueLength: queue.length,
+    });
   }
 
   function blocksPlainText(blocks) {
@@ -2614,39 +2701,55 @@
     return { hide: false, hideNextAssistant: hideNextAssistant };
   }
 
-  function shouldHideTurn(turnId, role, blocks) {
-    if (!globalThis.__cgwHideAssistantEditArtifacts) return false;
+  function shouldHideRevisionArtifact(turnId, role, blocks, wrap) {
     var id = String(turnId);
-    var text = blocksPlainText(blocks);
+
+    if (isRevisionPromptTurn(wrap, role, blocks)) return true;
+
     var entries = globalThis.__cgwRevisionHideEntries || [];
     var i;
     for (i = 0; i < entries.length; i++) {
-      var meta = entries[i];
-      if (meta.assistantDomTurnId && String(meta.assistantDomTurnId) === id) {
-        return true;
-      }
-      if (role === "user" && meta.promptPrefix) {
-        if (text.indexOf(meta.promptPrefix) === 0) return true;
-      }
       if (
-        role === "user" &&
-        meta.messageKind === "narrator_revision_prompt" &&
-        text.indexOf(REVISION_PROMPT_PREFIX) === 0
+        entries[i].assistantDomTurnId &&
+        String(entries[i].assistantDomTurnId) === id
       ) {
         return true;
       }
     }
     var queue = globalThis.__cgwRevisionHideQueue || [];
-    if (!queue.length) return false;
     for (i = 0; i < queue.length; i++) {
-      var entry = queue[i];
-      if (String(entry.assistantTurnId) === id) return true;
-      if (role === "user" && entry.promptPrefix) {
-        if (text.indexOf(entry.promptPrefix) === 0) return true;
-        if (text.indexOf(REVISION_PROMPT_PREFIX) === 0) return true;
-      }
+      if (String(queue[i].assistantTurnId) === id) return true;
     }
     return false;
+  }
+
+  function shouldHideTurn(turnId, role, blocks, wrap) {
+    if (shouldHideRevisionArtifact(turnId, role, blocks, wrap)) return true;
+    if (!globalThis.__cgwHideAssistantEditArtifacts) return false;
+    return false;
+  }
+
+  function hiddenWrapsFingerprint(hiddenWraps) {
+    if (!hiddenWraps || !hiddenWraps.length) return "";
+    return hiddenWraps
+      .map(function (wrap) {
+        return (
+          (wrap && wrap.getAttribute("data-cgw-turn-id")) ||
+          (wrap && wrap.getAttribute("data-testid")) ||
+          ""
+        );
+      })
+      .join("\x04");
+  }
+
+  function computeOverlayFingerprint(segments, hiddenWraps) {
+    return (
+      computeSegmentsFingerprint(segments) +
+      "\x05" +
+      hiddenWrapsFingerprint(hiddenWraps) +
+      "\x05" +
+      String(globalThis.__cgwRevisionHideGeneration || 0)
+    );
   }
 
   function ensureScrollHostResizeObserver(scrollHost, container) {
@@ -3424,6 +3527,17 @@
       }
     }
 
+    if (isIncompleteNarratorCapture(captured)) {
+      if (
+        pending.revisedText &&
+        !isIncompleteNarratorCapture(pending.revisedText)
+      ) {
+        captured = pending.revisedText;
+      } else {
+        return;
+      }
+    }
+
     postTurnInvalidated(pending.assistantTurnId, "composer_revision", captured, {
       editRole: "assistant",
       revisionGroupId: pending.revisionGroupId,
@@ -3431,6 +3545,11 @@
       assistantDomTurnId: pending.assistantTurnId,
     });
     globalThis.__cgwPendingComposerRevision = null;
+    delete globalThis.__cgwContinuousViewFingerprint;
+    delete globalThis.__cgwWeaveViewFingerprint;
+    if (globalThis.__cgwContinuousViewSchedule) {
+      globalThis.__cgwContinuousViewSchedule({ immediate: true });
+    }
   }
 
   function submitComposerRevision(editedText, assistantTurnId, onComplete) {
@@ -3455,7 +3574,7 @@
       if (!submitBtn) submitBtn = findComposerSubmitButton(true);
       if (submitBtn && !submitBtn.disabled) {
         submitBtn.click();
-        recordRevisionHide(assistantTurnId);
+        recordRevisionHide(assistantTurnId, prompt);
         delete globalThis.__cgwContinuousViewFingerprint;
         setTimeout(function () {
           if (globalThis.__cgwContinuousViewEnabled) schedule();
@@ -4239,6 +4358,12 @@
     assignTurnIdsInDocumentOrder(turns);
 
     var streamingTurnId = getStreamingAssistantTurnId(turns);
+    var revisionHideStats = {
+      hidden: 0,
+      revisionPrompts: 0,
+      precedingAssistants: 0,
+      queueAssistants: 0,
+    };
 
     turns.forEach(function (turn) {
       if (seenTurn.has(turn)) return;
@@ -4252,8 +4377,23 @@
 
       var rawBlocks = getRawTurnBlocks(turn, turnId, role);
 
-      if (shouldHideTurn(turnId, role, rawBlocks)) {
+      if (role === "user" && isRevisionPromptTurn(wrap, role, rawBlocks)) {
         hiddenWraps.push(wrap);
+        revisionHideStats.revisionPrompts++;
+        revisionHideStats.hidden++;
+        var preceding = findPrecedingAssistantWrap(turns, turn);
+        if (preceding) {
+          hiddenWraps.push(preceding);
+          revisionHideStats.precedingAssistants++;
+          revisionHideStats.hidden++;
+        }
+        return;
+      }
+
+      if (shouldHideTurn(turnId, role, rawBlocks, wrap)) {
+        hiddenWraps.push(wrap);
+        revisionHideStats.hidden++;
+        if (role === "assistant") revisionHideStats.queueAssistants++;
         return;
       }
 
@@ -4289,6 +4429,27 @@
     }
 
     globalThis.__cgwTurnRegistry = registry;
+
+    var dedupedHidden = [];
+    var seenHiddenWrap = new Set();
+    hiddenWraps.forEach(function (wrap) {
+      if (!wrap || seenHiddenWrap.has(wrap)) return;
+      seenHiddenWrap.add(wrap);
+      dedupedHidden.push(wrap);
+    });
+    hiddenWraps = dedupedHidden;
+
+    if (revisionHideStats.hidden > 0) {
+      diagRevisionHide("collect_segments_revision_hide", {
+        segments: segments.length,
+        hidden: revisionHideStats.hidden,
+        revisionPrompts: revisionHideStats.revisionPrompts,
+        precedingAssistants: revisionHideStats.precedingAssistants,
+        queueAssistants: revisionHideStats.queueAssistants,
+        queueLength: (globalThis.__cgwRevisionHideQueue || []).length,
+        metadataEntries: (globalThis.__cgwRevisionHideEntries || []).length,
+      });
+    }
 
     var scrollHost = findScrollHost(turns);
     if (!scrollHost) {
@@ -4340,7 +4501,7 @@
     bindTranscriptObserver(scrollHost);
 
     var container = document.getElementById(CONTAINER_ID);
-    var fingerprint = computeSegmentsFingerprint(segments);
+    var fingerprint = computeOverlayFingerprint(segments, hiddenWraps);
     var prevFingerprint = globalThis.__cgwContinuousViewFingerprint;
     var unchanged =
       container &&
@@ -4355,6 +4516,7 @@
       !isNativeStreaming() &&
       !segmentsNeedPhraseHighlightRefresh(container)
     ) {
+      applyTurnSuppressions(segments, registry, hiddenWraps);
       if (!shouldSkipOverlayGeometrySync(scrollHost, container, computeComposerBottomInset(scrollHost))) {
         scheduleOverlayGeometrySync(scrollHost, container, { preserveScroll: true });
       }
@@ -4474,9 +4636,7 @@
         finalizeContinuousViewFormatting(container, null);
       }
 
-      if (!unchanged || reparented) {
-        applyTurnSuppressions(segments, registry, hiddenWraps);
-      }
+      applyTurnSuppressions(segments, registry, hiddenWraps);
 
       document.documentElement.setAttribute("data-cgw-continuous-view", "1");
       document.documentElement.removeAttribute("data-cgw-cv-pending");
@@ -4655,6 +4815,7 @@
     patchStreamingProseBlock: patchStreamingProseBlock,
     syncPacketContextExpandState: syncPacketContextExpandState,
     computeSegmentsFingerprint: computeSegmentsFingerprint,
+    computeOverlayFingerprint: computeOverlayFingerprint,
     blocksFingerprint: blocksFingerprint,
     blockFingerprint: blockFingerprint,
     bindContextMenuOnContainer: bindContextMenuOnContainer,

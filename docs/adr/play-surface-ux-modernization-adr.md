@@ -22,6 +22,7 @@ This ADR normatively records product decisions from the **2026-06-29 workshop** 
 ## Problem statement
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart TB
   subgraph today [Today — stacked chrome]
     Shell[MainWindow top bar]
@@ -207,6 +208,7 @@ Document in [ui-components.md](../reference/ui-components.md) when shipped.
 ## Chrome IA — target model
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
   subgraph bar [Unified session top bar]
     Back[Back + title]
@@ -262,13 +264,13 @@ flowchart LR
 
 ## Acceptance criteria (epic CMD-415)
 
-- [ ] No user intent has more than one **primary** chrome entry (secondary ⋯ menu allowed)
-- [ ] Companion restores last-used state; preferences documented above are implemented
-- [ ] Narrator minimal + full modes; Advanced dialog removed
-- [ ] AI tools action list default; button bank optional via settings
-- [ ] Comfortable/Compact changes control templates measurably
-- [ ] Icon rules applied per surface table
-- [ ] `docs/reference/ui-components.md` and [adventure-panel.md](../user/adventure-panel.md) updated
+- [x] No user intent has more than one **primary** chrome entry (secondary ⋯ menu allowed)
+- [x] Companion restores last-used state; preferences documented above are implemented
+- [x] Narrator minimal + full modes; Advanced dialog removed
+- [x] AI tools action list default; button bank optional via settings (`AiToolsLayout`; ButtonBank falls back to action list)
+- [x] Comfortable/Compact changes control templates measurably
+- [x] Icon rules applied per surface table
+- [x] `docs/reference/ui-components.md` and [adventure-panel.md](../user/adventure-panel.md) updated
 
 ---
 

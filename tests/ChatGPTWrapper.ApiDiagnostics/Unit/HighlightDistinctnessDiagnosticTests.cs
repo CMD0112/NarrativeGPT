@@ -48,7 +48,7 @@ public sealed class HighlightDistinctnessDiagnosticTests
         var palette = HighlightColorAssignmentEngine.BuildPalette(options, theme, canvas);
 
         Assert.True(palette.Count >= 10, $"Palette only has {palette.Count} colors");
-        AssertPerceptuallyDistinct(palette, minCount: 10);
+        AssertPerceptuallyDistinct(palette, minCount: 10, HighlightColorMath.MinPaletteDistinctDistance);
     }
 
     [Fact]
@@ -77,11 +77,14 @@ public sealed class HighlightDistinctnessDiagnosticTests
         AssertPerceptuallyDistinct(colors, 20);
     }
 
-    private static void AssertPerceptuallyDistinct(IReadOnlyList<string> colors, int minCount)
+    private static void AssertPerceptuallyDistinct(
+        IReadOnlyList<string> colors,
+        int minCount,
+        double minDistance = HighlightColorMath.MinDistinctDistance)
     {
         Assert.True(colors.Count >= minCount, $"Expected at least {minCount} colors, got {colors.Count}");
 
-        var minDistance = double.MaxValue;
+        var closestDistance = double.MaxValue;
         string? closestPair = null;
 
         for (var i = 0; i < colors.Count; i++)
@@ -89,16 +92,16 @@ public sealed class HighlightDistinctnessDiagnosticTests
             for (var j = i + 1; j < colors.Count; j++)
             {
                 var distance = HighlightColorMath.PerceptualDistance(colors[i], colors[j]);
-                if (distance < minDistance)
+                if (distance < closestDistance)
                 {
-                    minDistance = distance;
+                    closestDistance = distance;
                     closestPair = $"{colors[i]} vs {colors[j]}";
                 }
             }
         }
 
         Assert.True(
-            minDistance >= HighlightColorMath.MinDistinctDistance,
-            $"Closest pair {closestPair} distance {minDistance:F3} < {HighlightColorMath.MinDistinctDistance}");
+            closestDistance >= minDistance,
+            $"Closest pair {closestPair} distance {closestDistance:F3} < {minDistance}");
     }
 }

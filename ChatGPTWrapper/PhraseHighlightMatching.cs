@@ -102,6 +102,16 @@ internal static class PhraseHighlightMatching
         foreach (var variant in variants)
             AddNeedle(needles, seen, variant, tier: 1);
 
+        if (entityId is not null)
+        {
+            foreach (var variant in variants)
+            {
+                var alias = TryGetFirstNameAlias(variant, entityId);
+                if (alias is not null)
+                    AddNeedle(needles, seen, alias, tier: 2);
+            }
+        }
+
         return needles;
     }
 

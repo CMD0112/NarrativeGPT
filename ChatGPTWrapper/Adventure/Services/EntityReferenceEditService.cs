@@ -73,6 +73,15 @@ public static class EntityReferenceEditService
         else if (!EntityEditMapper.Apply(bundle.Entities, model))
             return false;
 
+        if (!deleted)
+        {
+            var kindId = EntityInternalStateService.ResolveKindId(
+                EntityEditMapper.KindForCategory(category),
+                category);
+            if (EntityInternalStateService.EnsureTracked(bundle, kindId, model.Id))
+                AdventureStore.Save(bundle, AdventureSaveScope.EntityInternalState);
+        }
+
         AdventureStore.Save(bundle);
 
         if (!promptCanonReconcile)
@@ -154,6 +163,7 @@ public static class EntityReferenceEditService
         return TryFinishEntityEditorSave(
             bundle,
             dlg.FormHost,
+            dlg.InternalStateHost,
             model,
             dlg.Deleted,
             category,
@@ -171,6 +181,7 @@ public static class EntityReferenceEditService
     public static bool TryFinishEntityEditorSave(
         AdventureBundle bundle,
         EntityEditFormHost form,
+        EntityInternalStateFormHost? internalStateForm,
         EntityEditModel model,
         bool deleted,
         string category,
@@ -211,11 +222,18 @@ public static class EntityReferenceEditService
 
         var highlightChanged = form.HasHighlightChanges();
         var entityChanged = form.HasEntityChanges();
+        var internalChanged = internalStateForm?.HasChanges() == true;
 
         if (!entityChanged && !model.IsNew)
         {
             if (highlightChanged)
                 form.TryCommitHighlightRulesIfChanged();
+            if (internalChanged && internalStateForm is not null)
+            {
+                internalStateForm.Apply(bundle);
+                AdventureStore.Save(bundle, AdventureSaveScope.EntityInternalState);
+            }
+
             return true;
         }
 
@@ -238,7 +256,36 @@ public static class EntityReferenceEditService
         else if (entityChanged)
             form.TrySyncEntityAliasHighlights();
 
+        if (internalChanged && internalStateForm is not null)
+        {
+            internalStateForm.Apply(bundle);
+            AdventureStore.Save(bundle, AdventureSaveScope.EntityInternalState);
+        }
+
         return true;
+    }
+
+    /// <summary>Commits a harvested entity profile from the native WinUI editor (no WPF form hosts).</summary>
+    public static bool TryCommitEntityEditor(
+        AdventureBundle bundle,
+        EntityEditModel model,
+        bool deleted,
+        string category,
+        string? priorName,
+        bool promptCanonReconcile = true)
+    {
+        if (!deleted && string.IsNullOrWhiteSpace(model.Name))
+            return false;
+
+        return TryCommitModel(
+            bundle,
+            model,
+            deleted,
+            category,
+            priorName,
+            owner: null,
+            callbacks: null,
+            promptCanonReconcile);
     }
 
     public static bool TryDelete(
@@ -300,25 +347,46 @@ public static class EntityReferenceEditService
         {
             case AdventurePlayEntityKind.Location:
                 if (bundle.Entities.Locations.FirstOrDefault(e => e.Id == row.Id) is { } location)
+                {
                     location.Pinned = !location.Pinned;
+                    if (location.Pinned)
+                        EntityInternalStateService.BindIfMissing(
+                            bundle,
+                            EntityInternalStateKind.Location,
+                            row.Id);
+                }
                 else
                     return false;
                 break;
             case AdventurePlayEntityKind.Concept:
                 if (bundle.Entities.Concepts.FirstOrDefault(e => e.Id == row.Id) is { } concept)
+                {
                     concept.Pinned = !concept.Pinned;
+                    if (concept.Pinned)
+                        EntityInternalStateService.BindIfMissing(
+                            bundle,
+                            EntityInternalStateKind.Concept,
+                            row.Id);
+                }
                 else
                     return false;
                 break;
             default:
                 if (bundle.Entities.Characters.FirstOrDefault(e => e.Id == row.Id) is { } character)
+                {
                     character.Pinned = !character.Pinned;
+                    if (character.Pinned)
+                        EntityInternalStateService.BindIfMissing(
+                            bundle,
+                            EntityInternalStateKind.Npc,
+                            row.Id);
+                }
                 else
                     return false;
                 break;
         }
 
-        AdventureStore.Save(bundle);
+        AdventureStore.Save(bundle, AdventureSaveScope.Entities | AdventureSaveScope.EntityInternalState);
         return true;
     }
 

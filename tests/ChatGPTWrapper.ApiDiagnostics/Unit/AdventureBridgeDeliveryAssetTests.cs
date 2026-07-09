@@ -38,6 +38,8 @@ public sealed class AdventureBridgeDeliveryAssetTests
 
         var text = File.ReadAllText(path);
         Assert.Contains("compose_native_submit_click", text);
-        Assert.Contains("allowing ChatGPT default", text);
+        Assert.Contains("compose_send_blocked", text);
+        Assert.Contains("Native send blocked; intercept unavailable", text);
+        Assert.Contains("__cgwNativeComposePassthrough", text);
     }
 }

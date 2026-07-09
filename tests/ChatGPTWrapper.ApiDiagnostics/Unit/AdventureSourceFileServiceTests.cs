@@ -71,7 +71,7 @@ public sealed class AdventureSourceFileServiceTests : IClassFixture<FileLockAwar
         var entry = reloaded!.SourceManifest.Entries
             .FirstOrDefault(e => string.Equals(e.RelativePath, SectionSchema.ScenarioFile, StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(entry);
-        Assert.Equal(SourceSyncState.LocalOnly, entry!.SyncState);
+        Assert.Equal(SourceSyncState.LocalNewer, entry!.SyncState);
         Assert.False(string.IsNullOrWhiteSpace(entry.LocalSha256));
     }
 
@@ -79,10 +79,11 @@ public sealed class AdventureSourceFileServiceTests : IClassFixture<FileLockAwar
     public void TryWrite_archives_previous_version_on_overwrite()
     {
         var bundle = AdventureStore.CreateNew("Archive test");
-        AdventureSourceFileService.TryWrite(bundle, SectionSchema.WorldFile, "# World\n\nVersion 1", "test");
-        AdventureSourceFileService.TryWrite(bundle, SectionSchema.WorldFile, "# World\n\nVersion 2", "test");
+        const string archivePath = "notes-archive.md";
+        AdventureSourceFileService.TryWrite(bundle, archivePath, "# Notes\n\nVersion 1", "test");
+        AdventureSourceFileService.TryWrite(bundle, archivePath, "# Notes\n\nVersion 2", "test");
 
-        var history = SourceFileHistoryService.ListHistory(bundle.Metadata.Id, SectionSchema.WorldFile);
+        var history = SourceFileHistoryService.ListHistory(bundle.Metadata.Id, archivePath);
         Assert.Single(history);
         Assert.Equal("test", history[0].Reason);
     }
@@ -155,6 +156,10 @@ public sealed class AdventureSourceFileServiceTests : IClassFixture<FileLockAwar
             bundle.Metadata.Title,
             SectionSchema.CastFile);
         AdventureDesignService.EnsureWorkspace(bundle);
+        var castPath = AdventureSourceFileService.ResolveAbsolutePath(bundle, SectionSchema.CastFile);
+        if (File.Exists(castPath))
+            File.Delete(castPath);
+
         var sourcesStep = AdventureDesignService.GetOrCreateStep(bundle, AdventureDesignStep.Sources);
         sourcesStep.ChatMessages.Add(new DesignChatMessage
         {
@@ -206,7 +211,9 @@ public sealed class AdventureSourceFileServiceTests : IClassFixture<FileLockAwar
         Assert.Equal(2, saved);
         Assert.True(File.Exists(AdventureSourceFileService.ResolveAbsolutePath(bundle, SectionSchema.CastFile)));
         Assert.True(File.Exists(AdventureSourceFileService.ResolveAbsolutePath(bundle, SectionSchema.WorldFile)));
-        Assert.Equal(2, bundle.SourceManifest.Entries.Count);
+        Assert.Equal(2, bundle.SourceManifest.Entries.Count(e =>
+            string.Equals(e.RelativePath, SectionSchema.CastFile, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(e.RelativePath, SectionSchema.WorldFile, StringComparison.OrdinalIgnoreCase)));
     }
 
     [Fact]

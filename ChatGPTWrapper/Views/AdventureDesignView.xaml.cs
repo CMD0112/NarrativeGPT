@@ -23,6 +23,7 @@ public partial class AdventureDesignView : UserControl
     private DispatcherTimer? _canonSyncNoticeTimer;
     private bool _canonSyncNoticePersistent;
     private bool _shellChromeActive;
+    private bool _referenceAutoGenerateAttempted;
 
     public event EventHandler? BackRequested;
 
@@ -69,7 +70,23 @@ public partial class AdventureDesignView : UserControl
     public AdventureDesignView()
     {
         InitializeComponent();
+        EnsureStepComboItems();
         WireEntityReferencePanel();
+    }
+
+    private void EnsureStepComboItems()
+    {
+        if (StepCombo.Items.Count > 0)
+            return;
+
+        foreach (var step in AdventureDesignService.OrderedSteps.Where(s => s is not AdventureDesignStep.Setup))
+        {
+            StepCombo.Items.Add(new ComboBoxItem
+            {
+                Content = AdventureDesignService.GetStepDisplayName(step),
+                Tag = step.ToString(),
+            });
+        }
     }
 
     public void SetShellChromeState(bool shellChromeActive)
@@ -177,6 +194,7 @@ public partial class AdventureDesignView : UserControl
 
     public void LoadAdventure(Guid id)
     {
+        _referenceAutoGenerateAttempted = false;
         _bundle = AdventureStore.Load(id);
         if (_bundle is null)
             return;
@@ -280,8 +298,9 @@ public partial class AdventureDesignView : UserControl
             .Where(s => s is not AdventureDesignStep.Setup)
             .ToList();
         var idx = designSteps.IndexOf(CurrentStep);
-        if (idx >= 0 && idx < StepTabs.Items.Count)
-            StepTabs.SelectedIndex = idx;
+        EnsureStepComboItems();
+        if (idx >= 0 && idx < StepCombo.Items.Count)
+            StepCombo.SelectedIndex = idx;
         _suppressTabChange = false;
     }
 
@@ -311,6 +330,8 @@ public partial class AdventureDesignView : UserControl
         PinDesignTabMenuItem.IsEnabled = hasProject;
 
         UpdatePipelineExpanderForStep(step);
+
+        MaybeAutoGenerateReferenceFiles(step);
 
         if (isReview)
             ShowReviewSummary();
@@ -446,6 +467,13 @@ public partial class AdventureDesignView : UserControl
             return;
         }
 
+        var step = CurrentStep;
+        if (step is not AdventureDesignStep.Sources and not AdventureDesignStep.Review)
+        {
+            PipelineChecklistExpander.Visibility = Visibility.Collapsed;
+            return;
+        }
+
         PipelineChecklistExpander.Visibility = Visibility.Visible;
         var muted = (System.Windows.Media.Brush)FindResource("TextMutedBrush");
         var accent = (System.Windows.Media.Brush)FindResource("AccentPrimaryBrush");
@@ -454,20 +482,50 @@ public partial class AdventureDesignView : UserControl
         var panelBg = (System.Windows.Media.Brush)FindResource("BgSurfaceBrush");
         var accentSubtle = (System.Windows.Media.Brush)FindResource("AccentSubtleBrush");
 
-        foreach (var row in AdventureDesignSourcePromptService.BuildPipelineChecklist(_bundle))
+        var referenceDefs = AdventureDesignSourcePromptService.ReferenceDefinitions;
+        if (referenceDefs.Count > 0)
         {
-            if (row.IsReferenceFile && PipelineChecklistPanel.Children.Count == 0)
+            PipelineChecklistPanel.Children.Add(new TextBlock
             {
-                PipelineChecklistPanel.Children.Add(new TextBlock
+                Text = "Project reference files",
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = muted,
+                Margin = new Thickness(0, 0, 0, 4),
+            });
+
+            var refActions = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 6),
+            };
+            var generateBtn = new Button
+            {
+                Content = "Generate reference files",
+                Padding = new Thickness(8, 3, 8, 3),
+                ToolTip = "Write canon-format.md, narrator-scales.md, and entity-state-format.md into sources/",
+            };
+            generateBtn.Click += (_, _) => GenerateReferenceFiles(SourceExportMode.Force);
+            refActions.Children.Add(generateBtn);
+
+            if (AdventureDesignSourcePromptService.AnyReferenceFilesMissing(_bundle))
+            {
+                refActions.Children.Add(new TextBlock
                 {
-                    Text = "Project reference files",
+                    Text = "· missing on disk",
                     FontSize = 10,
-                    FontWeight = FontWeights.SemiBold,
-                    Foreground = muted,
-                    Margin = new Thickness(0, 0, 0, 4),
+                    Foreground = accent,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(8, 0, 0, 0),
                 });
             }
-            else if (!row.IsReferenceFile && row.IsLoreFile && row.Position == 1)
+
+            PipelineChecklistPanel.Children.Add(refActions);
+        }
+
+        foreach (var row in AdventureDesignSourcePromptService.BuildPipelineChecklist(_bundle))
+        {
+            if (!row.IsReferenceFile && row.IsLoreFile && row.Position == 1)
             {
                 PipelineChecklistPanel.Children.Add(new TextBlock
                 {
@@ -487,7 +545,7 @@ public partial class AdventureDesignView : UserControl
             string statusText;
             if (row.IsReferenceFile)
             {
-                var diskLabel = row.PresentOnDisk ? "✓ on disk" : "○ missing · Refresh export";
+                var diskLabel = row.PresentOnDisk ? "✓ on disk" : "○ missing · Generate";
                 statusText = row.IsPublishedToProject
                     ? $"{diskLabel} · ✓ uploaded"
                     : $"{diskLabel} · ↑ upload to Project";
@@ -505,7 +563,7 @@ public partial class AdventureDesignView : UserControl
 
             var rowPanel = new Border
             {
-                Padding = new Thickness(6, 4, 6, 4),
+                Padding = new Thickness(4, 3, 4, 3),
                 Margin = new Thickness(0, 0, 0, 2),
                 Background = row.IsNextRecommended ? accentSubtle : panelBg,
                 BorderThickness = new Thickness(0),
@@ -576,6 +634,12 @@ public partial class AdventureDesignView : UserControl
             return;
         }
 
+        if (string.Equals(relativePath, SectionSchema.EntityStateFormatFile, StringComparison.OrdinalIgnoreCase))
+        {
+            OpenEntityStateFormatReferenceFile();
+            return;
+        }
+
         AdventureDesignStep step;
         if (string.Equals(relativePath, InstructionContractService.InstructionsSnippetFile, StringComparison.OrdinalIgnoreCase))
             step = AdventureDesignStep.Instructions;
@@ -604,6 +668,7 @@ public partial class AdventureDesignView : UserControl
             DraftPanel.Children.Add(new TextBlock
             {
                 Text = field.Label,
+                Style = (Style)FindResource("ShellSectionHeaderStyle"),
                 Margin = new Thickness(0, 0, 0, 4),
             });
 
@@ -634,6 +699,7 @@ public partial class AdventureDesignView : UserControl
             DraftPanel.Children.Add(new TextBlock
             {
                 Text = "Additional notes",
+                Style = (Style)FindResource("ShellSectionHeaderStyle"),
                 Margin = new Thickness(0, 0, 0, 4),
             });
             var notes = new TextBox
@@ -686,7 +752,6 @@ public partial class AdventureDesignView : UserControl
             return;
 
         AdventureDesignService.EnsureWorkspace(_bundle);
-        var muted = (System.Windows.Media.Brush)FindResource("TextMutedBrush");
         var title = _bundle.Metadata.Title;
         var canUseChat = AdventureDesignChatService.CanUseChat(_bundle);
 
@@ -698,14 +763,18 @@ public partial class AdventureDesignView : UserControl
             .ToList();
 
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock
+        var header = CreateSectionHeader(step == AdventureDesignStep.Sources
+            ? "Project source file prompts"
+            : "Source file prompt");
+        if (!string.IsNullOrWhiteSpace(title))
         {
-            Text = step == AdventureDesignStep.Sources
-                ? "Project source file prompts"
-                : "Source file prompt",
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 4),
-        });
+            var examplePath = AdventureDesignSourcePromptService.BuildPrefixedSourcesPath(
+                title,
+                SectionSchema.ScenarioFile);
+            header.ToolTip = $"Files use adventure title \"{title}\" (e.g. {examplePath}).";
+        }
+
+        panel.Children.Add(header);
 
         if (lorePrompts.Count == 1 && step != AdventureDesignStep.Sources)
         {
@@ -717,41 +786,17 @@ public partial class AdventureDesignView : UserControl
             {
                 var loreTotal = AdventureDesignSourcePromptService.PromptPipelineOrder.Count(p =>
                     !string.Equals(p, InstructionContractService.InstructionsSnippetFile, StringComparison.OrdinalIgnoreCase));
-                panel.Children.Add(new TextBlock
-                {
-                    Text = $"Source draft {pipelineIndex + 1} of {loreTotal}: {only.RelativePath}",
-                    Foreground = muted,
-                    FontSize = 11,
-                    Margin = new Thickness(0, 0, 0, 4),
-                });
+                panel.Children.Add(CreateHintText(
+                    $"Draft {pipelineIndex + 1} of {loreTotal}: {only.RelativePath}",
+                    new Thickness(0, 0, 0, 4)));
             }
         }
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = step == AdventureDesignStep.Sources
-                ? "Draft one file with a button, or select several and send as a single combined prompt."
-                : "Ask for a downloadable source file and the same contents inline in the design thread reply.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = muted,
-            FontSize = 11,
-            Margin = new Thickness(0, 0, 0, 8),
-        });
-
-        if (!string.IsNullOrWhiteSpace(title))
-        {
-            var examplePath = AdventureDesignSourcePromptService.BuildPrefixedSourcesPath(
-                title,
-                SectionSchema.ScenarioFile);
-            panel.Children.Add(new TextBlock
-            {
-                Text = $"Files use wrapper title: \"{title}\" (e.g. {examplePath})",
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = muted,
-                FontSize = 11,
-                Margin = new Thickness(0, 0, 0, 4),
-            });
-        }
+        panel.Children.Add(CreateHintText(
+            step == AdventureDesignStep.Sources
+                ? "Draft one file, or combine several into a single prompt."
+                : "Draft asks for a downloadable source file plus inline reply text.",
+            new Thickness(0, 0, 0, 8)));
 
         var outOfOrderPaths = lorePrompts
             .Where(p => AdventureDesignSourcePromptService.IsOutOfOrder(_bundle, p.RelativePath))
@@ -761,29 +806,25 @@ public partial class AdventureDesignView : UserControl
         {
             panel.Children.Add(new TextBlock
             {
-                Text = $"Out of pipeline order: {string.Join(", ", outOfOrderPaths)} — send earlier files first, or confirm when drafting.",
+                Text = $"Out of order: {string.Join(", ", outOfOrderPaths)}",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = (System.Windows.Media.Brush)FindResource("WarningBrush"),
-                FontSize = 11,
+                FontSize = HintFontSize,
                 Margin = new Thickness(0, 0, 0, 8),
+                ToolTip = "Send earlier pipeline files first, or confirm when drafting out of order.",
             });
         }
 
         if (DesignTabPinService.GetDesignConversationId(_bundle) is null
             && string.IsNullOrWhiteSpace(_bundle.Metadata.PinnedDesignTabKey))
         {
-            panel.Children.Add(new TextBlock
-            {
-                Text = "Open a Project chat (New chat in the Project). Pin with “Use this tab as design thread” to remember it, then click Draft.",
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = muted,
-                FontSize = 11,
-                Margin = new Thickness(0, 0, 0, 8),
-            });
+            panel.Children.Add(CreateHintText(
+                "Pin a Project chat as the design thread (More → Use this tab as design thread) before drafting.",
+                new Thickness(0, 0, 0, 8)));
         }
 
         if (hasInstructionsWorkflow)
-            AppendInstructionsWorkflowPanel(panel, muted);
+            AppendInstructionsWorkflowPanel(panel);
 
         var buttons = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
         for (var i = 0; i < lorePrompts.Count; i++)
@@ -791,7 +832,7 @@ public partial class AdventureDesignView : UserControl
             var def = lorePrompts[i];
             var sent = AdventureDesignService.IsSourceFilePromptSent(_bundle, def.RelativePath);
             var label = lorePrompts.Count > 1
-                ? $"{i + 1}. {def.ButtonLabel}{(sent ? " ✓ sent" : "")}"
+                ? $"{i + 1}. {def.ButtonLabel}{(sent ? " ✓" : "")}"
                 : $"{def.ButtonLabel}{(sent ? " ✓ sent" : "")}";
 
             var tooltip = def.Summary;
@@ -799,14 +840,9 @@ public partial class AdventureDesignView : UserControl
             if (!string.IsNullOrWhiteSpace(outOfOrder))
                 tooltip = $"{tooltip}\n{outOfOrder}";
 
-            var btn = new Button
-            {
-                Content = label,
-                Padding = new Thickness(8, 4, 8, 4),
-                Margin = new Thickness(0, 0, 6, 6),
-                Tag = def.RelativePath,
-                ToolTip = tooltip,
-            };
+            var btn = CreateSecondaryButton(label, tooltip);
+            btn.Margin = new Thickness(0, 0, 6, 6);
+            btn.Tag = def.RelativePath;
             btn.Click += SourceFilePrompt_Click;
             buttons.Children.Add(btn);
         }
@@ -815,19 +851,24 @@ public partial class AdventureDesignView : UserControl
 
         if (lorePrompts.Count > 1)
         {
-            panel.Children.Add(new TextBlock
+            var combineExpander = new Expander
             {
-                Text = "Combine selected",
-                FontWeight = FontWeights.SemiBold,
-                Margin = new Thickness(0, 8, 0, 4),
-            });
+                Header = new TextBlock
+                {
+                    Text = "Combine selected prompts",
+                    Style = (Style)FindResource("ShellSectionHintStyle"),
+                },
+                IsExpanded = false,
+                Margin = new Thickness(0, 4, 0, 0),
+            };
+            var combineBody = new StackPanel();
 
-            var selectPanel = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var selectPanel = new StackPanel { Margin = new Thickness(0, 4, 0, 8) };
             for (var i = 0; i < lorePrompts.Count; i++)
             {
                 var def = lorePrompts[i];
                 var sent = AdventureDesignService.IsSourceFilePromptSent(_bundle, def.RelativePath);
-                var checkboxLabel = $"{i + 1}. {def.ButtonLabel}{(sent ? " ✓ sent" : "")}";
+                var checkboxLabel = $"{i + 1}. {def.ButtonLabel}{(sent ? " ✓" : "")}";
                 var tooltip = def.Summary;
                 var outOfOrder = AdventureDesignSourcePromptService.GetOutOfOrderTooltip(_bundle, def.RelativePath);
                 if (!string.IsNullOrWhiteSpace(outOfOrder))
@@ -842,17 +883,15 @@ public partial class AdventureDesignView : UserControl
                 });
             }
 
-            panel.Children.Add(selectPanel);
+            combineBody.Children.Add(selectPanel);
 
-            var sendSelected = new Button
-            {
-                Content = "Send selected as one prompt",
-                Padding = new Thickness(8, 4, 8, 4),
-                Margin = new Thickness(0, 0, 0, 4),
-                Tag = "send-combined-source-prompts",
-            };
+            var sendSelected = CreateSecondaryButton("Send selected as one prompt");
+            sendSelected.Margin = new Thickness(0, 0, 0, 4);
+            sendSelected.Tag = "send-combined-source-prompts";
             sendSelected.Click += SendSelectedSourcePrompts_Click;
-            panel.Children.Add(sendSelected);
+            combineBody.Children.Add(sendSelected);
+            combineExpander.Content = combineBody;
+            panel.Children.Add(combineExpander);
         }
 
         DraftPanel.Children.Add(WrapInShellCard(panel));
@@ -861,79 +900,58 @@ public partial class AdventureDesignView : UserControl
     private static bool IsInstructionsSnippet(string relativePath) =>
         string.Equals(relativePath, InstructionContractService.InstructionsSnippetFile, StringComparison.OrdinalIgnoreCase);
 
-    private void AppendInstructionsWorkflowPanel(StackPanel panel, System.Windows.Media.Brush muted)
+    private void AppendInstructionsWorkflowPanel(StackPanel panel)
     {
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Instructions (deterministic + optional AI refine)",
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 8, 0, 4),
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Define the contract in the designer, generate the file locally without AI, then optionally refine wording in the design thread.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = muted,
-            FontSize = 11,
-            Margin = new Thickness(0, 0, 0, 4),
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Tutorial: Design instructions… → Save → Generate instructions file → Copy instructions. Do not use Draft cast/world prompts for instructions.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = muted,
-            FontSize = 11,
-            Margin = new Thickness(0, 0, 0, 8),
-        });
+        panel.Children.Add(CreateSectionHeader("Instructions"));
+        panel.Children.Add(CreateHintText(
+            "Define in the designer, generate locally, then optionally refine wording in the design thread.",
+            new Thickness(0, 0, 0, 8)));
 
-        var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
-        var designBtn = new Button
-        {
-            Content = "Design instructions…",
-            Padding = new Thickness(8, 4, 8, 4),
-            Margin = new Thickness(0, 0, 6, 6),
-        };
+        var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+        var designBtn = CreateSecondaryButton(
+            "Design instructions…",
+            "Open the instruction contract designer — define boundaries before AI refine.");
+        designBtn.Margin = new Thickness(0, 0, 6, 6);
         designBtn.Click += async (_, _) => await RunOpenInstructionDesignerAsync();
         actions.Children.Add(designBtn);
 
-        var generateBtn = new Button
-        {
-            Content = "Generate instructions file",
-            Padding = new Thickness(8, 4, 8, 4),
-            Margin = new Thickness(0, 0, 6, 6),
-        };
+        var generateBtn = CreateSecondaryButton("Generate instructions file");
+        generateBtn.Margin = new Thickness(0, 0, 6, 6);
         generateBtn.Click += async (_, _) => await RunGenerateInstructionsFileAsync();
         actions.Children.Add(generateBtn);
 
         var sent = AdventureDesignService.IsSourceFilePromptSent(
             _bundle!,
             InstructionContractService.InstructionsSnippetFile);
-        var refineBtn = new Button
-        {
-            Content = $"Refine instructions with AI{(sent ? " ✓ sent" : "")}",
-            Padding = new Thickness(8, 4, 8, 4),
-            Margin = new Thickness(0, 0, 6, 6),
-            ToolTip = "Sends the canonical manual version for wording polish only.",
-        };
+        var refineBtn = CreateSecondaryButton(
+            $"Refine with AI{(sent ? " ✓" : "")}",
+            "Sends the canonical manual version for wording polish only.");
+        refineBtn.Margin = new Thickness(0, 0, 6, 6);
         refineBtn.Click += async (_, _) => await RunRefineInstructionsAsync();
         refineBtn.IsEnabled = _bundle is not null && AdventureDesignChatService.CanUseChat(_bundle);
         actions.Children.Add(refineBtn);
         panel.Children.Add(actions);
 
-        panel.Children.Add(new TextBlock
+        var notesExpander = new Expander
         {
-            Text = "Refinement notes (optional)",
+            Header = new TextBlock
+            {
+                Text = "Refinement notes (optional)",
+                Style = (Style)FindResource("ShellSectionHintStyle"),
+            },
+            IsExpanded = false,
             Margin = new Thickness(0, 0, 0, 4),
-        });
+        };
         var notes = new TextBox
         {
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
             MinHeight = 40,
-            Margin = new Thickness(0, 0, 0, 4),
+            Margin = new Thickness(0, 4, 0, 0),
         };
         notes.Name = "InstructionsRefineNotesBox";
-        panel.Children.Add(notes);
+        notesExpander.Content = notes;
+        panel.Children.Add(notesExpander);
     }
 
     private string? ReadInstructionsRefineNotes()
@@ -1027,6 +1045,7 @@ public partial class AdventureDesignView : UserControl
         var panel = new StackPanel();
         AppendCanonFormatReferenceCallout(panel, sourcesDir, muted);
         AppendNarratorScalesReferenceCallout(panel, sourcesDir, muted);
+        AppendEntityStateFormatReferenceCallout(panel, sourcesDir, muted);
 
         panel.Children.Add(new TextBlock
         {
@@ -1358,7 +1377,9 @@ public partial class AdventureDesignView : UserControl
             .Where(p => p.Status == DesignProposalStatus.Pending)
             .ToList();
 
-        AcceptProposalsButton.IsEnabled = pending.Count > 0;
+        var hasPending = pending.Count > 0;
+        AcceptProposalsButton.IsEnabled = hasPending;
+        AcceptProposalsButton.Visibility = hasPending ? Visibility.Visible : Visibility.Collapsed;
 
         var existing = DraftPanel.Children.OfType<Border>().Where(b => b.Name == "ProposalsPanel").ToList();
         foreach (var el in existing)
@@ -1371,7 +1392,7 @@ public partial class AdventureDesignView : UserControl
         panel.Children.Add(new TextBlock
         {
             Text = "Pending proposals",
-            FontWeight = FontWeights.SemiBold,
+            Style = (Style)FindResource("ShellSectionHeaderStyle"),
             Margin = new Thickness(0, 0, 0, 6),
         });
 
@@ -1414,12 +1435,12 @@ public partial class AdventureDesignView : UserControl
         AdventureStore.Save(_bundle);
     }
 
-    private void StepTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void StepCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_suppressTabChange || _bundle is null || StepTabs.SelectedItem is not TabItem tab)
+        if (_suppressTabChange || _bundle is null || StepCombo.SelectedItem is not ComboBoxItem item)
             return;
 
-        if (tab.Tag is not string tag || !Enum.TryParse<AdventureDesignStep>(tag, out var step))
+        if (item.Tag is not string tag || !Enum.TryParse<AdventureDesignStep>(tag, out var step))
             return;
 
         AdventureDesignService.GoToStep(_bundle, step);
@@ -1911,7 +1932,7 @@ public partial class AdventureDesignView : UserControl
         var accent = (System.Windows.Media.Brush)FindResource("AccentPrimaryBrush");
 
         var status = !present
-            ? "Missing — run Refresh export in Source Manager or regenerate from JSON."
+            ? "Missing — use Generate reference files below, or Refresh export in Source Manager."
             : uploaded
                 ? "Ready on disk and marked uploaded to Project."
                 : "Ready on disk — upload to ChatGPT Project → Files and mark Published in Source Manager.";
@@ -1937,6 +1958,14 @@ public partial class AdventureDesignView : UserControl
 
         var menu = new Menu { Background = System.Windows.Media.Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left };
         var root = new MenuItem { Header = "Canon reference…", Padding = new Thickness(10, 4, 10, 4) };
+
+        var generateItem = new MenuItem
+        {
+            Header = "Generate into sources",
+            ToolTip = "Write canon-format.md from the current canon schema",
+        };
+        generateItem.Click += (_, _) => GenerateReferenceFiles(SourceExportMode.Force);
+        root.Items.Add(generateItem);
 
         var openItem = new MenuItem { Header = "Open canon-format.md", IsEnabled = present };
         openItem.Click += (_, _) => OpenCanonFormatReferenceFile();
@@ -1997,7 +2026,7 @@ public partial class AdventureDesignView : UserControl
         var path = AdventureSourceFileService.ResolveAbsolutePath(_bundle, SectionSchema.CanonFormatFile);
         if (!File.Exists(path))
         {
-            SetStatus("canon-format.md is missing — run Refresh export in Source Manager.");
+            SetStatus("canon-format.md is missing — use Generate reference files on the Sources step.");
             return;
         }
 
@@ -2022,7 +2051,7 @@ public partial class AdventureDesignView : UserControl
         var accent = (System.Windows.Media.Brush)FindResource("AccentPrimaryBrush");
 
         var status = !present
-            ? "Missing — run Refresh export in Source Manager or regenerate from JSON."
+            ? "Missing — use Generate reference files below, or Refresh export in Source Manager."
             : uploaded
                 ? "Ready on disk and marked uploaded to Project."
                 : "Ready on disk — upload to ChatGPT Project → Files and mark Published in Source Manager.";
@@ -2048,6 +2077,14 @@ public partial class AdventureDesignView : UserControl
 
         var menu = new Menu { Background = System.Windows.Media.Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left };
         var root = new MenuItem { Header = "Narrator scales…", Padding = new Thickness(10, 4, 10, 4) };
+
+        var generateItem = new MenuItem
+        {
+            Header = "Generate into sources",
+            ToolTip = "Write narrator-scales.md from the current scales catalog",
+        };
+        generateItem.Click += (_, _) => GenerateReferenceFiles(SourceExportMode.Force);
+        root.Items.Add(generateItem);
 
         var openItem = new MenuItem { Header = "Open narrator-scales.md", IsEnabled = present };
         openItem.Click += (_, _) => OpenNarratorScalesReferenceFile();
@@ -2108,12 +2145,162 @@ public partial class AdventureDesignView : UserControl
         var path = AdventureSourceFileService.ResolveAbsolutePath(_bundle, SectionSchema.NarratorScalesFile);
         if (!File.Exists(path))
         {
-            SetStatus("narrator-scales.md is missing — run Refresh export in Source Manager.");
+            SetStatus("narrator-scales.md is missing — use Generate reference files on the Sources step.");
             return;
         }
 
         Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         SetStatus($"Opened {SectionSchema.NarratorScalesFile}");
+    }
+
+    private void AppendEntityStateFormatReferenceCallout(
+        StackPanel panel,
+        string sourcesDir,
+        System.Windows.Media.Brush muted)
+    {
+        if (_bundle is null)
+            return;
+
+        AdventureSourceFileService.EnsureLayout(_bundle);
+        var statePath = AdventureSourceFileService.ResolveAbsolutePath(_bundle, SectionSchema.EntityStateFormatFile);
+        var present = File.Exists(statePath);
+        var entry = _bundle.SourceManifest.Entries.FirstOrDefault(e =>
+            string.Equals(e.RelativePath, SectionSchema.EntityStateFormatFile, StringComparison.OrdinalIgnoreCase));
+        var uploaded = entry?.IsManuallyCurrent() ?? false;
+        var accent = (System.Windows.Media.Brush)FindResource("AccentPrimaryBrush");
+
+        var status = !present
+            ? "Missing — use Generate reference files below, or Refresh export in Source Manager."
+            : uploaded
+                ? "Ready on disk and marked uploaded to Project."
+                : "Ready on disk — upload to ChatGPT Project → Files and mark Published in Source Manager.";
+
+        var callout = new StackPanel();
+        callout.Children.Add(new TextBlock
+        {
+            Text = "Entity state format reference (entity-state-format.md)",
+            Style = (Style)FindResource("ShellSectionHeaderStyle"),
+            Margin = new Thickness(0, 0, 0, 4),
+        });
+        callout.Children.Add(CreateHintText(
+            "Auto-generated field paths for entity-state.json (mood, trust, injuries, quest progress). Separate from canon profile in entities.json.",
+            new Thickness(0, 0, 0, 4)));
+        callout.Children.Add(new TextBlock
+        {
+            Text = status,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = HintFontSize,
+            Foreground = uploaded ? (System.Windows.Media.Brush)FindResource("SuccessBrush") : accent,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        var menu = new Menu { Background = System.Windows.Media.Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left };
+        var root = new MenuItem { Header = "Entity state reference…", Padding = new Thickness(10, 4, 10, 4) };
+
+        var generateItem = new MenuItem
+        {
+            Header = "Generate into sources",
+            ToolTip = "Write entity-state-format.md from the internal-state schema",
+        };
+        generateItem.Click += (_, _) => GenerateReferenceFiles(SourceExportMode.Force);
+        root.Items.Add(generateItem);
+
+        var openItem = new MenuItem { Header = "Open entity-state-format.md", IsEnabled = present };
+        openItem.Click += (_, _) => OpenEntityStateFormatReferenceFile();
+        root.Items.Add(openItem);
+
+        var copyItem = new MenuItem
+        {
+            Header = "Copy for Project upload",
+            IsEnabled = present,
+            ToolTip = "Copy file contents to paste into ChatGPT Project → Files",
+        };
+        copyItem.Click += (_, _) =>
+        {
+            if (!present)
+                return;
+
+            Clipboard.SetText(File.ReadAllText(statePath));
+            SetStatus("Copied entity-state-format.md to clipboard — paste into ChatGPT Project → Files.");
+        };
+        root.Items.Add(copyItem);
+
+        var sourceMgrItem = new MenuItem
+        {
+            Header = "Open Source Manager",
+            ToolTip = "Refresh export, drag files to Project, and mark Published",
+        };
+        sourceMgrItem.Click += async (_, _) =>
+        {
+            if (OpenSourceManagerAsync is not null)
+                await OpenSourceManagerAsync();
+            else
+            {
+                Directory.CreateDirectory(sourcesDir);
+                Process.Start(new ProcessStartInfo(sourcesDir) { UseShellExecute = true });
+                SetStatus($"Opened {sourcesDir}");
+            }
+        };
+        root.Items.Add(sourceMgrItem);
+
+        menu.Items.Add(root);
+        callout.Children.Add(menu);
+
+        panel.Children.Add(new Border
+        {
+            Style = (Style)FindResource("ShellCardStyle"),
+            Background = (System.Windows.Media.Brush)FindResource("AccentSubtleBrush"),
+            Margin = new Thickness(0, 0, 0, 12),
+            Child = callout,
+        });
+    }
+
+    private void OpenEntityStateFormatReferenceFile()
+    {
+        if (_bundle is null)
+            return;
+
+        AdventureSourceFileService.EnsureLayout(_bundle);
+        var path = AdventureSourceFileService.ResolveAbsolutePath(_bundle, SectionSchema.EntityStateFormatFile);
+        if (!File.Exists(path))
+        {
+            SetStatus("entity-state-format.md is missing — use Generate reference files on the Sources step.");
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        SetStatus($"Opened {SectionSchema.EntityStateFormatFile}");
+    }
+
+    private void MaybeAutoGenerateReferenceFiles(AdventureDesignStep step)
+    {
+        if (_bundle is null
+            || _referenceAutoGenerateAttempted
+            || step is not AdventureDesignStep.Sources and not AdventureDesignStep.Review)
+            return;
+
+        _referenceAutoGenerateAttempted = true;
+
+        if (!_bundle.Metadata.Settings.AutoGenerateReferenceSourcesOnDesignSourcesStep)
+            return;
+
+        if (!AdventureDesignSourcePromptService.AnyReferenceFilesMissing(_bundle))
+            return;
+
+        GenerateReferenceFiles(SourceExportMode.Force, refreshUi: false);
+    }
+
+    private void GenerateReferenceFiles(SourceExportMode mode, bool refreshUi = true)
+    {
+        if (_bundle is null)
+            return;
+
+        AdventureSourceFileService.EnsureLayout(_bundle);
+        AdventureDesignSourcePromptService.ExportReferenceFiles(_bundle, mode);
+        Save();
+        if (refreshUi)
+            RefreshUi();
+        SetStatus("Reference files generated under sources/ — upload to Project and mark Published.");
     }
 
     private void PersistFieldsFromUi()
@@ -2133,6 +2320,14 @@ public partial class AdventureDesignView : UserControl
             Style = (Style)FindResource("ShellCardStyle"),
             Margin = margin ?? new Thickness(0, 0, 0, 12),
             Child = child,
+        };
+
+    private TextBlock CreateSectionHeader(string text) =>
+        new()
+        {
+            Text = text,
+            Style = (Style)FindResource("ShellSectionHeaderStyle"),
+            Margin = new Thickness(0, 0, 0, 4),
         };
 
     private TextBlock CreateHintText(string text, Thickness? margin = null) =>

@@ -133,6 +133,7 @@
                      Background="Transparent"
                      BorderThickness="0"
                      SelectionMode="Extended"
+                     VirtualizingPanel.IsVirtualizing="False"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ItemContainerStyle="{StaticResource ShellLibraryListItemStyle}"
                      SelectionChanged="AdventureList_SelectionChanged"
@@ -144,6 +145,7 @@
                         <MenuItem x:Name="LinkProjectContextMenuItem" Header="Link Project…" Click="LinkProject_Click"/>
                         <MenuItem x:Name="ContinueDesignMenuItem" Header="Continue design…" Click="ContinueDesign_Click"/>
                         <MenuItem x:Name="RenameContextMenuItem" Header="Rename…" Click="Rename_Click"/>
+                        <MenuItem x:Name="OpenAdventureFolderContextMenuItem" Header="Open adventure folder" Click="OpenAdventureFolder_Click"/>
                         <MenuItem x:Name="CreateFolderContextMenuItem" Header="Create folder on disk…" Click="CreateFolder_Click"/>
                         <MenuItem x:Name="ArchiveContextMenuItem" Header="Archive selected" Click="Archive_Click"/>
                         <MenuItem x:Name="UnarchiveContextMenuItem" Header="Unarchive selected" Click="Unarchive_Click"/>

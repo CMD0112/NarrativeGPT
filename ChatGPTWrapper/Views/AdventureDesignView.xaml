@@ -3,10 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:ChatGPTWrapper.Views"
              Background="{StaticResource BgBaseBrush}">
-    <Grid Margin="12">
+    <Grid Margin="{DynamicResource SpaceMdPadding}">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -67,100 +65,114 @@
             <Button x:Name="LinkProjectButton" Grid.Column="2" Visibility="Collapsed" Click="LinkProject_Click"/>
         </Grid>
 
-        <Border x:Name="DraftModeBanner" Grid.Row="1" Visibility="Collapsed"
-                Background="{StaticResource AccentSubtleBrush}"
-                BorderBrush="{StaticResource AccentPrimaryBrush}" BorderThickness="1"
-                CornerRadius="{StaticResource RadiusCard}" Padding="8,6" Margin="0,0,0,8">
-            <TextBlock x:Name="DraftModeBannerText" TextWrapping="Wrap"
-                       Foreground="{DynamicResource AccentLinkBrush}" FontWeight="SemiBold"
-                       FontSize="{StaticResource FontSizeBody}"/>
-        </Border>
-
-        <StackPanel Grid.Row="2">
-        <Border x:Name="CanonSyncNoticeBanner"
-                Background="{StaticResource SuccessSubtleBrush}"
-                BorderBrush="{StaticResource SuccessBrush}"
-                BorderThickness="1"
-                CornerRadius="{StaticResource RadiusControl}"
-                Padding="8,6"
-                Margin="0,0,0,6"
-                Visibility="Collapsed">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock x:Name="CanonSyncNoticeText"
-                           TextWrapping="Wrap"
-                           VerticalAlignment="Center"/>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
-                    <Button Content="View diff" Padding="8,3" Margin="0,0,6,0" Click="ViewLastCanonSyncDiff_Click"/>
-                    <Button Content="Open Source Manager" Padding="8,3" Margin="0,0,6,0" Click="OpenSourceManagerFromBanner_Click"/>
-                    <Button Content="×"
-                            Padding="6,0"
-                            VerticalAlignment="Top"
-                            ToolTip="Dismiss"
-                            Click="DismissCanonSyncNotice_Click"/>
-                </StackPanel>
-            </Grid>
-        </Border>
-        <local:EntityCanonCommitBar x:Name="CanonHealthBar" PlansChanged="CanonHealthBar_PlansChanged"/>
-        </StackPanel>
-
-        <Border Grid.Row="3" Style="{StaticResource ShellCardStyle}" Margin="0,0,0,8">
+        <Border x:Name="DesignCockpit"
+                Grid.Row="1"
+                Style="{StaticResource ShellCardStyle}"
+                Margin="0,0,0,8">
             <StackPanel>
-                <TextBlock x:Name="ThreadStatusBlock" Foreground="{StaticResource TextMutedBrush}"
-                           FontSize="{StaticResource FontSizeHint}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                <TextBox x:Name="BriefNoteBox" MinWidth="200" Padding="6,4" Margin="0,0,0,8"
-                         ToolTip="Optional note included with Send step brief"/>
-                <StackPanel Orientation="Horizontal">
-                    <StackPanel Style="{StaticResource ShellCommandBarStyle}">
-                        <Button x:Name="SendStepBriefButton"
-                                Content="Send step brief…"
-                                Style="{StaticResource ShellCommandBarPrimarySlot}"
-                                Margin="0,0,8,0"
-                                Click="SendStepBrief_Click"/>
-                        <Button x:Name="ExtractButton"
-                                Content="Extract proposals"
-                                Style="{StaticResource ShellCommandBarSecondarySlot}"
-                                Click="Extract_Click"/>
-                    </StackPanel>
+                <Border x:Name="DraftModeBanner" Visibility="Collapsed"
+                        Background="{StaticResource AccentSubtleBrush}"
+                        BorderBrush="{StaticResource AccentPrimaryBrush}" BorderThickness="1"
+                        CornerRadius="{StaticResource RadiusControl}" Padding="8,6" Margin="0,0,0,8">
+                    <TextBlock x:Name="DraftModeBannerText" TextWrapping="Wrap"
+                               Foreground="{DynamicResource AccentLinkBrush}" FontWeight="SemiBold"
+                               FontSize="{StaticResource FontSizeHint}"/>
+                </Border>
+
+                <Border x:Name="CanonSyncNoticeBanner"
+                        Background="{StaticResource SuccessSubtleBrush}"
+                        BorderBrush="{StaticResource SuccessBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource RadiusControl}"
+                        Padding="8,6"
+                        Margin="0,0,0,8"
+                        Visibility="Collapsed">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="CanonSyncNoticeText"
+                                   TextWrapping="Wrap"
+                                   VerticalAlignment="Center"
+                                   Style="{StaticResource ShellSectionHintStyle}"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
+                            <Button Content="View diff" Style="{StaticResource ShellCommandBarSecondarySlot}" Margin="0,0,6,0" Click="ViewLastCanonSyncDiff_Click"/>
+                            <Button Content="Source Manager" Style="{StaticResource ShellCommandBarSecondarySlot}" Margin="0,0,6,0" Click="OpenSourceManagerFromBanner_Click"/>
+                            <Button Content="×" Style="{StaticResource ShellCommandBarSecondarySlot}" ToolTip="Dismiss" Click="DismissCanonSyncNotice_Click"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <local:EntityCanonCommitBar x:Name="CanonHealthBar" PlansChanged="CanonHealthBar_PlansChanged"/>
+
+                <TextBlock x:Name="ThreadStatusBlock"
+                           Style="{StaticResource ShellSectionHintStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,8"
+                           Cursor="Hand"
+                           ToolTip="Manage threads"
+                           MouseLeftButtonUp="ThreadStatus_Click"/>
+
+                <Expander x:Name="BriefNoteExpander" IsExpanded="False" Margin="0,0,0,8">
+                    <Expander.Header>
+                        <TextBlock Text="Brief note (optional)" Style="{StaticResource ShellSectionHintStyle}"/>
+                    </Expander.Header>
+                    <TextBox x:Name="BriefNoteBox" MinWidth="200" Padding="6,4" Margin="0,4,0,0"
+                             ToolTip="Optional note included with Send step brief"/>
+                </Expander>
+
+                <StackPanel Orientation="Horizontal" Style="{StaticResource ShellCommandBarStyle}">
+                    <Button x:Name="SendStepBriefButton"
+                            Content="Send step brief…"
+                            Style="{StaticResource ShellCommandBarPrimarySlot}"
+                            Margin="0,0,8,0"
+                            Click="SendStepBrief_Click"/>
+                    <Button x:Name="ExtractButton"
+                            Content="Extract proposals"
+                            Style="{StaticResource ShellCommandBarSecondarySlot}"
+                            Click="Extract_Click"/>
                 </StackPanel>
             </StackPanel>
         </Border>
 
-        <TabControl x:Name="StepTabs" Grid.Row="4" Margin="0,0,0,4"
-                    Style="{StaticResource ShellCompanionTabControlStyle}"
-                    SelectionChanged="StepTabs_SelectionChanged">
-            <TabItem Header="Concept" Tag="Concept"/>
-            <TabItem Header="World" Tag="World"/>
-            <TabItem Header="Plot" Tag="Plot"/>
-            <TabItem Header="Cast" Tag="Cast"/>
-            <TabItem Header="Lexicon" Tag="Lexicon"/>
-            <TabItem Header="Sources" Tag="Sources"/>
-            <TabItem Header="Instructions" Tag="Instructions"/>
-            <TabItem Header="Review" Tag="Review"/>
-        </TabControl>
+        <Grid Grid.Row="2" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" MinWidth="0"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Step"
+                       Style="{StaticResource ShellSectionHintStyle}"
+                       VerticalAlignment="Center"
+                       Margin="0,0,8,0"/>
+            <ComboBox x:Name="StepCombo"
+                      Grid.Column="1"
+                      MinWidth="0"
+                      SelectionChanged="StepCombo_SelectionChanged"/>
+        </Grid>
 
-        <Expander x:Name="PipelineChecklistExpander" Grid.Row="5" IsExpanded="False" Margin="0,0,0,8">
+        <Expander x:Name="PipelineChecklistExpander" Grid.Row="3" IsExpanded="False" Margin="0,0,0,8" Visibility="Collapsed">
             <Expander.Header>
-                <TextBlock Text="Source draft pipeline" FontWeight="SemiBold"/>
+                <TextBlock Text="Source draft pipeline" Style="{StaticResource ShellSectionHeaderStyle}"/>
             </Expander.Header>
-            <Border x:Name="PipelineChecklistBorder" Style="{StaticResource ShellCardStyle}" Margin="0,4,0,0">
+            <Border x:Name="PipelineChecklistBorder" Style="{StaticResource ShellCardStyle}" Margin="0,4,0,0" Padding="8">
                 <StackPanel>
-                    <TextBlock Text="Brainstorm tabs follow a different order — use this checklist for canonical source drafts."
-                               TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"
-                               Style="{StaticResource ShellSectionHintStyle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="Canonical source draft order — click a row to jump."
+                               TextWrapping="Wrap"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               Margin="0,0,0,8"/>
                     <StackPanel x:Name="PipelineChecklistPanel"/>
                 </StackPanel>
             </Border>
         </Expander>
 
-        <ScrollViewer Grid.Row="6" Style="{StaticResource ShellFormScrollViewerStyle}">
-            <StackPanel x:Name="DraftPanel" Margin="4"/>
+        <ScrollViewer Grid.Row="4" Style="{StaticResource ShellFormScrollViewerStyle}">
+            <StackPanel x:Name="DraftPanel" Margin="0,0,4,0"/>
         </ScrollViewer>
+
         <!-- Parking host when Cast step is not active (panel is reparented into DraftPanel on Cast). -->
-        <Grid x:Name="EntityReferenceHost" Grid.Row="6" Visibility="Collapsed">
+        <Grid x:Name="EntityReferenceHost" Grid.Row="4" Visibility="Collapsed">
             <Border x:Name="EntityReferenceSection"
                     Style="{StaticResource ShellCardStyle}"
                     Margin="0,0,0,12"
@@ -169,7 +181,7 @@
                     <TextBlock Text="Canon entities"
                                Style="{StaticResource ShellSectionHeaderStyle}"
                                Margin="0,0,0,4"/>
-                    <TextBlock Text="Structured entries in entities.json — renames auto-sync to local sources when possible. Use Sync canon if the banner appears."
+                    <TextBlock Text="Structured entries in entities.json — renames auto-sync to local sources when possible."
                                TextWrapping="Wrap"
                                Style="{StaticResource ShellSectionHintStyle}"
                                Margin="0,0,0,10"/>
@@ -179,15 +191,15 @@
             </Border>
         </Grid>
 
-        <Grid Grid.Row="7" Margin="0,8,0,0">
+        <Grid Grid.Row="5" Margin="0,8,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <StackPanel Orientation="Horizontal">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <Button x:Name="AcceptProposalsButton" Content="Accept proposals"
                         Style="{StaticResource ShellCommandBarSecondarySlot}"
-                        Margin="0,0,8,0" Click="AcceptProposals_Click" IsEnabled="False"/>
+                        Margin="0,0,8,0" Click="AcceptProposals_Click" IsEnabled="False" Visibility="Collapsed"/>
                 <TextBlock x:Name="StatusLine" VerticalAlignment="Center" TextWrapping="Wrap"
                            Style="{StaticResource ShellSectionHintStyle}"/>
             </StackPanel>

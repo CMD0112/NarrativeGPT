@@ -249,7 +249,7 @@ public sealed class CanonReconciliationServiceTests
     [Fact]
     public void MarkUnresolvedDrift_preserves_entities_after_save_and_load()
     {
-        var bundle = AdventureTestData.CreateLinkedBundle(entryCount: 4);
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: null, entryCount: 4);
         var id = Guid.NewGuid();
         bundle.Entities.Characters.Add(new CharacterEntry
         {

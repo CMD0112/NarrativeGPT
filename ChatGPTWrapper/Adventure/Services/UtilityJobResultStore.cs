@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
 
@@ -51,7 +52,8 @@ internal static class UtilityJobResultStore
         bool streamComplete,
         DateTimeOffset? pushedAt,
         UtilityContextManifestRecord? contextManifest = null,
-        Guid? dualRunGroupId = null)
+        Guid? dualRunGroupId = null,
+        GenerationJobContext? context = null)
     {
         var record = new UtilityJobRunRecord
         {
@@ -75,10 +77,100 @@ internal static class UtilityJobResultStore
             State = applyResult.Success ? UtilityJobRunState.Complete : UtilityJobRunState.Failed,
             ContextManifest = contextManifest ?? pending.ContextManifest,
             DualRunGroupId = dualRunGroupId,
+            EphemeralConversationId = conversationId,
         };
+
+        if (context is not null)
+            UtilityJobLoggingHooks.ApplyLoggingMetadata(record, context);
 
         WriteRecord(bundle.Metadata.Id, record);
         TryLinkFlightRecordFromBundle(bundle, pending.RunId);
+    }
+
+    public static string WriteContextProjection(
+        Guid adventureId,
+        Guid runId,
+        string jobId,
+        Guid playThreadEntryId,
+        Guid ingestEventId,
+        string? rawPath,
+        string? projectionPath,
+        ThreadProjectionResult projection,
+        Guid? linkedTurnId)
+    {
+        var relativePath = $"{runId}/context-projection.json";
+        var document = new UtilityContextProjectionDocument
+        {
+            RunId = runId,
+            JobId = jobId,
+            PlayThreadEntryId = playThreadEntryId,
+            PlayThreadIngestEventId = ingestEventId,
+            PlayThreadRawPath = rawPath,
+            PlayThreadProjectionPath = projectionPath,
+            ProjectionSource = projection.Source.ToString(),
+            TurnPairCount = projection.TurnPairs.Count,
+            MessageCount = projection.Messages.Count,
+            LinkedTurnId = linkedTurnId,
+        };
+
+        WriteRunArtifact(adventureId, relativePath, document);
+        return relativePath;
+    }
+
+    public static string WriteEphemeralCapture(
+        Guid adventureId,
+        Guid runId,
+        string jobId,
+        string? conversationId,
+        string? promptHash,
+        string? responseText,
+        bool streamComplete)
+    {
+        var relativePath = $"{runId}/ephemeral-capture.json";
+        var document = new UtilityEphemeralCaptureDocument
+        {
+            RunId = runId,
+            JobId = jobId,
+            ConversationId = conversationId,
+            PromptHash = promptHash,
+            ContentHash = string.IsNullOrWhiteSpace(responseText)
+                ? null
+                : ComputeContentHash(responseText),
+            ResponseCharCount = responseText?.Length ?? 0,
+            StreamComplete = streamComplete,
+        };
+
+        WriteRunArtifact(adventureId, relativePath, document);
+        return relativePath;
+    }
+
+    public static void MergeLoggingMetadata(
+        Guid adventureId,
+        Guid runId,
+        GenerationJobContext context)
+    {
+        var record = LoadRun(adventureId, runId);
+        if (record is null)
+            return;
+
+        UtilityJobLoggingHooks.ApplyLoggingMetadata(record, context);
+        WriteRecordFile(adventureId, record);
+    }
+
+    private static void WriteRunArtifact(Guid adventureId, string relativePath, object document)
+    {
+        var dir = ResultsDirectory(adventureId);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(document, AdventureJson.Options));
+    }
+
+    private static string ComputeContentHash(string content)
+    {
+        var bytes = Encoding.UTF8.GetBytes(content);
+        var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     public static void TryLinkFlightRecord(Guid adventureId, Guid utilityRunId, Guid flightRecordId)

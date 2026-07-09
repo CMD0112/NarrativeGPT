@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings.PlaySettingsInjectionTab"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings">
+    <StackPanel Spacing="12">
+        <local:PlaySettingsSectionCard Title="Preset &amp; budget"
+                                       Hint="Controls which sections ship in the next play packet and the character budget."
+                                       ScopeLabel="This send">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Injection preset" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <ComboBox x:Name="InjectionPresetCombo" HorizontalAlignment="Stretch" SelectionChanged="OnChanged" />
+                <TextBlock x:Name="InjectionPresetHint" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+                <TextBlock Text="Max packet characters" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="MaxPacketMirrorText" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+                    <HyperlinkButton Content="Edit in Narrator contract →" Click="GoToNarratorContract_Click" Padding="0" FontSize="12" />
+                </StackPanel>
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard Title="Sections to include"
+                                       Hint="Toggle packet sections for the next Send."
+                                       ScopeLabel="This send">
+            <StackPanel Spacing="10">
+                <Grid ColumnSpacing="16" RowSpacing="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <CheckBox x:Name="IncludeSummaryCheck" Grid.Row="0" Grid.Column="0" Content="Story so far" Checked="OnChanged" Unchecked="OnChanged" />
+                    <CheckBox x:Name="IncludeStateCheck" Grid.Row="0" Grid.Column="1" Content="Current state" Checked="OnChanged" Unchecked="OnChanged" />
+                    <CheckBox x:Name="IncludeMemoryCheck" Grid.Row="1" Grid.Column="0" Content="Pinned memory" Checked="OnChanged" Unchecked="OnChanged" />
+                    <CheckBox x:Name="IncludeTranscriptCheck" Grid.Row="1" Grid.Column="1" Content="Recent transcript" Checked="OnChanged" Unchecked="OnChanged" />
+                    <CheckBox x:Name="IncludeCardsCheck" Grid.Row="2" Grid.Column="0" Content="Lore cards" Checked="OnChanged" Unchecked="OnChanged" />
+                    <CheckBox x:Name="IncludeSourcesCheck" Grid.Row="2" Grid.Column="1" Content="Source pointers (thin)" Checked="OnChanged" Unchecked="OnChanged" />
+                    <CheckBox x:Name="InjectAttachmentGuidanceInjectionCheck" Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Content="Attachment guidance" Checked="OnChanged" Unchecked="OnChanged" />
+                </Grid>
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="64" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Transcript max turns (0 = preset default)" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+                    <TextBox x:Name="TranscriptMaxTurnsBox" Grid.Column="1" LostFocus="OnChanged" />
+                </Grid>
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard Title="Formatting"
+                                       Hint="Advanced packet structure options."
+                                       ScopeLabel="This send">
+            <StackPanel Spacing="8">
+                <CheckBox x:Name="UseContextTagsCheck" Content="Use context tags ([[cgw:…]])" Checked="OnChanged" Unchecked="OnChanged" />
+                <CheckBox x:Name="UseSectionInjectionCheck" Content="Section injection v2 (pointers)" Checked="OnChanged" Unchecked="OnChanged" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard Title="Narrator behavior"
+                                       Hint="Turn/session overrides for the next Send. Adventure baseline (perspective, boundaries) lives in Narrator contract."
+                                       ScopeLabel="This send">
+            <StackPanel Spacing="8">
+                <HyperlinkButton Content="Open Narrator contract (adventure baseline) →"
+                                 Click="GoToNarratorContract_Click"
+                                 Padding="0"
+                                 HorizontalAlignment="Left"
+                                 FontSize="12" />
+                <local:WinUiNarratorBehaviorPanel x:Name="NarratorPanel" SettingsChanged="OnNarratorChanged" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+    </StackPanel>
+</UserControl>

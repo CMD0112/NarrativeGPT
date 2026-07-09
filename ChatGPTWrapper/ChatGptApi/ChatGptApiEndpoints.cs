@@ -25,6 +25,10 @@ internal static class ChatGptApiEndpoints
     public static string GizmoDetail(string gizmoId) =>
         $"/backend-api/gizmos/{Uri.EscapeDataString(gizmoId)}";
 
+    /// <summary>Project settings read/write (ChatGPT project settings UI).</summary>
+    public static string ProjectDetail(string projectId) =>
+        $"/backend-api/projects/{Uri.EscapeDataString(projectId)}";
+
     /// <summary>Snorlax project file attach (observed in ChatGPT web UI).</summary>
     public static string ProjectFilesAttach(string gizmoId) =>
         $"/backend-api/projects/{Uri.EscapeDataString(gizmoId)}/files";
@@ -54,6 +58,34 @@ internal static class ChatGptApiEndpoints
     public static string GizmoFileDownload(string gizmoId, string fileId) =>
         $"/backend-api/gizmos/{Uri.EscapeDataString(gizmoId)}/files/{Uri.EscapeDataString(fileId)}";
 
+    /// <summary>ChatGPT Sources UI download (observed when clicking a project source file).</summary>
+    public static string ProjectSourceFileDownload(string gizmoId, string fileId) =>
+        ProjectSourceFileDownloadWithOptions(gizmoId, fileId, inline: false, downloadIntent: false);
+
+    public static string ProjectSourceFileDownloadInline(string gizmoId, string fileId) =>
+        ProjectSourceFileDownloadWithOptions(gizmoId, fileId, inline: true, downloadIntent: false);
+
+    public static string ProjectSourceFileDownloadWithIntent(string gizmoId, string fileId) =>
+        ProjectSourceFileDownloadWithOptions(gizmoId, fileId, inline: false, downloadIntent: true);
+
+    /// <summary>Observed ChatGPT Sources UI click download (download_intent only, no inline param).</summary>
+    public static string ProjectSourceFileDownloadIntentOnly(string gizmoId, string fileId) =>
+        $"/backend-api/files/download/{Uri.EscapeDataString(fileId)}"
+        + $"?gizmo_id={Uri.EscapeDataString(gizmoId)}&download_intent=true";
+
+    private static string ProjectSourceFileDownloadWithOptions(
+        string gizmoId,
+        string fileId,
+        bool inline,
+        bool downloadIntent) =>
+        $"/backend-api/files/download/{Uri.EscapeDataString(fileId)}"
+        + $"?gizmo_id={Uri.EscapeDataString(gizmoId)}&inline={(inline ? "true" : "false")}"
+        + $"&download_intent={(downloadIntent ? "true" : "false")}";
+
+    /// <summary>Lightweight project source file metadata probe before download.</summary>
+    public static string ProjectSourceFileSimple(string gizmoId, string fileId) =>
+        $"/backend-api/files/{Uri.EscapeDataString(fileId)}/simple?gizmo_id={Uri.EscapeDataString(gizmoId)}";
+
     /// <summary>
     /// Ordered download path candidates. Project-scoped paths come first when gizmoId is set or location is fs.
     /// </summary>
@@ -68,6 +100,10 @@ internal static class ChatGptApiEndpoints
 
         if (preferProjectFirst && !string.IsNullOrWhiteSpace(gizmoId))
         {
+            paths.Add(ProjectSourceFileDownloadIntentOnly(gizmoId, fileId));
+            paths.Add(ProjectSourceFileDownloadWithIntent(gizmoId, fileId));
+            paths.Add(ProjectSourceFileDownload(gizmoId, fileId));
+            paths.Add(ProjectSourceFileDownloadInline(gizmoId, fileId));
             paths.Add(ProjectFileDownloadWithQuery(gizmoId, fileId));
             paths.Add(ProjectFileDownload(gizmoId, fileId));
             paths.Add(GizmoFileDownloadWithQuery(gizmoId, fileId));
@@ -86,6 +122,10 @@ internal static class ChatGptApiEndpoints
         string fileId,
         string gizmoId) =>
     [
+        ProjectSourceFileDownloadIntentOnly(gizmoId, fileId),
+        ProjectSourceFileDownloadWithIntent(gizmoId, fileId),
+        ProjectSourceFileDownload(gizmoId, fileId),
+        ProjectSourceFileDownloadInline(gizmoId, fileId),
         ProjectFileDownloadWithQuery(gizmoId, fileId),
         ProjectFileDownload(gizmoId, fileId),
         GizmoFileDownloadWithQuery(gizmoId, fileId),
@@ -115,6 +155,18 @@ internal static class ChatGptApiEndpoints
 
     public static string ConversationGet(string conversationId) =>
         $"/backend-api/conversation/{Uri.EscapeDataString(conversationId.Trim())}";
+
+    /// <summary>
+    /// Download assistant-generated sandbox file (code interpreter / container.exec output).
+    /// Step 1 returns a download_url envelope; step 2 is estuary/content.
+    /// </summary>
+    public static string ConversationInterpreterDownload(
+        string conversationId,
+        string messageId,
+        string sandboxPath) =>
+        $"/backend-api/conversation/{Uri.EscapeDataString(conversationId.Trim())}/interpreter/download"
+        + $"?message_id={Uri.EscapeDataString(messageId.Trim())}"
+        + $"&sandbox_path={Uri.EscapeDataString(sandboxPath)}";
 
     /// <summary>Soft-delete (hide) a conversation — same path as GET, PATCH with is_visible: false.</summary>
     public static string ConversationHide(string conversationId) => ConversationGet(conversationId);

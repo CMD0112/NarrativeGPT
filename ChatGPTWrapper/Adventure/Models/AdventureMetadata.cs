@@ -230,6 +230,21 @@ public enum SourcePublishMode
     ApiSync,
 }
 
+/// <summary>DOM transport for publication lab project-knowledge uploads.</summary>
+[JsonConverter(typeof(ProjectSourceUploadMethodJsonConverter))]
+public enum ProjectSourceUploadMethod
+{
+    /// <summary>Legacy value — persisted settings migrate to <see cref="HeadlessBrowser"/>.</summary>
+    [Obsolete("Use HeadlessBrowser or PureApi.")]
+    WebView2Dom,
+
+    /// <summary>Headless Chrome via Playwright — DOM file chooser on Sources tab.</summary>
+    HeadlessBrowser,
+
+    /// <summary>ChatGPT backend-api upload (register → blob → process stream → project attach).</summary>
+    PureApi,
+}
+
 public sealed class AdventureSettings
 {
     public int MaxPacketChars { get; set; } = 28000;
@@ -292,6 +307,9 @@ public sealed class AdventureSettings
     /// <summary>Cockpit expander open state keyed by expander name.</summary>
     public Dictionary<string, bool>? PlayCompanionExpanderState { get; set; }
 
+    /// <summary>Last narrator cockpit density (Minimal or Full) when global pref is RememberLast.</summary>
+    public string? PlayCompanionLastNarratorDensity { get; set; }
+
     /// <summary>Expanded play side panel width in device-independent pixels.</summary>
     public double PlaySidePanelWidth { get; set; } = 300;
 
@@ -314,6 +332,9 @@ public sealed class AdventureSettings
     public int SummaryUpdateIntervalTurns { get; set; } = 5;
 
     public bool AutoContinuityCheck { get; set; }
+
+    /// <summary>Queue session state proposals after each accepted play turn (requires linked Project).</summary>
+    public bool AutoUpdateState { get; set; }
 
     public string AttachmentOnlyPlaceholder { get; set; } = "[Attached file]";
 
@@ -346,6 +367,9 @@ public sealed class AdventureSettings
     /// <summary>Manual = copy/drag publish; ApiSync = programmatic source sync.</summary>
     public SourcePublishMode SourcePublishMode { get; set; } = SourcePublishMode.Manual;
 
+    /// <summary>Publication lab upload transport (headless DOM or pure backend-api).</summary>
+    public ProjectSourceUploadMethod ProjectSourceUploadMethod { get; set; } = ProjectSourceUploadMethod.HeadlessBrowser;
+
     /// <summary>Default story-context feed for utility AI action job packets.</summary>
     public UtilityStoryContextSettings UtilityStoryContext { get; set; } = new();
 
@@ -367,11 +391,23 @@ public sealed class AdventureSettings
     /// <summary>Export reviewed rolling summary to optional summary.md.</summary>
     public bool ExportSummarySource { get; set; }
 
+    /// <summary>When entering Design → Sources, generate missing reference files (canon-format, narrator-scales, entity-state-format).</summary>
+    public bool AutoGenerateReferenceSourcesOnDesignSourcesStep { get; set; } = true;
+
+    /// <summary>Queue entity state proposals after each accepted play turn (requires linked Project).</summary>
+    public bool AutoProposeEntityState { get; set; }
+
+    /// <summary>Queue canon evolution proposals after each accepted play turn (requires linked Project).</summary>
+    public bool AutoProposeCanonEvolution { get; set; }
+
     /// <summary>Footer hint when log.json diverges from the play thread and sync was skipped.</summary>
     public string? ThreadLogDriftHint { get; set; }
 
     /// <summary>Drift fingerprint the author dismissed; suppresses repeat sync prompts until drift changes.</summary>
     public string? ThreadLogDriftDismissedHash { get; set; }
+
+    /// <summary>Automatic explicit branch snapshot triggers (see thread-conversation-log.md).</summary>
+    public ThreadSnapshotSettings ThreadSnapshot { get; set; } = new();
 
     /// <summary>Play packet section includes, transcript depth, and injection preset.</summary>
     public PlayInjectionPolicy InjectionPolicy { get; set; } = new();
@@ -389,10 +425,13 @@ public sealed class AdventureSettings
     /// <summary>When true, auto jobs that exceed <see cref="MaxUtilitySectionsPerSend"/> spill to worker outbox.</summary>
     public bool AutoSpillToWorker { get; set; } = true;
 
-    /// <summary>CMD-412: ephemeral project chat for worker setup + per-job sends.</summary>
+    /// <summary>CMD-412: ephemeral project chat for worker setup + per-job sends (recommended). File revision jobs always use ephemeral via <see cref="UtilitySourceFileIoCatalog"/>.</summary>
     public bool UseEphemeralUtilityWorkerChat { get; set; }
 
-    /// <summary>CMD-424: when ephemeral is on, stage all reference files via DOM composer (testing).</summary>
+    /// <summary>Max concurrent utility worker outbox jobs (ephemeral lane). 0 = unset (UI uses 3 when ephemeral on); 1 = serial; 2–4 = parallel slot pool.</summary>
+    public int MaxParallelUtilityWorkerJobs { get; set; }
+
+    /// <summary>CMD-424: when ephemeral is on, stage reference files via DOM composer for manual Run selected action… runs (not source-pointer file revision).</summary>
     public bool ForceUtilityWorkerDomAttach { get; set; }
 
     /// <summary>Developer-only: allow DomOnly utility sends when worker diagnostics enabled.</summary>

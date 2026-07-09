@@ -18,8 +18,17 @@ internal static class PlaySendDeliveryPolicy
         AdventureBundle bundle,
         IReadOnlyList<ChatAttachmentRef>? apiAttachments,
         IReadOnlyList<DomAttachmentPayload>? domAttachments) =>
-        domAttachments is not { Count: > 0 }
-        && apiAttachments is { Count: > 0 };
+        // API multimodal attachment sends on linked project threads are retired.
+        // Deterministic hybrid policy: attach sends use DOM composer lane.
+        false;
+
+    public static bool RequiresDomComposerForAttachments(
+        IReadOnlyList<ChatAttachmentRef>? apiAttachments,
+        IReadOnlyList<DomAttachmentPayload>? domAttachments,
+        bool attachmentsPreStaged) =>
+        attachmentsPreStaged
+        || domAttachments is { Count: > 0 }
+        || apiAttachments is { Count: > 0 };
 
     public static bool ShouldUseApiTextPlaySend(
         AdventureBundle bundle,

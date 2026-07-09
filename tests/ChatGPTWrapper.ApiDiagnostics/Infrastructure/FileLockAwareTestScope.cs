@@ -1,4 +1,5 @@
 using ChatGPTWrapper;
+using ChatGPTWrapper.Diagnostics;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Infrastructure;
 
@@ -19,7 +20,9 @@ public sealed class FileLockAwareTestScope : IDisposable
 
         AppDirectories.ResetStoresForTests();
         AppDirectories.TestRootOverride = _root;
+        DiagnosticsPaths.TestRootOverride = _root;
         AppDirectories.EnsureCreated();
+        WpfDiagnosticsHost.Register();
     }
 
     public string Root => _root;
@@ -33,6 +36,7 @@ public sealed class FileLockAwareTestScope : IDisposable
 
         _disposed = true;
         AppDirectories.TestRootOverride = null;
+        DiagnosticsPaths.TestRootOverride = null;
         AppDirectories.ResetStoresForTests();
 
         try

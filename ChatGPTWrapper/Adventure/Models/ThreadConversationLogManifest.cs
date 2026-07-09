@@ -25,4 +25,26 @@ public sealed class ThreadConversationLogManifest
     public DateTimeOffset? LastDumpAt { get; set; }
 
     public int DumpCount { get; set; }
+
+    public int SnapshotCount { get; set; }
+
+    public DateTimeOffset? LastSnapshotAt { get; set; }
+
+    public string? LastSnapshotTrigger { get; set; }
+
+    public string? LatestSnapshotPath { get; set; }
+
+    public string? LatestSendSnapshotPath { get; set; }
+
+    public int IngestEventCount { get; set; }
+
+    public DateTimeOffset? LastIngestAt { get; set; }
+
+    public string? LastIngestTrigger { get; set; }
+
+    public Guid? LatestIngestEventId { get; set; }
+
+    public string? LatestRawPath { get; set; }
+
+    public string? LatestProjectionPath { get; set; }
 }

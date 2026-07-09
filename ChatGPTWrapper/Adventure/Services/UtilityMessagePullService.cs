@@ -92,7 +92,8 @@ internal static class UtilityMessagePullService
             entry.StreamComplete,
             entry.PushedAt,
             context.UtilityContextManifest?.ToRecord(),
-            context.DualRunGroupId);
+            context.DualRunGroupId,
+            context);
 
         UtilityParseLogService.Append(
             bundle,

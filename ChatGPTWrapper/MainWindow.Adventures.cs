@@ -959,7 +959,7 @@ public partial class MainWindow
         _projectApiService = new ChatGptProjectApiService(_apiBridge);
         _conversationSendService = new ChatGptConversationSendService(_apiBridge);
         _chatFileService = new ChatGptChatFileService(_apiBridge, _projectApiService, _conversationSendService);
-        _playSendWarmupService = new PlaySendWarmupService(_apiBridge, _conversationSendService);
+        _playSendWarmupService = new PlaySendWarmupService(_apiBridge, _chatFileService.Transport.Warmup);
         _sourceSyncService = new ProjectSourceSyncService(_projectApiService);
         _projectBindingService = new AdventureProjectBindingService(_projectApiService, _sourceSyncService);
         _generationJobService = new GenerationJobService(
@@ -1998,7 +1998,8 @@ public partial class MainWindow
         return await _chatFileService.DownloadConversationFileAsync(
             core,
             file,
-            bundle.Metadata.LinkedProjectId);
+            bundle.Metadata.LinkedProjectId,
+            bundle.Metadata.LinkedConversationId);
     }
 
     private async Task ReconcilePlaySourcesAsync(Guid adventureId)

@@ -38,10 +38,13 @@ internal static class RecapService
 
     public static string BuildSummaryUpdatePrompt(AdventureBundle bundle, bool omitRecentTurns = false)
     {
+        var memoryIndex = MemoryBaselineService.BuildSinceLastSummaryRevisionBlock(bundle);
         if (omitRecentTurns)
         {
-            return "Update the rolling story summary. Preserve major events, relationships, conflicts, and consequences. Output only the new summary text.\n\n" +
-                   $"CURRENT SUMMARY:\n{bundle.Summary.RollingSummary}";
+            return "=== STORY DIGEST UPDATE JOB ===\n" +
+                   "Update the rolling story summary. Preserve major events, relationships, conflicts, and consequences. Output only the new summary text.\n\n" +
+                   $"=== CURRENT DIGEST ===\n{bundle.Summary.RollingSummary}\n\n" +
+                   memoryIndex;
         }
 
         var recent = bundle.Log.Turns
@@ -52,8 +55,11 @@ internal static class RecapService
         var transcript = string.Join("\n", recent.Select(t =>
             $"{t.PlayerText} -> {(t.NarratorText ?? "")}"));
 
-        return "Update the rolling story summary. Preserve major events, relationships, conflicts, and consequences. Output only the new summary text.\n\n" +
-               $"CURRENT SUMMARY:\n{bundle.Summary.RollingSummary}\n\nRECENT TURNS:\n{transcript}";
+        return "=== STORY DIGEST UPDATE JOB ===\n" +
+               "Update the rolling story summary. Preserve major events, relationships, conflicts, and consequences. Output only the new summary text.\n\n" +
+               $"=== CURRENT DIGEST ===\n{bundle.Summary.RollingSummary}\n\n" +
+               memoryIndex + "\n\n" +
+               $"=== RECENT TURNS ===\n{transcript}";
     }
 }
 

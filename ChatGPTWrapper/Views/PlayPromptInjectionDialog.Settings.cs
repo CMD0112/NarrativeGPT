@@ -1,7 +1,7 @@
-using System.Text.Json;
 using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Adventure.Services.UtilityWorker;
 using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Views;
@@ -48,19 +48,6 @@ public partial class PlayPromptInjectionDialog
     private void SaveTurnOverrideSettings() =>
         SaveTurnOverrideSettingsTo(_bundle.Metadata.Settings);
 
-    private bool HasTurnOverrideChanges()
-    {
-        if (!IsLoaded)
-            return false;
-
-        var staging = new AdventureSettings();
-        SaveTurnOverrideSettingsTo(staging);
-        return !TurnOverridesEqual(_bundle.Metadata.Settings.PlayTurnOverrides, staging.PlayTurnOverrides);
-    }
-
-    private static bool TurnOverridesEqual(PlayTurnOverrideSettings left, PlayTurnOverrideSettings right) =>
-        string.Equals(JsonSerializer.Serialize(left), JsonSerializer.Serialize(right), StringComparison.Ordinal);
-
     private void ResetTurnOverridesUi()
     {
         NarratorOverrideResolver.ClearTurnOverrides(_bundle.Metadata.Settings);
@@ -88,8 +75,12 @@ public partial class PlayPromptInjectionDialog
         {
             UtilityInjectionModeCombo.ItemsSource = new[]
             {
-                new UtilityInjectionModeComboItem(PlayUtilityInjectionMode.LegacyInlineSend, "Inline send (separate composer submit)"),
-                new UtilityInjectionModeComboItem(PlayUtilityInjectionMode.InjectionFirst, "Injection-first (bundle with next play packet)"),
+                new UtilityInjectionModeComboItem(
+                    PlayUtilityInjectionMode.LegacyInlineSend,
+                    "Separate send — utility jobs submit on their own after the play turn"),
+                new UtilityInjectionModeComboItem(
+                    PlayUtilityInjectionMode.InjectionFirst,
+                    "Bundled send — embed utility sections in the next play packet"),
             };
             UtilityInjectionModeCombo.DisplayMemberPath = nameof(UtilityInjectionModeComboItem.DisplayName);
         }
@@ -103,9 +94,15 @@ public partial class PlayPromptInjectionDialog
         {
             UtilityExecutionPolicyCombo.ItemsSource = new[]
             {
-                new UtilityExecutionPolicyComboItem(UtilityExecutionPolicy.PlayInjectionPreferred, "Play injection preferred"),
-                new UtilityExecutionPolicyComboItem(UtilityExecutionPolicy.WorkerPreferred, "Utility worker preferred"),
-                new UtilityExecutionPolicyComboItem(UtilityExecutionPolicy.WorkerOnly, "Utility worker only"),
+                new UtilityExecutionPolicyComboItem(
+                    UtilityExecutionPolicy.PlayInjectionPreferred,
+                    "Play thread first — inject when possible, else utility worker"),
+                new UtilityExecutionPolicyComboItem(
+                    UtilityExecutionPolicy.WorkerPreferred,
+                    "Utility worker first — ephemeral chat when enabled, else pinned thread"),
+                new UtilityExecutionPolicyComboItem(
+                    UtilityExecutionPolicy.WorkerOnly,
+                    "Utility worker only — never inject on the play thread"),
             };
             UtilityExecutionPolicyCombo.DisplayMemberPath = nameof(UtilityExecutionPolicyComboItem.DisplayName);
         }
@@ -118,6 +115,15 @@ public partial class PlayPromptInjectionDialog
         MaxUtilitySectionsBox.Text = s.MaxUtilitySectionsPerSend.ToString();
         AutoSpillToWorkerCheck.IsChecked = s.AutoSpillToWorker;
         UseEphemeralUtilityWorkerChatCheck.IsChecked = s.UseEphemeralUtilityWorkerChat;
+        BindMaxParallelUtilityWorkerJobsCombo();
+        ApplyMaxParallelUtilityWorkerJobsUi(s.UseEphemeralUtilityWorkerChat);
+        var parallelSlots = UtilityWorkerParallelPolicy.NormalizeForUi(
+            s.MaxParallelUtilityWorkerJobs,
+            s.UseEphemeralUtilityWorkerChat);
+        MaxParallelUtilityWorkerJobsCombo.SelectedItem = MaxParallelUtilityWorkerJobsCombo.Items
+            .Cast<MaxParallelUtilityWorkerJobsComboItem>()
+            .FirstOrDefault(i => i.SlotCount == parallelSlots)
+            ?? MaxParallelUtilityWorkerJobsCombo.Items.Cast<MaxParallelUtilityWorkerJobsComboItem>().First();
         ForceUtilityWorkerDomAttachCheck.IsChecked = s.ForceUtilityWorkerDomAttach;
         ForceUtilityWorkerDomAttachCheck.IsEnabled = s.UseEphemeralUtilityWorkerChat;
         UpdateUtilityWorkerStatusLine();
@@ -130,8 +136,14 @@ public partial class PlayPromptInjectionDialog
 
         if (UtilityEphemeralWorkerPolicy.IsEnabled(_bundle))
         {
+            var slots = UtilityWorkerParallelPolicy.ResolveMaxSlots(_bundle);
+            var parallelNote = slots > 1
+                ? $" Up to {slots} jobs run in parallel on separate background WebViews."
+                : " Jobs drain sequentially (set concurrent jobs above for parallel).";
             UtilityWorkerStatusLine.Text =
-                "Ephemeral utility worker: enabled — jobs use short-lived hidden chats; linked Project required. Worker tab still recommended.";
+                "Ephemeral worker active — each job uses a short-lived Project chat (create → send → capture → delete)." +
+                parallelNote +
+                " Entities file revision always uses Project source publish under sources/cgw-utility-io/… regardless of lane policy.";
             UtilityWorkerStatusLine.Foreground = (System.Windows.Media.Brush)FindResource("TextMutedBrush");
             return;
         }
@@ -139,7 +151,8 @@ public partial class PlayPromptInjectionDialog
         if (UtilityWorkerCapabilityGate.IsGreen(_bundle))
         {
             UtilityWorkerStatusLine.Text =
-                "Utility worker: ready — Worker preferred / Worker only lane policies can route jobs to the worker thread.";
+                "Pinned utility worker ready — Worker first / Worker only policies route to the pinned thread. " +
+                "Enable ephemeral chats above to avoid long-lived worker threads. File revision jobs always use ephemeral source-pointer I/O.";
             UtilityWorkerStatusLine.Foreground = (System.Windows.Media.Brush)FindResource("TextMutedBrush");
             return;
         }
@@ -152,7 +165,8 @@ public partial class PlayPromptInjectionDialog
             detail = "capabilities incomplete";
 
         UtilityWorkerStatusLine.Text =
-            $"Utility worker: not ready ({detail}). Worker preferred falls back to the play thread until ready; Worker only blocks manual jobs. Open Threads hub → Utility worker to verify.";
+            $"Utility worker not ready ({detail}). Worker-first policies fall back to the play thread until verified; Worker only blocks manual runs. " +
+            "File revision needs a linked Project. Open Threads hub → Utility worker, or enable ephemeral chats.";
         UtilityWorkerStatusLine.Foreground = (System.Windows.Media.Brush)FindResource("WarningBrush");
     }
 
@@ -172,6 +186,13 @@ public partial class PlayPromptInjectionDialog
 
         settings.AutoSpillToWorker = AutoSpillToWorkerCheck.IsChecked == true;
         settings.UseEphemeralUtilityWorkerChat = UseEphemeralUtilityWorkerChatCheck.IsChecked == true;
+        if (MaxParallelUtilityWorkerJobsCombo.SelectedItem is MaxParallelUtilityWorkerJobsComboItem parallelItem)
+            settings.MaxParallelUtilityWorkerJobs = settings.UseEphemeralUtilityWorkerChat
+                ? parallelItem.SlotCount
+                : 1;
+        else
+            settings.MaxParallelUtilityWorkerJobs = settings.UseEphemeralUtilityWorkerChat ? 3 : 1;
+
         settings.ForceUtilityWorkerDomAttach = settings.UseEphemeralUtilityWorkerChat
             && ForceUtilityWorkerDomAttachCheck.IsChecked == true;
 
@@ -193,29 +214,6 @@ public partial class PlayPromptInjectionDialog
     private void SaveUtilityDeliverySettings() =>
         SaveUtilityDeliverySettingsTo(_bundle.Metadata.Settings);
 
-    private bool HasUtilityDeliveryChanges()
-    {
-        if (!IsLoaded)
-            return false;
-
-        var staging = new AdventureSettings();
-        SaveUtilityDeliverySettingsTo(staging);
-        var s = _bundle.Metadata.Settings;
-
-        return staging.HideInlineUtilityDuringPlay != s.HideInlineUtilityDuringPlay
-               || staging.ShowInlineUtilityTraffic != s.ShowInlineUtilityTraffic
-               || staging.PlayUtilityInjectionMode != s.PlayUtilityInjectionMode
-               || staging.UtilityExecutionPolicy != s.UtilityExecutionPolicy
-               || staging.MaxUtilitySectionsPerSend != s.MaxUtilitySectionsPerSend
-               || staging.AutoSpillToWorker != s.AutoSpillToWorker
-               || staging.UseEphemeralUtilityWorkerChat != s.UseEphemeralUtilityWorkerChat
-               || staging.ForceUtilityWorkerDomAttach != s.ForceUtilityWorkerDomAttach
-               || staging.LocalUtilityInference.Enabled != s.LocalUtilityInference.Enabled
-               || staging.LocalUtilityInference.DualRun != s.LocalUtilityInference.DualRun
-               || !string.Equals(staging.LocalUtilityInference.BaseUrl, s.LocalUtilityInference.BaseUrl, StringComparison.OrdinalIgnoreCase)
-               || !string.Equals(staging.LocalUtilityInference.Model, s.LocalUtilityInference.Model, StringComparison.OrdinalIgnoreCase);
-    }
-
     private void BindAutomationPanel()
     {
         var s = _bundle.Metadata.Settings;
@@ -225,6 +223,9 @@ public partial class PlayPromptInjectionDialog
         AutoUpdateSummaryCheck.IsChecked = s.AutoUpdateSummary;
         SummaryIntervalBox.Text = s.SummaryUpdateIntervalTurns.ToString();
         AutoContinuityCheckCheck.IsChecked = s.AutoContinuityCheck;
+        AutoUpdateStateCheck.IsChecked = s.AutoUpdateState;
+        AutoProposeEntityStateCheck.IsChecked = s.AutoProposeEntityState;
+        AutoProposeCanonEvolutionCheck.IsChecked = s.AutoProposeCanonEvolution;
         AutoSyncInstructionsCheck.IsChecked = s.AutoSyncProjectInstructions;
         BindAutomationContextGrid();
 
@@ -233,10 +234,19 @@ public partial class PlayPromptInjectionDialog
         AutoProposeMemoriesCheck.IsEnabled = hasProject;
         AutoUpdateSummaryCheck.IsEnabled = hasProject;
         AutoContinuityCheckCheck.IsEnabled = hasProject;
+        AutoUpdateStateCheck.IsEnabled = hasProject;
+        AutoProposeEntityStateCheck.IsEnabled = hasProject;
+        AutoProposeCanonEvolutionCheck.IsEnabled = hasProject;
         AutoSyncInstructionsCheck.IsEnabled = hasProject;
         AutoExtractEntitiesHint.Text = hasProject
-            ? "Proposals appear in Reference → review queue after each accepted turn."
-            : "Link a Project to enable auto entity extraction.";
+            ? "Post-turn proposals route to Reference → review queue by layer after each accepted turn."
+            : "Link a Project to enable post-turn utility jobs.";
+
+        NarrativeLayerHint.Text = GenerationJobGuideService.DescribeUtilityLayer("Narrative");
+        SessionLayerHint.Text = GenerationJobGuideService.DescribeUtilityLayer("Session");
+        CanonProfileLayerHint.Text = GenerationJobGuideService.DescribeUtilityLayer("Canon profile");
+        PlayStateLayerHint.Text = GenerationJobGuideService.DescribeUtilityLayer("Play state");
+        CanonEvolutionLayerHint.Text = GenerationJobGuideService.DescribeUtilityLayer("Canon evolution");
 
         AttachPlaySettingsAutosaveHandlers();
     }
@@ -250,23 +260,13 @@ public partial class PlayPromptInjectionDialog
         if (int.TryParse(SummaryIntervalBox.Text, out var interval))
             settings.SummaryUpdateIntervalTurns = Math.Max(1, interval);
         settings.AutoContinuityCheck = AutoContinuityCheckCheck.IsChecked == true;
+        settings.AutoUpdateState = AutoUpdateStateCheck.IsChecked == true;
+        settings.AutoProposeEntityState = AutoProposeEntityStateCheck.IsChecked == true;
+        settings.AutoProposeCanonEvolution = AutoProposeCanonEvolutionCheck.IsChecked == true;
         settings.AutoSyncProjectInstructions = AutoSyncInstructionsCheck.IsChecked == true;
     }
 
-    private bool HasAutomationChanges()
-    {
-        var s = _bundle.Metadata.Settings;
-        return AutomationCheck.IsChecked != s.AdventureAutomationEnabled
-            || AutoExtractEntitiesCheck.IsChecked != s.AutoExtractEntities
-            || AutoProposeMemoriesCheck.IsChecked != s.AutoProposeMemories
-            || AutoUpdateSummaryCheck.IsChecked != s.AutoUpdateSummary
-            || AutoContinuityCheckCheck.IsChecked != s.AutoContinuityCheck
-            || AutoSyncInstructionsCheck.IsChecked != s.AutoSyncProjectInstructions
-            || ReadSummaryIntervalTurns() != s.SummaryUpdateIntervalTurns
-            || HasAutomationContextChanges();
-    }
-
-    /// <summary>Writes the selected AI tool's in-progress edits into the working bundle.</summary>
+    /// <summary>Writes the selected utility job's in-progress edits into the working bundle.</summary>
     private void FlushCurrentAiActionEdits()
     {
         if (string.IsNullOrWhiteSpace(_selectedAiActionJobId))
@@ -275,6 +275,48 @@ public partial class PlayPromptInjectionDialog
         GenerationJobGuideService.SetInstructionOverride(_bundle, _selectedAiActionJobId, AiActionInstructionBox.Text);
         SaveJobOverrideSettingsTo(_bundle.Metadata.Settings);
         SaveStoryContextSettingsTo(_bundle);
+    }
+
+    private void BindMaxParallelUtilityWorkerJobsCombo()
+    {
+        if (MaxParallelUtilityWorkerJobsCombo.Items.Count > 0)
+            return;
+
+        MaxParallelUtilityWorkerJobsCombo.ItemsSource = new[]
+        {
+            new MaxParallelUtilityWorkerJobsComboItem(1, "1 — sequential (legacy)"),
+            new MaxParallelUtilityWorkerJobsComboItem(2, "2 — parallel jobs"),
+            new MaxParallelUtilityWorkerJobsComboItem(3, "3 — parallel jobs (recommended)"),
+            new MaxParallelUtilityWorkerJobsComboItem(4, "4 — parallel jobs (max)"),
+        };
+        MaxParallelUtilityWorkerJobsCombo.DisplayMemberPath = nameof(MaxParallelUtilityWorkerJobsComboItem.DisplayName);
+    }
+
+    private void ApplyMaxParallelUtilityWorkerJobsUi(bool ephemeralEnabled)
+    {
+        if (MaxParallelUtilityWorkerJobsPanel is null || MaxParallelUtilityWorkerJobsCombo is null)
+            return;
+
+        MaxParallelUtilityWorkerJobsPanel.IsEnabled = ephemeralEnabled;
+        if (!ephemeralEnabled)
+            return;
+
+        if (MaxParallelUtilityWorkerJobsCombo.SelectedItem is MaxParallelUtilityWorkerJobsComboItem { SlotCount: 1 }
+            && UtilityWorkerParallelPolicy.NormalizeForUi(
+                _bundle.Metadata.Settings.MaxParallelUtilityWorkerJobs,
+                ephemeralEnabled: false) <= 1)
+        {
+            MaxParallelUtilityWorkerJobsCombo.SelectedItem = MaxParallelUtilityWorkerJobsCombo.Items
+                .Cast<MaxParallelUtilityWorkerJobsComboItem>()
+                .First(i => i.SlotCount == UtilityWorkerParallelPolicy.RecommendedParallelSlots);
+        }
+    }
+
+    private sealed class MaxParallelUtilityWorkerJobsComboItem(int slotCount, string displayName)
+    {
+        public int SlotCount { get; } = slotCount;
+
+        public string DisplayName { get; } = displayName;
     }
 
     private sealed class UtilityInjectionModeComboItem(PlayUtilityInjectionMode mode, string displayName)

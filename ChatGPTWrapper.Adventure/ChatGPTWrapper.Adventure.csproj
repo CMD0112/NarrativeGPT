@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+
+
+  <PropertyGroup>
+
+    <TargetFramework>net9.0</TargetFramework>
+
+    <Nullable>enable</Nullable>
+
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <RootNamespace>ChatGPTWrapper.Adventure</RootNamespace>
+
+    <AssemblyName>ChatGPTWrapper.Adventure</AssemblyName>
+
+  </PropertyGroup>
+
+
+
+  <ItemGroup>
+
+    <ProjectReference Include="..\ChatGPTWrapper.Core\ChatGPTWrapper.Core.csproj" />
+
+  </ItemGroup>
+
+
+
+  <ItemGroup>
+
+    <InternalsVisibleTo Include="ChatGPT Wrapper" />
+
+    <InternalsVisibleTo Include="ChatGPT Wrapper WinUI" />
+
+    <InternalsVisibleTo Include="ChatGPTWrapper.ApiDiagnostics" />
+
+  </ItemGroup>
+
+
+
+</Project>
+

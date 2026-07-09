@@ -75,6 +75,7 @@ internal static class UtilityProposalRehydrateService
         GenerationJobId.ProcessTurn => [ProposalReviewCategory.Memory, ProposalReviewCategory.Entity],
         GenerationJobId.ProposeMemories => [ProposalReviewCategory.Memory],
         GenerationJobId.ExtractEntities or GenerationJobId.ExpandEntity
+            or GenerationJobId.ProposeEntitiesFile
             or GenerationJobId.BootstrapSections or GenerationJobId.ExpandSection =>
             [ProposalReviewCategory.Entity],
         GenerationJobId.UpdateSummary => [ProposalReviewCategory.Summary],

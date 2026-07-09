@@ -21,6 +21,9 @@ public partial class ActionListRow : UserControl
     public static readonly DependencyProperty DisabledReasonProperty =
         DependencyProperty.Register(nameof(DisabledReason), typeof(string), typeof(ActionListRow), new PropertyMetadata(string.Empty));
 
+    public static readonly DependencyProperty LeadingIconProperty =
+        DependencyProperty.Register(nameof(LeadingIcon), typeof(string), typeof(ActionListRow), new PropertyMetadata(string.Empty));
+
     public ActionListRow()
     {
         InitializeComponent();
@@ -54,5 +57,11 @@ public partial class ActionListRow : UserControl
     {
         get => (string)GetValue(DisabledReasonProperty);
         set => SetValue(DisabledReasonProperty, value);
+    }
+
+    public string LeadingIcon
+    {
+        get => (string)GetValue(LeadingIconProperty);
+        set => SetValue(LeadingIconProperty, value);
     }
 }

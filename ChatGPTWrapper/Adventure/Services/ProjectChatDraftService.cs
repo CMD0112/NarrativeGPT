@@ -140,7 +140,22 @@ internal static class ProjectChatDraftService
         snapshot.DraftTabKey = tabKey;
     }
 
-    public static bool IsDraftTab(AdventureBundle bundle, WebView2 webView, TabControl tabs)
+    public static void NoteDraftTabHost(AdventureBundle bundle, object tabHost, IPlayTabRegistry registry)
+    {
+        var tabKey = registry.GetTabKey(tabHost);
+        if (string.IsNullOrWhiteSpace(tabKey))
+            return;
+
+        if (!Active.TryGetValue(bundle.Metadata.Id, out var snapshot))
+            return;
+
+        snapshot.DraftTabKey = tabKey;
+    }
+
+    public static bool IsDraftTab(AdventureBundle bundle, WebView2 webView, TabControl tabs) =>
+        IsDraftTabHost(bundle, webView, new WpfPlayTabRegistry(tabs));
+
+    public static bool IsDraftTabHost(AdventureBundle bundle, object tabHost, IPlayTabRegistry registry)
     {
         if (!Active.TryGetValue(bundle.Metadata.Id, out var snapshot)
             || string.IsNullOrWhiteSpace(snapshot.DraftTabKey))
@@ -148,7 +163,7 @@ internal static class ProjectChatDraftService
             return false;
         }
 
-        var tabKey = PlayTabPinService.GetTabKey(webView, tabs);
+        var tabKey = registry.GetTabKey(tabHost);
         return tabKey is not null
                && string.Equals(tabKey, snapshot.DraftTabKey, StringComparison.OrdinalIgnoreCase);
     }

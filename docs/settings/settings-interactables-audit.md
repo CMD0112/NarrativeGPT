@@ -23,6 +23,7 @@ Surface-by-surface audit for [CMD-256](https://linear.app/cmd0112/issue/CMD-256)
 | Toolbar Format button (if present in old docs) | **deprecate** | Removed; View menu only |
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":50,"rankSpacing":56,"padding":16,"subGraphTitleMargin":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
   subgraph global [Global discovery]
     Hub[PreferencesHubDialog]

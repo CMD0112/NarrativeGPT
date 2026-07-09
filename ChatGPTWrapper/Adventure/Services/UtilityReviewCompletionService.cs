@@ -21,8 +21,10 @@ internal static class UtilityReviewCompletionService
             case ProposalReviewCategory.Entity:
                 if (bundle.Entities.ReviewQueue.Count > 0)
                     return;
+                EntitiesFileRevisionService.ClearProposedSnapshot(bundle.Entities);
                 UtilityJobResultStore.MarkReviewResolved(adventureId, GenerationJobId.ExtractEntities);
                 UtilityJobResultStore.MarkReviewResolved(adventureId, GenerationJobId.ExpandEntity);
+                UtilityJobResultStore.MarkReviewResolved(adventureId, GenerationJobId.ProposeEntitiesFile);
                 UtilityJobResultStore.MarkReviewResolved(adventureId, GenerationJobId.BootstrapSections);
                 UtilityJobResultStore.MarkReviewResolved(adventureId, GenerationJobId.ExpandSection);
                 TryMarkProcessTurnResolved(bundle);

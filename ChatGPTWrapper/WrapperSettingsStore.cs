@@ -22,6 +22,7 @@ internal static class WrapperSettingsStore
     {
         _cached = Load();
         AppDirectories.ApplyAdventuresDirectoryOverride(_cached.AdventuresDirectoryOverride);
+        Adventure.Stores.AdventureIndexDirectoryService.EnsureDirectory();
     }
 
     public static WrapperSettings Load()
@@ -55,6 +56,8 @@ internal static class WrapperSettingsStore
         File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, JsonOptions));
         _cached = settings;
         AppDirectories.ApplyAdventuresDirectoryOverride(settings.AdventuresDirectoryOverride);
+        Adventure.Stores.AdventureIndexDirectoryService.EnsureDirectory();
+        Adventure.Stores.AdventureIndexDirectoryService.RebuildAll();
     }
 
     public static bool TryValidateAdventuresDirectory(string? path, out string? normalized, out string? error)
@@ -72,6 +75,7 @@ internal static class WrapperSettingsStore
         {
             normalized = Path.GetFullPath(path.Trim());
             Directory.CreateDirectory(normalized);
+            Directory.CreateDirectory(Path.Combine(normalized, AppDirectories.AdventuresIndexDirectoryName));
 
             var probe = Path.Combine(normalized, ".write-test-" + Guid.NewGuid().ToString("N"));
             File.WriteAllText(probe, "ok");

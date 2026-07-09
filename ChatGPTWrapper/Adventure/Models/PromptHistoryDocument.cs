@@ -39,4 +39,19 @@ public sealed class PromptHistoryEntry
     public string? AttachmentDeliveryLane { get; set; }
 
     public List<string> AttachmentFiles { get; set; } = [];
+
+    /// <summary>Play thread registry entry id for thread ingest correlation.</summary>
+    public Guid? ThreadEntryId { get; set; }
+
+    /// <summary>Latest thread ingest event id at capture/sync time.</summary>
+    public Guid? ThreadIngestEventId { get; set; }
+
+    /// <summary>Relative path under thread log dir, e.g. <c>raw/...-conversation.json</c>.</summary>
+    public string? ThreadRawPath { get; set; }
+
+    /// <summary>Relative path under thread log dir when raw unavailable, e.g. <c>projections/...-branch.json</c>.</summary>
+    public string? ThreadProjectionPath { get; set; }
+
+    /// <summary>Relative path under thread log dir, e.g. <c>snapshots/...-branch.json</c>.</summary>
+    public string? ThreadSnapshotPath { get; set; }
 }

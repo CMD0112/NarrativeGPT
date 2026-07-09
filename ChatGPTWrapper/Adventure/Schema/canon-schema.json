@@ -180,7 +180,9 @@
           "role": "Snippet",
           "multiline": true,
           "controlType": "Text",
-          "alternateLabels": []
+          "alternateLabels": [
+            "Motives"
+          ]
         },
         {
           "label": "Secrets",
@@ -189,6 +191,42 @@
           "role": "Extra",
           "multiline": true,
           "controlType": "Text",
+          "alternateLabels": []
+        },
+        {
+          "label": "Personality",
+          "jsonKey": "personality",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Abilities",
+          "jsonKey": "abilities",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Weaknesses",
+          "jsonKey": "weaknesses",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Flavor",
+          "jsonKey": "flavor",
+          "format": "BlockquoteFlavor",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
           "alternateLabels": []
         }
       ]
@@ -269,6 +307,29 @@
           "multiline": true,
           "controlType": "Text",
           "alternateLabels": []
+        },
+        {
+          "label": "Personality",
+          "jsonKey": "personality",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": []
+        },
+        {
+          "label": "Author guidance",
+          "jsonKey": "useInPlay",
+          "format": "PlainLine",
+          "role": "Extra",
+          "multiline": true,
+          "controlType": "Multiline",
+          "alternateLabels": [
+            "Use in play",
+            "Use in Play",
+            "Plot function",
+            "Practical function"
+          ]
         },
         {
           "label": "Flavor",

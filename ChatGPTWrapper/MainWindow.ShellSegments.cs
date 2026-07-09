@@ -21,6 +21,7 @@ public partial class MainWindow
         };
         SyncAppModeSegmentSelection();
         SyncShellSessionModeSegmentSelection();
+        InitializeTranscriptModeSegment();
     }
 
     private void AppModeSegment_SelectionChanged(object sender, RoutedEventArgs e)
@@ -117,5 +118,18 @@ public partial class MainWindow
             },
         };
         SyncShellSessionModeSegmentSelection();
+    }
+
+    private void InitializeTranscriptModeSegment()
+    {
+        if (TranscriptModeSegment is null)
+            return;
+
+        TranscriptModeSegment.ItemsSource = new SegmentedItem[]
+        {
+            new() { Content = "Native", Tag = TranscriptViewMode.Native },
+            new() { Content = "Continuous", Tag = TranscriptViewMode.Continuous },
+            new() { Content = "Weave", Tag = TranscriptViewMode.Weave },
+        };
     }
 }

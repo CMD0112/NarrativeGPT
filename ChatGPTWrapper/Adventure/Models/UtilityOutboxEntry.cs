@@ -41,7 +41,15 @@ public sealed class UtilityOutboxEntry
 
     public DateTimeOffset? PushedAt { get; set; }
 
+    /// <summary>Set when coordinator finished utility source I/O publish for this run.</summary>
+    public DateTimeOffset? SourceInputsPublishedAt { get; set; }
+
     public DateTimeOffset? CompletedAt { get; set; }
+
+    /// <summary>Parallel slot that owns this entry while in flight (0 = unclaimed).</summary>
+    public int ClaimedBySlot { get; set; }
+
+    public DateTimeOffset? ClaimedAt { get; set; }
 
     public List<UtilityOutboxAttachment>? Attachments { get; set; }
 

@@ -7,6 +7,8 @@ public sealed class MemoryDocument
     public List<MemoryEntry> Entries { get; set; } = [];
 
     public List<MemoryEntry> ReviewQueue { get; set; } = [];
+
+    public List<MemoryLinkEntry> Links { get; set; } = [];
 }
 
 public sealed class MemoryEntry
@@ -22,6 +24,29 @@ public sealed class MemoryEntry
     public string? Outcome { get; set; }
 
     public MemoryAnchor? Anchor { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public string? InferenceSource { get; set; }
+
+    public Guid? UtilityRunId { get; set; }
+}
+
+public sealed class MemoryLinkEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid? FromMemoryId { get; set; }
+
+    public string? FromMemoryText { get; set; }
+
+    public Guid? ToMemoryId { get; set; }
+
+    public string? ToMemoryText { get; set; }
+
+    public string Relation { get; set; } = "related";
+
+    public string? Notes { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 

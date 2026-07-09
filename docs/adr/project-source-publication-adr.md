@@ -1,6 +1,6 @@
 # ADR: Project source publication lab
 
-**Status:** Proposed (2026-06-30)  
+**Status:** Accepted (2026-06-30)  
 **Linear:** [CMD-429](https://linear.app/cmd0112/issue/CMD-429) · Epic [CMD-428](https://linear.app/cmd0112/issue/CMD-428)  
 **Plan:** [project-source-publication-redesign.md](../Enhancements/project-source-publication-redesign.md)
 

@@ -99,7 +99,12 @@ public partial class PreferencesHubDialog : ShellDialogWindow
     private void WrapperSettings_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new WrapperSettingsDialog { Owner = this };
-        dialog.ShowDialog();
+        if (dialog.ShowDialog() != true || dialog.ResultSettings is null)
+            return;
+
+        var merged = WrapperSettingsStore.Current;
+        merged.AdventuresDirectoryOverride = dialog.ResultSettings.AdventuresDirectoryOverride;
+        WrapperSettingsStore.Save(merged);
     }
 
     private void PlaySettings_Click(object sender, RoutedEventArgs e) =>

@@ -92,3 +92,38 @@ public sealed class DialogViewportLayoutTests
         Assert.False(DialogViewportLayout.ShouldPersistDimensions(900, 700, 900, 700));
     }
 }
+
+[Trait("Category", "Unit")]
+public sealed class WorkbenchViewportDesignTests
+{
+    [Theory]
+    [InlineData(1280, 720, 0)]
+    [InlineData(1600, 900, 1)]
+    [InlineData(1920, 1080, 2)]
+    public void Classify_maps_work_area_to_viewport_bucket(int width, int height, int expectedOrdinal)
+    {
+        var expected = (WorkbenchViewportClass)expectedOrdinal;
+        Assert.Equal(expected, WorkbenchViewportDesign.Classify(new WorkAreaBounds(width, height)));
+    }
+
+    [Fact]
+    public void ResolveT4Session_uses_high_ratio_on_compact_displays()
+    {
+        var metrics = WorkbenchViewportDesign.ResolveT4Session(new WorkAreaBounds(1280, 720));
+
+        Assert.Equal(WorkbenchViewportClass.Compact, metrics.ViewportClass);
+        Assert.InRange(metrics.DesignWidth, metrics.MinWidth, 1040);
+        Assert.InRange(metrics.DesignHeight, metrics.MinHeight, 820);
+        Assert.True(metrics.DesignWidth >= 1000);
+    }
+
+    [Fact]
+    public void ResolveT4Session_caps_spacious_displays()
+    {
+        var metrics = WorkbenchViewportDesign.ResolveT4Session(new WorkAreaBounds(2560, 1440));
+
+        Assert.Equal(WorkbenchViewportClass.Spacious, metrics.ViewportClass);
+        Assert.True(metrics.DesignWidth <= 1440);
+        Assert.True(metrics.DesignHeight <= 980);
+    }
+}

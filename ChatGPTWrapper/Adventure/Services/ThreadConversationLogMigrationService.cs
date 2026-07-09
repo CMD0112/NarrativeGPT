@@ -115,7 +115,10 @@ internal static class ThreadConversationLogMigrationService
             bundle,
             entry,
             branch,
-            ThreadConversationLogCaptureSource.Migration);
+            ThreadConversationLogCaptureSource.Migration,
+            ThreadSnapshotPolicyService.TryCreateRequest(
+                bundle,
+                ThreadConversationLogSnapshotTrigger.Migration));
 
         return true;
     }

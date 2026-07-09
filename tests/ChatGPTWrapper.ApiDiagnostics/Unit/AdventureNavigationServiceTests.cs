@@ -176,7 +176,7 @@ public sealed class AdventureNavigationServiceTests : IClassFixture<FileLockAwar
     }
 
     [Fact]
-    public void ShouldNavigateToPlayTarget_true_on_project_page_when_stored_play_thread()
+    public void ShouldNavigateToPlayTarget_false_on_project_page_when_stored_play_thread()
     {
         var bundle = new AdventureBundle
         {
@@ -190,7 +190,7 @@ public sealed class AdventureNavigationServiceTests : IClassFixture<FileLockAwar
         var source = ChatGptUrls.BuildProjectUrl("g-p-nav");
         var target = AdventureNavigationService.ResolvePlayBrowseUrl(bundle)!;
 
-        Assert.True(AdventureNavigationService.ShouldNavigateToPlayTarget(source, bundle, target));
+        Assert.False(AdventureNavigationService.ShouldNavigateToPlayTarget(source, bundle, target));
     }
 
     [Fact]

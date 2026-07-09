@@ -335,6 +335,7 @@ public sealed class PlayContextSessionCacheTests
                 LinkedProjectId = "g-p-test",
             },
         };
+        ProjectChatDraftService.BeginPlayDraft(bundle);
 
         var source = ChatGptUrls.BuildProjectUrl("g-p-test");
 

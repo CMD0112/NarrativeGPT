@@ -29,6 +29,7 @@ public static class ThreadConversationLogCaptureSource
     public const string Invalidation = "invalidation";
     public const string Migration = "migration";
     public const string ManualDump = "manual_dump";
+    public const string WorkerDispatch = "worker_dispatch";
 }
 
 public sealed class ThreadConversationLogEntry

@@ -57,7 +57,7 @@ When an adventure session is active, the shell context row owns session IA (no d
 | Zone | Controls |
 |------|----------|
 | **Left** | Back, adventure title, **Play \| Design** segment |
-| **Center** | `StatusChip` row — review count (opens Proposal Review Hub), link attention, running generation job |
+| **Center** | `StatusChip` row — review count (opens Proposal Review Hub), link attention, **Working** chip when generation jobs run |
 | **Right** | View menu, session **⋯** overflow (threads, rename, …), Preferences |
 
 Canonical intents: **Review** → shell chip only; **Threads** → session **⋯**; **Play settings** → View menu bridge dot + Play settings dialog; **Focus chat** → shell Focus button (View menu item hidden). Play and Design duplicate headers are hidden when unified session chrome is active (`UseUnifiedSessionChrome`).
@@ -155,7 +155,7 @@ Top card in the play side panel with a **Session | Narrator | Tools** `Segmented
 |---------|----------|
 | **Session** | Link-project banner, thread/sources status lines, session settings |
 | **Narrator** | Minimal (scene profile, scope radios, override chips, **Full narrator settings**) or **Full** density (inline combo grids via Play surface pref) |
-| **Tools** | Vertical `ActionListRow` list for AI utility jobs (continuity, entities, etc.) |
+| **Tools** | Vertical `ActionListRow` list for AI utility jobs (Entity state, Canon evolution, continuity, etc.); **Menu only** layout hides list — use Play settings → Utility jobs |
 
 **Review** entry is canonical in the shell `StatusChip` — not duplicated in the cockpit or play settings badge.
 
@@ -169,7 +169,7 @@ Companion tabs can host on the **left** (`PlaySideTabControl`) or **right** (`Pl
 |-----|---------|
 | **Reference** | Filter pills (Characters, Locations, …); list-based entity rows with pin/role chips; sticky Add/Edit/Delete + overflow (Pin, Suggest, Expand); inline review queue when navigated from cockpit. |
 | **Warnings** | Continuity list with severity chips, last-checked line, dismiss/open-in-Reference actions; empty state when none. Also reachable from AI tools **Continuity**. |
-| **State** | World skim: summary/location/objectives preview cards, empty-state card, last-updated hint, optional **All fields** grid; edit via Play settings → World. Location card links to Reference when a matching entity exists. |
+| **State** | World skim: summary/location/objectives preview cards, empty-state card, last-updated hint, optional **All fields** grid (expander state restored per adventure); edit via Play settings → World. Location card links to Reference when a matching entity exists. |
 
 ### Notes panel
 

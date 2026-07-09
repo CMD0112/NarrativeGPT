@@ -69,4 +69,24 @@ public sealed class UtilityEphemeralWorkerPolicyTests
 
         Assert.True(UtilityEphemeralWorkerPolicy.RequiresWorkerPin(bundle));
     }
+
+    [Fact]
+    public void RequiresWorkerPin_false_for_entities_file_job_without_ephemeral_setting()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle();
+        bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat = false;
+        Assert.False(UtilityEphemeralWorkerPolicy.RequiresWorkerPin(
+            bundle,
+            GenerationJobId.ProposeEntitiesFile));
+    }
+
+    [Fact]
+    public void IsWorkerLaneAvailable_entities_file_requires_linked_project_only()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle();
+        bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat = false;
+        Assert.True(UtilityEphemeralWorkerPolicy.IsWorkerLaneAvailable(
+            bundle,
+            GenerationJobId.ProposeEntitiesFile));
+    }
 }

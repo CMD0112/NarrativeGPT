@@ -8,7 +8,7 @@ Canonical workspace reference for **creating and updating** Linear issues on tea
 
 **Dual canon:** `docs/linear/linear-issue-reference.md` and the Linear taxonomy doc must stay aligned. Agents are required to update **both** whenever labels, statuses, or workflow policy change (see [Maintaining this reference](#maintaining-this-reference) and `.cursor/rules/linear-issues.mdc`).
 
-**Last synced with Linear labels:** 2026-06-25
+**Last synced with Linear labels:** 2026-07-05
 
 ---
 
@@ -74,9 +74,10 @@ Omit when the issue is pure WPF chrome with no named subsystem (see note below).
 
 | Label | Use when | Examples | Do not use when |
 |-------|----------|----------|-----------------|
-| **C#** | Primary work in services, models, MainWindow partials, or xUnit tests | `ContinuityService`; adventure models; unit tests | Primary work is XAML-only (use **WPF**); primary work is injected JS (use **JavaScript**) |
+| **C#** | Primary work in services, models, MainWindow partials, or xUnit tests | `ContinuityService`; adventure models; unit tests | Primary work is XAML-only (use **WPF** or **WinUI**); primary work is injected JS (use **JavaScript**) |
 | **JavaScript** | Primary work in `ChatGPT_files/*.js`, wrapper-assets, or DOM injection scripts | `adventure-bridge.js`; `cgw-play-compose.js` | C# bridge host only with no JS change (use **C#** or **WebView** area) |
-| **WPF** | Primary work in XAML, dialogs, controls, layout, styling | `AdventurePlayView.xaml`; dialog layout; `WrapperControls.xaml` | Backend service logic (use **C#**); markdown guides (use **Docs**) |
+| **WPF** | Primary work in legacy WPF XAML, dialogs, controls, layout, styling (pre–WinUI migration) | `AdventurePlayView.xaml`; `WrapperControls.xaml` | Deliverable targets WinUI host (use **WinUI**); backend service logic (use **C#**); markdown guides (use **Docs**) |
+| **WinUI** | Primary work in WinUI 3 / Windows App SDK XAML, controls, shell, and Fluent styling | WinUI `MainWindow`; `ContentDialog` ports; Mica shell | Legacy WPF-only surface with no WinUI target (use **WPF**); markdown guides (use **Docs**) |
 | **Docs** | Primary deliverable is `docs/*.md`, guides, ADRs, or in-repo instruction architecture notes | `adventure-panel.md`; architecture ADR; prompt construction guide | Code change with docs as minor follow-up (use code layer + optional docs link in issue) |
 
 ### `work-type` (pick at most one modifier)
@@ -102,9 +103,10 @@ Omit when the issue is pure WPF chrome with no named subsystem (see note below).
 | **Needs Manual QA** | Automated tests insufficient — requires real ChatGPT session (play, design, or Projects) | End-to-end play turn; source sync against live Project; DOM-dependent flow | Pure unit-tested C# with no WebView (use **Has Tests**); after QA passed (remove; add **Verified**) |
 | **Has Tests** | PR adds or updates automated coverage, or issue explicitly requires tests before Done | New xUnit for packet builder; CI test gate for service | Manual-only verification (use **Needs Manual QA**); docs-only change |
 | **ChatGPT Fragile** | Implementation depends on ChatGPT DOM/selectors/session behavior that OpenAI may change without notice | Selector in injected JS; composer DOM assumption | Pure local WPF/C# with no chatgpt.com dependency |
-| **shell-ux-wave** | Same wave constraint as **Shell UX Plan** — tag issues in CMD-95 execution batch | Shell chrome PR series item | Non-shell work; after epic sign-off |
+| **shell-ux-wave** | Same wave constraint as **Shell UX Plan** — tag issues in CMD-95 execution batch | Shell chrome PR series item | Non-shell work; after CMD-95 epic sign-off |
+| **winui-migration-wave** | Child of [CMD-478](https://linear.app/cmd0112/issue/CMD-478) WinUI 3 shell migration — filter plan board by this | WinUI scaffold; Mica shell; dialog port batch | Unrelated feature work; after CMD-478 epic sign-off |
 
-**Status cap (wave labels):** Issues with **Shell UX Plan** or **shell-ux-wave** should not move past **In Review** until CMD-95 epic sign-off.
+**Status cap (wave labels):** Issues with **Shell UX Plan**, **shell-ux-wave**, or **winui-migration-wave** should not move past **In Review** until their parent epic sign-off (CMD-95 or CMD-478 respectively).
 
 ### Label decision tree
 

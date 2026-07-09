@@ -191,4 +191,27 @@ public sealed class EphemeralProjectChatServiceTests
         var dict = Assert.IsType<Dictionary<string, object?>>(body);
         Assert.False(Assert.IsType<bool>(dict["is_visible"]));
     }
+
+    [Fact]
+    public void BuildRenameConversationBody_sets_title()
+    {
+        var body = ChatGptConversationSendService.BuildRenameConversationBody("Utility Worker Thread");
+        var dict = Assert.IsType<Dictionary<string, object?>>(body);
+        Assert.Equal("Utility Worker Thread", dict["title"]);
+    }
+
+    [Fact]
+    public void BuildProjectSettingsPatchBody_includes_observed_fields()
+    {
+        var body = ChatGptProjectApiService.BuildProjectSettingsPatchBody(
+            "The King in Red & Black",
+            "# Instructions",
+            "book",
+            "#fa423e");
+        var dict = Assert.IsType<Dictionary<string, object?>>(body);
+        Assert.Equal("The King in Red & Black", dict["name"]);
+        Assert.Equal("# Instructions", dict["instructions"]);
+        Assert.Equal("book", dict["emoji"]);
+        Assert.Equal("#fa423e", dict["theme"]);
+    }
 }

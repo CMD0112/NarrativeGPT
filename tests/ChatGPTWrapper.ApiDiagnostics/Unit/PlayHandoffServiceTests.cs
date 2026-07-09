@@ -129,7 +129,7 @@ public sealed class PlayHandoffServiceTests : IClassFixture<FileLockAwareFixture
         Assert.Null(bundle.Metadata.LinkedConversationId);
 
         Assert.True(PlayHandoffService.TryRollbackPendingHandoff(bundle));
-        Assert.Equal("conv-a", bundle.Metadata.LinkedConversationId);
-        Assert.Equal("tab-1", bundle.Metadata.PinnedPlayTabKey);
+        Assert.Equal("conv-a", PlayThreadBindingService.GetActiveConversationId(bundle));
+        Assert.Equal("tab-1", PlayTabPinService.GetPlayPinKey(bundle));
     }
 }

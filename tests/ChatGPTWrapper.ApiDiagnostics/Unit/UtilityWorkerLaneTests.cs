@@ -76,7 +76,7 @@ public sealed class UtilityJobRouterTests
             UtilityJobTrigger.ManualCompanion);
 
         Assert.Equal(UtilityRouteLane.Blocked, decision.Lane);
-        Assert.Equal("dual_run_requires_utility_worker", decision.Reason);
+        Assert.Equal("transitioned_job_requires_worker", decision.Reason);
     }
 
     [Fact]
@@ -111,9 +111,9 @@ public sealed class UtilityJobRouterTests
     }
 
     [Fact]
-    public void Manual_falls_back_to_injection_when_worker_red()
+    public void Manual_blocks_transitioned_job_when_worker_unavailable()
     {
-        var bundle = AdventureTestData.CreateLinkedBundle();
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
         bundle.Metadata.Settings.PlayUtilityInjectionMode = PlayUtilityInjectionMode.InjectionFirst;
 
         var decision = UtilityJobRouter.Resolve(
@@ -121,13 +121,44 @@ public sealed class UtilityJobRouterTests
             GenerationJobId.ProposeMemories,
             UtilityJobTrigger.ManualCompanion);
 
-        Assert.Equal(UtilityRouteLane.PlayInjection, decision.Lane);
+        Assert.Equal(UtilityRouteLane.Blocked, decision.Lane);
+        Assert.Equal("transitioned_job_requires_worker", decision.Reason);
+    }
+
+    [Fact]
+    public void Manual_routes_transitioned_job_to_worker_when_ephemeral_enabled()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle();
+        bundle.Metadata.Settings.UseEphemeralUtilityWorkerChat = true;
+        bundle.Metadata.UtilityWorkerCapabilities = null;
+
+        var decision = UtilityJobRouter.Resolve(
+            bundle,
+            GenerationJobId.UpdateSummary,
+            UtilityJobTrigger.ManualCompanion);
+
+        Assert.Equal(UtilityRouteLane.WorkerOutbox, decision.Lane);
+    }
+
+    [Fact]
+    public void Auto_post_turn_blocks_transitioned_job_when_worker_unavailable()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
+        bundle.Metadata.Settings.PlayUtilityInjectionMode = PlayUtilityInjectionMode.InjectionFirst;
+
+        var decision = UtilityJobRouter.Resolve(
+            bundle,
+            GenerationJobId.ProcessTurn,
+            UtilityJobTrigger.AutoPostTurn);
+
+        Assert.Equal(UtilityRouteLane.Blocked, decision.Lane);
+        Assert.Equal("transitioned_job_requires_worker", decision.Reason);
     }
 
     [Fact]
     public void Manual_blocks_when_worker_only_and_capabilities_red()
     {
-        var bundle = AdventureTestData.CreateLinkedBundle();
+        var bundle = AdventureTestData.CreateLinkedBundle(projectId: null);
         bundle.Metadata.Settings.UtilityExecutionPolicy = UtilityExecutionPolicy.WorkerOnly;
 
         var decision = UtilityJobRouter.Resolve(
@@ -136,11 +167,11 @@ public sealed class UtilityJobRouterTests
             UtilityJobTrigger.ManualCompanion);
 
         Assert.Equal(UtilityRouteLane.Blocked, decision.Lane);
-        Assert.Equal("utility_worker_not_ready", decision.Reason);
+        Assert.Equal("transitioned_job_requires_worker", decision.Reason);
     }
 
     [Fact]
-    public void Manual_blocks_when_dual_run_and_worker_red()
+    public void Manual_routes_dual_run_to_worker_when_linked_project_available()
     {
         var bundle = AdventureTestData.CreateLinkedBundle();
         bundle.Metadata.Settings.LocalUtilityInference = new LocalUtilityInferenceSettings
@@ -155,8 +186,7 @@ public sealed class UtilityJobRouterTests
             GenerationJobId.ProposeMemories,
             UtilityJobTrigger.ManualCompanion);
 
-        Assert.Equal(UtilityRouteLane.Blocked, decision.Lane);
-        Assert.Equal("dual_run_requires_utility_worker", decision.Reason);
+        Assert.Equal(UtilityRouteLane.WorkerOutbox, decision.Lane);
     }
 
     [Fact]

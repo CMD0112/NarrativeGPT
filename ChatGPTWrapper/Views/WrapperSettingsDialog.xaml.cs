@@ -57,7 +57,8 @@ public partial class WrapperSettingsDialog : ShellDialogWindow
             var currentRoot = Path.GetFullPath(AppDirectories.AdventuresDirectory);
             if (!string.Equals(normalized, currentRoot, StringComparison.OrdinalIgnoreCase)
                 && Directory.Exists(currentRoot)
-                && Directory.EnumerateDirectories(currentRoot).Any())
+                && Directory.EnumerateDirectories(currentRoot).Any(d =>
+                    !AppDirectories.IsReservedAdventuresDirectory(Path.GetFileName(d))))
             {
                 var warn = MessageBox.Show(
                     this,
@@ -76,6 +77,7 @@ public partial class WrapperSettingsDialog : ShellDialogWindow
         ResultSettings = new WrapperSettings
         {
             AdventuresDirectoryOverride = normalized,
+            PublicationLabDomUploadMethod = WrapperSettingsStore.Current.PublicationLabDomUploadMethod,
         };
         DialogResult = true;
         Close();

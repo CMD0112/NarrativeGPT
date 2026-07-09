@@ -15,6 +15,8 @@ public static class ShellShortcutCatalog
     public const string TabState = "tab-state";
     public const string TabNotes = "tab-notes";
     public const string ShowShortcuts = "show-shortcuts";
+    public const string ReviewAcceptProposal = "review-accept-proposal";
+    public const string ReviewDismissProposal = "review-dismiss-proposal";
 
     public static IReadOnlyList<ShellShortcutDefinition> Defaults { get; } =
     [
@@ -125,6 +127,26 @@ public static class ShellShortcutCatalog
             Key = Key.OemQuestion,
             Modifiers = ModifierKeys.Control | ModifierKeys.Shift,
             Scope = ShellShortcutScope.Global,
+            AllowWhenWebViewFocused = true,
+        },
+        new()
+        {
+            Id = ReviewAcceptProposal,
+            DisplayName = "Accept selected review proposal",
+            Category = "Play review",
+            Key = Key.Y,
+            Modifiers = ModifierKeys.Control | ModifierKeys.Alt,
+            Scope = ShellShortcutScope.Play,
+            AllowWhenWebViewFocused = true,
+        },
+        new()
+        {
+            Id = ReviewDismissProposal,
+            DisplayName = "Dismiss selected review proposal",
+            Category = "Play review",
+            Key = Key.X,
+            Modifiers = ModifierKeys.Control | ModifierKeys.Alt,
+            Scope = ShellShortcutScope.Play,
             AllowWhenWebViewFocused = true,
         },
     ];

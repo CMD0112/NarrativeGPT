@@ -24,6 +24,7 @@ Prompt construction is **not centralized**. Different surfaces use different bui
 | **Recap / extraction** | `RecapService`, `EntityExtractionService` | Utility job packets |
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
     subgraph play [Play surface]
         PS[PromptInjectionService.PrepareSend]
@@ -319,6 +320,7 @@ These are thin wrappers around structured job instructions plus bundle context s
 Architecture review of preview/send parity, turn meta visibility, and session scoping.
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":42,"rankSpacing":48,"padding":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
   composer[Composer_or_preview_line] --> prepare[PromptInjectionService.PrepareSend]
   prepare --> build[PromptPacketBuilder.Build]

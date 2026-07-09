@@ -8,6 +8,7 @@ using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
+using ChatGPTWrapper.ChatGptApi.ProjectSource.Publication;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Microsoft.Win32;
@@ -26,6 +27,13 @@ public partial class SourceSyncDialog : ShellDialogWindow
     private readonly ObservableCollection<SourceSyncRowViewModel> _rows = [];
 
     public bool SyncCompleted { get; private set; }
+
+    private bool _suppressUploadMethodSave;
+
+    private ProjectSourceUploadMethod SelectedUploadMethod =>
+        UploadMethodCombo.SelectedItem is ComboBoxItem { Tag: ProjectSourceUploadMethod method }
+            ? method
+            : ProjectSourceUploadMethod.HeadlessBrowser;
 
     public SourceSyncDialog(Guid adventureId, IChatGptProjectHost host)
     {
@@ -94,6 +102,7 @@ public partial class SourceSyncDialog : ShellDialogWindow
         }
 
         _bundle = bundle;
+        BindUploadMethodSelector(bundle);
         try
         {
             var progress = new Progress<string>(s => StatusLine.Text = s);
@@ -411,19 +420,24 @@ public partial class SourceSyncDialog : ShellDialogWindow
         CancelPublishButton.IsEnabled = true;
         try
         {
+            var uploadMethod = ProjectSourceUploadMethodResolver.Resolve(_bundle, SelectedUploadMethod);
+            ProjectSourceUploadMethodResolver.PersistSelection(_bundle, uploadMethod);
             var progress = new Progress<string>(s => StatusLine.Text = s);
             var result = await upload.PublishLocalFileAsync(
                 core,
                 gizmoId,
                 remoteFileName,
                 localFilePath,
-                manifestEntry is not null ? _bundle : null,
+                _bundle,
                 manifestEntry,
                 progress,
-                _directPublishCts.Token);
+                _directPublishCts.Token,
+                uploadMethod);
 
             StatusLine.Text = $"Published {remoteFileName} → file_id={result.File.FileId}"
-                              + (result.UsedAttachFallback ? " (attach fallback)" : "");
+                              + (result.UsedAttachFallback ? " (attach fallback)" : "")
+                              + $" [{result.Outcome}]";
+            RenderPublicationAttempts(result.Run);
 
             var testUploadNote = manifestEntry is null
                 ? $"{Environment.NewLine}{Environment.NewLine}"
@@ -448,9 +462,23 @@ public partial class SourceSyncDialog : ShellDialogWindow
         {
             StatusLine.Text = "Publish cancelled.";
         }
+        catch (ProjectPublicationExhaustedException ex)
+        {
+            StatusLine.Text = $"Publication exhausted: {ex.Message}";
+            RenderPublicationAttempts(ex.Run);
+            ProjectLinkDiagnostics.Log($"Direct source publish exhausted {remoteFileName}: {ex}");
+            var triage = ProjectPublicationTriage.BuildExhaustedSummary(ex.Run, remoteFileName);
+            MessageBox.Show(
+                this,
+                $"{ex.Message}{Environment.NewLine}{Environment.NewLine}{triage}",
+                "Publication exhausted",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
         catch (Exception ex)
         {
             StatusLine.Text = $"Publish failed: {ex.Message}";
+            PublicationAttemptList.Visibility = Visibility.Collapsed;
             ProjectLinkDiagnostics.Log($"Direct source publish failed {remoteFileName}: {ex}");
             MessageBox.Show(this, ex.Message, "Publish failed", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
@@ -611,6 +639,68 @@ public partial class SourceSyncDialog : ShellDialogWindow
             $"{SelectedRow.FileName} | {SelectedRow.StateLabel} | local {SelectedRow.LocalHashShort}");
         dlg.Owner = this;
         dlg.ShowDialog();
+    }
+
+    private void RenderPublicationAttempts(ProjectFilePublicationRun? run)
+    {
+        if (run is null || run.Attempts.Count == 0)
+        {
+            PublicationAttemptList.Visibility = Visibility.Collapsed;
+            PublicationAttemptList.ItemsSource = null;
+            return;
+        }
+
+        PublicationAttemptList.ItemsSource = run.Attempts.Select(a =>
+            $"{a.Lane} · {a.Phase} · {a.Outcome} · {a.LatencyMs}ms"
+            + (string.IsNullOrWhiteSpace(a.Error) ? "" : $" · {a.Error}"));
+        PublicationAttemptList.Visibility = Visibility.Visible;
+    }
+
+    private void BindUploadMethodSelector(AdventureBundle bundle)
+    {
+        if (UploadMethodCombo.Items.Count == 0)
+        {
+            UploadMethodCombo.Items.Add(new ComboBoxItem
+            {
+                Content = "Headless Chrome (Playwright)",
+                Tag = ProjectSourceUploadMethod.HeadlessBrowser,
+            });
+            UploadMethodCombo.Items.Add(new ComboBoxItem
+            {
+                Content = "Pure API (backend-api)",
+                Tag = ProjectSourceUploadMethod.PureApi,
+            });
+            UploadMethodCombo.SelectionChanged += UploadMethodCombo_SelectionChanged;
+        }
+
+        var method = ProjectSourceUploadMethodResolver.Resolve(bundle);
+        _suppressUploadMethodSave = true;
+        try
+        {
+            foreach (ComboBoxItem item in UploadMethodCombo.Items)
+            {
+                if (item.Tag is ProjectSourceUploadMethod tagged && tagged == method)
+                {
+                    UploadMethodCombo.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _suppressUploadMethodSave = false;
+        }
+    }
+
+    private void UploadMethodCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressUploadMethodSave || _bundle is null)
+            return;
+
+        if (UploadMethodCombo.SelectedItem is not ComboBoxItem { Tag: ProjectSourceUploadMethod method })
+            return;
+
+        ProjectSourceUploadMethodResolver.PersistSelection(_bundle, method);
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

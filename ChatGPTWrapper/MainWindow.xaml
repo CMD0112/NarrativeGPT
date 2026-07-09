@@ -73,9 +73,14 @@
                     <controls:StatusChip x:Name="ShellLinkChip"
                                          Label="Link"
                                          Kind="Attention"
-                                         Margin="0,0,12,0"
+                                         Margin="0,0,6,0"
                                          Visibility="Collapsed"
                                          Click="ShellLinkChip_Click"/>
+                    <controls:StatusChip x:Name="ShellJobChip"
+                                         Label="Working"
+                                         Kind="Running"
+                                         Margin="0,0,12,0"
+                                         Visibility="Collapsed"/>
                     <Button x:Name="ShellPlayFocusButton"
                             Style="{StaticResource ShellIconButtonStyle}"
                             Tag="{StaticResource ShellIconFocus}"
@@ -102,25 +107,9 @@
                                   FontWeight="SemiBold"/>
                         <MenuItem StaysOpenOnClick="True">
                             <MenuItem.Header>
-                                <Border Style="{StaticResource ShellCardStyle}"
-                                        CornerRadius="{DynamicResource RadiusControl}"
-                                        Padding="2"
-                                        Margin="0,2,0,4">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Button x:Name="NativeTranscriptModeButton"
-                                                Content="Native"
-                                                Style="{StaticResource ModeButtonStyle}"
-                                                Click="NativeTranscriptModeButton_Click"/>
-                                        <Button x:Name="ContinuousTranscriptModeButton"
-                                                Content="Continuous"
-                                                Style="{StaticResource ModeButtonStyle}"
-                                                Click="ContinuousTranscriptModeButton_Click"/>
-                                        <Button x:Name="WeaveTranscriptModeButton"
-                                                Content="Weave"
-                                                Style="{StaticResource ModeButtonStyle}"
-                                                Click="WeaveTranscriptModeButton_Click"/>
-                                    </StackPanel>
-                                </Border>
+                                <controls:SegmentedControl x:Name="TranscriptModeSegment"
+                                                            Margin="0,2,0,4"
+                                                            SelectionChanged="TranscriptModeSegment_SelectionChanged"/>
                             </MenuItem.Header>
                         </MenuItem>
                         <Separator/>
@@ -360,13 +349,6 @@
                            MaxWidth="480"
                            Cursor="Hand"
                            ToolTip="Session link — click for source manager"/>
-                <TextBlock x:Name="ShellJobStatusText"
-                           VerticalAlignment="Center"
-                           Margin="12,0,0,0"
-                           Style="{StaticResource ShellSectionHintStyle}"
-                           Foreground="{DynamicResource AccentLinkBrush}"
-                           Visibility="Collapsed"
-                           Text="Working…"/>
             </StackPanel>
         </Border>
     </Grid>

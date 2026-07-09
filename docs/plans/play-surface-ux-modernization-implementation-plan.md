@@ -118,9 +118,10 @@ Use this document as the **single source of truth** for sequencing, file touchpo
 ## Target architecture
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":58,"rankSpacing":68,"padding":20,"subGraphTitleMargin":16,"diagramPadding":12,"htmlLabels":true},"themeVariables":{"fontSize":"12px"}} }%%
 flowchart TB
   subgraph shell [MainWindow session chrome]
-    SEG[SegmentedControl Browse/Adventures + Play/Design]
+    SEG[SegmentedControl Browse/Adventures<br/>+ Play/Design]
     CHIPS[StatusChip row - review link job]
     VIEW[View menu + session overflow]
   end
@@ -165,6 +166,7 @@ Dictionary<string, bool>? PlayCompanionExpanderState;
 ## Dependency graph
 
 ```mermaid
+%%{init: {"flowchart":{"nodeSpacing":42,"rankSpacing":48,"padding":12,"diagramPadding":8,"htmlLabels":true},"themeVariables":{"fontSize":"13px"}} }%%
 flowchart LR
   ADR[CMD-416 ADR]
   KIT[CMD-417 Kit]

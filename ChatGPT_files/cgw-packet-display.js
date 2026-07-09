@@ -272,8 +272,16 @@
 
   function looksLikePacketText(text) {
     if (!text) return false;
+    if (isRevisionPromptDisplayText(text)) return false;
     if (text.indexOf(MARKER) >= 0) return true;
     return isStructuredPreviewPacket(text);
+  }
+
+  function isRevisionPromptDisplayText(text) {
+    if (!text) return false;
+    var stripped = String(text).replace(INVALIDATION_RE, "").trimStart();
+    if (stripped.indexOf("For play turn ") === 0) return true;
+    return stripped.indexOf("disregard your prior assistant reply for this turn") >= 0;
   }
 
   function findNativePacketTurns() {
@@ -720,6 +728,7 @@
 
     var rawText = getPacketSourceText(turn, blocks);
     if (!rawText) return blocks;
+    if (isRevisionPromptDisplayText(rawText)) return [];
     if (shouldHideUtilityDisplay(rawText)) return [];
     if (!looksLikePacketText(rawText) && !isPacketTurn(turn, rawText)) return blocks;
 

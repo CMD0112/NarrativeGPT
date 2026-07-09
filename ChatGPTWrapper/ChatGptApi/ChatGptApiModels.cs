@@ -21,6 +21,9 @@ public sealed class GizmoFileRef
 
     /// <summary>True when uploaded via POST /files/library (already bound to the project).</summary>
     public bool FromLibraryUpload { get; init; }
+
+    /// <summary>Token count from upload finalize (browser attach sends include this).</summary>
+    public int? FileTokenSize { get; init; }
 }
 
 public sealed class GizmoSummary
@@ -41,6 +44,20 @@ public sealed class GizmoConversationRef
     public string? Title { get; init; }
 
     public DateTimeOffset? UpdatedAt { get; init; }
+}
+
+/// <summary>ChatGPT project settings payload (PATCH /backend-api/projects/{id}).</summary>
+public sealed class ProjectSettingsDetail
+{
+    public required string ProjectId { get; init; }
+
+    public required string Name { get; init; }
+
+    public string Instructions { get; init; } = "";
+
+    public string? Emoji { get; init; }
+
+    public string? Theme { get; init; }
 }
 
 public sealed class ProjectSidebarSnapshotResult

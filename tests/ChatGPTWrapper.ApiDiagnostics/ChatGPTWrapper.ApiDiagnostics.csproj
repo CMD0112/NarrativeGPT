@@ -23,6 +23,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\ChatGPTWrapper\ChatGPTWrapper.csproj" />
+    <ProjectReference Include="..\..\ChatGPTWrapper.Adventure\ChatGPTWrapper.Adventure.csproj" />
+    <ProjectReference Include="..\..\ChatGPTWrapper.Theme\ChatGPTWrapper.Theme.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +33,7 @@
     <Content Include="Fixtures\packet-display-parity.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\source-sync-fixture.html" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\source-sync-bridge-mock.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures\api-send-samples\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

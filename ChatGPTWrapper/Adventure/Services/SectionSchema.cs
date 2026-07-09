@@ -13,11 +13,14 @@ internal static class SectionSchema
 
     public const string NarratorScalesFile = "narrator-scales.md";
 
+    public const string EntityStateFormatFile = "entity-state-format.md";
+
     /// <summary>Auto-generated meta files recommended for Project upload alongside lore.</summary>
     public static readonly string[] ReferenceSourceFiles =
     [
         CanonFormatFile,
         NarratorScalesFile,
+        EntityStateFormatFile,
     ];
 
     public static bool IsReferenceSourceFile(string relativePath) =>

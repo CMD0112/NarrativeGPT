@@ -2,6 +2,9 @@
 
 All persistence is **JSON files** on disk. No database. Schema version: `AdventureJson.SchemaVersion` (see `Adventure/AdventureJson.cs`).
 
+> **Reference hub:** [api-and-data-models-index.md](api-and-data-models-index.md)  
+> **Satellite files** (context-index, utility-outbox, thread logs, diagnostics): [data-model-secondary-files.md](data-model-secondary-files.md)
+
 ---
 
 ## On-disk layout
@@ -73,8 +76,11 @@ ChatGPTWrapper/
 | Source | Role |
 |--------|------|
 | ChatGPT thread (per registry entry) | **Narrative source of truth** — live transcript the model sees |
-| `thread-logs/{threadEntryId}/rolling.jsonl` | **Local canonical log** — append-only active branch + superseded audit lines |
-| `thread-logs/{threadEntryId}/manifest.json` | Per-thread sync cursor and branch tail metadata |
+| `thread-logs/{threadEntryId}/events.jsonl` + `raw/` | **Ingest index + canonical raw capture** per sync |
+| `thread-logs/{threadEntryId}/projections/` | Branch JSON when API raw unavailable |
+| `thread-logs/{threadEntryId}/rolling.jsonl` | Branch reconciliation + superseded audit |
+| `thread-logs/{threadEntryId}/snapshots/` | **Explicit branch snapshots** — immutable point-in-time captures |
+| `thread-logs/{threadEntryId}/manifest.json` | Per-thread sync cursor, ingest index, branch tail, snapshot paths |
 | `thread-logs/{threadEntryId}/dumps/` | Manual full-conversation JSON snapshots |
 | `log.json` | **Legacy** — migrated into thread log on load; no longer written on send |
 | `thread-metadata.json` | **Legacy** — migrated on load; superseded by thread log |
@@ -161,8 +167,8 @@ Correct logged text via continuous-view surrogate edit; invalidation triggers AP
 | `hideInlineUtilityDuringPlay` | true | Hide utility traffic in UI |
 | `showInlineUtilityTraffic` | false | Peek utility traffic |
 | `lastUtilityScopeHash` | null | Dedup bundled utility runs |
-| `useEphemeralUtilityWorkerChat` | false | CMD-412: per-job ephemeral project chats for utility worker (experimental) |
-| `forceUtilityWorkerDomAttach` | false | CMD-424 QA: route all staged reference files through DOM composer attach (requires ephemeral mode) |
+| `useEphemeralUtilityWorkerChat` | false | CMD-412: per-job ephemeral project chats for utility worker (recommended). File revision jobs always use ephemeral source-pointer I/O regardless. |
+| `forceUtilityWorkerDomAttach` | false | CMD-424 QA: DOM composer attach for manual reference-file runs (requires ephemeral mode; not entities file revision) |
 | `autoSpillToWorker` | false | Overflow utility context to worker when lane available |
 
 ### Enums
@@ -333,10 +339,10 @@ Per-turn **audit of merged packets actually sent** to ChatGPT after verified del
 
 | Document field | Type | Description |
 |----------------|------|-------------|
-| `schemaVersion` | `int` | **2** = flight recorder v2; **1** or absent migrates on load |
+| `schemaVersion` | `int` | **3** = thread ingest correlation; **2** = flight recorder v2; **1** migrates on load |
 | `entries` | `PromptHistoryEntry[]` | Newest appended at send; UI sorts by `at` descending |
 
-### PromptHistoryEntry (schema v2)
+### PromptHistoryEntry (schema v2+)
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -352,6 +358,16 @@ Per-turn **audit of merged packets actually sent** to ChatGPT after verified del
 | `utilityRuns` | `FlightUtilityRunSnapshot[]` | Job id, channel, `UtilityContextManifestRecord` at capture |
 | `injection` | `FlightInjectionSnapshot?` | Section manifest + pointers (null on migrated v1 entries) |
 | `delivery` | `FlightDeliverySnapshot?` | Channel, outcome, verified flag, conversation id |
+
+**Schema v3** (thread ingest correlation — [thread-log-ingest-refactor-adr.md](../adr/thread-log-ingest-refactor-adr.md)):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `threadEntryId` | `Guid?` | Registry thread entry |
+| `threadIngestEventId` | `Guid?` | Ingest fact at send/sync |
+| `threadRawPath` | `string?` | Relative `raw/…` under thread log dir |
+| `threadProjectionPath` | `string?` | Relative `projections/…` when branch-only |
+| `threadSnapshotPath` | `string?` | Relative `snapshots/…` when snapshot captured |
 
 ### FlightInjectionSnapshot
 

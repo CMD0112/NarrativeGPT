@@ -1,0 +1,110 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Style x:Key="ShellGhostButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource ButtonGhostBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource TextPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BorderSubtleBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{ThemeResource RadiusControl}" />
+        <Setter Property="Padding" Value="{ThemeResource CommandBarSecondaryPadding}" />
+        <Setter Property="FontSize" Value="{ThemeResource FontSizeHint}" />
+        <Setter Property="MinHeight" Value="32" />
+    </Style>
+
+    <Style x:Key="ShellIconButtonStyle" TargetType="Button" BasedOn="{StaticResource ShellGhostButtonStyle}">
+        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="MinWidth" Value="32" />
+        <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
+        <Setter Property="FontSize" Value="10" />
+    </Style>
+
+    <Style x:Key="ShellAppTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="{ThemeResource FontSizeShellTitle}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{ThemeResource TextPrimaryBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="ShellCaptionStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="{ThemeResource FontSizeHint}" />
+        <Setter Property="Foreground" Value="{ThemeResource TextMutedBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="ShellPrimaryButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource AccentPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource TextPrimaryBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="{ThemeResource RadiusControl}" />
+        <Setter Property="Padding" Value="14,6" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="FontSize" Value="{ThemeResource FontSizeBody}" />
+    </Style>
+
+    <Style x:Key="ShellSectionHeaderStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="{ThemeResource FontSizeTitle}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{ThemeResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="ShellSectionHintStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="{ThemeResource FontSizeHint}" />
+        <Setter Property="Foreground" Value="{ThemeResource TextMutedBrush}" />
+        <Setter Property="TextWrapping" Value="WrapWholeWords" />
+    </Style>
+
+    <Style x:Key="ShellFormFieldLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="{ThemeResource FontSizeBody}" />
+        <Setter Property="Foreground" Value="{ThemeResource TextPrimaryBrush}" />
+        <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+
+    <Style x:Key="ShellCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource BgSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BorderSubtleBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{ThemeResource RadiusCard}" />
+        <Setter Property="Padding" Value="{ThemeResource SpaceMdPadding}" />
+    </Style>
+
+    <Style x:Key="ShellBadgeStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Padding" Value="6,2" />
+        <Setter Property="Background" Value="{ThemeResource BgElevatedBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BorderSubtleBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Margin" Value="0,0,6,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <!-- Semantic scope badge chrome (P2). Colors applied by ScopeBadgePalette / ScopeBadgeView. -->
+    <Style x:Key="ScopeBadgeStyle" TargetType="Border" BasedOn="{StaticResource ShellBadgeStyle}">
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="6,2" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <Style x:Key="PlaySettingsNavItemStyle" TargetType="ListViewItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="6,1" />
+        <Setter Property="MinHeight" Value="48" />
+        <Setter Property="CornerRadius" Value="{ThemeResource RadiusControl}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <Style x:Key="PlaySettingsCodeBoxStyle" TargetType="TextBox">
+        <Setter Property="FontFamily" Value="Consolas" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="AcceptsReturn" Value="True" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="BorderBrush" Value="{ThemeResource BorderSubtleBrush}" />
+        <Setter Property="Background" Value="{ThemeResource BgElevatedBrush}" />
+    </Style>
+
+</ResourceDictionary>

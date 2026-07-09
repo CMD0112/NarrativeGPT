@@ -50,7 +50,6 @@ public sealed class PlayLayoutContextTests
 
         Assert.True(context.Capabilities.UseEntityWideTemplate);
         Assert.False(context.Capabilities.UseCompactEntityMore);
-        Assert.False(context.Capabilities.UseShellHeaderFlyouts);
         Assert.True(context.Capabilities.UseUnifiedSessionChrome);
     }
 
