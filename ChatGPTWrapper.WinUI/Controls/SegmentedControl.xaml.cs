@@ -28,6 +28,13 @@ public sealed partial class SegmentedControl : UserControl
             typeof(SegmentedControl),
             new PropertyMetadata(null));
 
+    public static readonly DependencyProperty AllowWrapProperty =
+        DependencyProperty.Register(
+            nameof(AllowWrap),
+            typeof(bool),
+            typeof(SegmentedControl),
+            new PropertyMetadata(false, OnAllowWrapChanged));
+
     private readonly List<Button> _segmentButtons = [];
     private bool _suppressSelectionEvents;
 
@@ -54,6 +61,16 @@ public sealed partial class SegmentedControl : UserControl
         set => SetValue(SelectedTagProperty, value);
     }
 
+    /// <summary>
+    /// When true, overflow segments remain reachable via horizontal scroll
+    /// instead of a single clipped row (avoids SizeChanged re-layout loops).
+    /// </summary>
+    public bool AllowWrap
+    {
+        get => (bool)GetValue(AllowWrapProperty);
+        set => SetValue(AllowWrapProperty, value);
+    }
+
     public event EventHandler? SelectionChanged;
 
     private static void OnItemsSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -68,10 +85,22 @@ public sealed partial class SegmentedControl : UserControl
             control.ApplySelectedIndex();
     }
 
+    private static void OnAllowWrapChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is SegmentedControl control)
+            control.RebuildSegments();
+    }
+
     private void RebuildSegments()
     {
-        SegmentPanel.Children.Clear();
+        SegmentHost.Child = null;
         _segmentButtons.Clear();
+
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 2,
+        };
 
         var items = ItemsSource ?? [];
         for (var i = 0; i < items.Count; i++)
@@ -97,7 +126,23 @@ public sealed partial class SegmentedControl : UserControl
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
             };
             _segmentButtons.Add(button);
-            SegmentPanel.Children.Add(button);
+            row.Children.Add(button);
+        }
+
+        if (AllowWrap)
+        {
+            SegmentHost.Child = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                HorizontalScrollMode = ScrollMode.Enabled,
+                VerticalScrollMode = ScrollMode.Disabled,
+                Content = row,
+            };
+        }
+        else
+        {
+            SegmentHost.Child = row;
         }
 
         ApplySelectedIndex();

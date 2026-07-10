@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:ChatGPTWrapper.WinUI.Controls"
-    xmlns:services="using:ChatGPTWrapper.Adventure.Services"
+    xmlns:playSettings="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings"
     HorizontalAlignment="Stretch">
 
     <Border x:Name="CockpitBorder"
@@ -60,30 +60,9 @@
             </StackPanel>
 
             <StackPanel x:Name="NarratorPanel" Spacing="{ThemeResource SpaceSm}" Visibility="Collapsed">
-                <TextBlock Text="Scene profile"
-                           Style="{ThemeResource ShellSectionHintStyle}" />
-                <ComboBox x:Name="SceneProfileCombo"
-                          HorizontalAlignment="Stretch"
-                          SelectionChanged="SceneProfileCombo_SelectionChanged">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="services:NarratorPresetComboItem">
-                            <TextBlock Text="{x:Bind DisplayName}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-
-                <TextBlock x:Name="OverrideChipsText"
-                           Style="{ThemeResource ShellSectionHintStyle}"
-                           TextWrapping="Wrap" />
-
-                <TextBlock Text="Apply changes to"
-                           Style="{ThemeResource ShellSectionHintStyle}" />
-                <controls:SegmentedControl x:Name="ScopeSegment"
-                                           HorizontalAlignment="Stretch"
-                                           SelectionChanged="ScopeSegment_SelectionChanged" />
-
+                <playSettings:WinUiNarratorBehaviorPanel x:Name="NarratorBehaviorPanel" />
                 <Button x:Name="NarratorSettingsButton"
-                        Content="Full narrator settings"
+                        Content="Open in Play settings"
                         Style="{ThemeResource ShellGhostButtonStyle}"
                         HorizontalAlignment="Left"
                         Click="NarratorSettings_Click" />

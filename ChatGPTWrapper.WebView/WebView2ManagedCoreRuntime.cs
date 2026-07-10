@@ -64,9 +64,20 @@ public static class WebView2ManagedCoreRuntime
         if (!File.Exists(path) || !HasManagedAssemblyMetadata(path))
             return false;
 
-        assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
-        _managedCoreAssembly = assembly;
-        return true;
+        try
+        {
+            assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
+            _managedCoreAssembly = assembly;
+            return true;
+        }
+        catch (BadImageFormatException)
+        {
+            return false;
+        }
+        catch (FileLoadException)
+        {
+            return false;
+        }
     }
 
     private static bool HasManagedAssemblyMetadata(string path)
@@ -174,7 +185,7 @@ public static class WebView2ManagedCoreRuntime
         IsManagedCoreRequest(new AssemblyName(args.Name)) ? TryGetLoaded() : null;
 
     private static bool IsManagedCoreRequest(AssemblyName assemblyName) =>
-        string.Equals(assemblyName.Name, ManagedCoreFileName, StringComparison.OrdinalIgnoreCase);
+        string.Equals(assemblyName.Name, "Microsoft.Web.WebView2.Core", StringComparison.OrdinalIgnoreCase);
 
     private static Assembly? TryGetLoaded()
     {

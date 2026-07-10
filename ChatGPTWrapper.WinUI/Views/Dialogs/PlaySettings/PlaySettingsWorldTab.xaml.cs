@@ -13,9 +13,33 @@ internal sealed partial class PlaySettingsWorldTab : UserControl, IPlaySettingsT
     public PlaySettingsWorldTab()
     {
         InitializeComponent();
+        ApplyCardGridLayout();
     }
 
     public event EventHandler? SettingsChanged;
+
+    private void OnCardsGridSizeChanged(object sender, SizeChangedEventArgs e) =>
+        ApplyCardGridLayout();
+
+    private void ApplyCardGridLayout()
+    {
+        var cards = new List<FrameworkElement> { IntroCard };
+        var span = new List<bool> { true };
+        if (SummaryReviewPanel.Visibility == Visibility.Visible)
+        {
+            cards.Add(SummaryReviewPanel);
+            span.Add(true);
+        }
+
+        cards.Add(SummaryCard);
+        span.Add(true);
+        cards.Add(SceneCard);
+        span.Add(false);
+        cards.Add(AuthorsNoteCard);
+        span.Add(false);
+
+        PlaySettingsCardGridLayout.Apply(CardsGrid, cards, span, ActualWidth);
+    }
 
     public void Bind(PlaySettingsWorkbenchContext context)
     {
@@ -28,6 +52,7 @@ internal sealed partial class PlaySettingsWorldTab : UserControl, IPlaySettingsT
         var pending = SummaryReviewService.IsPending(context.Bundle.Summary);
         SummaryReviewPanel.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
         ProposedSummaryBox.Text = pending ? context.Bundle.Summary.ProposedSummary ?? "" : "";
+        ApplyCardGridLayout();
     }
 
     public void Flush(PlaySettingsWorkbenchContext context)

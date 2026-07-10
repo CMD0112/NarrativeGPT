@@ -46,7 +46,8 @@ internal sealed partial class PlaySettingsInjectionTab : UserControl, IPlaySetti
             IncludeStateCheck.IsChecked = policy.IncludeState;
             IncludeMemoryCheck.IsChecked = policy.IncludePinnedMemory;
             IncludeTranscriptCheck.IsChecked = policy.IncludeTranscript;
-            IncludeCardsCheck.IsChecked = policy.IncludeTriggeredCards;
+            IncludeCardsCheck.IsChecked = false;
+            IncludeCardsCheck.Visibility = Visibility.Collapsed;
             IncludeSourcesCheck.IsChecked = policy.IncludeSourcesPointers;
             InjectAttachmentGuidanceInjectionCheck.IsChecked = s.InjectAttachmentGuidance;
             TranscriptMaxTurnsBox.Text = policy.TranscriptMaxTurns.ToString();
@@ -78,7 +79,7 @@ internal sealed partial class PlaySettingsInjectionTab : UserControl, IPlaySetti
         policy.IncludeState = IncludeStateCheck.IsChecked == true;
         policy.IncludePinnedMemory = IncludeMemoryCheck.IsChecked == true;
         policy.IncludeTranscript = IncludeTranscriptCheck.IsChecked == true;
-        policy.IncludeTriggeredCards = IncludeCardsCheck.IsChecked == true;
+        policy.IncludeTriggeredCards = false;
         policy.IncludeSourcesPointers = IncludeSourcesCheck.IsChecked == true;
         settings.InjectAttachmentGuidance = InjectAttachmentGuidanceInjectionCheck.IsChecked == true;
         if (int.TryParse(TranscriptMaxTurnsBox.Text, out var turns))

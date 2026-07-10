@@ -3,6 +3,7 @@ using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Services.PlayLayout;
 using ChatGPTWrapper.Adventure.Stores;
+using ChatGPTWrapper.Theme;
 using ChatGPTWrapper.Views;
 using ChatGPTWrapper.WinUI.Controls;
 using ChatGPTWrapper.WinUI.Services;
@@ -14,8 +15,8 @@ namespace ChatGPTWrapper.WinUI.Views;
 public sealed partial class PlaySessionCockpit : UserControl
 {
     private WinUiPlaySessionService? _session;
+    private NarratorSettingsSession? _narratorSession;
     private bool _suppressSegment;
-    private bool _suppressNarrator;
     private readonly Dictionary<string, ActionListRow> _aiToolRows = new(StringComparer.Ordinal);
 
     public PlaySessionCockpit()
@@ -31,7 +32,8 @@ public sealed partial class PlaySessionCockpit : UserControl
     {
         _session = session;
         InitializeSections();
-        BindNarratorControls(resetSceneProfile: true);
+        NarratorBehaviorPanel.SettingsChanged += NarratorBehaviorPanel_SettingsChanged;
+        BindNarratorControls();
         ResyncFromStore();
         session.StatusChanged += (_, _) => ResyncFromStore();
     }
@@ -47,8 +49,8 @@ public sealed partial class PlaySessionCockpit : UserControl
             : "Threads";
 
         NarratorSettingsButton.Content = context.Capabilities.UseFullFooterLabels
-            ? "Full narrator settings"
-            : "Narrator settings";
+            ? "Open in Play settings"
+            : "Play settings";
     }
 
     public void ResyncFromStore()
@@ -99,7 +101,7 @@ public sealed partial class PlaySessionCockpit : UserControl
         SourcesStatusLink.Content = sourcesWithInstructions;
 
         RefreshAiToolRows(bundle);
-        UpdateOverrideChips(bundle);
+        BindNarratorControls();
     }
 
     public void RestoreSection()
@@ -135,52 +137,31 @@ public sealed partial class PlaySessionCockpit : UserControl
             new SegmentedItemModel { Content = "AI Tools", Tag = "Tools" },
         };
         SectionSegment.SelectedIndex = 0;
-
-        ScopeSegment.ItemsSource = new List<object>
-        {
-            new SegmentedItemModel { Content = "This send", Tag = NarratorOverrideScope.Turn },
-            new SegmentedItemModel { Content = "Session", Tag = NarratorOverrideScope.Session },
-            new SegmentedItemModel { Content = "Adventure", Tag = NarratorOverrideScope.Adventure },
-        };
-
         ApplySectionVisibility();
     }
 
-    private void BindNarratorControls(bool resetSceneProfile)
+    private void BindNarratorControls()
     {
         if (_session?.CurrentBundle is not { } bundle)
             return;
 
-        _suppressNarrator = true;
-        try
-        {
-            var items = new List<NarratorPresetComboItem> { NarratorPresetComboItem.Inherit() };
-            items.AddRange(NarratorPresetLibrary.SceneProfiles.Select(p => new NarratorPresetComboItem(p.Id, p.DisplayName)));
-            SceneProfileCombo.ItemsSource = items;
-            if (resetSceneProfile)
-                SceneProfileCombo.SelectedIndex = 0;
+        if (_narratorSession is null || !ReferenceEquals(_narratorSession.Bundle, bundle))
+            _narratorSession = NarratorSettingsSession.Attach(bundle);
+        else
+            _narratorSession.RepointWorkingBundle(bundle);
 
-            var scope = NarratorOverrideResolver.ReadPersistedScope(bundle.Metadata.Settings);
-            ScopeSegment.SelectedIndex = scope switch
-            {
-                NarratorOverrideScope.Session => 1,
-                NarratorOverrideScope.Adventure => 2,
-                _ => 0,
-            };
-
-            UpdateOverrideChips(bundle);
-        }
-        finally
-        {
-            _suppressNarrator = false;
-        }
+        _narratorSession.AutoCommitToDisk = true;
+        NarratorBehaviorPanel.Bind(_narratorSession);
     }
 
-    private void UpdateOverrideChips(AdventureBundle bundle)
+    private void NarratorBehaviorPanel_SettingsChanged(object? sender, EventArgs e)
     {
-        OverrideChipsText.Text = NarratorOverrideResolver.GetActiveOverrideChips(bundle) is { Count: > 0 } chips
-            ? $"Active: {string.Join(" · ", chips)}"
-            : "No active overrides.";
+        if (_session?.CurrentBundle is null || _narratorSession is null)
+            return;
+
+        NarratorBehaviorPanel.FlushToSession();
+        AdventureStore.Save(_narratorSession.Bundle);
+        _session.NotifyStatusChanged();
     }
 
     private void RefreshAiToolRows(AdventureBundle bundle)
@@ -242,40 +223,6 @@ public sealed partial class PlaySessionCockpit : UserControl
         ToolsPanel.Visibility = tag == "Tools" ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private NarratorOverrideScope GetSelectedScope() =>
-        ScopeSegment.SelectedTag is NarratorOverrideScope scope
-            ? scope
-            : NarratorOverrideScope.Turn;
-
-    private void ScopeSegment_SelectionChanged(object sender, EventArgs e)
-    {
-        if (_suppressNarrator || _session?.CurrentBundle is not { } bundle)
-            return;
-
-        NarratorOverrideResolver.PersistScope(bundle.Metadata.Settings, GetSelectedScope());
-        AdventureStore.Save(bundle);
-        UpdateOverrideChips(bundle);
-    }
-
-    private void SceneProfileCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_suppressNarrator || _session?.CurrentBundle is not { } bundle)
-            return;
-
-        if (SceneProfileCombo.SelectedItem is not NarratorPresetComboItem item)
-            return;
-
-        var scope = GetSelectedScope();
-        if (item.IsInherit)
-            NarratorOverrideResolver.ResetScope(bundle, scope);
-        else if (!string.IsNullOrWhiteSpace(item.Id))
-            NarratorPresetLibrary.ApplySceneProfile(bundle, item.Id, scope);
-
-        AdventureStore.Save(bundle);
-        UpdateOverrideChips(bundle);
-        _session.NotifyStatusChanged();
-    }
-
     private void ReviewChip_Click(object sender, RoutedEventArgs e) =>
         ReviewRequested?.Invoke(this, EventArgs.Empty);
 
@@ -314,7 +261,7 @@ public sealed partial class PlaySessionCockpit : UserControl
             bundle.Metadata.Id,
             PlaySettingsTab.Injection);
         _session.ReloadBundle(bundle.Metadata.Id);
-        BindNarratorControls(resetSceneProfile: false);
+        BindNarratorControls();
         ResyncFromStore();
     }
 }

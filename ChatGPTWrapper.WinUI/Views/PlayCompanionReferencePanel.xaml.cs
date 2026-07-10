@@ -21,7 +21,20 @@ public sealed partial class PlayCompanionReferencePanel : UserControl
     public PlayCompanionReferencePanel()
     {
         InitializeComponent();
-        SizeChanged += (_, _) => RefreshEntities();
+        SizeChanged += OnPanelSizeChanged;
+    }
+
+    private double _lastLayoutWidth = -1;
+
+    private void OnPanelSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Only rebuild when width crosses a meaningful threshold — SizeChanged fires
+        // continuously during companion resize and must not thrash the entity list.
+        if (Math.Abs(e.NewSize.Width - _lastLayoutWidth) < 24)
+            return;
+
+        _lastLayoutWidth = e.NewSize.Width;
+        RefreshEntities();
     }
 
     public void Bind(WinUiPlaySessionService session)

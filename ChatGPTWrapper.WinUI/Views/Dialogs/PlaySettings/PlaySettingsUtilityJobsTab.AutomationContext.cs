@@ -33,7 +33,7 @@ internal sealed partial class PlaySettingsUtilityJobsTab
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var layer = new TextBlock { Text = row.Layer, Style = GetStyle("ShellSectionHintStyle"), VerticalAlignment = VerticalAlignment.Center };
@@ -44,7 +44,13 @@ internal sealed partial class PlaySettingsUtilityJobsTab
             row.TurnPairsText = turns.Text;
             OnAutomationRowChanged(row);
         };
-        var scope = new ComboBox { ItemsSource = row.ScopeChoices, DisplayMemberPath = nameof(LookbackAnchorChoice.Label), Width = 132 };
+        var scope = new ComboBox
+        {
+            ItemsSource = row.ScopeChoices,
+            DisplayMemberPath = nameof(LookbackAnchorChoice.Label),
+            MinWidth = 240,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
         scope.SelectedItem = row.ScopeChoice;
         scope.SelectionChanged += (_, _) =>
         {

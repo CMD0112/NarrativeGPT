@@ -106,13 +106,22 @@ public sealed partial class ThreadManagerPage : UserControl
                 await RunRowActionAsync(r => SetActiveAsync(kind, r), row);
         };
 
-        var actions = new ScrollViewer
+        var actions = new Border
         {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 },
+            Style = GetBorderStyle("ShellCardStyle"),
+            Padding = new Thickness(10, 8, 10, 8),
+            Child = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 6,
+                },
+            },
         };
-        var actionPanel = (StackPanel)actions.Content!;
+        var actionPanel = (StackPanel)((ScrollViewer)actions.Child!).Content!;
 
         var newSlot = CreateActionButton(ThreadManagerCopy.NewThreadSlotButton, async () =>
         {
@@ -726,6 +735,11 @@ public sealed partial class ThreadManagerPage : UserControl
     }
 
     private static Microsoft.UI.Xaml.Style? GetTextStyle(string key) =>
+        Application.Current.Resources.TryGetValue(key, out var value) && value is Microsoft.UI.Xaml.Style style
+            ? style
+            : null;
+
+    private static Microsoft.UI.Xaml.Style? GetBorderStyle(string key) =>
         Application.Current.Resources.TryGetValue(key, out var value) && value is Microsoft.UI.Xaml.Style style
             ? style
             : null;

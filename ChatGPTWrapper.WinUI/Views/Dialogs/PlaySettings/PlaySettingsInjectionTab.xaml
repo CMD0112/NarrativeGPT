@@ -33,15 +33,14 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <CheckBox x:Name="IncludeSummaryCheck" Grid.Row="0" Grid.Column="0" Content="Story so far" Checked="OnChanged" Unchecked="OnChanged" />
                     <CheckBox x:Name="IncludeStateCheck" Grid.Row="0" Grid.Column="1" Content="Current state" Checked="OnChanged" Unchecked="OnChanged" />
                     <CheckBox x:Name="IncludeMemoryCheck" Grid.Row="1" Grid.Column="0" Content="Pinned memory" Checked="OnChanged" Unchecked="OnChanged" />
                     <CheckBox x:Name="IncludeTranscriptCheck" Grid.Row="1" Grid.Column="1" Content="Recent transcript" Checked="OnChanged" Unchecked="OnChanged" />
-                    <CheckBox x:Name="IncludeCardsCheck" Grid.Row="2" Grid.Column="0" Content="Lore cards" Checked="OnChanged" Unchecked="OnChanged" />
-                    <CheckBox x:Name="IncludeSourcesCheck" Grid.Row="2" Grid.Column="1" Content="Source pointers (thin)" Checked="OnChanged" Unchecked="OnChanged" />
-                    <CheckBox x:Name="InjectAttachmentGuidanceInjectionCheck" Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Content="Attachment guidance" Checked="OnChanged" Unchecked="OnChanged" />
+                    <CheckBox x:Name="IncludeSourcesCheck" Grid.Row="2" Grid.Column="0" Content="Source pointers (thin)" Checked="OnChanged" Unchecked="OnChanged" />
+                    <CheckBox x:Name="InjectAttachmentGuidanceInjectionCheck" Grid.Row="2" Grid.Column="1" Content="Attachment guidance" Checked="OnChanged" Unchecked="OnChanged" />
+                    <CheckBox x:Name="IncludeCardsCheck" Visibility="Collapsed" Content="Lore cards" Checked="OnChanged" Unchecked="OnChanged" />
                 </Grid>
                 <Grid ColumnSpacing="8">
                     <Grid.ColumnDefinitions>

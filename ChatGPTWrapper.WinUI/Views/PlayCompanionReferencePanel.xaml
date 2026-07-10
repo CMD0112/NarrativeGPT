@@ -26,6 +26,7 @@
 
         <controls:SegmentedControl x:Name="FilterSegment"
                                    Grid.Row="0"
+                                   AllowWrap="True"
                                    SelectionChanged="FilterSegment_SelectionChanged" />
 
         <TextBox x:Name="SearchBox"

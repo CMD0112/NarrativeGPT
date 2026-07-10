@@ -12,9 +12,20 @@ internal sealed partial class PlaySettingsNarratorContractTab : UserControl, IPl
     public PlaySettingsNarratorContractTab()
     {
         InitializeComponent();
+        ApplyCardGridLayout();
     }
 
     public event EventHandler? SettingsChanged;
+
+    private void OnCardsGridSizeChanged(object sender, SizeChangedEventArgs e) =>
+        ApplyCardGridLayout();
+
+    private void ApplyCardGridLayout() =>
+        PlaySettingsCardGridLayout.Apply(
+            CardsGrid,
+            [IntroCard, PacketPolicyCard, VoiceCard, InstructionsCard],
+            [true, false, true, true],
+            ActualWidth);
 
     public void Bind(PlaySettingsWorkbenchContext context)
     {

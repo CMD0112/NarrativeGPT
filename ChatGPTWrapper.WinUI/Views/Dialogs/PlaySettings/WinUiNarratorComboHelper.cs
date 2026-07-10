@@ -18,23 +18,42 @@ internal static class WinUiNarratorComboHelper
         var displayValue = current ?? baseline;
         var items = NarratorPresetLibrary.BuildComboItems(parameter, baseline, displayValue).ToList();
 
+        // Ensure the current value is always a member of ItemsSource so WinUI can
+        // render DisplayMemberPath after selection (orphan SelectedItem shows blank).
+        if (current is not null
+            && !items.Any(i =>
+                string.Equals(i.Id, current, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(i.DisplayName, current, StringComparison.OrdinalIgnoreCase)))
+        {
+            items.Add(new NarratorPresetComboItem(current, current));
+        }
+
         combo.IsEditable = isEditable;
+        combo.HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch;
         combo.ItemsSource = items;
         combo.DisplayMemberPath = nameof(NarratorPresetComboItem.DisplayName);
 
+        NarratorPresetComboItem? selected;
         if (current is null)
         {
-            combo.SelectedItem = NarratorPresetComboItem.Inherit(baseline);
+            selected = items.FirstOrDefault(i => i.IsInherit);
+            if (selected is null)
+            {
+                selected = NarratorPresetComboItem.Inherit(baseline);
+                items.Insert(0, selected);
+                combo.ItemsSource = items;
+            }
         }
         else
         {
-            var match = items.FirstOrDefault(i =>
+            selected = items.FirstOrDefault(i =>
                 string.Equals(i.Id, current, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(i.DisplayName, current, StringComparison.OrdinalIgnoreCase));
-            combo.SelectedItem = match ?? new NarratorPresetComboItem(current, current);
         }
 
-        if (isEditable && combo.SelectedItem is NarratorPresetComboItem selected)
+        combo.SelectedItem = selected;
+
+        if (isEditable && selected is not null)
             combo.Text = selected.DisplayName;
     }
 

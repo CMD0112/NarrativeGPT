@@ -27,7 +27,7 @@ internal sealed class PlaySettingsNavItem
 
             Header("World & sources"),
             Item("World & sources", "World state", "Summary, location, objectives", "Persistent", PlaySettingsTab.World),
-            Item("World & sources", "Memory & cards", "Pinned memory and lore cards", "Persistent", PlaySettingsTab.MemoryCards),
+            Item("World & sources", "Memory", "Pinned memory for play packets", "Persistent", PlaySettingsTab.MemoryCards),
             Item("World & sources", "Sources", "Project files and publication", "Project", PlaySettingsTab.Sources),
 
             Header("Narrator"),

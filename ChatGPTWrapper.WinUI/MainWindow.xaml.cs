@@ -26,7 +26,7 @@ public sealed partial class MainWindow : Window
 {
     private readonly ShellNavigationService _navigation = new();
     private readonly ShellStatusService _statusService = new();
-    private const double PlaySessionSplitterWidth = 12;
+    private const double PlaySessionSplitterWidth = 14;
     private const double ExpandCompanionRailWidth = 10;
     private const double DefaultPlayCompanionWidth = 320;
     private const double MinChatColumnWidth = 360;
@@ -701,6 +701,23 @@ public sealed partial class MainWindow : Window
 
     private void ExpandCompanionRail_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e) =>
         SnapCompanionToOptimalWidth();
+
+    private void CollapseCompanionButton_Click(object sender, RoutedEventArgs e) =>
+        SyncPlayCompanionWidth(GetCompanionPanelWidth(), collapsed: true);
+
+    private void PlaySplitterHost_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is Border border)
+            border.Background = (Brush)Application.Current.Resources["AccentSubtleBrush"];
+    }
+
+    private void PlaySplitterHost_PointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (_companionSplitterDragging)
+            return;
+        if (sender is Border border)
+            border.Background = (Brush)Application.Current.Resources["BgElevatedBrush"];
+    }
 
     private void PlaySplitterHost_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e) =>
         SnapCompanionToOptimalWidth();

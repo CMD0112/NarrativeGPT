@@ -48,11 +48,15 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="100" />
-                                    <ColumnDefinition Width="80" />
+                                    <ColumnDefinition Width="Auto" MinWidth="110" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding RelativePath}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Grid.Column="1" Text="{Binding LocalStatus}" Style="{ThemeResource ShellSectionHintStyle}" />
-                                <CheckBox Grid.Column="2" Content="Published" IsChecked="{Binding IsPublished, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="0" Text="{Binding RelativePath}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding LocalStatus}" Style="{ThemeResource ShellSectionHintStyle}" VerticalAlignment="Center" />
+                                <CheckBox Grid.Column="2"
+                                          Content="Published"
+                                          MinWidth="110"
+                                          IsChecked="{Binding IsPublished, Mode=TwoWay}"
+                                          VerticalAlignment="Center" />
                             </Grid>
                         </DataTemplate>
                     </ListView.ItemTemplate>

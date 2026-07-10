@@ -8,6 +8,6 @@
             BorderThickness="1"
             CornerRadius="{ThemeResource RadiusControl}"
             Padding="2">
-        <StackPanel x:Name="SegmentPanel" Orientation="Horizontal" Spacing="2" />
+        <Border x:Name="SegmentHost" />
     </Border>
 </UserControl>

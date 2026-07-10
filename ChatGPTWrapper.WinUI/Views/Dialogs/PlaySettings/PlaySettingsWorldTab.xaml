@@ -3,9 +3,16 @@
     x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings.PlaySettingsWorldTab"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings">
-    <StackPanel Spacing="12">
-        <Border Style="{ThemeResource ShellCardStyle}"
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings"
+    SizeChanged="OnCardsGridSizeChanged">
+    <Grid x:Name="CardsGrid" ColumnSpacing="12" RowSpacing="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border x:Name="IntroCard"
+                Style="{ThemeResource ShellCardStyle}"
                 Background="{ThemeResource BgElevatedBrush}"
                 Padding="12,10">
             <StackPanel Orientation="Horizontal" Spacing="8">
@@ -27,7 +34,8 @@
             </StackPanel>
         </Border>
 
-        <local:PlaySettingsSectionCard Title="Rolling summary"
+        <local:PlaySettingsSectionCard x:Name="SummaryCard"
+                                       Title="Rolling summary"
                                        Hint="Compressed story context included in injection packets."
                                        ScopeLabel="Persistent">
             <StackPanel Spacing="10">
@@ -39,7 +47,8 @@
             </StackPanel>
         </local:PlaySettingsSectionCard>
 
-        <local:PlaySettingsSectionCard Title="Scene &amp; objectives"
+        <local:PlaySettingsSectionCard x:Name="SceneCard"
+                                       Title="Scene &amp; objectives"
                                        Hint="Current location and active goals for the narrator."
                                        ScopeLabel="Persistent">
             <StackPanel Spacing="10">
@@ -50,10 +59,11 @@
             </StackPanel>
         </local:PlaySettingsSectionCard>
 
-        <local:PlaySettingsSectionCard Title="Author's note"
+        <local:PlaySettingsSectionCard x:Name="AuthorsNoteCard"
+                                       Title="Author's note"
                                        Hint="Style-only guidance — not in-world facts."
                                        ScopeLabel="Persistent">
             <TextBox x:Name="AuthorsNoteBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" TextChanged="OnChanged" />
         </local:PlaySettingsSectionCard>
-    </StackPanel>
+    </Grid>
 </UserControl>

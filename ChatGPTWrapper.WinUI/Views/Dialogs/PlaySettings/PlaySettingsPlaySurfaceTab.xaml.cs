@@ -14,9 +14,20 @@ internal sealed partial class PlaySettingsPlaySurfaceTab : UserControl, IPlaySet
     public PlaySettingsPlaySurfaceTab()
     {
         InitializeComponent();
+        ApplyCardGridLayout();
     }
 
     public event EventHandler? SettingsChanged;
+
+    private void OnCardsGridSizeChanged(object sender, SizeChangedEventArgs e) =>
+        ApplyCardGridLayout();
+
+    private void ApplyCardGridLayout() =>
+        PlaySettingsCardGridLayout.Apply(
+            CardsGrid,
+            [AttachmentsCard, CompanionLayoutCard],
+            [false, false],
+            ActualWidth);
 
     public void Bind(PlaySettingsWorkbenchContext context)
     {

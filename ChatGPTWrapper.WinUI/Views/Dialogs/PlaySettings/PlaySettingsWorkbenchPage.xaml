@@ -24,7 +24,7 @@
                             Background="{ThemeResource AccentPrimaryBrush}"
                             CornerRadius="2"
                             Opacity="0" />
-                    <StackPanel Grid.Column="1" Spacing="3">
+                    <StackPanel Grid.Column="1" Spacing="2">
                         <Grid ColumnSpacing="6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -40,10 +40,6 @@
                                                      HorizontalAlignment="Right"
                                                      Margin="0" />
                         </Grid>
-                        <TextBlock Text="{x:Bind Description}"
-                                   Style="{ThemeResource ShellSectionHintStyle}"
-                                   TextTrimming="CharacterEllipsis"
-                                   MaxLines="2" />
                     </StackPanel>
                 </Grid>
             </Border>
@@ -53,7 +49,7 @@
             <TextBlock Text="{x:Bind Label}"
                        Style="{ThemeResource ShellSectionHintStyle}"
                        FontWeight="SemiBold"
-                       Margin="10,16,10,6"
+                       Margin="10,10,10,4"
                        CharacterSpacing="60"
                        Opacity="0.9" />
         </DataTemplate>
@@ -115,7 +111,7 @@
         <!-- Body -->
         <Grid x:Name="BodyGrid" Grid.Row="1" ColumnSpacing="0" SizeChanged="BodyGrid_SizeChanged">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="NavColumnDefinition" Width="232" MinWidth="200" />
+                <ColumnDefinition x:Name="NavColumnDefinition" Width="220" MinWidth="196" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" MinWidth="360" />
             </Grid.ColumnDefinitions>

@@ -32,8 +32,8 @@ internal readonly record struct PlaySettingsLayoutSnapshot(
 
 internal static class PlaySettingsWorkbenchLayout
 {
-    public const double DefaultFormColumnMaxWidth = 720;
-    public const double DefaultNavRailWidthWide = 232;
+    public const double DefaultFormColumnMaxWidth = 880;
+    public const double DefaultNavRailWidthWide = 220;
     public const double DefaultNavRailWidthNarrow = 200;
     public const double DefaultShellBreakpointMedium = 880;
     public const double DefaultCardGridTwoUpBreakpoint = 880;
@@ -59,6 +59,7 @@ internal static class PlaySettingsWorkbenchLayout
             PlaySettingsTab.UtilityJobs or PlaySettingsTab.MemoryCards or PlaySettingsTab.History
                 => PlaySettingsContentLayoutMode.MasterDetail,
             PlaySettingsTab.Session or PlaySettingsTab.Sources
+                or PlaySettingsTab.World or PlaySettingsTab.Settings or PlaySettingsTab.PlaySurface
                 => PlaySettingsContentLayoutMode.CardGrid,
             _ => PlaySettingsContentLayoutMode.FormColumn,
         };

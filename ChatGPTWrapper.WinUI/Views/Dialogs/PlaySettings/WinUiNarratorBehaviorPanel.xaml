@@ -26,13 +26,19 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock Grid.Row="0" Grid.Column="0" Text="Length" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
-            <ComboBox x:Name="ResponseLengthCombo" Grid.Row="0" Grid.Column="1" SelectionChanged="OnSettingsChanged" />
+            <ComboBox x:Name="ResponseLengthCombo" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSettingsChanged" />
             <TextBlock Grid.Row="1" Grid.Column="0" Text="Detail" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
-            <ComboBox x:Name="DetailLevelCombo" Grid.Row="1" Grid.Column="1" SelectionChanged="OnSettingsChanged" />
+            <ComboBox x:Name="DetailLevelCombo" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSettingsChanged" />
             <TextBlock Grid.Row="2" Grid.Column="0" Text="Tone" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
-            <ComboBox x:Name="ToneCombo" Grid.Row="2" Grid.Column="1" SelectionChanged="OnSettingsChanged" LostFocus="OnSettingsChanged" />
+            <ComboBox x:Name="ToneCombo"
+                      Grid.Row="2"
+                      Grid.Column="1"
+                      IsEditable="True"
+                      HorizontalAlignment="Stretch"
+                      SelectionChanged="OnSettingsChanged"
+                      LostFocus="OnSettingsChanged" />
             <TextBlock Grid.Row="3" Grid.Column="0" Text="Pacing" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
-            <ComboBox x:Name="NarrativePacingCombo" Grid.Row="3" Grid.Column="1" SelectionChanged="OnSettingsChanged" />
+            <ComboBox x:Name="NarrativePacingCombo" Grid.Row="3" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSettingsChanged" />
         </Grid>
         <TextBlock Text="Combat &amp; stakes" FontWeight="SemiBold" />
         <Grid ColumnSpacing="8" RowSpacing="6">
@@ -46,11 +52,17 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <TextBlock Grid.Row="0" Grid.Column="0" Text="Combat diff." VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
-            <ComboBox x:Name="DifficultyCombo" Grid.Row="0" Grid.Column="1" SelectionChanged="OnSettingsChanged" LostFocus="OnSettingsChanged" />
+            <ComboBox x:Name="DifficultyCombo"
+                      Grid.Row="0"
+                      Grid.Column="1"
+                      IsEditable="True"
+                      HorizontalAlignment="Stretch"
+                      SelectionChanged="OnSettingsChanged"
+                      LostFocus="OnSettingsChanged" />
             <TextBlock Grid.Row="1" Grid.Column="0" Text="Violence" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
-            <ComboBox x:Name="ViolenceCombo" Grid.Row="1" Grid.Column="1" SelectionChanged="OnSettingsChanged" />
+            <ComboBox x:Name="ViolenceCombo" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSettingsChanged" />
             <TextBlock Grid.Row="2" Grid.Column="0" Text="Consequences" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
-            <ComboBox x:Name="ConsequenceWeightCombo" Grid.Row="2" Grid.Column="1" SelectionChanged="OnSettingsChanged" />
+            <ComboBox x:Name="ConsequenceWeightCombo" Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSettingsChanged" />
         </Grid>
                 <Button Content="Reset scope" Style="{ThemeResource ShellGhostButtonStyle}" Click="ResetScope_Click" HorizontalAlignment="Left" />
         <Expander Header="Turn &amp; session directives" IsExpanded="False">

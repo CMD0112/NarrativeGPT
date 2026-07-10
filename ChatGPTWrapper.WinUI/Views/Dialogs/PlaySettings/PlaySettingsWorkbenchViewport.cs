@@ -18,23 +18,23 @@ internal readonly record struct PlaySettingsViewportMetrics(
         {
             WorkbenchViewportClass.Compact => new(
                 WorkbenchViewportClass.Compact,
-                FormColumnMaxWidth: 680,
-                CardGridTwoUpBreakpoint: 960,
-                NavRailWidthWide: 200,
-                NavRailWidthNarrow: 184,
+                FormColumnMaxWidth: 720,
+                CardGridTwoUpBreakpoint: 880,
+                NavRailWidthWide: 212,
+                NavRailWidthNarrow: 196,
                 ShellBreakpointMedium: 840),
 
             WorkbenchViewportClass.Spacious => new(
                 WorkbenchViewportClass.Spacious,
-                FormColumnMaxWidth: 800,
-                CardGridTwoUpBreakpoint: 960,
+                FormColumnMaxWidth: 960,
+                CardGridTwoUpBreakpoint: 880,
                 NavRailWidthWide: 248,
                 NavRailWidthNarrow: 212,
                 ShellBreakpointMedium: 960),
 
             _ => new(
                 WorkbenchViewportClass.Standard,
-                FormColumnMaxWidth: PlaySettingsWorkbenchLayout.DefaultFormColumnMaxWidth,
+                FormColumnMaxWidth: 880,
                 CardGridTwoUpBreakpoint: PlaySettingsWorkbenchLayout.DefaultCardGridTwoUpBreakpoint,
                 NavRailWidthWide: PlaySettingsWorkbenchLayout.DefaultNavRailWidthWide,
                 NavRailWidthNarrow: PlaySettingsWorkbenchLayout.DefaultNavRailWidthNarrow,

@@ -82,11 +82,35 @@
 
             <Border x:Name="PlaySplitterHost"
                     Grid.Column="1"
-                    Background="Transparent"
+                    Background="{ThemeResource BgElevatedBrush}"
+                    BorderBrush="{ThemeResource BorderSubtleBrush}"
+                    BorderThickness="1,0"
                     Visibility="Collapsed"
-                    Width="12"
-                    HorizontalAlignment="Stretch">
-                <FontIcon Glyph="&#xE76B;" FontSize="8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    Width="14"
+                    HorizontalAlignment="Stretch"
+                    PointerEntered="PlaySplitterHost_PointerEntered"
+                    PointerExited="PlaySplitterHost_PointerExited">
+                <Grid>
+                    <Border Width="4"
+                            Height="48"
+                            CornerRadius="2"
+                            Background="{ThemeResource BorderStrongBrush}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Opacity="0.85" />
+                    <Button x:Name="CollapseCompanionButton"
+                            Content="&#xE76B;"
+                            FontFamily="Segoe Fluent Icons"
+                            FontSize="10"
+                            Width="14"
+                            Height="28"
+                            Padding="0"
+                            VerticalAlignment="Top"
+                            Margin="0,8,0,0"
+                            Style="{ThemeResource ShellIconButtonStyle}"
+                            ToolTipService.ToolTip="Collapse companion"
+                            Click="CollapseCompanionButton_Click" />
+                </Grid>
             </Border>
 
             <Button x:Name="ExpandCompanionRail"
