@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<UserControl
+
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings.PlaySettingsUtilityJobsTab"
+
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+
+        <StackPanel Spacing="12">
+
+            <local:PlaySettingsSectionCard Title="Delivery and routing"
+
+                                           Hint="How post-turn utility jobs reach ChatGPT."
+
+                                           ScopeLabel="Jobs">
+
+                <StackPanel Spacing="8">
+
+                    <TextBlock x:Name="UtilityWorkerStatusLine" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+
+                    <CheckBox x:Name="UseEphemeralWorkerCheck" Content="Ephemeral Project chat per job (recommended)" Checked="OnChanged" Unchecked="OnChanged" />
+
+                    <StackPanel x:Name="MaxParallelUtilityWorkerJobsPanel" Spacing="4">
+
+                        <ComboBox x:Name="MaxParallelUtilityWorkerJobsCombo" Header="Concurrent worker jobs" SelectionChanged="OnChanged" />
+
+                    </StackPanel>
+
+                    <ComboBox x:Name="UtilityExecutionPolicyCombo" Header="Lane policy" SelectionChanged="OnChanged" />
+
+                    <ComboBox x:Name="UtilityInjectionModeCombo" Header="Injection mode" SelectionChanged="OnChanged" />
+
+                    <TextBox x:Name="MaxUtilitySectionsBox" Header="Max embedded sections per play send" Width="80" LostFocus="OnChanged" />
+
+                    <CheckBox x:Name="AutoSpillToWorkerCheck" Content="Spill overflow jobs to utility worker" Checked="OnChanged" Unchecked="OnChanged" />
+
+                    <Expander Header="Transcript visibility during play" IsExpanded="False">
+
+                        <StackPanel Spacing="6" Margin="0,8,0,0">
+
+                            <CheckBox x:Name="HideInlineUtilityCheck" Content="Hide inline utility traffic" Checked="OnChanged" Unchecked="OnChanged" />
+
+                            <CheckBox x:Name="ShowInlineUtilityTrafficCheck" Content="Show inline utility traffic (debug)" Checked="OnChanged" Unchecked="OnChanged" />
+
+                        </StackPanel>
+
+                    </Expander>
+
+                    <Button Content="Open Threads hub…" Style="{ThemeResource ShellGhostButtonStyle}" Click="OpenThreadsHub_Click" />
+
+                </StackPanel>
+
+            </local:PlaySettingsSectionCard>
+
+
+
+            <local:PlaySettingsSectionCard Title="Automation transcript scope"
+
+                                           Hint="Per-job turn pairs and transcript scope for post-turn automation."
+
+                                           ScopeLabel="Jobs">
+
+                <StackPanel Spacing="8">
+
+                    <StackPanel x:Name="AutomationContextHost" Spacing="4" />
+
+                    <Button Content="Reset all automation context" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Left" Click="ResetAllAutomationContext_Click" />
+
+                </StackPanel>
+
+            </local:PlaySettingsSectionCard>
+
+
+
+            <local:PlaySettingsSectionCard Title="QA local inference (experimental)" ScopeLabel="Developer">
+
+                <Expander Header="Local inference options" IsExpanded="False">
+
+                    <StackPanel Spacing="8" Margin="0,8,0,0">
+
+                        <CheckBox x:Name="LocalUtilityInferenceCheck" Content="Route utility jobs to local LLM (Ollama)" Checked="OnChanged" Unchecked="OnChanged" />
+
+                        <CheckBox x:Name="LocalUtilityInferenceDualRunCheck" Content="Dual run with ChatGPT" Margin="16,0,0,0" Checked="OnChanged" Unchecked="OnChanged" />
+
+                        <TextBox x:Name="LocalInferenceBaseUrlBox" Header="Base URL" LostFocus="OnChanged" />
+
+                        <TextBox x:Name="LocalInferenceModelBox" Header="Model" LostFocus="OnChanged" />
+
+                    </StackPanel>
+
+                </Expander>
+
+            </local:PlaySettingsSectionCard>
+
+
+
+            <local:PlaySettingsSectionCard Title="Developer and testing" ScopeLabel="Developer">
+
+                <CheckBox x:Name="ForceUtilityWorkerDomAttachCheck" Content="Force DOM composer attach for staged reference files" Checked="OnChanged" Unchecked="OnChanged" />
+
+            </local:PlaySettingsSectionCard>
+
+
+
+            <Grid ColumnSpacing="12" MinHeight="360">
+
+                <Grid.ColumnDefinitions>
+
+                    <ColumnDefinition Width="220" MinWidth="180" />
+
+                    <ColumnDefinition Width="*" MinWidth="280" />
+
+                </Grid.ColumnDefinitions>
+
+
+
+                <local:PlaySettingsSectionCard Grid.Column="0" Title="Jobs" ScopeLabel="Jobs">
+
+                    <StackPanel Spacing="8">
+
+                        <ListView x:Name="JobsList" MinHeight="240" SelectionChanged="JobsList_SelectionChanged" />
+
+                        <Button Content="Run selected job…" Style="{ThemeResource ShellPrimaryButtonStyle}" Click="RunJob_Click" />
+
+                        <Button Content="Open review hub…" Style="{ThemeResource ShellGhostButtonStyle}" Click="OpenReview_Click" />
+
+                    </StackPanel>
+
+                </local:PlaySettingsSectionCard>
+
+
+
+                <local:PlaySettingsSectionCard Grid.Column="1" Title="Job detail" ScopeLabel="Jobs">
+
+                    <ScrollViewer MaxHeight="520" VerticalScrollBarVisibility="Auto">
+
+                        <StackPanel Spacing="10">
+
+                            <TextBlock x:Name="JobTitleBlock" Style="{ThemeResource ShellSectionHeaderStyle}" />
+
+                            <TextBlock x:Name="AiActionLayerBadge" Style="{ThemeResource ShellSectionHintStyle}" />
+
+                            <TextBlock x:Name="JobLayerHintBlock" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+
+                            <TextBlock x:Name="AiActionStatusBlock" Style="{ThemeResource ShellSectionHintStyle}" />
+
+                            <TextBlock Text="Instruction guide" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+
+                            <TextBox x:Name="InstructionBox" Style="{ThemeResource PlaySettingsCodeBoxStyle}" MinHeight="120" TextChanged="InstructionBox_TextChanged" />
+
+                            <ComboBox x:Name="JobOverrideResponseLengthCombo" Header="Response length" SelectionChanged="OnChanged" />
+
+                            <ComboBox x:Name="JobOverrideResponseDetailCombo" Header="Response detail" SelectionChanged="OnChanged" />
+
+                            <TextBlock Text="Job packet context" FontWeight="SemiBold" />
+
+                            <TextBlock x:Name="StoryContextLayerGuidanceHint" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+
+                            <TextBlock x:Name="StoryContextJobDefaultHint" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+
+                            <TextBlock x:Name="StoryContextEffectiveHint" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+
+                            <TextBox x:Name="StoryContextMaxTurnsBox" Header="Turn pairs" Width="72" LostFocus="StoryContextSettings_Changed" />
+
+                            <ComboBox x:Name="StoryContextAnchorCombo" Header="Transcript scope" SelectionChanged="StoryContextSettings_Changed" />
+
+                            <TextBox x:Name="StoryContextMaxCharsBox" Header="Max context chars" Width="96" LostFocus="StoryContextSettings_Changed" />
+
+                            <CheckBox x:Name="StoryContextPerJobOverrideCheck" Content="Override adventure-wide context for this job only" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                            <Expander Header="Advanced packet options" IsExpanded="False">
+
+                                <StackPanel Spacing="8" Margin="0,8,0,0">
+
+                                    <ComboBox x:Name="StoryContextSourceCombo" Header="Source" SelectionChanged="StoryContextSettings_Changed" />
+
+                                    <TextBox x:Name="StoryContextSkipNewestBox" Header="Skip newest pairs" Width="72" LostFocus="StoryContextSettings_Changed" />
+
+                                    <TextBox x:Name="StoryContextMinTurnsBox" Header="Min pairs required" Width="72" LostFocus="StoryContextSettings_Changed" />
+
+                                    <TextBox x:Name="StoryContextMaxTranscriptCharsBox" Header="Max transcript chars" Width="96" LostFocus="StoryContextSettings_Changed" />
+
+                                    <TextBox x:Name="StoryContextAnchorTurnIndexBox" Header="Anchor turn index" Width="72" LostFocus="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextIncludePlayerCheck" Content="Include player messages" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextIncludeNarratorCheck" Content="Include narrator messages" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                    <ComboBox x:Name="StoryContextFormatCombo" Header="Layout" SelectionChanged="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextIncludePendingLocalCheck" Content="Include pending local turns" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextExcludeIncompleteCheck" Content="Exclude incomplete trailing pair" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextStripEmptyCheck" Content="Strip empty turn pairs" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                    <TextBox x:Name="StoryContextMaxCharsPerPairBox" Header="Max chars per turn pair" Width="96" LostFocus="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextIncludeSummaryCheck" Content="Rolling digest" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextIncludeStateCheck" Content="Session snapshot" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextIncludeMemoryCheck" Content="Pinned memories" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextIncludeEntitiesCheck" Content="Canon entity index" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextIncludeScenarioCheck" Content="Scenario excerpt" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                    <TextBox x:Name="StoryContextDirectionBox" Header="Direction preamble" AcceptsReturn="True" MinHeight="48" LostFocus="StoryContextSettings_Changed" />
+
+                                    <ComboBox x:Name="StoryContextTrimCombo" Header="Trim strategy" SelectionChanged="StoryContextSettings_Changed" />
+
+                                    <CheckBox x:Name="StoryContextOmitRedundantCheck" Content="Omit redundant turn slices" Checked="StoryContextSettings_Changed" Unchecked="StoryContextSettings_Changed" />
+
+                                </StackPanel>
+
+                            </Expander>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+
+                                <Button Content="Preview (local)" Style="{ThemeResource ShellGhostButtonStyle}" Click="PreviewStoryContextLocal_Click" />
+
+                                <Button Content="Preview (live)" Style="{ThemeResource ShellGhostButtonStyle}" Click="PreviewStoryContextLive_Click" />
+
+                                <Button Content="Reset guide" Style="{ThemeResource ShellGhostButtonStyle}" Click="ResetGuide_Click" />
+
+                                <Button Content="Reset context" Style="{ThemeResource ShellGhostButtonStyle}" Click="ResetStoryContext_Click" />
+
+                            </StackPanel>
+
+                            <TextBlock x:Name="StoryContextPreviewMeta" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+
+                            <TextBlock x:Name="StoryContextMaxTurnsDefaultHint" Visibility="Collapsed" />
+
+                            <TextBlock x:Name="StoryContextLookbackDefaultHint" Visibility="Collapsed" />
+
+                            <TextBlock x:Name="StoryContextMaxCharsDefaultHint" Visibility="Collapsed" />
+
+                        </StackPanel>
+
+                    </ScrollViewer>
+
+                </local:PlaySettingsSectionCard>
+
+            </Grid>
+
+        </StackPanel>
+
+    </ScrollViewer>
+
+</UserControl>
+

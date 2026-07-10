@@ -5,7 +5,7 @@ using ChatGPTWrapper.Adventure.Services;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-public sealed class InstructionContractServiceTests
+public sealed class InstructionContractServiceTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void ApplyFromDesignStep_maps_fields_to_settings_not_authors_note()
@@ -177,8 +177,8 @@ public sealed class InstructionContractServiceTests
 }
 
 [Trait("Category", "Unit")]
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class InstructionContractDesignerTests : IDisposable
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class InstructionContractDesignerTests : IClassFixture<FileLockAwareFixture>, IDisposable
 {
     private readonly string _tempRoot;
 
@@ -232,7 +232,9 @@ public sealed class InstructionContractDesignerTests : IDisposable
             [new CharacterPortrayalRule { Subject = "Mara", Rule = "Not passive." }],
             "Keep ambiguity.",
             "hard",
-            "moderate");
+            "moderate",
+            "balanced",
+            "lasting");
 
         Assert.Equal("second person", bundle.Metadata.Settings.Perspective);
         Assert.Equal("hard", bundle.Metadata.Settings.Difficulty);

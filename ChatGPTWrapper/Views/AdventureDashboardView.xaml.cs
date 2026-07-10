@@ -1,7 +1,11 @@
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
@@ -28,25 +32,51 @@ public partial class AdventureDashboardView : UserControl
     private List<AdventureMetadata> _all = [];
     private bool _showArchived;
     private bool _refreshInFlight;
+    private int _filterGeneration;
+    private CancellationTokenSource? _filterDebounceCts;
+    private AdventureSort _sort = AdventureSort.LastPlayed;
+
+    public event EventHandler? PreferencesRequested;
 
     public AdventureDashboardView()
     {
         InitializeComponent();
+        InitializeSortCombo();
         UpdateStorageHint();
         RefreshList();
     }
 
+    private void InitializeSortCombo()
+    {
+        SortCombo.Items.Add(CreateSortItem("Last played", AdventureSort.LastPlayed));
+        SortCombo.Items.Add(CreateSortItem("Title A–Z", AdventureSort.Title));
+        SortCombo.Items.Add(CreateSortItem("Date created", AdventureSort.Created));
+        SortCombo.Items.Add(CreateSortItem("Status", AdventureSort.Status));
+        SortCombo.SelectedIndex = 0;
+    }
+
+    private static ComboBoxItem CreateSortItem(string label, AdventureSort sort) =>
+        new() { Content = label, Tag = sort };
+
     private void UpdateStorageHint()
     {
-        LocalOnlyHint.Text =
-            $"Adventures: {AppDirectories.AdventuresDirectory} · Config: {AppDirectories.ConfigRoot}. "
-            + "Only prompt packets are sent to ChatGPT when you play.";
+        LocalOnlyHint.Text = "Adventures stay on this device. Only prompt packets are sent to ChatGPT when you play.";
+        ToolTipService.SetToolTip(
+            LocalOnlyHint,
+            $"Adventures: {AppDirectories.AdventuresDirectory}{Environment.NewLine}"
+            + $"Config: {AppDirectories.ConfigRoot}");
+    }
+
+    public void RefreshAfterPreferencesClosed()
+    {
+        UpdateStorageHint();
+        RefreshList();
     }
 
     public void RefreshList()
     {
         _all = AdventureStore.ListIndex();
-        ApplyFilter();
+        _ = ApplyFilterAsync();
     }
 
     public async Task RefreshOnEnterAsync()
@@ -62,7 +92,9 @@ public partial class AdventureDashboardView : UserControl
 
         try
         {
-            await Task.Run(RefreshList);
+            var all = await Task.Run(AdventureStore.ListIndex);
+            _all = all;
+            await ApplyFilterAsync();
         }
         finally
         {
@@ -73,9 +105,31 @@ public partial class AdventureDashboardView : UserControl
         }
     }
 
-    private void ApplyFilter()
+    private void DebouncedApplyFilter()
     {
-        var q = SearchBox.Text.Trim().ToLowerInvariant();
+        _filterDebounceCts?.Cancel();
+        _filterDebounceCts = new CancellationTokenSource();
+        var token = _filterDebounceCts.Token;
+        _ = DebouncedApplyFilterCoreAsync(token);
+    }
+
+    private async Task DebouncedApplyFilterCoreAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(300, token);
+            await ApplyFilterAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            /* superseded by newer input */
+        }
+    }
+
+    private async Task ApplyFilterAsync()
+    {
+        var generation = Interlocked.Increment(ref _filterGeneration);
+        var q = SearchBox.Text.Trim();
         IEnumerable<AdventureMetadata> filtered = _all;
 
         if (!_showArchived)
@@ -89,25 +143,86 @@ public partial class AdventureDashboardView : UserControl
                 a.Tags.Any(t => t.Contains(q, StringComparison.OrdinalIgnoreCase)));
         }
 
-        AdventureGrid.ItemsSource = filtered.Select(m => new AdventureGridRow(m)).ToList();
+        var sorted = SortAdventures(filtered).ToList();
+        var summaries = await Task.Run(() => AdventureStore.BuildLibrarySummaries(sorted));
+
+        if (generation != Volatile.Read(ref _filterGeneration))
+            return;
+
+        var rows = sorted
+            .Select(meta =>
+            {
+                var summary = summaries[meta.Id];
+                return new AdventureLibraryRow(
+                    this,
+                    meta,
+                    summary.AcceptedTurnCount,
+                    summary.HasDesignThread);
+            })
+            .ToList();
+
+        AdventureList.ItemsSource = rows;
+        UpdateEmptyState(rows.Count);
         UpdateSelectionActions();
     }
 
-    private AdventureGridRow? SelectedRow =>
-        AdventureGrid.SelectedItem as AdventureGridRow;
+    private IEnumerable<AdventureMetadata> SortAdventures(IEnumerable<AdventureMetadata> items) =>
+        _sort switch
+        {
+            AdventureSort.Title => items.OrderBy(a => a.Title, StringComparer.OrdinalIgnoreCase),
+            AdventureSort.Created => items.OrderByDescending(a => a.CreatedAt),
+            AdventureSort.Status => items
+                .OrderBy(a => a.Archived)
+                .ThenBy(a => a.Status)
+                .ThenBy(a => a.Title, StringComparer.OrdinalIgnoreCase),
+            _ => items.OrderByDescending(a => a.LastPlayedAt == default ? DateTimeOffset.MinValue : a.LastPlayedAt),
+        };
+
+    private void UpdateEmptyState(int visibleCount)
+    {
+        if (visibleCount > 0)
+        {
+            EmptyStatePanel.Visibility = Visibility.Collapsed;
+            AdventureList.Visibility = Visibility.Visible;
+            return;
+        }
+
+        EmptyStatePanel.Visibility = Visibility.Visible;
+        AdventureList.Visibility = Visibility.Collapsed;
+
+        var libraryEmpty = _all.Count == 0;
+        var hasActiveFilter = !string.IsNullOrWhiteSpace(SearchBox.Text) || _showArchived;
+
+        if (libraryEmpty && !hasActiveFilter)
+        {
+            EmptyStateTitle.Text = "No adventures yet";
+            EmptyStateHint.Text = "Create a new adventure, import a backup, or start designing with AI.";
+            EmptyStateActions.Visibility = Visibility.Visible;
+            return;
+        }
+
+        EmptyStateTitle.Text = "No matching adventures";
+        EmptyStateHint.Text = hasActiveFilter
+            ? "Try clearing search or showing archived adventures."
+            : "All adventures are hidden by the current filters.";
+        EmptyStateActions.Visibility = Visibility.Collapsed;
+    }
+
+    private AdventureLibraryRow? SelectedRow =>
+        AdventureList.SelectedItem as AdventureLibraryRow;
 
     private AdventureMetadata? PrimarySelectedMeta => GetSelectedMetas().FirstOrDefault();
 
     private IReadOnlyList<AdventureMetadata> GetSelectedMetas() =>
-        AdventureGrid.SelectedItems
-            .Cast<AdventureGridRow>()
+        AdventureList.SelectedItems
+            .Cast<AdventureLibraryRow>()
             .Select(r => r.Meta)
             .ToList();
 
     private int VisibleAdventureCount =>
-        AdventureGrid.Items.Count;
+        AdventureList.Items.Count;
 
-    private void AdventureGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+    private void AdventureList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
         UpdateSelectionActions();
 
     private void UpdateSelectionActions()
@@ -122,6 +237,7 @@ public partial class AdventureDashboardView : UserControl
         LinkProjectContextMenuItem.IsEnabled = count == 1;
         RenameButton.IsEnabled = count == 1;
         RenameContextMenuItem.IsEnabled = count == 1;
+        OpenAdventureFolderContextMenuItem.IsEnabled = count == 1;
         var projectLabel = count == 1
                            && single is not null
                            && AdventureProjectBindingService.HasLinkedProject(
@@ -140,14 +256,18 @@ public partial class AdventureDashboardView : UserControl
         var activeCount = count - archivedCount;
         ArchiveButton.IsEnabled = hasSelection && activeCount > 0;
         ArchiveButton.Content = count <= 1 ? "Archive" : $"Archive ({activeCount})";
+        ArchiveMenuItem.IsEnabled = ArchiveButton.IsEnabled;
+        ArchiveMenuItem.Header = ArchiveButton.Content;
         ArchiveContextMenuItem.Header = count <= 1 ? "Archive" : $"Archive ({activeCount})";
         UnarchiveButton.IsEnabled = hasSelection && archivedCount > 0;
         UnarchiveButton.Content = count <= 1 ? "Unarchive" : $"Unarchive ({archivedCount})";
-        UnarchiveContextMenuItem.IsEnabled = hasSelection && archivedCount > 0;
+        UnarchiveMenuItem.IsEnabled = UnarchiveButton.IsEnabled;
+        UnarchiveMenuItem.Header = UnarchiveButton.Content;
         UnarchiveContextMenuItem.Header = count <= 1 ? "Unarchive" : $"Unarchive ({archivedCount})";
 
         BackupSelectedButton.IsEnabled = hasSelection;
         BackupSelectedButton.Content = count <= 1 ? "Backup" : $"Backup ({count})";
+        BackupMenuItem.IsEnabled = hasSelection;
         BackupMenuItem.Header = count <= 1 ? "Backup selected" : $"Backup selected ({count})";
         BackupContextMenuItem.Header = BackupMenuItem.Header;
 
@@ -173,44 +293,71 @@ public partial class AdventureDashboardView : UserControl
         if (selectedCount == 0)
         {
             SelectionStatusBlock.Text = VisibleAdventureCount == 1
-                ? "1 adventure shown"
-                : $"{VisibleAdventureCount} adventures shown";
+                ? "1 adventure"
+                : $"{VisibleAdventureCount} adventures";
             return;
         }
 
         SelectionStatusBlock.Text = selectedCount == 1
-            ? "1 adventure selected"
-            : $"{selectedCount} adventures selected";
+            ? "1 selected"
+            : $"{selectedCount} selected";
     }
 
     private void SelectAll_Click(object sender, RoutedEventArgs e)
     {
-        AdventureGrid.SelectAll();
+        AdventureList.SelectAll();
         UpdateSelectionActions();
     }
 
     private void ClearSelection_Click(object sender, RoutedEventArgs e)
     {
-        AdventureGrid.UnselectAll();
+        AdventureList.UnselectAll();
         UpdateSelectionActions();
     }
 
-    private void AdventureDashboardView_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private void AdventureDashboardView_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == System.Windows.Input.Key.A
-            && (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0)
+        if (e.Key == Key.A
+            && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
-            AdventureGrid.SelectAll();
+            AdventureList.SelectAll();
             UpdateSelectionActions();
             e.Handled = true;
             return;
         }
 
-        if (e.Key == System.Windows.Input.Key.F2 && PrimarySelectedMeta is not null)
+        if (e.Key == Key.F2 && PrimarySelectedMeta is not null)
         {
             RenameSelectedAdventure();
             e.Handled = true;
         }
+    }
+
+    private void AdventureList_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && PrimarySelectedMeta is not null)
+        {
+            Play_Click(sender, e);
+            e.Handled = true;
+        }
+    }
+
+    private void RowPlay_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is Button { Tag: AdventureLibraryRow row })
+        {
+            AdventureList.SelectedItem = row;
+            Play_Click(sender, e);
+        }
+    }
+
+    private void SortCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SortCombo.SelectedItem is ComboBoxItem { Tag: AdventureSort sort })
+            _sort = sort;
+
+        _ = ApplyFilterAsync();
     }
 
     private void Rename_Click(object sender, RoutedEventArgs e) => RenameSelectedAdventure();
@@ -266,12 +413,12 @@ public partial class AdventureDashboardView : UserControl
         DraftFrameworkRequested?.Invoke(this, PrimarySelectedMeta.Id);
     }
 
-    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => DebouncedApplyFilter();
 
     private void ShowArchived_Changed(object sender, RoutedEventArgs e)
     {
         _showArchived = ShowArchivedCheck.IsChecked == true;
-        ApplyFilter();
+        _ = ApplyFilterAsync();
     }
 
     private void DesignWithAi_Click(object sender, RoutedEventArgs e) =>
@@ -361,11 +508,8 @@ public partial class AdventureDashboardView : UserControl
         LinkProjectRequested?.Invoke(this, PrimarySelectedMeta.Id);
     }
 
-    private void AdventureGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (PrimarySelectedMeta is not null)
-            PlayRequested?.Invoke(this, PrimarySelectedMeta.Id);
-    }
+    private void AdventureList_MouseDoubleClick(object sender, MouseButtonEventArgs e) =>
+        Play_Click(sender, e);
 
     private void Archive_Click(object sender, RoutedEventArgs e)
     {
@@ -485,7 +629,22 @@ public partial class AdventureDashboardView : UserControl
         if (!ConfirmDelete(deletable))
             return;
 
-        AdventureStore.DeleteMany(deletable.Select(m => m.Id));
+        try
+        {
+            AdventureStore.DeleteMany(deletable.Select(m => m.Id));
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                Window.GetWindow(this),
+                $"Could not delete one or more adventures:\n\n{ex.Message}",
+                "Delete adventures",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            RefreshList();
+            return;
+        }
+
         RefreshList();
     }
 
@@ -558,17 +717,8 @@ public partial class AdventureDashboardView : UserControl
         return text;
     }
 
-    private void WrapperSettings_Click(object sender, RoutedEventArgs e)
-    {
-        var dlg = new WrapperSettingsDialog { Owner = Window.GetWindow(this) };
-        if (dlg.ShowDialog() != true || dlg.ResultSettings is null)
-            return;
-
-        WrapperSettingsStore.Save(dlg.ResultSettings);
-        AppDirectories.EnsureCreated();
-        UpdateStorageHint();
-        RefreshList();
-    }
+    private void WrapperSettings_Click(object sender, RoutedEventArgs e) =>
+        PreferencesRequested?.Invoke(this, EventArgs.Empty);
 
     private void CreateFolder_Click(object sender, RoutedEventArgs e)
     {
@@ -592,6 +742,24 @@ public partial class AdventureDashboardView : UserControl
             $"Adventure folder ready:\n{path}",
             "Create folder on disk",
             MessageBoxButton.OK);
+    }
+
+    private void OpenAdventureFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (PrimarySelectedMeta is not { } meta)
+            return;
+
+        if (AdventureDirectoryService.TryOpenInShell(meta.Id, out var error))
+            return;
+
+        MessageBox.Show(
+            Window.GetWindow(this),
+            error ?? "Could not open the adventure folder.",
+            "Open adventure folder",
+            MessageBoxButton.OK,
+            error?.StartsWith("Folder not found", StringComparison.Ordinal) == true
+                ? MessageBoxImage.Warning
+                : MessageBoxImage.Information);
     }
 
     private void ImportFolder_Click(object sender, RoutedEventArgs e)
@@ -773,53 +941,123 @@ public partial class AdventureDashboardView : UserControl
         dlg.ShowDialog();
     }
 
-    private sealed class AdventureGridRow
+    private enum AdventureSort
     {
-        private readonly AdventureMetadata _meta;
+        LastPlayed,
+        Title,
+        Created,
+        Status,
+    }
 
-        public AdventureGridRow(AdventureMetadata metadata) => _meta = metadata;
-
-        public AdventureMetadata Meta => _meta;
-
-        public string Title => _meta.Title;
-
-        public string Genre => _meta.Genre;
-
-        public string Status => _meta.Archived
-            ? "Archived"
-            : _meta.Status == AdventureStatus.Designing
-                ? "In design"
-                : _meta.Status.ToString();
-
-        public string ProjectLinked => string.IsNullOrWhiteSpace(_meta.LinkedProjectId) ? "—" : "Yes";
-
-        public string DesignThread
+    private sealed class AdventureLibraryRow
+    {
+        public AdventureLibraryRow(
+            FrameworkElement host,
+            AdventureMetadata metadata,
+            int turnCount,
+            bool hasDesignThread)
         {
-            get
+            Meta = metadata;
+            Title = metadata.Title;
+            GenreLabel = string.IsNullOrWhiteSpace(metadata.Genre) ? "No genre" : metadata.Genre;
+            GenreBadgeVisibility = string.IsNullOrWhiteSpace(metadata.Genre)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            TurnCountLabel = turnCount == 1 ? "1 turn" : $"{turnCount} turns";
+            LastPlayedLabel = FormatRelativeLastPlayed(metadata.LastPlayedAt);
+            ProjectBadgeVisibility = string.IsNullOrWhiteSpace(metadata.LinkedProjectId)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            DesignThreadBadgeVisibility = metadata.Status == AdventureStatus.Designing && hasDesignThread
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+            if (metadata.Archived)
             {
-                if (_meta.Status != AdventureStatus.Designing)
-                    return "—";
-
-                var bundle = AdventureStore.Load(_meta.Id);
-                if (bundle is null)
-                    return "—";
-
-                return AdventureDesignContextService.GetDesignConversationId(bundle) is { Length: > 0 }
-                    ? "Yes"
-                    : "—";
+                StatusLabel = "Archived";
+                StatusBadgeVisibility = Visibility.Visible;
+                StatusBadgeBackground = Brush(host, "BgElevatedBrush");
+                StatusBadgeBorder = Brush(host, "BorderSubtleBrush");
+                StatusBadgeForeground = Brush(host, "TextMutedBrush");
+            }
+            else if (metadata.Status == AdventureStatus.Designing)
+            {
+                StatusLabel = "In design";
+                StatusBadgeVisibility = Visibility.Visible;
+                StatusBadgeBackground = Brush(host, "WarningSubtleBrush");
+                StatusBadgeBorder = Brush(host, "WarningBrush");
+                StatusBadgeForeground = Brush(host, "WarningBrush");
+            }
+            else if (metadata.Status == AdventureStatus.Completed)
+            {
+                StatusLabel = "Completed";
+                StatusBadgeVisibility = Visibility.Visible;
+                StatusBadgeBackground = Brush(host, "AccentSubtleBrush");
+                StatusBadgeBorder = Brush(host, "AccentPrimaryBrush");
+                StatusBadgeForeground = Brush(host, "AccentLinkBrush");
+            }
+            else if (metadata.Status == AdventureStatus.Paused)
+            {
+                StatusLabel = "Paused";
+                StatusBadgeVisibility = Visibility.Visible;
+                StatusBadgeBackground = Brush(host, "BgElevatedBrush");
+                StatusBadgeBorder = Brush(host, "BorderSubtleBrush");
+                StatusBadgeForeground = Brush(host, "TextMutedBrush");
+            }
+            else
+            {
+                StatusLabel = "Ready to play";
+                StatusBadgeVisibility = turnCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+                StatusBadgeBackground = Brush(host, "SuccessSubtleBrush");
+                StatusBadgeBorder = Brush(host, "SuccessBrush");
+                StatusBadgeForeground = Brush(host, "SuccessBrush");
             }
         }
 
-        public string TurnCount
-        {
-            get
-            {
-                var bundle = AdventureStore.Load(_meta.Id);
-                return bundle?.Log.Turns.Count(t => t.Status == TurnStatus.Accepted).ToString() ?? "0";
-            }
-        }
+        public AdventureMetadata Meta { get; }
 
-        public string LastPlayedDisplay =>
-            _meta.LastPlayedAt == default ? "—" : _meta.LastPlayedAt.LocalDateTime.ToString("g");
+        public string Title { get; }
+
+        public string GenreLabel { get; }
+
+        public Visibility GenreBadgeVisibility { get; }
+
+        public string StatusLabel { get; }
+
+        public Visibility StatusBadgeVisibility { get; }
+
+        public Brush StatusBadgeBackground { get; } = Brushes.Transparent;
+
+        public Brush StatusBadgeBorder { get; } = Brushes.Transparent;
+
+        public Brush StatusBadgeForeground { get; } = Brushes.White;
+
+        public Visibility ProjectBadgeVisibility { get; }
+
+        public Visibility DesignThreadBadgeVisibility { get; }
+
+        public string TurnCountLabel { get; }
+
+        public string LastPlayedLabel { get; }
+
+        private static Brush Brush(FrameworkElement host, string key) =>
+            (Brush)host.FindResource(key);
+
+        private static string FormatRelativeLastPlayed(DateTimeOffset when)
+        {
+            if (when == default)
+                return "Never played";
+
+            var local = when.LocalDateTime;
+            var days = (DateTime.Now.Date - local.Date).Days;
+            return days switch
+            {
+                0 => "Played today",
+                1 => "Played yesterday",
+                < 7 => $"Played {days} days ago",
+                < 30 => $"Played {days / 7} wk ago",
+                _ => $"Played {local:MMM d, yyyy}",
+            };
+        }
     }
 }

@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using ChatGPTWrapper.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 
 namespace ChatGPTWrapper.ChatGptApi;
@@ -102,6 +103,14 @@ public sealed class ProjectDiscoveryService
                 error,
             });
             await File.AppendAllTextAsync(TracePath, line + Environment.NewLine);
+
+            DiagnosticsMirror.WriteText(
+                DiagnosticsChannel.Api,
+                DiagnosticsLevel.Debug,
+                "project_discovery",
+                $"strategy={strategy} batches={batchCount} merged={mergedCount}",
+                source: "project-discovery-trace",
+                data: new { strategy, batchCount, mergedCount, error });
         }
         catch
         {

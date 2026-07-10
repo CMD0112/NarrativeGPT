@@ -39,6 +39,54 @@ public sealed class UtilityConversationReadinessTests
         Assert.Equal(expected, UtilityConversationReadinessService.IsRateLimitFetchError(fetchError));
     }
 
+    [Fact]
+    public void CanRegisterViaPingPush_true_for_404_with_composer()
+    {
+        var readiness = new UtilityConversationReadinessResult
+        {
+            Level = UtilityConversationReadinessLevel.DomOnly,
+            ComposerFound = true,
+            DomOnlyReason = "http_404",
+        };
+
+        Assert.True(UtilityConversationReadinessService.CanRegisterViaPingPush(readiness));
+    }
+
+    [Fact]
+    public void CanRegisterViaPingPush_true_for_403_with_composer()
+    {
+        var readiness = new UtilityConversationReadinessResult
+        {
+            Level = UtilityConversationReadinessLevel.DomOnly,
+            ComposerFound = true,
+            DomOnlyReason = "http_403",
+        };
+
+        Assert.True(UtilityConversationReadinessService.CanRegisterViaPingPush(readiness));
+    }
+
+    [Fact]
+    public void CanRegisterViaDomPing_false_when_composer_missing()
+    {
+        var readiness = new UtilityConversationReadinessResult
+        {
+            Level = UtilityConversationReadinessLevel.DomOnly,
+            ComposerFound = false,
+            DomOnlyReason = "http_404",
+        };
+
+        Assert.False(UtilityConversationReadinessService.CanRegisterViaPingPush(readiness));
+    }
+
+    [Theory]
+    [InlineData("http_404", true)]
+    [InlineData("http_403", true)]
+    [InlineData("http_429", false)]
+    public void IsUnregisteredFetchError_detects_unregistered_conversations(string? fetchError, bool expected)
+    {
+        Assert.Equal(expected, UtilityConversationReadinessService.IsUnregisteredFetchError(fetchError));
+    }
+
     [Theory]
     [InlineData(1000, 120_000)]
     [InlineData(4001, 122_008)]

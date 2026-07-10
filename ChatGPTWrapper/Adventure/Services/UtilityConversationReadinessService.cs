@@ -1,4 +1,5 @@
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.UtilityWorker;
 using ChatGPTWrapper.ChatGptApi;
 using Microsoft.Web.WebView2.Core;
 
@@ -36,7 +37,6 @@ internal static class UtilityConversationReadinessService
         "Pin a utility Project tab for more reliable jobs.";
 
     private static readonly TimeSpan[] RateLimitFetchBackoff = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)];
-    private static DateTimeOffset _rateLimitBackoffUntil = DateTimeOffset.MinValue;
 
     public static async Task<UtilityConversationReadinessResult> ProbeAsync(
         CoreWebView2 core,
@@ -45,9 +45,10 @@ internal static class UtilityConversationReadinessService
         ChatGptConversationSendService conversationSend,
         AdventureTurnService? turnService,
         AdventureBundle? bundle,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool skipNavigation = false)
     {
-        if (DateTimeOffset.UtcNow < _rateLimitBackoffUntil)
+        if (bundle is not null && UtilityWorkerSession.For(bundle.Metadata.Id).IsRateLimited)
         {
             return new UtilityConversationReadinessResult
             {
@@ -57,22 +58,53 @@ internal static class UtilityConversationReadinessService
             };
         }
 
-        var nav = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
-            core,
-            conversationId,
-            gizmoId,
-            cancellationToken);
-        if (!nav.Success)
+        if (!skipNavigation)
+        {
+            var nav = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
+                core,
+                conversationId,
+                gizmoId,
+                cancellationToken);
+            if (!nav.Success)
+            {
+                return new UtilityConversationReadinessResult
+                {
+                    Level = UtilityConversationReadinessLevel.Unready,
+                    Error = nav.Error ?? "utility_page_not_ready",
+                    PageHref = await UtilityConversationPageService.GetPageHrefAsync(core),
+                };
+            }
+        }
+
+        var pageHref = await UtilityConversationPageService.GetPageHrefAsync(core);
+        if (UtilityConversationPageService.IsProjectHomePage(pageHref) && bundle is not null)
+        {
+            var settled = await UtilityConversationPageService.WaitForStableOnConversationPageAsync(
+                core,
+                conversationId,
+                gizmoId,
+                cancellationToken,
+                maxWaitSeconds: 8);
+            pageHref = await UtilityConversationPageService.GetPageHrefAsync(core);
+            if (!settled.Success || UtilityConversationPageService.IsProjectHomePage(pageHref))
+            {
+                return new UtilityConversationReadinessResult
+                {
+                    Level = UtilityConversationReadinessLevel.Unready,
+                    Error = "utility_page_not_ready",
+                    PageHref = pageHref,
+                };
+            }
+        }
+        else if (UtilityConversationPageService.IsProjectHomePage(pageHref))
         {
             return new UtilityConversationReadinessResult
             {
                 Level = UtilityConversationReadinessLevel.Unready,
-                Error = nav.Error ?? "utility_page_not_ready",
-                PageHref = await UtilityConversationPageService.GetPageHrefAsync(core),
+                Error = "utility_page_not_ready",
+                PageHref = pageHref,
             };
         }
-
-        var pageHref = await UtilityConversationPageService.GetPageHrefAsync(core);
 
         if (turnService is null || !await turnService.EnsureUtilityBridgeReadyAsync(core, cancellationToken))
         {
@@ -96,11 +128,12 @@ internal static class UtilityConversationReadinessService
                 Level = UtilityConversationReadinessLevel.Registered,
                 ApiVisible = true,
                 PageHref = pageHref,
+                ComposerFound = true,
             };
         }
 
         var domOnlyReason = fetch.Error ?? "conversation_fetch_failed";
-        var isDomCapable = IsDomCapableFetchError(domOnlyReason);
+        var isDomCapable = IsDomCapableFetchError(domOnlyReason) || IsUnregisteredFetchError(domOnlyReason);
 
         if (!isDomCapable)
         {
@@ -113,8 +146,8 @@ internal static class UtilityConversationReadinessService
             };
         }
 
-        if (IsRateLimitFetchError(domOnlyReason))
-            _rateLimitBackoffUntil = DateTimeOffset.UtcNow.AddSeconds(15);
+        if (IsRateLimitFetchError(domOnlyReason) && bundle is not null)
+            UtilityWorkerSession.For(bundle.Metadata.Id).ApplyRateLimit(TimeSpan.FromSeconds(15));
 
         await turnService.EnsureUtilityComposerReadyAsync(
             core,
@@ -174,6 +207,11 @@ internal static class UtilityConversationReadinessService
         string.Equals(fetchError, "http_404", StringComparison.OrdinalIgnoreCase)
         || (fetchError?.Contains("404", StringComparison.OrdinalIgnoreCase) ?? false);
 
+    internal static bool IsUnregisteredFetchError(string? fetchError) =>
+        IsDomOnlyFetchError(fetchError)
+        || string.Equals(fetchError, "http_403", StringComparison.OrdinalIgnoreCase)
+        || (fetchError?.Contains("403", StringComparison.OrdinalIgnoreCase) ?? false);
+
     internal static bool IsRateLimitFetchError(string? fetchError) =>
         string.Equals(fetchError, "http_429", StringComparison.OrdinalIgnoreCase)
         || (fetchError?.Contains("429", StringComparison.OrdinalIgnoreCase) ?? false);
@@ -181,11 +219,17 @@ internal static class UtilityConversationReadinessService
     internal static bool IsDomCapableFetchError(string? fetchError) =>
         IsDomOnlyFetchError(fetchError) || IsRateLimitFetchError(fetchError);
 
-    private static string? ShouldShowUtilityPinHint(AdventureBundle? bundle)
-    {
-        if (bundle is null || UtilityDeliveryModeService.UsesInlineDelivery(bundle))
-            return null;
+    /// <summary>
+    /// Unregistered conversations (404/403 on GET) can be registered via ping push when composer is ready.
+    /// </summary>
+    internal static bool CanRegisterViaPingPush(UtilityConversationReadinessResult readiness) =>
+        readiness.ComposerFound
+        && readiness.Level != UtilityConversationReadinessLevel.Unready
+        && IsUnregisteredFetchError(readiness.DomOnlyReason);
 
-        return PlayTabPinService.HasUtilityPin(bundle) ? null : PinUtilityTabHint;
-    }
+    /// <summary>Alias kept for call sites.</summary>
+    internal static bool CanRegisterViaDomPing(UtilityConversationReadinessResult readiness) =>
+        CanRegisterViaPingPush(readiness);
+
+    private static string? ShouldShowUtilityPinHint(AdventureBundle? bundle) => null;
 }

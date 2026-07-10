@@ -1,0 +1,441 @@
+<shell:ShellDialogWindow xmlns:shell="clr-namespace:ChatGPTWrapper.Shell" x:Class="ChatGPTWrapper.Views.ThemeCustomizationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Appearance &amp; theme"
+        Height="720"
+        Width="860"
+        MinHeight="520"
+        MinWidth="640"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BgBaseBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        ResizeMode="CanResizeWithGrip">
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MinWidth="320"/>
+            <ColumnDefinition Width="8"/>
+            <ColumnDefinition Width="260" MinWidth="220"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TabControl x:Name="SettingsTabs" Grid.Column="0" Grid.Row="0" Margin="0,0,8,0" MinHeight="320">
+            <TabItem Header="Presets">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0"
+                               Text="Pick a starting palette or save your own. Fine-tune colors on the Colors tab."
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12"/>
+                    <Grid Grid.Row="1" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="140"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="160"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="PresetSearchBox"
+                                 Grid.Column="0"
+                                 ToolTip="Filter by name or description"
+                                 TextChanged="PresetSearchBox_TextChanged"/>
+                        <ComboBox x:Name="PresetCategoryFilter"
+                                  Grid.Column="2"
+                                  SelectionChanged="PresetCategoryFilter_SelectionChanged"/>
+                    </Grid>
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,4">
+                        <Button Content="New…"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="10,5"
+                                Margin="0,0,8,0"
+                                Click="NewUserPreset_Click"/>
+                        <Button x:Name="DuplicatePresetButton"
+                                Content="Duplicate"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="10,5"
+                                Margin="0,0,8,0"
+                                Click="DuplicatePreset_Click"/>
+                        <Button x:Name="RenamePresetButton"
+                                Content="Rename…"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="10,5"
+                                Margin="0,0,8,0"
+                                Click="RenamePreset_Click"/>
+                        <Button x:Name="DeletePresetButton"
+                                Content="Delete"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="10,5"
+                                Margin="0,0,8,0"
+                                Click="DeletePreset_Click"/>
+                        <Button x:Name="SavePresetButton"
+                                Content="Save"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="10,5"
+                                Click="SavePreset_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="PresetStatusText"
+                               Grid.Row="3"
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"/>
+                    <Grid x:Name="PresetCategoryEditorPanel"
+                          Grid.Row="4"
+                          Margin="0,0,0,8"
+                          Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="220"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Category"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                        <ComboBox x:Name="PresetCategoryEditor"
+                                  Grid.Column="2"
+                                  SelectionChanged="PresetCategoryEditor_SelectionChanged"/>
+                    </Grid>
+                    <TextBlock x:Name="PresetEmptyHint"
+                               Grid.Row="5"
+                               Text="No presets match the current filter."
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               Visibility="Collapsed"
+                               Margin="0,0,0,8"/>
+                    <ListBox x:Name="PresetList"
+                             Grid.Row="6"
+                             MinHeight="200"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             SelectionChanged="PresetList_SelectionChanged">
+                        <ListBox.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.ContainerStyle>
+                                    <Style TargetType="GroupItem">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="GroupItem">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   FontWeight="SemiBold"
+                                                                   FontSize="{DynamicResource FontSizeHint}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   Margin="0,10,0,4"/>
+                                                        <ItemsPresenter/>
+                                                    </StackPanel>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </GroupStyle.ContainerStyle>
+                            </GroupStyle>
+                        </ListBox.GroupStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
+                                        <Border Width="14" Height="14" Margin="0,0,3,0"
+                                                CornerRadius="2"
+                                                Background="{Binding Swatch0}"/>
+                                        <Border Width="14" Height="14" Margin="0,0,3,0"
+                                                CornerRadius="2"
+                                                Background="{Binding Swatch1}"/>
+                                        <Border Width="14" Height="14" Margin="0,0,3,0"
+                                                CornerRadius="2"
+                                                Background="{Binding Swatch2}"/>
+                                        <Border Width="14" Height="14"
+                                                CornerRadius="2"
+                                                Background="{Binding Swatch3}"/>
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,0,8,0"/>
+                                            <Border Background="{DynamicResource BgElevatedBrush}"
+                                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="3"
+                                                    Padding="6,1"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Category}"
+                                                           FontSize="{DynamicResource FontSizeHint}"
+                                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Description}"
+                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                   FontSize="{DynamicResource FontSizeHint}"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="420"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </TabItem>
+            <TabItem Header="Colors">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0"
+                               Text="Shell and wrapper chrome colors. Transcript role colors are in Format…"
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"/>
+                    <Grid Grid.Row="1" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="140"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="ColorSearchBox"
+                                 Grid.Column="0"
+                                 ToolTip="Filter by label, token, or hex"
+                                 TextChanged="ColorSearchBox_TextChanged"/>
+                        <Button Grid.Column="2"
+                                Content="Auto-fix contrast"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="10,5"
+                                ToolTip="Adjust colors to meet readability targets"
+                                Click="AutoFixContrast_Click"/>
+                    </Grid>
+                    <TextBlock x:Name="ContrastSummary"
+                               Grid.Row="2"
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"
+                               Visibility="Collapsed"/>
+                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="ColorEditorsPanel"/>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+            <TabItem Header="Typography">
+                <StackPanel Margin="8">
+                    <TextBlock Text="Shell font and sizes (dialogs, toolbar). Transcript typography is in Format…"
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Font family" VerticalAlignment="Center"/>
+                        <TextBox x:Name="FontFamilyBox" Grid.Column="1" TextChanged="TypographyField_TextChanged"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Body size" VerticalAlignment="Center"/>
+                        <TextBox x:Name="FontSizeBodyBox" Grid.Column="1" TextChanged="TypographyField_TextChanged"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Title size" VerticalAlignment="Center"/>
+                        <TextBox x:Name="FontSizeTitleBox" Grid.Column="1" TextChanged="TypographyField_TextChanged"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Hint size" VerticalAlignment="Center"/>
+                        <TextBox x:Name="FontSizeHintBox" Grid.Column="1" TextChanged="TypographyField_TextChanged"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Density preset" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="DensityPresetCombo"
+                                  Grid.Column="1"
+                                  SelectionChanged="DensityPresetCombo_SelectionChanged">
+                            <ComboBoxItem Content="Default (legacy)" Tag="Default"/>
+                            <ComboBoxItem Content="Comfortable" Tag="Comfortable"/>
+                            <ComboBoxItem Content="Compact" Tag="Compact"/>
+                        </ComboBox>
+                    </Grid>
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="Spacing &amp; shape">
+                <StackPanel Margin="8">
+                    <TextBlock Text="Shell padding scale and corner radii. Card padding follows medium spacing."
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Extra small spacing" VerticalAlignment="Center"/>
+                        <TextBox x:Name="SpaceXsBox" Grid.Column="1" TextChanged="SpacingField_TextChanged"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Small spacing" VerticalAlignment="Center"/>
+                        <TextBox x:Name="SpaceSmBox" Grid.Column="1" TextChanged="SpacingField_TextChanged"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Medium spacing" VerticalAlignment="Center"/>
+                        <TextBox x:Name="SpaceMdBox" Grid.Column="1" TextChanged="SpacingField_TextChanged"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Large spacing" VerticalAlignment="Center"/>
+                        <TextBox x:Name="SpaceLgBox" Grid.Column="1" TextChanged="SpacingField_TextChanged"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Extra large spacing" VerticalAlignment="Center"/>
+                        <TextBox x:Name="SpaceXlBox" Grid.Column="1" TextChanged="SpacingField_TextChanged"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Control radius" VerticalAlignment="Center"/>
+                        <TextBox x:Name="RadiusControlBox" Grid.Column="1" TextChanged="SpacingField_TextChanged"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Card radius" VerticalAlignment="Center"/>
+                        <TextBox x:Name="RadiusCardBox" Grid.Column="1" TextChanged="SpacingField_TextChanged"/>
+                    </Grid>
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="Advanced">
+                <StackPanel Margin="8">
+                    <TextBlock Text="Import, export, and power-user CSS overrides."
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button Content="Export theme JSON…"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="10,5"
+                                Margin="0,0,8,0"
+                                Click="ExportTheme_Click"/>
+                        <Button Content="Import theme JSON…"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="10,5"
+                                Click="ImportTheme_Click"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button Content="Open styles folder"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="10,5"
+                                Margin="0,0,8,0"
+                                Click="OpenStylesFolder_Click"/>
+                        <Button Content="Open user-overrides.css"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="10,5"
+                                Click="OpenUserCss_Click"/>
+                    </StackPanel>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Column="2" Grid.Row="0" Style="{StaticResource ShellCardStyle}">
+            <StackPanel>
+                <TextBlock Text="Preview"
+                           Style="{StaticResource ShellSectionHeaderStyle}"
+                           Margin="0,0,0,8"/>
+                <Border Background="{DynamicResource BgInsetBrush}"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{DynamicResource RadiusCard}"
+                        Padding="10"
+                        Margin="0,0,0,10">
+                    <TextBlock x:Name="PreviewTitle"
+                               Text="Sample adventure"
+                               FontSize="{DynamicResource FontSizeTitle}"
+                               FontWeight="SemiBold"/>
+                </Border>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <Border Style="{StaticResource ShellBadgeStyle}">
+                        <TextBlock Text="Ready to play" FontSize="{DynamicResource FontSizeHint}"/>
+                    </Border>
+                    <Border Style="{StaticResource ShellBadgeStyle}"
+                            Background="{DynamicResource AccentSubtleBrush}"
+                            BorderBrush="{DynamicResource AccentPrimaryBrush}">
+                        <TextBlock Text="Project linked"
+                                   Foreground="{DynamicResource AccentLinkBrush}"
+                                   FontSize="{DynamicResource FontSizeHint}"/>
+                    </Border>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Play"
+                            Style="{StaticResource ShellCommandBarPrimarySlot}"
+                            Padding="12,5"
+                            Margin="0,0,8,0"/>
+                    <Button Content="Secondary"
+                            Style="{StaticResource ShellCommandBarSecondarySlot}"
+                            Padding="12,5"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Column="0" Grid.ColumnSpan="3" Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,12,0,0">
+            <Button Content="Reset preset"
+                    Style="{StaticResource ShellCommandBarSecondarySlot}"
+                    Padding="12,6"
+                    Margin="0,0,8,0"
+                    Click="ResetPreset_Click"/>
+            <Button Content="Reset all"
+                    Style="{StaticResource ShellCommandBarSecondarySlot}"
+                    Padding="12,6"
+                    Margin="0,0,8,0"
+                    Click="ResetAll_Click"/>
+            <Button Content="Cancel"
+                    Style="{StaticResource ShellCommandBarSecondarySlot}"
+                    Padding="12,6"
+                    Margin="0,0,8,0"
+                    IsCancel="True"/>
+            <Button Content="Apply"
+                    Style="{StaticResource ShellCommandBarPrimarySlot}"
+                    Padding="12,6"
+                    IsDefault="True"
+                    Click="Apply_Click"/>
+        </StackPanel>
+    </Grid>
+</shell:ShellDialogWindow>

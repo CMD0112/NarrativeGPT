@@ -1,0 +1,115 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.ThreadManagerPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:ChatGPTWrapper.Adventure.Services"
+    Padding="{ThemeResource SpaceMdPadding}">
+
+    <UserControl.Resources>
+        <DataTemplate x:Key="ThreadRowTemplate" x:DataType="models:ThreadManagerRowModel">
+            <Grid ColumnSpacing="8" Padding="4,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="100" />
+                    <ColumnDefinition Width="Auto" MinWidth="72" />
+                    <ColumnDefinition Width="Auto" MinWidth="100" />
+                    <ColumnDefinition Width="*" MinWidth="80" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{x:Bind Label}"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1"
+                           Text="{x:Bind StatusDisplay}"
+                           Foreground="{ThemeResource TextMutedBrush}"
+                           VerticalAlignment="Center"
+                           Margin="0,0,8,0" />
+                <TextBlock Grid.Column="2"
+                           Text="{x:Bind ConversationDisplay}"
+                           Foreground="{ThemeResource TextMutedBrush}"
+                           FontFamily="Consolas"
+                           FontSize="11"
+                           VerticalAlignment="Center"
+                           Margin="0,0,8,0" />
+                <TextBlock Grid.Column="3"
+                           Text="{x:Bind TabTitleDisplay}"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid RowSpacing="{ThemeResource SpaceMd}" MinWidth="700" MinHeight="480">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Style="{ThemeResource ShellSectionHintStyle}"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,4"
+                   Text="One active pin per thread kind. Create thread slots, pin browser tabs to a selected row, and switch active to change which conversation jobs and navigation use." />
+
+        <Border Grid.Row="1"
+                Style="{ThemeResource ShellCardStyle}"
+                Padding="{ThemeResource SpaceMdPadding}">
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Linked project"
+                               Style="{ThemeResource ShellSectionHeaderStyle}" />
+                    <TextBlock x:Name="ProjectSummaryBlock"
+                               Style="{ThemeResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+                <Button x:Name="ChangeProjectButton"
+                        Grid.Column="1"
+                        Content="Change project…"
+                        Style="{ThemeResource ShellGhostButtonStyle}"
+                        VerticalAlignment="Center"
+                        Click="ChangeProject_Click" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Style="{ThemeResource ShellCardStyle}"
+                Padding="{ThemeResource SpaceMdPadding}">
+            <StackPanel Spacing="6">
+                <TextBlock Text="Delivery during play"
+                           Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <CheckBox x:Name="HideInlineUtilityCheck"
+                          Content="Hide inline utility traffic during play"
+                          Checked="DeliverySetting_Changed"
+                          Unchecked="DeliverySetting_Changed" />
+                <CheckBox x:Name="ShowInlineUtilityTrafficCheck"
+                          Content="Show inline utility traffic in transcript"
+                          Checked="DeliverySetting_Changed"
+                          Unchecked="DeliverySetting_Changed" />
+            </StackPanel>
+        </Border>
+
+        <TabView x:Name="KindTabs"
+                 Grid.Row="3"
+                 TabWidthMode="Equal"
+                 SelectionChanged="KindTabs_SelectionChanged">
+            <TabViewItem Header="Play threads" Tag="Play" />
+            <TabViewItem Header="Design threads" Tag="Design" />
+            <TabViewItem Header="Utility worker" Tag="UtilityWorker" />
+        </TabView>
+
+        <Border Grid.Row="4"
+                Margin="0,8,0,0"
+                Padding="0,8,0,0"
+                BorderBrush="{ThemeResource BorderSubtleBrush}"
+                BorderThickness="0,1,0,0">
+            <TextBlock x:Name="ActiveSummaryBlock"
+                       Style="{ThemeResource ShellSectionHintStyle}"
+                       TextWrapping="Wrap" />
+        </Border>
+    </Grid>
+</UserControl>

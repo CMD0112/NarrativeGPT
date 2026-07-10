@@ -1,3 +1,4 @@
+using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.ChatGptApi;
 using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
@@ -14,7 +15,8 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
     private static string? _cachedScript;
     private static long _cachedStamp;
 
-    private readonly WebView2 _webView;
+    private readonly WebView2? _webView;
+    private readonly CoreWebView2? _coreOnly;
     private ChatGptPageHost? _pageHost;
     private bool _standaloneRegistered;
 
@@ -29,11 +31,23 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         _webView = webView ?? throw new ArgumentNullException(nameof(webView));
     }
 
+    /// <summary>WinUI / host-neutral bridge when only CoreWebView2 is available.</summary>
+    public static ChatGptAdventureBridgeInjection CreateForCore(object coreWebView2)
+    {
+        var core = WinUiBridge.WinUiWebView2CoreRuntime.RequireTypedCore(coreWebView2);
+        return new ChatGptAdventureBridgeInjection(core);
+    }
+
+    private ChatGptAdventureBridgeInjection(CoreWebView2 core)
+    {
+        _coreOnly = core ?? throw new ArgumentNullException(nameof(core));
+    }
+
     public void Register(ChatGptPageHost pageHost)
     {
         _pageHost = pageHost ?? throw new ArgumentNullException(nameof(pageHost));
         pageHost.RegisterFeature(this);
-        if (_webView.CoreWebView2 is { } core)
+        if (_webView?.CoreWebView2 is { } core)
             _ = InjectAsync(core);
     }
 
@@ -44,8 +58,9 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
             if (string.IsNullOrEmpty(type) || type.StartsWith("cgwCompose", StringComparison.Ordinal))
                 return;
 
-            if (string.Equals(type, "cgwPlaySendLog", StringComparison.Ordinal))
-                return;
+        if (string.Equals(type, "cgwPlaySendLog", StringComparison.Ordinal)
+            || string.Equals(type, "cgwDiagnosticsLog", StringComparison.Ordinal))
+            return;
 
             HandleMessage(type, root);
         });
@@ -64,7 +79,7 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         if (_pageHost is not null)
             return;
 
-        var core = _webView.CoreWebView2
+        var core = _coreOnly ?? _webView?.CoreWebView2
                    ?? throw new InvalidOperationException("Call after CoreWebView2 is ready.");
 
         if (!_standaloneRegistered)
@@ -111,7 +126,7 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
 
     public async Task InjectAsync(CoreWebView2? core = null)
     {
-        core ??= _webView.CoreWebView2;
+        core ??= _coreOnly ?? _webView?.CoreWebView2;
         if (core is null || !ChatGptPageGate.IsInjectable(core.Source))
             return;
 
@@ -147,7 +162,9 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         string? displayPlayerLine = null,
         string? packetHash = null,
         bool attachmentsPreStaged = false,
-        bool hostCdpStaged = false)
+        bool hostCdpStaged = false,
+        bool useWrapperAttachmentStash = false,
+        bool allowKeyboardSubmitOnProjectHome = false)
     {
         var textJson = JsonSerializer.Serialize(text);
         var req = requireProjectContext ? "true" : "false";
@@ -155,10 +172,15 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         var hashJson = JsonSerializer.Serialize(packetHash ?? "");
         var preStagedJson = attachmentsPreStaged ? "true" : "false";
         var cdpJson = hostCdpStaged ? "true" : "false";
+        var stashJson = useWrapperAttachmentStash ? "true" : "false";
+        var keyboardJson = allowKeyboardSubmitOnProjectHome ? "true" : "false";
         var script =
             "(function(){var fn=globalThis.__cgwAdventureSubmitPrompt;"
             + "if(typeof fn!=='function')return false;"
-            + $"fn({textJson},{req},{playerJson},{hashJson},[],false,{cdpJson},{preStagedJson});return true;}})()";
+            + "globalThis.__cgwSubmitPromptOptions={allowKeyboardSubmitOnProjectHome:"
+            + keyboardJson
+            + "};"
+            + $"fn({textJson},{req},{playerJson},{hashJson},[],{stashJson},{cdpJson},{preStagedJson});return true;}})()";
 
         var raw = await core.ExecuteScriptAsync(script);
         return raw.Contains("true", StringComparison.OrdinalIgnoreCase);
@@ -167,18 +189,50 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
     public void SendFillComposerCommand(CoreWebView2 core, string text) =>
         SendCommand(core, new { action = "fillComposer", text });
 
+    public void SendClearStaleInjectionComposerCommand(CoreWebView2 core) =>
+        SendCommand(core, new { action = "clearComposerIfInjection" });
+
     public async Task<bool> InvokeSendPromptAsync(
         CoreWebView2 core,
         string text,
         int timeoutMs,
-        bool requireProjectContext)
+        bool requireProjectContext,
+        int? composerStableWaitMs = null)
     {
         var textJson = JsonSerializer.Serialize(text);
         var req = requireProjectContext ? "true" : "false";
+        var stableArg = composerStableWaitMs.HasValue
+            ? composerStableWaitMs.Value.ToString()
+            : "undefined";
         var script =
             "(function(){var fn=globalThis.__cgwAdventureSendPrompt;"
             + "if(typeof fn!=='function')return false;"
-            + $"fn({textJson},{timeoutMs},{req});return true;}})()";
+            + $"fn({textJson},{timeoutMs},{req},{stableArg});return true;}})()";
+
+        var raw = await core.ExecuteScriptAsync(script);
+        return raw.Contains("true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public async Task<bool> InvokeSendPromptWithAttachmentsAsync(
+        CoreWebView2 core,
+        string text,
+        int timeoutMs,
+        bool requireProjectContext,
+        int? composerStableWaitMs,
+        bool hostCdpStaged,
+        bool useWrapperAttachmentStash)
+    {
+        var textJson = JsonSerializer.Serialize(text);
+        var req = requireProjectContext ? "true" : "false";
+        var stableArg = composerStableWaitMs.HasValue
+            ? composerStableWaitMs.Value.ToString()
+            : "undefined";
+        var cdp = hostCdpStaged ? "true" : "false";
+        var stash = useWrapperAttachmentStash ? "true" : "false";
+        var script =
+            "(function(){var fn=globalThis.__cgwAdventureSendPrompt;"
+            + "if(typeof fn!=='function')return false;"
+            + $"fn({textJson},{timeoutMs},{req},{stableArg},{{hostCdpStaged:{cdp},useWrapperAttachmentStash:{stash}}});return true;}})()";
 
         var raw = await core.ExecuteScriptAsync(script);
         return raw.Contains("true", StringComparison.OrdinalIgnoreCase);
@@ -223,6 +277,10 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
             + "}");
     }
 
+    /// <summary>Utility worker tabs should always show job traffic regardless of play hide settings.</summary>
+    public static Task ApplyUtilityWorkerTabVisibilityAsync(CoreWebView2 core) =>
+        ApplyInlineUtilityPreferencesAsync(core, hideDuringPlay: false, showTraffic: true);
+
     public static Task ApplyPlaySurfaceActionsAsync(
         CoreWebView2 core,
         IReadOnlyDictionary<string, string> actions)
@@ -238,6 +296,18 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
     {
         var json = JsonSerializer.Serialize(ordinalMap);
         return core.ExecuteScriptAsync($"globalThis.__cgwThreadOrdinalMap={json};");
+    }
+
+    public static Task ApplyLogTurnLinkMapAsync(CoreWebView2 core, IReadOnlyDictionary<int, LogTurnLink> linkMap)
+    {
+        var json = JsonSerializer.Serialize(linkMap);
+        return core.ExecuteScriptAsync($"globalThis.__cgwLogTurnLinkMap={json};");
+    }
+
+    public static Task ApplyRevisionHideEntriesAsync(CoreWebView2 core, IReadOnlyList<RevisionHideEntry> entries)
+    {
+        var json = JsonSerializer.Serialize(entries);
+        return core.ExecuteScriptAsync($"globalThis.__cgwRevisionHideEntries={json};");
     }
 
     public void SendCommand(CoreWebView2 core, object command)
@@ -260,7 +330,8 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         string? packetHash,
         bool useWrapperAttachmentStash = false,
         bool hostCdpStaged = false,
-        bool attachmentsPreStaged = false)
+        bool attachmentsPreStaged = false,
+        bool allowKeyboardSubmitOnProjectHome = false)
     {
         SendCommand(core, new
         {
@@ -272,6 +343,7 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
             useWrapperAttachmentStash = useWrapperAttachmentStash,
             hostCdpStaged = hostCdpStaged,
             attachmentsPreStaged = attachmentsPreStaged,
+            allowKeyboardSubmitOnProjectHome = allowKeyboardSubmitOnProjectHome,
         });
     }
 
@@ -339,6 +411,48 @@ public sealed class ChatGptAdventureBridgeInjection : IPageFeature
         _cachedStamp = stamp;
         return _cachedScript;
     }
+
+    /// <summary>WinUI / CoreWebView2-only bridge feature for <see cref="ChatGPTWrapper.WebView.ChatGptPageHost"/>.</summary>
+    public static ChatGPTWrapper.WebView.IPageFeature CreateWebViewFeature(
+        object coreWebView2,
+        EventHandler<AdventureBridgeMessage>? onMessage = null)
+    {
+        var core = WinUiBridge.WinUiWebView2CoreRuntime.RequireTypedCore(coreWebView2);
+        return new WebViewBridgeFeature(core, onMessage);
+    }
+
+    private sealed class WebViewBridgeFeature : ChatGPTWrapper.WebView.IPageFeature
+    {
+        private readonly CoreWebView2 _core;
+        private readonly EventHandler<AdventureBridgeMessage>? _onMessage;
+
+        public WebViewBridgeFeature(CoreWebView2 core, EventHandler<AdventureBridgeMessage>? onMessage)
+        {
+            _core = core;
+            _onMessage = onMessage;
+        }
+
+        string ChatGPTWrapper.WebView.IPageFeature.FeatureId => ChatGPTWrapper.WebView.PageFeatureIds.AdventureBridge;
+
+        Task ChatGPTWrapper.WebView.IPageFeature.ApplyAsync(CoreWebView2 core, CancellationToken cancellationToken) =>
+            new ChatGptAdventureBridgeInjection(core).InjectAsync(core);
+
+        void ChatGPTWrapper.WebView.IPageFeature.RegisterMessageHandlers(ChatGPTWrapper.WebView.PageMessageRouter router)
+        {
+            router.RegisterLegacy((type, root) =>
+            {
+                if (string.IsNullOrEmpty(type) || type.StartsWith("cgwCompose", StringComparison.Ordinal))
+                    return;
+
+                if (string.Equals(type, "cgwPlaySendLog", StringComparison.Ordinal)
+                    || string.Equals(type, "cgwDiagnosticsLog", StringComparison.Ordinal))
+                    return;
+
+                var message = AdventureBridgeMessage.FromJson(type, root.GetRawText(), root);
+                _onMessage?.Invoke(null, message);
+            });
+        }
+    }
 }
 
 public sealed class AdventureBridgeMessage
@@ -355,7 +469,13 @@ public sealed class AdventureBridgeMessage
         bool submitFound,
         int? assistantTurnCount,
         string? domTurnId,
-        string? reason)
+        string? reason,
+        int? logTurnIndex,
+        string? editRole,
+        bool usedFallback,
+        string? revisionGroupId,
+        string? revisionPrompt,
+        string? assistantDomTurnId)
     {
         Type = type;
         RawJson = rawJson;
@@ -369,6 +489,12 @@ public sealed class AdventureBridgeMessage
         AssistantTurnCount = assistantTurnCount;
         DomTurnId = domTurnId;
         Reason = reason;
+        LogTurnIndex = logTurnIndex;
+        EditRole = editRole;
+        UsedFallback = usedFallback;
+        RevisionGroupId = revisionGroupId;
+        RevisionPrompt = revisionPrompt;
+        AssistantDomTurnId = assistantDomTurnId;
     }
 
     public string? Type { get; }
@@ -394,6 +520,18 @@ public sealed class AdventureBridgeMessage
     public string? DomTurnId { get; }
 
     public string? Reason { get; }
+
+    public int? LogTurnIndex { get; }
+
+    public string? EditRole { get; }
+
+    public bool UsedFallback { get; }
+
+    public string? RevisionGroupId { get; }
+
+    public string? RevisionPrompt { get; }
+
+    public string? AssistantDomTurnId { get; }
 
     public static AdventureBridgeMessage FromJson(string? type, string rawJson, JsonElement root)
     {
@@ -437,6 +575,33 @@ public sealed class AdventureBridgeMessage
             ? reasonEl.GetString()
             : null;
 
+        int? logTurnIndex = null;
+        if (root.TryGetProperty("logTurnIndex", out var logIdxEl) && logIdxEl.ValueKind == JsonValueKind.Number
+            && logIdxEl.TryGetInt32(out var logIdxValue))
+        {
+            logTurnIndex = logIdxValue;
+        }
+
+        var editRole = root.TryGetProperty("editRole", out var roleEl) && roleEl.ValueKind == JsonValueKind.String
+            ? roleEl.GetString()
+            : null;
+
+        var usedFallback =
+            root.TryGetProperty("usedFallback", out var fbEl) && fbEl.ValueKind == JsonValueKind.True;
+
+        var revisionGroupId =
+            root.TryGetProperty("revisionGroupId", out var rgEl) && rgEl.ValueKind == JsonValueKind.String
+                ? rgEl.GetString()
+                : null;
+        var revisionPrompt =
+            root.TryGetProperty("revisionPrompt", out var rpEl) && rpEl.ValueKind == JsonValueKind.String
+                ? rpEl.GetString()
+                : null;
+        var assistantDomTurnId =
+            root.TryGetProperty("assistantDomTurnId", out var adEl) && adEl.ValueKind == JsonValueKind.String
+                ? adEl.GetString()
+                : null;
+
         return new AdventureBridgeMessage(
             type,
             rawJson,
@@ -449,7 +614,13 @@ public sealed class AdventureBridgeMessage
             submitFound,
             assistantTurnCount,
             domTurnId,
-            reason);
+            reason,
+            logTurnIndex,
+            editRole,
+            usedFallback,
+            revisionGroupId,
+            revisionPrompt,
+            assistantDomTurnId);
     }
 }
 

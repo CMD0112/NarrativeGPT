@@ -2,18 +2,36 @@
   "use strict";
 
   if (globalThis.__cgwPacketDisplayBooted) {
-    if (typeof globalThis.__cgwPacketDisplayNavigate === "function") {
-      globalThis.__cgwPacketDisplayNavigate();
-    } else if (typeof globalThis.__cgwApplyContextTagDisplay === "function") {
-      globalThis.__cgwApplyContextTagDisplay();
-    }
     return;
   }
   globalThis.__cgwPacketDisplayBooted = true;
 
   var MARKER = "[[cgw:";
+  var INVALIDATION_RE = /\[\[cgw:invalidation[^\]]*\]\]\s*/gi;
+  var TRAILING_INJECTION_MARKERS = [
+    "=== TURN OVERRIDES ===",
+    "=== TURN DIRECTIVE ===",
+    "=== CANON UPDATE (check sources) ===",
+  ];
   var BLOCK_RE =
     /\[\[cgw:([a-z][a-z0-9_-]*)([^\]]*)\]\]([\s\S]*?)\[\[\/cgw:\1\]\]/gi;
+  var STRIP_TAG_RE =
+    /\[\[cgw:[^\]/\]]+[^\]]*\]\][\s\S]*?\[\[\/cgw:[^\]]+\]\]/g;
+  var STRUCTURED_SECTION_RE = /^\[([a-z][a-z0-9_-]*)\]\s*(.*)$/i;
+  var STRUCTURED_SECTION_NAMES = {
+    meta: true,
+    sources: true,
+    instructions: true,
+    summary: true,
+    state: true,
+    cards: true,
+    memory: true,
+    transcript: true,
+    player: true,
+    user: true,
+  };
+  var STRUCTURED_INJECTION_SECTIONS =
+    /\[(meta|sources|instructions|summary|state|cards|memory|transcript)\]/i;
   var SECTION_ORDER = [
     "meta",
     "sources",
@@ -88,16 +106,23 @@
   }
 
   function refreshHiddenPacketIndicators() {
+    function syncPacketHost(el, hiddenClass) {
+      if (!el.querySelector("[data-cgw-packet-context]")) return;
+      el.classList.add("cgw-has-packet-context");
+      if (isPacketContextUiVisible()) {
+        el.classList.remove(hiddenClass);
+      } else {
+        el.classList.add(hiddenClass);
+      }
+    }
     document
       .querySelectorAll(".cgw-continuous-segment--user")
       .forEach(function (seg) {
-        if (!seg.querySelector("[data-cgw-packet-context]")) return;
-        if (isPacketContextUiVisible()) {
-          seg.classList.remove("cgw-continuous-segment--has-hidden-packet");
-        } else {
-          seg.classList.add("cgw-continuous-segment--has-hidden-packet");
-        }
+        syncPacketHost(seg, "cgw-continuous-segment--has-hidden-packet");
       });
+    document.querySelectorAll(".cgw-weave-embed").forEach(function (embed) {
+      syncPacketHost(embed, "cgw-weave-embed--has-hidden-packet");
+    });
   }
 
   function setPacketContextUiVisible(visible) {
@@ -142,6 +167,9 @@
   }
 
   function overlayActive() {
+    if (globalThis.__cgwTranscriptViewMode) {
+      return globalThis.__cgwTranscriptViewMode !== "native";
+    }
     return globalThis.__cgwContinuousViewEnabled === true;
   }
 
@@ -213,24 +241,47 @@
     var pres = wrap.querySelectorAll(
       '.whitespace-pre-wrap, [class*="whitespace-pre-wrap"]'
     );
-    if (!pres.length) return null;
+    if (pres.length) return pres[0];
+    return null;
+  }
 
-    var markerEl = null;
-    var longest = pres[0];
-    var longestLen = 0;
-    for (var i = 0; i < pres.length; i++) {
-      var el = pres[i];
-      var text = el.textContent || "";
-      if (text.indexOf(MARKER) >= 0) {
-        markerEl = el;
-        break;
+  function collectNativeUserMessageText(root) {
+    if (!root) return "";
+    var wrap = turnWrapper(root) || root;
+    var pres = wrap.querySelectorAll(
+      '.whitespace-pre-wrap, [class*="whitespace-pre-wrap"]'
+    );
+    if (pres.length) {
+      var parts = [];
+      for (var i = 0; i < pres.length; i++) {
+        var chunk = (pres[i].textContent || "").trim();
+        if (chunk) parts.push(chunk);
       }
-      if (text.length > longestLen) {
-        longestLen = text.length;
-        longest = el;
+      if (parts.length) {
+        return sanitizeExtractedMessageText(parts.join("\n\n"));
       }
     }
-    return markerEl || longest;
+
+    var host = findUserContentHostIn(wrap);
+    if (host) {
+      return sanitizeExtractedMessageText((host.textContent || "").trim());
+    }
+
+    return sanitizeExtractedMessageText((wrap.textContent || "").trim());
+  }
+
+  function looksLikePacketText(text) {
+    if (!text) return false;
+    if (isRevisionPromptDisplayText(text)) return false;
+    if (text.indexOf(MARKER) >= 0) return true;
+    return isStructuredPreviewPacket(text);
+  }
+
+  function isRevisionPromptDisplayText(text) {
+    if (!text) return false;
+    var stripped = String(text).replace(INVALIDATION_RE, "").trimStart();
+    if (stripped.indexOf("For play turn ") === 0) return true;
+    return stripped.indexOf("disregard your prior assistant reply for this turn") >= 0;
   }
 
   function findNativePacketTurns() {
@@ -266,19 +317,13 @@
 
   function computeSourceFingerprint(wrap) {
     if (!wrap) return "";
-    var host = findNativePlayerTextLeaf(wrap) || findUserContentHostIn(wrap) || wrap;
-    var text = "";
-    if (host) {
-      var live = sanitizeExtractedMessageText(host.textContent || "");
-      if (live.indexOf(MARKER) >= 0) text = live;
-    }
+    var text = collectNativeUserMessageText(wrap);
     if (!text) {
       var turnId = wrap.getAttribute("data-cgw-turn-id");
       if (turnId && sourceBackupByTurnId[turnId]) {
         text = sourceBackupByTurnId[turnId].sourceText || "";
       }
     }
-    if (!text && host) text = sanitizeExtractedMessageText(host.textContent || "");
     var len = text.length;
     var tail = len > 96 ? text.slice(len - 96) : text;
     var streaming = 0;
@@ -302,8 +347,94 @@
       .trim();
   }
 
+  function isStructuredPreviewPacket(text) {
+    if (!text || text.indexOf(MARKER) >= 0) return false;
+    var normalized = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    if (!/\[(user|player)\]/i.test(normalized)) return false;
+    return STRUCTURED_INJECTION_SECTIONS.test(normalized);
+  }
+
+  function parseStructuredPreview(text) {
+    if (!text || !isStructuredPreviewPacket(text)) return null;
+    if (parseCache.has(text)) return parseCache.get(text);
+
+    var lines = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    var blocks = {};
+    var userLine = "";
+    var currentName = null;
+    var currentHeaderExtra = "";
+    var currentLines = [];
+
+    function flushSection() {
+      if (!currentName) return;
+      var body = currentLines.join("\n").trim();
+      if (currentName === "user") {
+        if (!userLine) userLine = body;
+      } else if (currentName === "player") {
+        userLine = body;
+      } else if (currentName === "meta") {
+        var metaBody = currentHeaderExtra
+          ? currentHeaderExtra + (body ? "\n" + body : "")
+          : body;
+        if (metaBody.trim()) blocks.meta = metaBody.trim();
+      } else if (body) {
+        blocks[currentName] = body;
+      }
+      currentName = null;
+      currentHeaderExtra = "";
+      currentLines = [];
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var match = line.match(STRUCTURED_SECTION_RE);
+      var sectionName =
+        match && STRUCTURED_SECTION_NAMES[match[1].toLowerCase()]
+          ? match[1].toLowerCase()
+          : null;
+      if (sectionName) {
+        flushSection();
+        currentName = sectionName;
+        currentHeaderExtra = (match[2] || "").trim();
+        continue;
+      }
+      if (currentName) currentLines.push(line);
+    }
+    flushSection();
+
+    expandSourcesV2Blocks(blocks);
+
+    var sectionCount = 0;
+    Object.keys(blocks).forEach(function (key) {
+      if (blocks[key]) sectionCount++;
+    });
+
+    var result = {
+      blocks: blocks,
+      userLine: sanitizeExtractedMessageText(
+        stripTrailingInjectionBlocks(userLine)
+      ),
+      sectionCount: sectionCount,
+    };
+
+    if (parseCache.size >= MAX_CACHE) {
+      var firstKey = parseCache.keys().next().value;
+      if (firstKey !== undefined) parseCache.delete(firstKey);
+    }
+    parseCache.set(text, result);
+    return result;
+  }
+
+  function parsePacketText(text) {
+    if (!text) return null;
+    if (text.indexOf(MARKER) >= 0) return parsePacket(text);
+    if (isStructuredPreviewPacket(text)) return parseStructuredPreview(text);
+    return null;
+  }
+
   function isPacketTurn(turn, rawText) {
     if (rawText && rawText.indexOf(MARKER) >= 0) return true;
+    if (rawText && isStructuredPreviewPacket(rawText)) return true;
     var stamp = readStamp(turn);
     if (stamp && (stamp.userLine || stamp.hash)) return true;
     return !!loadPersistedStamp(turn);
@@ -311,36 +442,54 @@
 
   function getPacketSourceText(turn, blocks) {
     var wrap = turnWrapper(turn) || turn;
-    var fromBlocks = sanitizeExtractedMessageText(blocksPlainText(blocks));
-    if (fromBlocks.indexOf(MARKER) >= 0) return fromBlocks;
+    var joined = sanitizeExtractedMessageText(collectNativeUserMessageText(turn));
+    if (looksLikePacketText(joined)) return joined;
 
-    var host =
-      findUserContentHostIn(turn) ||
-      turn.querySelector(".cgw-native-packet-source") ||
-      turn;
-    if (host) {
-      var clone = host.cloneNode(true);
-      clone.querySelectorAll("button, [role='button'], a").forEach(function (el) {
-        var label = (
-          (el.getAttribute("aria-label") || "") +
-          " " +
-          (el.textContent || "")
-        )
-          .trim()
-          .toLowerCase();
-        if (label === "show more" || label === "show less") el.remove();
-      });
-      var hostText = sanitizeExtractedMessageText((clone.textContent || "").trim());
-      if (hostText.indexOf(MARKER) >= 0) return hostText;
-    }
+    var fromBlocks = sanitizeExtractedMessageText(blocksPlainText(blocks));
+    if (looksLikePacketText(fromBlocks)) return fromBlocks;
 
     var turnId = wrap.getAttribute && wrap.getAttribute("data-cgw-turn-id");
     if (turnId && sourceBackupByTurnId[turnId]) {
-      return sourceBackupByTurnId[turnId].sourceText || "";
+      var backup = sourceBackupByTurnId[turnId].sourceText || "";
+      if (backup && looksLikePacketText(backup)) return backup;
     }
 
-    return fromBlocks;
+    return joined || fromBlocks;
   }
+
+  function extractPacketUserLine(rawText) {
+    if (!rawText) return "";
+    var cleaned = sanitizeExtractedMessageText(rawText);
+    var parsed = parsePacketText(cleaned);
+    if (parsed && parsed.userLine) {
+      return sanitizeExtractedMessageText(parsed.userLine);
+    }
+    if (cleaned.indexOf(MARKER) >= 0) {
+      return sanitizeExtractedMessageText(
+        stripTrailingInjectionBlocks(stripContextTags(cleaned))
+      );
+    }
+    return "";
+  }
+
+  function stripTrailingInjectionBlocks(text) {
+    if (!text) return "";
+    var earliest = text.length;
+    for (var i = 0; i < TRAILING_INJECTION_MARKERS.length; i++) {
+      var idx = text.indexOf(TRAILING_INJECTION_MARKERS[i]);
+      if (idx >= 0 && idx < earliest) earliest = idx;
+    }
+    return earliest < text.length ? text.slice(0, earliest).trim() : text.trim();
+  }
+
+  globalThis.__cgwStripTrailingInjectionBlocks = stripTrailingInjectionBlocks;
+
+  function stripContextTags(text) {
+    if (!text) return "";
+    return String(text).replace(STRIP_TAG_RE, "").trim();
+  }
+
+  globalThis.__cgwStripContextTags = stripContextTags;
 
   function expandSourcesV2Blocks(blocks) {
     var sources = blocks.sources;
@@ -378,11 +527,12 @@
     }
     expandSourcesV2Blocks(blocks);
 
+    var strippedBody = text.replace(BLOCK_RE, "").replace(INVALIDATION_RE, "");
+    if (strippedBody.indexOf(MARKER) >= 0) {
+      strippedBody = stripContextTags(text.replace(INVALIDATION_RE, ""));
+    }
     var remainder = sanitizeExtractedMessageText(
-      text
-        .replace(BLOCK_RE, "")
-        .replace(/\[\[cgw:invalidation[^\]]*\]\]/gi, "")
-        .trim()
+      stripTrailingInjectionBlocks(strippedBody.trim())
     );
     var playerTagged = blocks.player;
     if (playerTagged) {
@@ -531,11 +681,10 @@
 
   function resolvePacketDisplay(turn, rawText) {
     if (!hideEnabled()) return null;
-    if (!isPacketTurn(turn, rawText)) return null;
-
     var cleaned = sanitizeExtractedMessageText(rawText || "");
-    var parsed =
-      cleaned.indexOf(MARKER) >= 0 ? parsePacket(cleaned) : null;
+    if (!looksLikePacketText(cleaned) && !isPacketTurn(turn, cleaned)) return null;
+
+    var parsed = parsePacketText(cleaned);
     var stamp = readStamp(turn);
 
     if (!parsed && !stamp) return null;
@@ -544,7 +693,10 @@
     var blocks = {};
     var sectionCount = 0;
 
-    if (stamp && stamp.userLine) {
+    var livePacket =
+      cleaned.indexOf(MARKER) >= 0 || isStructuredPreviewPacket(cleaned);
+
+    if (stamp && stamp.userLine && !livePacket) {
       userLine = sanitizeExtractedMessageText(stamp.userLine);
       if (stamp.blocks) blocks = stamp.blocks;
       if (typeof stamp.sectionCount === "number") {
@@ -552,9 +704,14 @@
       }
     }
     if (parsed) {
-      if (!userLine) userLine = sanitizeExtractedMessageText(parsed.userLine);
+      if (livePacket || !userLine) {
+        userLine = sanitizeExtractedMessageText(parsed.userLine);
+      }
       blocks = parsed.blocks;
       sectionCount = parsed.sectionCount;
+    }
+    if (!userLine) {
+      userLine = extractPacketUserLine(cleaned);
     }
 
     return {
@@ -564,20 +721,46 @@
     };
   }
 
-  function transformUserBlocks(turn, blocks) {
-    if (!blocks || !blocks.length) return blocks;
-    var rawText = getPacketSourceText(turn, blocks);
-    if (shouldHideUtilityDisplay(rawText)) return [];
-    var display = resolvePacketDisplay(turn, rawText);
-    if (!display) return blocks;
+  function transformUserBlocks(turn, blocks, role) {
+    blocks = blocks || [];
+    if (!hideEnabled()) return blocks;
+    if (role && role !== "user") return blocks;
 
-    var next = buildPlayerBlocks(display.userLine);
-    var summary = buildContextSummaryBlock(
-      display.blocks,
-      display.sectionCount
-    );
-    if (summary) next.push(summary);
-    return next.length ? next : blocks;
+    var rawText = getPacketSourceText(turn, blocks);
+    if (!rawText) return blocks;
+    if (isRevisionPromptDisplayText(rawText)) return [];
+    if (shouldHideUtilityDisplay(rawText)) return [];
+    if (!looksLikePacketText(rawText) && !isPacketTurn(turn, rawText)) return blocks;
+
+    var display = resolvePacketDisplay(turn, rawText);
+    var userLine =
+      (display && display.userLine) || extractPacketUserLine(rawText);
+    if (!userLine) {
+      var stamp = readStamp(turn);
+      if (stamp && stamp.userLine) {
+        userLine = sanitizeExtractedMessageText(stamp.userLine);
+      }
+    }
+
+    var next = buildPlayerBlocks(userLine);
+    if (display) {
+      var summary = buildContextSummaryBlock(
+        display.blocks,
+        display.sectionCount
+      );
+      if (summary) next.push(summary);
+    } else {
+      var parsed = parsePacketText(sanitizeExtractedMessageText(rawText));
+      if (parsed) {
+        var summaryFallback = buildContextSummaryBlock(
+          parsed.blocks,
+          parsed.sectionCount
+        );
+        if (summaryFallback) next.push(summaryFallback);
+      }
+    }
+
+    return next;
   }
 
   function buildNativePlayerLine(display, wrap) {
@@ -652,7 +835,10 @@
     var host = findNativePlayerTextLeaf(wrap) || findUserContentHostIn(wrap);
     cleanupLegacyPacketMount(host, wrap);
     if (host && backup && backup.leafHtml != null) {
-      host.innerHTML = backup.leafHtml;
+      var liveText = collectNativeUserMessageText(wrap);
+      if (!looksLikePacketText(liveText)) {
+        host.innerHTML = backup.leafHtml;
+      }
     }
 
     wrap.removeAttribute("data-cgw-packet-managed");
@@ -681,11 +867,11 @@
     reconcileOrphanedPacketSources();
   }
 
-  function hostHasVisiblePlayerLine(host) {
-    if (!host) return false;
-    var text = sanitizeExtractedMessageText(host.textContent || "");
+  function hostHasVisiblePlayerLine(wrap) {
+    if (!wrap) return false;
+    var text = collectNativeUserMessageText(wrap);
     if (!text) return false;
-    return text.indexOf(MARKER) < 0;
+    return !looksLikePacketText(text);
   }
 
   function cleanupLegacyPacketMount(host, wrap) {
@@ -700,29 +886,46 @@
   }
 
   function ensureSourceBackup(wrap, leaf, turnId, sourceText) {
-    if (!turnId || !leaf) return;
-    var liveText = sanitizeExtractedMessageText(leaf.textContent || "");
-    if (liveText.indexOf(MARKER) >= 0) {
-      sourceBackupByTurnId[turnId] = {
-        leafHtml: leaf.innerHTML,
-        sourceText: sourceText || liveText,
-      };
-      return;
+    if (!turnId || !wrap) return;
+    var liveText = collectNativeUserMessageText(wrap);
+    if (!sourceText && looksLikePacketText(liveText)) sourceText = liveText;
+    if (!looksLikePacketText(liveText) && !sourceText) return;
+    if (!leaf) leaf = findNativePlayerTextLeaf(wrap) || findUserContentHostIn(wrap);
+    if (!leaf) return;
+    sourceBackupByTurnId[turnId] = {
+      leafHtml: leaf.innerHTML,
+      sourceText: sourceText || liveText,
+    };
+  }
+
+  function rewriteNativePlayerMessage(wrap, userLine) {
+    if (!wrap || userLine == null) return false;
+    var line = String(userLine);
+    var pres = wrap.querySelectorAll(
+      '.whitespace-pre-wrap, [class*="whitespace-pre-wrap"]'
+    );
+    if (pres.length) {
+      pres[0].textContent = line;
+      pres[0].classList.remove("cgw-native-packet-source");
+      pres[0].removeAttribute("aria-hidden");
+      for (var i = 1; i < pres.length; i++) pres[i].remove();
+      return !!line.trim();
     }
-    if (!sourceBackupByTurnId[turnId] && sourceText) {
-      sourceBackupByTurnId[turnId] = {
-        leafHtml: leaf.innerHTML,
-        sourceText: sourceText,
-      };
-    }
+    var leaf = findNativePlayerTextLeaf(wrap) || findUserContentHostIn(wrap);
+    if (!leaf) return false;
+    leaf.textContent = line;
+    leaf.classList.remove("cgw-native-packet-source");
+    leaf.removeAttribute("aria-hidden");
+    return !!line.trim();
   }
 
   function rewriteNativeHostContent(leaf, userLine) {
-    if (!leaf || userLine == null) return false;
-    leaf.textContent = userLine;
-    leaf.classList.remove("cgw-native-packet-source");
-    leaf.removeAttribute("aria-hidden");
-    return !!String(userLine).trim();
+    var wrap =
+      (leaf &&
+        (leaf.closest('[data-testid^="conversation-turn-"]') ||
+          leaf.closest("[data-message-author-role]"))) ||
+      leaf;
+    return rewriteNativePlayerMessage(wrap, userLine);
   }
 
   function reconcileOrphanedPacketSources() {
@@ -746,15 +949,13 @@
       }
       cleanupLegacyPacketMount(host, wrap);
       if (playerLine) {
-        var leaf = findNativePlayerTextLeaf(wrap) || host;
-        rewriteNativeHostContent(leaf, playerLine);
+        rewriteNativePlayerMessage(wrap, playerLine);
         wrap.setAttribute("data-cgw-packet-managed", "1");
       }
     });
 
     document.querySelectorAll("[data-cgw-packet-managed]").forEach(function (wrap) {
-      var leaf = findNativePlayerTextLeaf(wrap) || findUserContentHostIn(wrap);
-      if (!hostHasVisiblePlayerLine(leaf)) {
+      if (!hostHasVisiblePlayerLine(wrap)) {
         wrap.removeAttribute("data-cgw-packet-managed");
         wrap.removeAttribute("data-cgw-packet-fp");
         var turnId = wrap.getAttribute("data-cgw-turn-id");
@@ -787,7 +988,7 @@
     ensureSourceBackup(wrap, leaf, turnId, sourceText);
 
     if (wrap.getAttribute("data-cgw-packet-fp") !== displayFp) {
-      if (!rewriteNativeHostContent(leaf, playerLine)) return false;
+      if (!rewriteNativePlayerMessage(wrap, playerLine)) return false;
       wrapSetDisplayFp(wrap, displayFp);
     }
 
@@ -829,11 +1030,8 @@
       entry.displayFp &&
       entry.displayFp === wrap.getAttribute("data-cgw-packet-fp")
     ) {
-      var leaf = findNativePlayerTextLeaf(wrap) || findUserContentHostIn(wrap);
       if (
-        leaf &&
-        hostHasVisiblePlayerLine(leaf) &&
-        !leaf.classList.contains("cgw-native-packet-source") &&
+        hostHasVisiblePlayerLine(wrap) &&
         !wrap.querySelector(".cgw-native-packet-display")
       ) {
         return;
@@ -1053,7 +1251,8 @@
   }
 
   function packetDisplayNavigate() {
-    if (overlayActive() || !hideEnabled()) {
+    if (overlayActive()) return;
+    if (!hideEnabled()) {
       teardownAllPacketDisplays();
       return;
     }
@@ -1111,8 +1310,79 @@
     }
   }
 
+  function clearPacketTurnProcessingState(wrap) {
+    if (!wrap) return;
+    var turnId = wrap.getAttribute("data-cgw-turn-id");
+    wrap.removeAttribute("data-cgw-packet-managed");
+    wrap.removeAttribute("data-cgw-packet-fp");
+    wrap.removeAttribute("data-cgw-user-line");
+    wrap.removeAttribute("data-cgw-packet-hash");
+    if (!turnId) return;
+    delete turnRegistry[turnId];
+    delete sourceBackupByTurnId[turnId];
+    Object.keys(turnDisplayCache).forEach(function (key) {
+      if (key.indexOf(":" + turnId) >= 0) delete turnDisplayCache[key];
+    });
+  }
+
+  function scheduleOverlayPacketReprocess(immediate) {
+    if (typeof globalThis.__cgwScheduleContinuousViewRebuild === "function") {
+      globalThis.__cgwScheduleContinuousViewRebuild(
+        immediate ? { immediate: true } : undefined
+      );
+      return;
+    }
+    if (typeof globalThis.__cgwContinuousViewSchedule === "function") {
+      globalThis.__cgwContinuousViewSchedule(
+        immediate ? { immediate: true } : undefined
+      );
+    }
+  }
+
+  function reprocessNativePacketTurns() {
+    parseCache.clear();
+    turnDisplayCache = {};
+    turnRegistry = {};
+    sourceBackupByTurnId = {};
+    findNativePacketTurns().forEach(function (wrap) {
+      clearPacketTurnProcessingState(wrap);
+    });
+    batchApplyAllTurns();
+  }
+
+  function reprocessOverlayPacketTurns(immediate) {
+    parseCache.clear();
+    turnDisplayCache = {};
+    turnRegistry = {};
+    scheduleOverlayPacketReprocess(!!immediate);
+  }
+
+  function forceReprocessAllPacketTurns(opts) {
+    opts = opts || {};
+    bindMainObserver();
+
+    if (!hideEnabled()) {
+      if (!overlayActive()) teardownAllPacketDisplays();
+      return;
+    }
+
+    if (overlayActive()) {
+      reprocessOverlayPacketTurns(!!opts.immediate);
+      return;
+    }
+
+    reprocessNativePacketTurns();
+  }
+
   globalThis.__cgwPacketDisplay = {
     parsePacket: parsePacket,
+    parseStructuredPreview: parseStructuredPreview,
+    parsePacketText: parsePacketText,
+    isStructuredPreviewPacket: isStructuredPreviewPacket,
+    collectNativeUserMessageText: collectNativeUserMessageText,
+    looksLikePacketText: looksLikePacketText,
+    stripContextTags: stripContextTags,
+    findNativePlayerTextLeaf: findNativePlayerTextLeaf,
     transformUserBlocks: transformUserBlocks,
     resolvePacketDisplay: resolvePacketDisplay,
     buildPlayerBlocks: buildPlayerBlocks,
@@ -1125,19 +1395,25 @@
     reconcileOrphanedPacketSources: reconcileOrphanedPacketSources,
     applyNativePacketDisplay: applyNativePacketDisplay,
     batchApplyAllTurns: batchApplyAllTurns,
+    forceReprocessAllPacketTurns: forceReprocessAllPacketTurns,
     enterConversationPacketPass: enterConversationPacketPass,
     processDeltaTurns: processDeltaTurns,
   };
 
   globalThis.__cgwStampUserTurnDisplay = stampUserTurnDisplay;
   globalThis.__cgwPacketDisplayNavigate = packetDisplayNavigate;
+  globalThis.__cgwForceReprocessAllPacketTurns = forceReprocessAllPacketTurns;
   globalThis.__cgwApplyContextTagDisplay = function () {
     bindMainObserver();
-    if (overlayActive() || !hideEnabled()) {
+    if (overlayActive()) {
+      reprocessOverlayPacketTurns(true);
+      return;
+    }
+    if (!hideEnabled()) {
       teardownAllPacketDisplays();
       return;
     }
-    packetDisplayNavigate();
+    reprocessNativePacketTurns();
   };
 
   bindMainObserver();

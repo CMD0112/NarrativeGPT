@@ -1,63 +1,40 @@
 using System.Reflection;
-using System.Windows;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.Views;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
+[Collection("WpfUi")]
 public sealed class EntityReviewRoutingTests
 {
     [Fact]
     public void FocusEntityReviewQueue_selects_index_zero_when_queue_has_items()
     {
-        Exception? failure = null;
-        var thread = new Thread(() =>
+        WpfStaTestHost.Run(() =>
         {
-            try
+            WpfStaTestHost.EnsureChromeResources();
+
+            var bundle = AdventureTestData.CreateLinkedBundle(projectId: "g-p-test");
+            bundle.Entities.ReviewQueue.Add(new EntityReviewItem
             {
-                if (System.Windows.Application.Current is null)
-                {
-                    var app = new System.Windows.Application();
-                    app.Resources.MergedDictionaries.Add(new ResourceDictionary
-                    {
-                        Source = new Uri("/ChatGPT Wrapper;component/Themes/WrapperChrome.xaml", UriKind.Relative),
-                    });
-                }
+                EntityType = "character",
+                ProposedChange = """{"name":"Ada"}""",
+            });
+            AdventureStore.Save(bundle);
 
-                var bundle = AdventureTestData.CreateLinkedBundle(projectId: "g-p-test");
-                bundle.Entities.ReviewQueue.Add(new EntityReviewItem
-                {
-                    EntityType = "character",
-                    ProposedChange = """{"name":"Ada"}""",
-                });
-                AdventureStore.Save(bundle);
+            var view = new AdventurePlayView();
+            view.LoadAdventure(bundle.Metadata.Id);
+            typeof(AdventurePlayView).GetMethod(
+                "FocusEntityReviewQueue",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(view, [true]);
 
-                var view = new AdventurePlayView();
-                view.LoadAdventure(bundle.Metadata.Id);
-                typeof(AdventurePlayView).GetMethod(
-                    "FocusEntityReviewQueue",
-                    BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .Invoke(view, [true]);
-
-                var list = (System.Windows.Controls.ListBox)view.GetType().GetField(
-                    "ReviewQueueList",
-                    BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
-                Assert.Equal(0, list.SelectedIndex);
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
-            }
-        })
-        {
-            IsBackground = true,
-        };
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join(TimeSpan.FromSeconds(15));
-        if (failure is not null)
-            throw failure;
+            var list = (System.Windows.Controls.ListBox)view.GetType().GetField(
+                "ReviewQueueList",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(view)!;
+            Assert.Equal(0, list.SelectedIndex);
+        });
     }
 
     [Fact]

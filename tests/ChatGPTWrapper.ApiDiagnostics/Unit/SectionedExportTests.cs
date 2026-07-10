@@ -54,4 +54,25 @@ public sealed class SectionedExportTests
             AdventureTestData.DeleteBundle(bundle);
         }
     }
+
+    [Fact]
+    public void Export_writes_canon_format_reference_file()
+    {
+        var bundle = AdventureTestData.CreateLinkedBundle(entryCount: 2);
+        try
+        {
+            ProjectSourceExportService.ExportForce(bundle);
+            var path = Path.Combine(ProjectSourceExportService.SourcesDirectory(bundle), SectionSchema.CanonFormatFile);
+            Assert.True(File.Exists(path));
+
+            var entry = bundle.SourceManifest.Entries
+                .FirstOrDefault(e => e.RelativePath == SectionSchema.CanonFormatFile);
+            Assert.NotNull(entry);
+            Assert.Contains("## Quick rules", File.ReadAllText(path), StringComparison.Ordinal);
+        }
+        finally
+        {
+            AdventureTestData.DeleteBundle(bundle);
+        }
+    }
 }

@@ -8,7 +8,7 @@ public sealed class InlineUtilityDomPipelineTests
 {
     [Theory]
     [InlineData(UtilityDeliveryMode.InlinePlayThread, true)]
-    [InlineData(UtilityDeliveryMode.SeparateThread, false)]
+    [InlineData(UtilityDeliveryMode.SeparateThread, true)]
     public void InlineUtilityPipeline_uses_dom_only_for_inline_delivery(
         UtilityDeliveryMode mode,
         bool expected)

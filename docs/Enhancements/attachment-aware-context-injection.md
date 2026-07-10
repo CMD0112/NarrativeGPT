@@ -1,11 +1,14 @@
 # Attachment-aware context injection
 
-**Status:** Phase A implemented (attachment manifest in play packets)  
-**Related:** [Native composer transition](../adventure-panel.md#play-loop), [Chat file I/O feasibility](../chat-file-io-feasibility.md), [Instruction vs sources](../instruction-sources-paradigm.md)
+**Status:** Phase B implemented (policy modes, DOM metadata, attachment-aware trimming). Phase A shipped attachment manifest in play packets. **Phase 4 (API path parity)** remains open.
 
-After the native-composer transition, Play sends no longer carry attachment bytes through the host for the default path. The host still builds the full adventure **context packet** via `PromptInjectionService.PrepareSend` and injects it into ChatGPT’s composer before submit. That packet is built from adventure state and the **player line only** — attachment type, count, and filenames are invisible to packet construction today.
+**Epic:** [CMD-292](https://linear.app/cmd0112/issue/CMD-292) · **Issue:** [CMD-297](https://linear.app/cmd0112/issue/CMD-297) · **Policy:** [injection-policy-adr.md](../injection-policy-adr.md)
 
-This document describes why that matters, what breaks or degrades, and a phased design for branching injected context based on what the user attached.
+**Related:** [Play view](../adventure-panel.md#4-play-view) · [Chat file I/O feasibility](../chat-file-io-feasibility.md) · [Instruction vs sources](../instruction-sources-paradigm.md)
+
+Phase A adds an `=== ATTACHMENTS (staged with this turn) ===` block to play packets when native attachments are detected. Phase B adds richer metadata from DOM scrape, `AttachmentContextMode` branching, filename token enrichment for story cards, and attachment-only turn display lines.
+
+This document describes why attachment-aware context matters, what still degrades without Phase B+, and a phased design for branching injected context based on what the user attached.
 
 ---
 
@@ -23,13 +26,14 @@ The narrator model receives:
 1. **Injected context** — scenario, state, lore cards, transcript, etc. (wrapper-built)
 2. **Visible user content** — player line in the composer + ChatGPT-native multimodal attachments
 
-Those two channels should be **coherent**. Today they are built independently: context assumes a text turn; attachments are handled entirely by ChatGPT’s UI after injection.
+Those two channels should be **coherent**. Phase A adds a basic attachment manifest; Phase B+ adds filename/MIME metadata, policy modes, and attachment-aware trimming.
 
 ---
 
 ## Current architecture (post native-composer default)
 
 ```mermaid
+%%{init: {"sequence":{"actorMargin":58,"boxMargin":12,"messageMargin":42,"mirrorActors":false,"useMaxWidth":true,"wrap":true},"themeVariables":{"fontSize":"13px"}} }%%
 sequenceDiagram
     participant User
     participant Native as ChatGPT native composer
@@ -361,7 +365,7 @@ This aligns native behavior with the existing wrapper fallback.
 |-------|--------|
 | **JS** | `listNativeComposerAttachments` parsing from fixture HTML; `cgwComposeSend` includes `attachmentMeta` |
 | **C# unit** | `AttachmentSendPolicy.Classify`; `PrepareSend` snapshot tests per mode; `searchHint` includes filename tokens |
-| **Integration** | Extend `PlayComposeNativeTests`: prestaged + meta → non-empty `displayPlayerLine` |
+| **Integration** | Extend `PlayComposeNativeTests` class in `PlayComposeBehaviorTests.cs`: prestaged + meta → non-empty `displayPlayerLine` |
 | **Manual** | Image-only send → adventure log shows filename; narrator references image in fiction voice |
 
 ---
@@ -404,7 +408,7 @@ This aligns native behavior with the existing wrapper fallback.
 | Packet build | `ChatGPTWrapper/Adventure/Services/PromptInjectionService.cs`, `PromptPacketBuilder.cs` |
 | Models | `ChatGPTWrapper/Adventure/Models/AdventureMetadata.cs` (settings) |
 | Bridge submit | `ChatGPTWrapper/Adventure/Services/AdventureTurnService.cs` |
-| Tests | `tests/ChatGPTWrapper.ApiDiagnostics/Unit/PlayComposeNativeTests.cs`, new `AttachmentContextTests.cs` |
+| Tests | `tests/ChatGPTWrapper.ApiDiagnostics/Unit/PlayComposeBehaviorTests.cs` (`PlayComposeNativeTests` class), `AttachmentContextModeTests.cs` |
 
 ---
 

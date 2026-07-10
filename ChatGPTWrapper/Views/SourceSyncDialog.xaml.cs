@@ -2,17 +2,20 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
+using ChatGPTWrapper.ChatGptApi.ProjectSource.Publication;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using Microsoft.Win32;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class SourceSyncDialog : Window
+public partial class SourceSyncDialog : ShellDialogWindow
 {
     private readonly Guid _adventureId;
     private readonly IChatGptProjectHost? _host;
@@ -24,6 +27,13 @@ public partial class SourceSyncDialog : Window
     private readonly ObservableCollection<SourceSyncRowViewModel> _rows = [];
 
     public bool SyncCompleted { get; private set; }
+
+    private bool _suppressUploadMethodSave;
+
+    private ProjectSourceUploadMethod SelectedUploadMethod =>
+        UploadMethodCombo.SelectedItem is ComboBoxItem { Tag: ProjectSourceUploadMethod method }
+            ? method
+            : ProjectSourceUploadMethod.HeadlessBrowser;
 
     public SourceSyncDialog(Guid adventureId, IChatGptProjectHost host)
     {
@@ -92,6 +102,7 @@ public partial class SourceSyncDialog : Window
         }
 
         _bundle = bundle;
+        BindUploadMethodSelector(bundle);
         try
         {
             var progress = new Progress<string>(s => StatusLine.Text = s);
@@ -193,6 +204,77 @@ public partial class SourceSyncDialog : Window
             await RefreshPlanAsync();
     }
 
+    private ChatGptProjectApiService? TryGetApi() =>
+        _host?.Api ?? _getSyncService?.Invoke()?.Api;
+
+    private async void DeleteRemote_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null || SelectedRow is null)
+            return;
+
+        var entry = SelectedRow.PlanItem.Entry;
+        if (entry.SyncState != SourceSyncState.RemoteOnly
+            || string.IsNullOrWhiteSpace(entry.RemoteFileId))
+        {
+            MessageBox.Show(
+                this,
+                "Select a RemoteOnly row with a remote file id.",
+                "Delete remote file",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId))
+            return;
+
+        var confirm = MessageBox.Show(
+            this,
+            $"Remove {entry.RelativePath} from the linked ChatGPT project?{Environment.NewLine}"
+            + $"file_id: {entry.RemoteFileId}",
+            "Delete remote file",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes)
+            return;
+
+        var api = TryGetApi();
+        if (api is null)
+        {
+            MessageBox.Show(this, "API service is not available.", "Delete remote file");
+            return;
+        }
+
+        if (!await TryEnsureCoreAsync())
+        {
+            MessageBox.Show(this, "ChatGPT WebView is not ready.", "Delete remote file");
+            return;
+        }
+
+        var core = _host?.ApiCore ?? _getWebView?.Invoke()?.CoreWebView2;
+        if (core is null)
+            return;
+
+        try
+        {
+            StatusLine.Text = $"Deleting {entry.RelativePath}…";
+            await api.DeleteProjectFileAsync(
+                core,
+                _bundle.Metadata.LinkedProjectId!,
+                entry.RemoteFileId,
+                CancellationToken.None);
+            ProjectRemoteListCache.Invalidate(_bundle.Metadata.LinkedProjectId!);
+            StatusLine.Text = $"Deleted remote file {entry.RelativePath}.";
+            await RefreshPlanAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusLine.Text = $"Delete failed: {ex.Message}";
+            ProjectLinkDiagnostics.Log($"Delete remote file failed {entry.RelativePath}: {ex}");
+            MessageBox.Show(this, ex.Message, "Delete remote file", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshPlanAsync();
 
     private void KeepLocal_Click(object sender, RoutedEventArgs e)
@@ -216,6 +298,200 @@ public partial class SourceSyncDialog : Window
         await ApplyAsync(autoSafeOnly: false);
 
     private bool _applyInFlight;
+    private bool _directPublishInFlight;
+    private CancellationTokenSource? _directPublishCts;
+
+    private ProjectSourceUploadService? TryGetUploadService() =>
+        _host?.Sync.Upload ?? _getSyncService?.Invoke()?.Upload;
+
+    private async Task<bool> TryEnsureCoreAsync()
+    {
+        if (_host is not null)
+        {
+            await _host.EnsureReadyAsync(_adventureId);
+            return _host.ApiCore is not null;
+        }
+
+        var wv = _getWebView?.Invoke();
+        if (wv?.CoreWebView2 is null && wv is not null)
+            await wv.EnsureCoreWebView2Async();
+        return wv?.CoreWebView2 is not null;
+    }
+
+    private async void PublishSelected_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null || SelectedRow is null || _directPublishInFlight)
+            return;
+
+        if (string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId))
+        {
+            MessageBox.Show(this, "Link a ChatGPT project first.", "Publish file", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var entry = SelectedRow.PlanItem.Entry;
+        var localPath = Path.Combine(
+            ProjectSourceExportService.SourcesDirectory(_bundle),
+            entry.RelativePath);
+        if (!File.Exists(localPath))
+        {
+            MessageBox.Show(this, "Local file not found. Export sources or pull from project first.", "Publish file");
+            return;
+        }
+
+        await RunDirectPublishAsync(entry.RelativePath, localPath, entry);
+    }
+
+    private async void UploadTestFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bundle is null || _directPublishInFlight)
+            return;
+
+        if (string.IsNullOrWhiteSpace(_bundle.Metadata.LinkedProjectId))
+        {
+            MessageBox.Show(this, "Link a ChatGPT project first.", "Upload test file", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dialog = new OpenFileDialog
+        {
+            Title = "Choose a file to publish to the linked project",
+            Filter = "All files (*.*)|*.*|Markdown (*.md)|*.md|Text (*.txt)|*.txt",
+            CheckFileExists = true,
+        };
+
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        var defaultName = Path.GetFileName(dialog.FileName);
+        if (!TextPromptDialog.TryPrompt(
+                this,
+                "Remote file name",
+                "Publish to the linked ChatGPT project as:",
+                defaultName,
+                out var remoteName,
+                confirmButtonText: "Publish"))
+        {
+            return;
+        }
+
+        await RunDirectPublishAsync(remoteName, dialog.FileName, manifestEntry: null);
+    }
+
+    private void CancelPublish_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_directPublishInFlight)
+            return;
+
+        StatusLine.Text = "Cancelling publish…";
+        _directPublishCts?.Cancel();
+    }
+
+    private async Task RunDirectPublishAsync(
+        string remoteFileName,
+        string localFilePath,
+        SourceManifestEntry? manifestEntry)
+    {
+        if (_bundle is null || _directPublishInFlight)
+            return;
+
+        var upload = TryGetUploadService();
+        if (upload is null)
+        {
+            MessageBox.Show(this, "Upload service is not available.", "Publish file");
+            return;
+        }
+
+        if (!await TryEnsureCoreAsync())
+        {
+            MessageBox.Show(this, "ChatGPT WebView is not ready.", "Publish file");
+            return;
+        }
+
+        var core = _host?.ApiCore ?? _getWebView?.Invoke()?.CoreWebView2;
+        if (core is null)
+            return;
+
+        var gizmoId = _bundle.Metadata.LinkedProjectId!;
+        _directPublishInFlight = true;
+        _directPublishCts = new CancellationTokenSource();
+        PublishSelectedButton.IsEnabled = false;
+        UploadTestFileButton.IsEnabled = false;
+        CancelPublishButton.IsEnabled = true;
+        try
+        {
+            var uploadMethod = ProjectSourceUploadMethodResolver.Resolve(_bundle, SelectedUploadMethod);
+            ProjectSourceUploadMethodResolver.PersistSelection(_bundle, uploadMethod);
+            var progress = new Progress<string>(s => StatusLine.Text = s);
+            var result = await upload.PublishLocalFileAsync(
+                core,
+                gizmoId,
+                remoteFileName,
+                localFilePath,
+                _bundle,
+                manifestEntry,
+                progress,
+                _directPublishCts.Token,
+                uploadMethod);
+
+            StatusLine.Text = $"Published {remoteFileName} → file_id={result.File.FileId}"
+                              + (result.UsedAttachFallback ? " (attach fallback)" : "")
+                              + $" [{result.Outcome}]";
+            RenderPublicationAttempts(result.Run);
+
+            var testUploadNote = manifestEntry is null
+                ? $"{Environment.NewLine}{Environment.NewLine}"
+                  + "Test uploads appear as RemoteOnly until you add a matching file under sources/ "
+                  + "or pull the remote into the adventure."
+                : "";
+
+            MessageBox.Show(
+                this,
+                $"Published {remoteFileName}{Environment.NewLine}"
+                + $"file_id: {result.File.FileId}{Environment.NewLine}"
+                + $"attach fallback: {result.UsedAttachFallback}{Environment.NewLine}"
+                + $"manifest updated: {result.UpdatedManifest}"
+                + testUploadNote,
+                "Publish complete",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            await RefreshPlanAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            StatusLine.Text = "Publish cancelled.";
+        }
+        catch (ProjectPublicationExhaustedException ex)
+        {
+            StatusLine.Text = $"Publication exhausted: {ex.Message}";
+            RenderPublicationAttempts(ex.Run);
+            ProjectLinkDiagnostics.Log($"Direct source publish exhausted {remoteFileName}: {ex}");
+            var triage = ProjectPublicationTriage.BuildExhaustedSummary(ex.Run, remoteFileName);
+            MessageBox.Show(
+                this,
+                $"{ex.Message}{Environment.NewLine}{Environment.NewLine}{triage}",
+                "Publication exhausted",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            StatusLine.Text = $"Publish failed: {ex.Message}";
+            PublicationAttemptList.Visibility = Visibility.Collapsed;
+            ProjectLinkDiagnostics.Log($"Direct source publish failed {remoteFileName}: {ex}");
+            MessageBox.Show(this, ex.Message, "Publish failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            _directPublishInFlight = false;
+            _directPublishCts?.Dispose();
+            _directPublishCts = null;
+            PublishSelectedButton.IsEnabled = true;
+            UploadTestFileButton.IsEnabled = true;
+            CancelPublishButton.IsEnabled = false;
+        }
+    }
 
     private async Task ApplyAsync(bool autoSafeOnly)
     {
@@ -363,6 +639,68 @@ public partial class SourceSyncDialog : Window
             $"{SelectedRow.FileName} | {SelectedRow.StateLabel} | local {SelectedRow.LocalHashShort}");
         dlg.Owner = this;
         dlg.ShowDialog();
+    }
+
+    private void RenderPublicationAttempts(ProjectFilePublicationRun? run)
+    {
+        if (run is null || run.Attempts.Count == 0)
+        {
+            PublicationAttemptList.Visibility = Visibility.Collapsed;
+            PublicationAttemptList.ItemsSource = null;
+            return;
+        }
+
+        PublicationAttemptList.ItemsSource = run.Attempts.Select(a =>
+            $"{a.Lane} · {a.Phase} · {a.Outcome} · {a.LatencyMs}ms"
+            + (string.IsNullOrWhiteSpace(a.Error) ? "" : $" · {a.Error}"));
+        PublicationAttemptList.Visibility = Visibility.Visible;
+    }
+
+    private void BindUploadMethodSelector(AdventureBundle bundle)
+    {
+        if (UploadMethodCombo.Items.Count == 0)
+        {
+            UploadMethodCombo.Items.Add(new ComboBoxItem
+            {
+                Content = "Headless Chrome (Playwright)",
+                Tag = ProjectSourceUploadMethod.HeadlessBrowser,
+            });
+            UploadMethodCombo.Items.Add(new ComboBoxItem
+            {
+                Content = "Pure API (backend-api)",
+                Tag = ProjectSourceUploadMethod.PureApi,
+            });
+            UploadMethodCombo.SelectionChanged += UploadMethodCombo_SelectionChanged;
+        }
+
+        var method = ProjectSourceUploadMethodResolver.Resolve(bundle);
+        _suppressUploadMethodSave = true;
+        try
+        {
+            foreach (ComboBoxItem item in UploadMethodCombo.Items)
+            {
+                if (item.Tag is ProjectSourceUploadMethod tagged && tagged == method)
+                {
+                    UploadMethodCombo.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _suppressUploadMethodSave = false;
+        }
+    }
+
+    private void UploadMethodCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressUploadMethodSave || _bundle is null)
+            return;
+
+        if (UploadMethodCombo.SelectedItem is not ComboBoxItem { Tag: ProjectSourceUploadMethod method })
+            return;
+
+        ProjectSourceUploadMethodResolver.PersistSelection(_bundle, method);
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

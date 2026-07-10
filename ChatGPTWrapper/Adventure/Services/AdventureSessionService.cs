@@ -29,6 +29,8 @@ internal static class AdventureSessionService
             session.EndedAt = DateTimeOffset.UtcNow;
 
         bundle.CurrentSessionId = null;
+        UtilityStoryContextSettingsService.EnsureDefaults(bundle.Metadata);
+        bundle.Metadata.Settings.SessionNarratorOverrides.Remove(sid.ToString());
     }
 
     public static void AttachTurnToSession(AdventureBundle bundle, TurnRecord turn)
@@ -47,9 +49,9 @@ internal static class AdventureSessionService
     /// </summary>
     public static void RestoreActiveSessionOnLoad(AdventureBundle bundle)
     {
-        var conversationId = bundle.Metadata.LinkedConversationId;
+        var conversationId = PlayThreadBindingService.GetActiveConversationId(bundle);
 
-        // After ReleasePlayThread, LinkedConversationId is cleared but prior turns remain in the log.
+        // After ReleasePlayThread, the active conversation is cleared but prior turns remain in the log.
         // Do not resurrect the latest accepted turn's session — use the open session from rotation.
         if (string.IsNullOrWhiteSpace(conversationId))
         {

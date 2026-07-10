@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ChatGPTWrapper.Diagnostics</RootNamespace>
+    <AssemblyName>ChatGPTWrapper.Diagnostics</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ChatGPT Wrapper" />
+    <InternalsVisibleTo Include="ChatGPT Wrapper WinUI" />
+    <InternalsVisibleTo Include="ChatGPTWrapper.ApiDiagnostics" />
+    <InternalsVisibleTo Include="ChatGPTWrapper.Shell" />
+    <InternalsVisibleTo Include="ChatGPTWrapper.WebView" />
+  </ItemGroup>
+
+</Project>

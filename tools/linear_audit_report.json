@@ -1,0 +1,757 @@
+{
+  "stats": {
+    "total": 145,
+    "status:Done": 86,
+    "status:Backlog": 19,
+    "status:Icebox": 2,
+    "status:In Review": 34,
+    "status:In Progress": 2,
+    "status:Canceled": 1,
+    "status:Out of Scope": 1
+  },
+  "violations": {
+    "missing_context": [
+      {
+        "id": "CMD-89",
+        "status": "Backlog",
+        "title": "Explore centralized LLM workflow for source file updates"
+      },
+      {
+        "id": "CMD-69",
+        "status": "Icebox",
+        "title": "Review prompt construction architecture across all surfaces"
+      },
+      {
+        "id": "CMD-94",
+        "status": "Backlog",
+        "title": "Refine instructions: canonical body sync and prompt clarity"
+      },
+      {
+        "id": "CMD-90",
+        "status": "In Review",
+        "title": "Allow drafting new Project chat without reroute to pinned thread"
+      },
+      {
+        "id": "CMD-86",
+        "status": "Backlog",
+        "title": "Audit canonical JSON data model (generation, interpretation, drift)"
+      },
+      {
+        "id": "CMD-44",
+        "status": "Backlog",
+        "title": "Automate in-chat file upload and download in play workflows"
+      },
+      {
+        "id": "CMD-65",
+        "status": "In Review",
+        "title": "Play chat handoff: migrate adventure context to a new thread"
+      },
+      {
+        "id": "CMD-55",
+        "status": "Backlog",
+        "title": "Design thread: revise auto-sent utility seed on continue (optional)"
+      },
+      {
+        "id": "CMD-45",
+        "status": "Backlog",
+        "title": "Summarization migration to new chat with checkpoint verification"
+      },
+      {
+        "id": "CMD-42",
+        "status": "Backlog",
+        "title": "Wrapper-wide per-message chat metadata (ordinals, visibility, edits)"
+      },
+      {
+        "id": "CMD-29",
+        "status": "Backlog",
+        "title": "Epic: Wrapper metadata, utility pipeline & chat migration"
+      },
+      {
+        "id": "CMD-148",
+        "status": "In Review",
+        "title": "Format settings: unbounded or liberal numeric bounds (advanced entry)"
+      },
+      {
+        "id": "CMD-146",
+        "status": "In Review",
+        "title": "Format settings: color picking + expanded per-category customization"
+      },
+      {
+        "id": "CMD-147",
+        "status": "In Review",
+        "title": "Format settings: named profile management (save, switch, library)"
+      },
+      {
+        "id": "CMD-138",
+        "status": "Backlog",
+        "title": "Entity media backup \u2014 include portraits in adventure export"
+      },
+      {
+        "id": "CMD-137",
+        "status": "In Review",
+        "title": "Splitter double-click \u2014 requirement-aware optimal panel widths"
+      },
+      {
+        "id": "CMD-135",
+        "status": "In Review",
+        "title": "Theme token contrast derivation (readable text on custom accents)"
+      },
+      {
+        "id": "CMD-133",
+        "status": "In Review",
+        "title": "Play layout context paradigm (PlayLayoutCoordinator + capabilities)"
+      },
+      {
+        "id": "CMD-126",
+        "status": "In Review",
+        "title": "Play companion layout contract & documentation update"
+      },
+      {
+        "id": "CMD-11",
+        "status": "In Progress",
+        "title": "Adventure Design: Source-file-centric Design Shift"
+      },
+      {
+        "id": "CMD-117",
+        "status": "In Review",
+        "title": "Theme import/export and user-overrides.css integration"
+      },
+      {
+        "id": "CMD-112",
+        "status": "In Review",
+        "title": "Theme customization dialog UI + Preferences hub entry"
+      },
+      {
+        "id": "CMD-111",
+        "status": "In Review",
+        "title": "Epic: Comprehensive theme customization menu"
+      },
+      {
+        "id": "CMD-88",
+        "status": "In Review",
+        "title": "Source edit review: diff-like preview of proposed changes"
+      },
+      {
+        "id": "CMD-134",
+        "status": "In Review",
+        "title": "Reference entity editor \u2014 portraits, extended fields, double-click"
+      },
+      {
+        "id": "CMD-56",
+        "status": "In Review",
+        "title": "Comprehensive review: Next send UX and play packet injection pipeline"
+      },
+      {
+        "id": "CMD-139",
+        "status": "Backlog",
+        "title": "State tab World skim \u2014 summary/location/objectives preview cards"
+      },
+      {
+        "id": "CMD-115",
+        "status": "In Review",
+        "title": "WPF live theme application (runtime resource updates)"
+      },
+      {
+        "id": "CMD-54",
+        "status": "In Review",
+        "title": "Wire cast import into phrase editor + MainWindow"
+      },
+      {
+        "id": "CMD-118",
+        "status": "In Review",
+        "title": "Expand Appearance & Themes preset catalog"
+      },
+      {
+        "id": "CMD-127",
+        "status": "In Review",
+        "title": "Narrator controls overhaul \u2014 presets, inherit/null semantics, and deep customization"
+      },
+      {
+        "id": "CMD-92",
+        "status": "In Review",
+        "title": "JSON import review: preview proposed scenario.json / entities.json files"
+      },
+      {
+        "id": "CMD-114",
+        "status": "In Review",
+        "title": "Theme model, token catalog, and persistence (WPF \u2194 CSS map)"
+      },
+      {
+        "id": "CMD-5",
+        "status": "In Review",
+        "title": "UI: Context Menu Styling"
+      },
+      {
+        "id": "CMD-110",
+        "status": "In Progress",
+        "title": "Epic: Adventure dashboard UX revamp (library experience)"
+      },
+      {
+        "id": "CMD-20",
+        "status": "In Review",
+        "title": "UI: General Overhaul of Play Settings"
+      },
+      {
+        "id": "CMD-24",
+        "status": "In Review",
+        "title": "Instructions Designer UX polish + structured editing"
+      },
+      {
+        "id": "CMD-79",
+        "status": "In Review",
+        "title": "Project linkage UI cleanup and refinement"
+      },
+      {
+        "id": "CMD-83",
+        "status": "In Review",
+        "title": "Design mode: surface canonical source draft order and progress"
+      },
+      {
+        "id": "CMD-21",
+        "status": "Icebox",
+        "title": "Adventure Management: Consider Combining Play and Design Surface"
+      },
+      {
+        "id": "CMD-116",
+        "status": "In Review",
+        "title": "WebView theme sync \u2014 inject --cgw-* CSS variables from saved theme"
+      },
+      {
+        "id": "CMD-113",
+        "status": "In Review",
+        "title": "Built-in theme presets (Default Dark, High Contrast, Warm Reading)"
+      },
+      {
+        "id": "CMD-17",
+        "status": "Backlog",
+        "title": "Configurable adventures directory and external folder association"
+      },
+      {
+        "id": "CMD-53",
+        "status": "In Review",
+        "title": "Cast phrase import dialog (checklist UI)"
+      },
+      {
+        "id": "CMD-52",
+        "status": "In Review",
+        "title": "Cast \u2192 phrase highlight import service + unit tests"
+      },
+      {
+        "id": "CMD-25",
+        "status": "In Review",
+        "title": "Wire adventure characters into continuous-view phrase highlights"
+      },
+      {
+        "id": "CMD-15",
+        "status": "In Review",
+        "title": "UI: Change Name Dialogue Box"
+      },
+      {
+        "id": "CMD-60",
+        "status": "In Review",
+        "title": "Show turn meta in packet preview and View full (empty meta block UX)"
+      },
+      {
+        "id": "CMD-93",
+        "status": "In Review",
+        "title": "Design Sources workflow: pull navigation, chat downloads, general thread seed"
+      },
+      {
+        "id": "CMD-41",
+        "status": "Backlog",
+        "title": "Utility synthesis into existing source file with download workflow"
+      },
+      {
+        "id": "CMD-40",
+        "status": "Backlog",
+        "title": "Persist structured utility-chat parse results locally"
+      },
+      {
+        "id": "CMD-59",
+        "status": "Backlog",
+        "title": "Architecture: play turn metadata strategy (explicit counter vs packet meta)"
+      },
+      {
+        "id": "CMD-22",
+        "status": "Backlog",
+        "title": "OOC Instruction Canonization"
+      },
+      {
+        "id": "CMD-46",
+        "status": "Backlog",
+        "title": "Response edit invalidation \u2014 model must disregard superseded content"
+      },
+      {
+        "id": "CMD-43",
+        "status": "Backlog",
+        "title": "Embed utility AI jobs as hidden player-packet injected sections"
+      }
+    ],
+    "missing_acceptance": [
+      {
+        "id": "CMD-89",
+        "status": "Backlog",
+        "title": "Explore centralized LLM workflow for source file updates"
+      },
+      {
+        "id": "CMD-69",
+        "status": "Icebox",
+        "title": "Review prompt construction architecture across all surfaces"
+      },
+      {
+        "id": "CMD-94",
+        "status": "Backlog",
+        "title": "Refine instructions: canonical body sync and prompt clarity"
+      },
+      {
+        "id": "CMD-90",
+        "status": "In Review",
+        "title": "Allow drafting new Project chat without reroute to pinned thread"
+      },
+      {
+        "id": "CMD-86",
+        "status": "Backlog",
+        "title": "Audit canonical JSON data model (generation, interpretation, drift)"
+      },
+      {
+        "id": "CMD-65",
+        "status": "In Review",
+        "title": "Play chat handoff: migrate adventure context to a new thread"
+      },
+      {
+        "id": "CMD-55",
+        "status": "Backlog",
+        "title": "Design thread: revise auto-sent utility seed on continue (optional)"
+      },
+      {
+        "id": "CMD-45",
+        "status": "Backlog",
+        "title": "Summarization migration to new chat with checkpoint verification"
+      },
+      {
+        "id": "CMD-42",
+        "status": "Backlog",
+        "title": "Wrapper-wide per-message chat metadata (ordinals, visibility, edits)"
+      },
+      {
+        "id": "CMD-29",
+        "status": "Backlog",
+        "title": "Epic: Wrapper metadata, utility pipeline & chat migration"
+      },
+      {
+        "id": "CMD-148",
+        "status": "In Review",
+        "title": "Format settings: unbounded or liberal numeric bounds (advanced entry)"
+      },
+      {
+        "id": "CMD-146",
+        "status": "In Review",
+        "title": "Format settings: color picking + expanded per-category customization"
+      },
+      {
+        "id": "CMD-147",
+        "status": "In Review",
+        "title": "Format settings: named profile management (save, switch, library)"
+      },
+      {
+        "id": "CMD-137",
+        "status": "In Review",
+        "title": "Splitter double-click \u2014 requirement-aware optimal panel widths"
+      },
+      {
+        "id": "CMD-136",
+        "status": "Backlog",
+        "title": "PlayPanelCoordinator extraction (deferred ADR follow-up)"
+      },
+      {
+        "id": "CMD-135",
+        "status": "In Review",
+        "title": "Theme token contrast derivation (readable text on custom accents)"
+      },
+      {
+        "id": "CMD-133",
+        "status": "In Review",
+        "title": "Play layout context paradigm (PlayLayoutCoordinator + capabilities)"
+      },
+      {
+        "id": "CMD-126",
+        "status": "In Review",
+        "title": "Play companion layout contract & documentation update"
+      },
+      {
+        "id": "CMD-11",
+        "status": "In Progress",
+        "title": "Adventure Design: Source-file-centric Design Shift"
+      },
+      {
+        "id": "CMD-154",
+        "status": "Backlog",
+        "title": "Improve side panel splitter grip and resize affordance design"
+      },
+      {
+        "id": "CMD-111",
+        "status": "In Review",
+        "title": "Epic: Comprehensive theme customization menu"
+      },
+      {
+        "id": "CMD-88",
+        "status": "In Review",
+        "title": "Source edit review: diff-like preview of proposed changes"
+      },
+      {
+        "id": "CMD-134",
+        "status": "In Review",
+        "title": "Reference entity editor \u2014 portraits, extended fields, double-click"
+      },
+      {
+        "id": "CMD-56",
+        "status": "In Review",
+        "title": "Comprehensive review: Next send UX and play packet injection pipeline"
+      },
+      {
+        "id": "CMD-139",
+        "status": "Backlog",
+        "title": "State tab World skim \u2014 summary/location/objectives preview cards"
+      },
+      {
+        "id": "CMD-54",
+        "status": "In Review",
+        "title": "Wire cast import into phrase editor + MainWindow"
+      },
+      {
+        "id": "CMD-118",
+        "status": "In Review",
+        "title": "Expand Appearance & Themes preset catalog"
+      },
+      {
+        "id": "CMD-127",
+        "status": "In Review",
+        "title": "Narrator controls overhaul \u2014 presets, inherit/null semantics, and deep customization"
+      },
+      {
+        "id": "CMD-92",
+        "status": "In Review",
+        "title": "JSON import review: preview proposed scenario.json / entities.json files"
+      },
+      {
+        "id": "CMD-114",
+        "status": "In Review",
+        "title": "Theme model, token catalog, and persistence (WPF \u2194 CSS map)"
+      },
+      {
+        "id": "CMD-5",
+        "status": "In Review",
+        "title": "UI: Context Menu Styling"
+      },
+      {
+        "id": "CMD-110",
+        "status": "In Progress",
+        "title": "Epic: Adventure dashboard UX revamp (library experience)"
+      },
+      {
+        "id": "CMD-20",
+        "status": "In Review",
+        "title": "UI: General Overhaul of Play Settings"
+      },
+      {
+        "id": "CMD-24",
+        "status": "In Review",
+        "title": "Instructions Designer UX polish + structured editing"
+      },
+      {
+        "id": "CMD-79",
+        "status": "In Review",
+        "title": "Project linkage UI cleanup and refinement"
+      },
+      {
+        "id": "CMD-83",
+        "status": "In Review",
+        "title": "Design mode: surface canonical source draft order and progress"
+      },
+      {
+        "id": "CMD-21",
+        "status": "Icebox",
+        "title": "Adventure Management: Consider Combining Play and Design Surface"
+      },
+      {
+        "id": "CMD-113",
+        "status": "In Review",
+        "title": "Built-in theme presets (Default Dark, High Contrast, Warm Reading)"
+      },
+      {
+        "id": "CMD-17",
+        "status": "Backlog",
+        "title": "Configurable adventures directory and external folder association"
+      },
+      {
+        "id": "CMD-53",
+        "status": "In Review",
+        "title": "Cast phrase import dialog (checklist UI)"
+      },
+      {
+        "id": "CMD-52",
+        "status": "In Review",
+        "title": "Cast \u2192 phrase highlight import service + unit tests"
+      },
+      {
+        "id": "CMD-25",
+        "status": "In Review",
+        "title": "Wire adventure characters into continuous-view phrase highlights"
+      },
+      {
+        "id": "CMD-15",
+        "status": "In Review",
+        "title": "UI: Change Name Dialogue Box"
+      },
+      {
+        "id": "CMD-60",
+        "status": "In Review",
+        "title": "Show turn meta in packet preview and View full (empty meta block UX)"
+      },
+      {
+        "id": "CMD-93",
+        "status": "In Review",
+        "title": "Design Sources workflow: pull navigation, chat downloads, general thread seed"
+      },
+      {
+        "id": "CMD-59",
+        "status": "Backlog",
+        "title": "Architecture: play turn metadata strategy (explicit counter vs packet meta)"
+      },
+      {
+        "id": "CMD-22",
+        "status": "Backlog",
+        "title": "OOC Instruction Canonization"
+      },
+      {
+        "id": "CMD-46",
+        "status": "Backlog",
+        "title": "Response edit invalidation \u2014 model must disregard superseded content"
+      },
+      {
+        "id": "CMD-43",
+        "status": "Backlog",
+        "title": "Embed utility AI jobs as hidden player-packet injected sections"
+      }
+    ],
+    "wave_past_cap": [
+      {
+        "id": "CMD-96",
+        "status": "Done",
+        "title": "Shell Phase 0a: Consolidate theme tokens & retire legacy brush aliases"
+      },
+      {
+        "id": "CMD-99",
+        "status": "Done",
+        "title": "Shell Phase 1a: Mode indicator & adventure context breadcrumb in chrome"
+      },
+      {
+        "id": "CMD-98",
+        "status": "Done",
+        "title": "Shell Phase 0c: Control templates for ScrollBar, RadioButton, and focus rings"
+      },
+      {
+        "id": "CMD-97",
+        "status": "Done",
+        "title": "Shell Phase 0b: Shell layout primitives (card, section header, command bar)"
+      },
+      {
+        "id": "CMD-106",
+        "status": "Done",
+        "title": "Shell Phase 3c: Surface elevation tokens & card hierarchy"
+      },
+      {
+        "id": "CMD-108",
+        "status": "Done",
+        "title": "Dashboard command bar simplification (primary / overflow IA)"
+      },
+      {
+        "id": "CMD-107",
+        "status": "Done",
+        "title": "Shell Phase 4: Preferences hub entry point (unify settings discovery)"
+      },
+      {
+        "id": "CMD-105",
+        "status": "Done",
+        "title": "Shell Phase 3b: App bar visual polish (elevation, icons, motion)"
+      },
+      {
+        "id": "CMD-104",
+        "status": "Done",
+        "title": "Shell Phase 2b: Rebalance View controls (demote Format, group display options)"
+      },
+      {
+        "id": "CMD-103",
+        "status": "Done",
+        "title": "Shell Phase 3a: Global status bar (bridge, link, save, jobs)"
+      },
+      {
+        "id": "CMD-102",
+        "status": "Done",
+        "title": "Shell Phase 2a: MainWindow app bar IA redesign (single-row chrome)"
+      },
+      {
+        "id": "CMD-101",
+        "status": "Done",
+        "title": "Shell Phase 1c: Chat tab strip polish (close, pin indicator, overflow)"
+      },
+      {
+        "id": "CMD-100",
+        "status": "Done",
+        "title": "Shell Phase 1b: Unified back-to-library control in shell chrome"
+      },
+      {
+        "id": "CMD-61",
+        "status": "Done",
+        "title": "Epic: Play side panel presentation & responsive layout overhaul"
+      },
+      {
+        "id": "CMD-95",
+        "status": "Done",
+        "title": "Epic: WPF Shell chrome & design system overhaul"
+      },
+      {
+        "id": "CMD-109",
+        "status": "Done",
+        "title": "Play session cockpit restructuring (grouped sections, tab badges, AI flyout)"
+      }
+    ],
+    "missing_layer": [
+      {
+        "id": "CMD-66",
+        "status": "Done",
+        "title": "Fix play start packet: empty ALWAYS RETRIEVE source pointers"
+      },
+      {
+        "id": "CMD-62",
+        "status": "Done",
+        "title": "Pinned play tab session binding fragility (regression)"
+      },
+      {
+        "id": "CMD-55",
+        "status": "Backlog",
+        "title": "Design thread: revise auto-sent utility seed on continue (optional)"
+      },
+      {
+        "id": "CMD-19",
+        "status": "Done",
+        "title": "LLM-assisted import: propose JSON from source files"
+      },
+      {
+        "id": "CMD-140",
+        "status": "Done",
+        "title": "Canon reconciliation: sync JSON edits with local source files"
+      },
+      {
+        "id": "CMD-21",
+        "status": "Icebox",
+        "title": "Adventure Management: Consider Combining Play and Design Surface"
+      },
+      {
+        "id": "CMD-28",
+        "status": "Done",
+        "title": "Epic: Play surface, transcript & continuous view reliability"
+      },
+      {
+        "id": "CMD-73",
+        "status": "Canceled",
+        "title": "Verify AC1: baseline pointers on ready linked adventure"
+      },
+      {
+        "id": "CMD-68",
+        "status": "Done",
+        "title": "Linked project page idles out to homepage access-denied"
+      },
+      {
+        "id": "CMD-67",
+        "status": "Done",
+        "title": "Fix play start packet: stale transcript on fresh play thread"
+      },
+      {
+        "id": "CMD-10",
+        "status": "Out of Scope",
+        "title": "Adventure Design: Proposal Extraction Refinement"
+      }
+    ],
+    "manual_qa_no_testplan": [
+      {
+        "id": "CMD-154",
+        "status": "Backlog",
+        "title": "Improve side panel splitter grip and resize affordance design"
+      },
+      {
+        "id": "CMD-117",
+        "status": "In Review",
+        "title": "Theme import/export and user-overrides.css integration"
+      },
+      {
+        "id": "CMD-112",
+        "status": "In Review",
+        "title": "Theme customization dialog UI + Preferences hub entry"
+      },
+      {
+        "id": "CMD-111",
+        "status": "In Review",
+        "title": "Epic: Comprehensive theme customization menu"
+      },
+      {
+        "id": "CMD-118",
+        "status": "In Review",
+        "title": "Expand Appearance & Themes preset catalog"
+      },
+      {
+        "id": "CMD-116",
+        "status": "In Review",
+        "title": "WebView theme sync \u2014 inject --cgw-* CSS variables from saved theme"
+      }
+    ],
+    "missing_area": [
+      {
+        "id": "CMD-69",
+        "status": "Icebox",
+        "title": "Review prompt construction architecture across all surfaces"
+      },
+      {
+        "id": "CMD-94",
+        "status": "Backlog",
+        "title": "Refine instructions: canonical body sync and prompt clarity"
+      },
+      {
+        "id": "CMD-78",
+        "status": "Done",
+        "title": "CMD-74 regression tests and docs"
+      },
+      {
+        "id": "CMD-32",
+        "status": "Done",
+        "title": "Transcript outputs grouped roles instead of alternating player/narrator"
+      }
+    ],
+    "missing_kind": [
+      {
+        "id": "CMD-29",
+        "status": "Backlog",
+        "title": "Epic: Wrapper metadata, utility pipeline & chat migration"
+      },
+      {
+        "id": "CMD-136",
+        "status": "Backlog",
+        "title": "PlayPanelCoordinator extraction (deferred ADR follow-up)"
+      },
+      {
+        "id": "CMD-73",
+        "status": "Canceled",
+        "title": "Verify AC1: baseline pointers on ready linked adventure"
+      }
+    ]
+  },
+  "counts": {
+    "wave_past_cap": 16,
+    "missing_context": 55,
+    "missing_acceptance": 49,
+    "missing_area": 4,
+    "missing_layer": 11,
+    "missing_kind": 3,
+    "manual_qa_no_testplan": 6
+  }
+}

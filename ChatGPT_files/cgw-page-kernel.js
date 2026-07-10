@@ -1,11 +1,11 @@
 (function () {
   "use strict";
 
-  if (globalThis.__cgwPageKernel && globalThis.__cgwPageKernel.version >= 2) {
+  if (globalThis.__cgwPageKernel && globalThis.__cgwPageKernel.version >= 3) {
     return;
   }
 
-  var KERNEL_VERSION = 2;
+  var KERNEL_VERSION = 3;
 
   var Selectors = {
     composer: ['[data-testid="composer"]', 'form:has(#prompt-textarea)'],
@@ -192,20 +192,32 @@
     if (!type || typeof type !== "string") return "legacy";
     if (type.indexOf("cgwCompose") === 0) return "play-compose";
     if (type === "cgwPlaySendLog") return "play-compose";
+    if (type === "cgwDiagnosticsLog") return "play-compose";
     if (type === "bridgeReady" || type === "turnComplete" || type === "probeResult") {
       return "adventure-bridge";
     }
     return "legacy";
   }
 
-  function playSendLog(level, eventName, message, data, source) {
+  function inferDiagnosticsChannel(source) {
+    var s = (source || "").toLowerCase();
+    if (s.indexOf("play-compose") >= 0) return "compose";
+    if (s.indexOf("adventure-bridge") >= 0) return "bridge";
+    if (s.indexOf("continuous") >= 0) return "navigation";
+    return "page";
+  }
+
+  function diagnosticsLog(level, eventName, message, data, source, channel) {
     try {
+      var lvl = (level || "info").toLowerCase();
+      if (lvl === "debug" && !globalThis.__cgwExtendedDiagnostics) return;
       var payload = {
-        type: "cgwPlaySendLog",
-        level: level || "info",
+        type: "cgwDiagnosticsLog",
+        level: lvl,
         event: eventName || "js",
         message: message || "",
         source: source || "page",
+        channel: channel || inferDiagnosticsChannel(source),
         url: location.href,
         ts: Date.now(),
       };
@@ -214,6 +226,10 @@
     } catch (_e) {
       /* ignore */
     }
+  }
+
+  function playSendLog(level, eventName, message, data, source) {
+    diagnosticsLog(level, eventName, message, data, source, "play_send");
   }
 
   var injectedStyles = Object.create(null);
@@ -285,6 +301,7 @@
       post: postToHost,
       inferFeature: inferFeatureFromLegacyType,
       playSendLog: playSendLog,
+      diagnosticsLog: diagnosticsLog,
     },
     style: {
       inject: injectStyle,

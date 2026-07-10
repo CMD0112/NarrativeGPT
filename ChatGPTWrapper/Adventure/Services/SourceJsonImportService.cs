@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.Adventure.Services;
@@ -39,10 +40,13 @@ internal static class SourceJsonImportService
 
     public static IReadOnlyCollection<string> AllowedScenarioFields => ScenarioReaders.Keys;
 
-    public static string BuildImportPrompt(AdventureBundle bundle)
+    public static string BuildImportPrompt(AdventureBundle bundle, bool forLocalInference = false)
     {
         var sourceReferences = BuildSourceReferencesBlock(bundle);
         var excerpts = BuildLocalExcerptBlock(bundle);
+        var formatReference = forLocalInference
+            ? ""
+            : CanonFormatReferenceService.BuildPromptBlock(bundle);
         var formatHints = ProjectSourceFileTemplates.BuildInlineFormatsSection(
             ProjectSourceImportService.ImportableLoreFileNames
                 .Where(file => File.Exists(Path.Combine(
@@ -77,6 +81,7 @@ internal static class SourceJsonImportService
 
             === CURRENT ENTITIES ({EntitiesJsonFileName} summary) ===
             {FormatEntityExcerpt(bundle.Entities)}
+            {formatReference}
             {formatsBlock}
 
             === LOCAL SOURCE EXCERPTS (fallback when retrieval unavailable) ===
@@ -1631,17 +1636,33 @@ internal static class SourceJsonImportService
         switch (entityType.Trim().ToLowerInvariant())
         {
             case "person":
-                entities.Characters.Add(new CharacterEntry { Name = name, Description = description });
+            {
+                var character = new CharacterEntry { Name = name, Description = description };
+                PromoteStructuredFields(character, CanonSchemaRegistry.Npc);
+                entities.Characters.Add(character);
                 return true;
+            }
             case "place":
-                entities.Locations.Add(new LocationEntry { Name = name, Description = description });
+            {
+                var location = new LocationEntry { Name = name, Description = description };
+                PromoteStructuredFields(location, CanonSchemaRegistry.Location);
+                entities.Locations.Add(location);
                 return true;
+            }
             case "concept":
-                entities.Concepts.Add(new ConceptEntry { Name = name, Description = description });
+            {
+                var concept = new ConceptEntry { Name = name, Description = description };
+                PromoteStructuredFields(concept, CanonSchemaRegistry.Concept);
+                entities.Concepts.Add(concept);
                 return true;
+            }
             case "faction":
-                entities.Factions.Add(new FactionEntry { Name = name, Goals = description });
+            {
+                var faction = new FactionEntry { Name = name, Goals = description };
+                PromoteStructuredFields(faction, CanonSchemaRegistry.Faction);
+                entities.Factions.Add(faction);
                 return true;
+            }
             default:
                 return false;
         }
@@ -1656,6 +1677,7 @@ internal static class SourceJsonImportService
                         string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)) is { } character)
                 {
                     character.Description = description;
+                    PromoteStructuredFields(character, CanonSchemaRegistry.Npc);
                     return true;
                 }
                 break;
@@ -1664,6 +1686,7 @@ internal static class SourceJsonImportService
                         string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase)) is { } location)
                 {
                     location.Description = description;
+                    PromoteStructuredFields(location, CanonSchemaRegistry.Location);
                     return true;
                 }
                 break;
@@ -1672,6 +1695,7 @@ internal static class SourceJsonImportService
                         string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)) is { } concept)
                 {
                     concept.Description = description;
+                    PromoteStructuredFields(concept, CanonSchemaRegistry.Concept);
                     return true;
                 }
                 break;
@@ -1680,6 +1704,7 @@ internal static class SourceJsonImportService
                         string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)) is { } faction)
                 {
                     faction.Goals = description;
+                    PromoteStructuredFields(faction, CanonSchemaRegistry.Faction);
                     return true;
                 }
                 break;
@@ -1687,6 +1712,9 @@ internal static class SourceJsonImportService
 
         return false;
     }
+
+    private static void PromoteStructuredFields(object entity, CanonEntityKindSpec spec) =>
+        CanonFieldMapper.TryPromoteStructuredFieldsFromBody(entity, spec);
 
     private static bool TryRemoveEntity(EntitiesDocument entities, string entityType, string name)
     {

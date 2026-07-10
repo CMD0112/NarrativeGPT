@@ -1,0 +1,147 @@
+<shell:ShellDialogWindow xmlns:shell="clr-namespace:ChatGPTWrapper.Shell" x:Class="ChatGPTWrapper.Views.HighlightColorGroupingDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Color groupings"
+        Height="680"
+        Width="920"
+        MinHeight="520"
+        MinWidth="760"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Style="{StaticResource ShellSectionHintStyle}"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,12"
+                   Text="Define who shares colors at category, entity-subset, or individual-entity granularity. First matching group wins (by priority). Use Match remainder for “everything else” buckets."/>
+
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="140"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Unmatched" VerticalAlignment="Center" Margin="0,0,8,8"/>
+            <ComboBox x:Name="UnmatchedBehaviorCombo" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" SelectionChanged="Field_Changed"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Description" VerticalAlignment="Top" Margin="0,0,8,0"/>
+            <TextBox x:Name="DescriptionBox" Grid.Row="1" Grid.Column="1" MinHeight="28" TextChanged="Field_Changed"/>
+        </Grid>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.05*" MinWidth="260"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="1.4*" MinWidth="360"/>
+            </Grid.ColumnDefinitions>
+
+            <DockPanel Grid.Column="0">
+                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <Button x:Name="AddGroupButton" Content="Add group" Padding="8,4" MinHeight="28" Margin="0,0,6,0"
+                            Style="{StaticResource ShellCommandBarSecondarySlot}" Click="AddGroupButton_Click"/>
+                    <Button x:Name="RemoveGroupButton" Content="Remove" Padding="8,4" MinHeight="28"
+                            Style="{StaticResource ShellCommandBarSecondarySlot}" Click="RemoveGroupButton_Click"/>
+                </WrapPanel>
+                <ListView x:Name="GroupsListView" SelectionChanged="GroupsListView_SelectionChanged">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Group" Width="120" DisplayMemberBinding="{Binding Name}"/>
+                            <GridViewColumn Header="Match" Width="180" DisplayMemberBinding="{Binding Summary}"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" Style="{StaticResource SidePanelGridSplitterStyle}" Width="8"/>
+
+            <ScrollViewer Grid.Column="2" Style="{StaticResource ShellFormScrollViewerStyle}">
+                <StackPanel x:Name="GroupEditorPanel" IsEnabled="False">
+                    <TextBlock Text="Group name" Margin="0,0,0,4"/>
+                    <TextBox x:Name="GroupNameBox" MinHeight="28" Margin="0,0,0,10" TextChanged="Field_Changed"/>
+
+                    <TabControl Margin="0,0,0,10">
+                        <TabItem Header="Include">
+                            <StackPanel Margin="0,8,0,0">
+                                <TextBlock Text="Entity categories" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                <WrapPanel x:Name="IncludeCategoriesPanel" Margin="0,0,0,10"/>
+
+                                <TextBlock Text="Individual entities" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                <DockPanel Margin="0,0,0,10" MinHeight="100">
+                                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                        <Button Content="Add from cast…" Padding="8,4" MinHeight="26" Margin="0,0,6,0"
+                                                Style="{StaticResource ShellCommandBarSecondarySlot}" Click="AddIncludeEntitiesButton_Click"/>
+                                        <Button Content="Remove" Padding="8,4" MinHeight="26"
+                                                Style="{StaticResource ShellCommandBarSecondarySlot}" Click="RemoveIncludeEntitiesButton_Click"/>
+                                    </WrapPanel>
+                                    <ListView x:Name="IncludeEntitiesListView" DisplayMemberPath="Describe"/>
+                                </DockPanel>
+
+                                <TextBlock Text="Phrases (comma-separated)" Margin="0,0,0,4"/>
+                                <TextBox x:Name="IncludePhrasesBox" MinHeight="28" Margin="0,0,0,10" TextChanged="Field_Changed"/>
+
+                                <TextBlock Text="Role prefixes (comma-separated)" Margin="0,0,0,4"/>
+                                <TextBox x:Name="RolePrefixesBox" MinHeight="28" TextChanged="Field_Changed"
+                                         ToolTip="Alias ·, First name ·"/>
+                            </StackPanel>
+                        </TabItem>
+                        <TabItem Header="Exclude">
+                            <StackPanel Margin="0,8,0,0">
+                                <TextBlock Text="Exclude categories" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                <WrapPanel x:Name="ExcludeCategoriesPanel" Margin="0,0,0,10"/>
+
+                                <TextBlock Text="Exclude entities" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                                <DockPanel Margin="0,0,0,10" MinHeight="100">
+                                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                                        <Button Content="Add from cast…" Padding="8,4" MinHeight="26" Margin="0,0,6,0"
+                                                Style="{StaticResource ShellCommandBarSecondarySlot}" Click="AddExcludeEntitiesButton_Click"/>
+                                        <Button Content="Remove" Padding="8,4" MinHeight="26"
+                                                Style="{StaticResource ShellCommandBarSecondarySlot}" Click="RemoveExcludeEntitiesButton_Click"/>
+                                    </WrapPanel>
+                                    <ListView x:Name="ExcludeEntitiesListView" DisplayMemberPath="Describe"/>
+                                </DockPanel>
+
+                                <TextBlock Text="Exclude phrases (comma-separated)" Margin="0,0,0,4"/>
+                                <TextBox x:Name="ExcludePhrasesBox" MinHeight="28" TextChanged="Field_Changed"/>
+                            </StackPanel>
+                        </TabItem>
+                        <TabItem Header="Behavior">
+                            <StackPanel Margin="0,8,0,0">
+                                <TextBlock Text="Priority (lower = first)" Margin="0,0,0,4"/>
+                                <TextBox x:Name="PriorityBox" MinHeight="28" Margin="0,0,0,10" TextChanged="Field_Changed"/>
+                                <CheckBox x:Name="ShareColorCheckBox" Content="Share one color within group" Margin="0,0,0,8"
+                                          Checked="Field_Changed" Unchecked="Field_Changed"/>
+                                <CheckBox x:Name="MatchRemainderCheckBox" Content="Match remainder (everything else after higher-priority groups)"
+                                          Margin="0,0,0,8" Checked="Field_Changed" Unchecked="Field_Changed"/>
+                                <CheckBox x:Name="ExcludeAutoAssignCheckBox" Content="Exclude from automatic coloring"
+                                          Checked="Field_Changed" Unchecked="Field_Changed"/>
+                            </StackPanel>
+                        </TabItem>
+                    </TabControl>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <TextBlock x:Name="EntityCatalogHintText" Grid.Row="3"
+                   Foreground="{StaticResource TextMutedBrush}"
+                   TextWrapping="Wrap"
+                   Margin="0,10,0,0"/>
+
+        <TextBlock x:Name="ValidationText" Grid.Row="3" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" Margin="0,10,0,0" Visibility="Collapsed"/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Cancel" IsCancel="True" Padding="14,6" Margin="0,0,8,0"/>
+            <Button Content="OK" IsDefault="True" Padding="14,6" Click="OkButton_Click"/>
+        </StackPanel>
+    </Grid>
+</shell:ShellDialogWindow>

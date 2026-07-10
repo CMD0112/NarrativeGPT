@@ -40,7 +40,13 @@ internal static class PlayComposeUiEnvironment
                 };
                 var webView = new WebView2 { Dock = DockStyle.Fill };
                 form.Controls.Add(webView);
+                var loaded = new ManualResetEventSlim(false);
+                form.Load += (_, _) => loaded.Set();
                 form.Show();
+                if (!loaded.Wait(TimeSpan.FromSeconds(15)))
+                    throw new TimeoutException("Play compose test form did not load.");
+
+                _ = form.Handle;
                 Ready.TrySetResult((form, webView));
                 Application.Run(form);
             })

@@ -1,0 +1,435 @@
+<UserControl x:Class="ChatGPTWrapper.Views.EntityReferencePanel"
+
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+
+             xmlns:local="clr-namespace:ChatGPTWrapper.Views">
+
+    <UserControl.Resources>
+
+        <DataTemplate x:Key="EntityRowTemplateCompact">
+
+            <DockPanel Margin="8,6">
+
+                <Border DockPanel.Dock="Left"
+
+                        Width="32"
+
+                        Height="32"
+
+                        Margin="0,0,8,0"
+
+                        CornerRadius="4"
+
+                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+
+                        BorderThickness="1"
+
+                        Background="{DynamicResource BgElevatedBrush}"
+
+                        ClipToBounds="True"
+
+                        Visibility="{Binding PortraitVisibility}">
+
+                    <Image Source="{Binding Portrait}" Stretch="UniformToFill"/>
+
+                </Border>
+
+                <StackPanel>
+
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Right"
+                                Padding="4,1"
+                                Margin="4,0,0,0"
+                                CornerRadius="3"
+                                Background="{DynamicResource WarningSubtleBrush}"
+                                Visibility="{Binding StateDivergenceBadgeVisibility}"
+                                ToolTip="{Binding StateDivergenceBadgeTooltip}">
+                            <TextBlock Text="{Binding StateDivergenceBadgeText}"
+                                       FontSize="9"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource WarningBrush}"/>
+                        </Border>
+                        <Border DockPanel.Dock="Right"
+                                Padding="4,1"
+                                Margin="4,0,0,0"
+                                CornerRadius="3"
+                                Background="{DynamicResource BgElevatedBrush}"
+                                Visibility="{Binding SyncBadgeVisibility}">
+                            <TextBlock Text="{Binding SyncBadgeText}"
+                                       FontSize="9"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding SyncBadgeBrush}"/>
+                        </Border>
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+
+                    <TextBlock Text="{Binding TagsLine}"
+
+                               Foreground="{DynamicResource TextMutedBrush}"
+
+                               FontSize="10"
+
+                               TextTrimming="CharacterEllipsis"
+
+                               Visibility="{Binding TagsVisibility}"/>
+
+                </StackPanel>
+
+            </DockPanel>
+
+        </DataTemplate>
+
+        <DataTemplate x:Key="EntityRowTemplateAdaptive">
+
+            <DockPanel Margin="{Binding RowMargin}">
+
+                <Border DockPanel.Dock="Left"
+
+                        Width="44"
+
+                        Height="44"
+
+                        Margin="0,0,10,0"
+
+                        CornerRadius="6"
+
+                        BorderBrush="{DynamicResource BorderSubtleBrush}"
+
+                        BorderThickness="1"
+
+                        Background="{DynamicResource BgElevatedBrush}"
+
+                        ClipToBounds="True"
+
+                        Visibility="{Binding PortraitVisibility}">
+
+                    <Image Source="{Binding Portrait}" Stretch="UniformToFill"/>
+
+                </Border>
+
+                <StackPanel>
+
+                    <DockPanel LastChildFill="True">
+
+                        <Border DockPanel.Dock="Right"
+                                Style="{StaticResource EntitySyncBadgeStyle}"
+                                Margin="6,0,0,0"
+                                VerticalAlignment="Top"
+                                Visibility="{Binding SyncBadgeVisibility}"
+                                ToolTip="{Binding SyncBadgeTooltip}"
+                                MouseLeftButtonUp="SyncBadge_Click">
+                            <TextBlock Text="{Binding SyncBadgeText}"
+                                       Style="{StaticResource EntitySyncBadgeTextStyle}"/>
+                        </Border>
+
+                        <Border DockPanel.Dock="Right"
+                                Style="{StaticResource EntityStateDivergenceBadgeStyle}"
+                                Margin="6,0,0,0"
+                                VerticalAlignment="Top"
+                                Visibility="{Binding StateDivergenceBadgeVisibility}"
+                                ToolTip="{Binding StateDivergenceBadgeTooltip}">
+                            <TextBlock Text="{Binding StateDivergenceBadgeText}"
+                                       Style="{StaticResource EntityStateDivergenceBadgeTextStyle}"/>
+                        </Border>
+
+                        <Border DockPanel.Dock="Right"
+
+                                Style="{StaticResource ShellBadgeStyle}"
+
+                                Margin="6,0,0,0"
+
+                                VerticalAlignment="Top"
+
+                                Visibility="{Binding TypeBadgeVisibility}">
+
+                            <TextBlock Text="{Binding TypeBadge}" FontSize="10" FontWeight="SemiBold"/>
+
+                        </Border>
+
+                        <TextBlock DockPanel.Dock="Right"
+
+                                   Text="{Binding PinGlyph}"
+
+                                   Margin="6,0,0,0"
+
+                                   FontSize="11"
+
+                                   VerticalAlignment="Top"
+
+                                   Visibility="{Binding PinVisibility}"/>
+
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+
+                    </DockPanel>
+
+                    <TextBlock Text="{Binding RoleOrStatus}"
+
+                               Foreground="{DynamicResource TextMutedBrush}"
+
+                               FontSize="{StaticResource FontSizeHint}"
+
+                               Margin="0,2,0,0"
+
+                               TextTrimming="CharacterEllipsis"
+
+                               Visibility="{Binding RoleVisibility}"/>
+
+                    <TextBlock Text="{Binding TagsLine}"
+
+                               Foreground="{DynamicResource TextMutedBrush}"
+
+                               FontSize="10"
+
+                               Margin="0,2,0,0"
+
+                               TextTrimming="CharacterEllipsis"
+
+                               Visibility="{Binding TagsVisibility}"/>
+
+                    <TextBlock Text="{Binding DescriptionSnippet}"
+
+                               Foreground="{DynamicResource TextMutedBrush}"
+
+                               FontSize="11"
+
+                               Margin="0,4,0,0"
+
+                               TextWrapping="Wrap"
+
+                               MaxHeight="{Binding DescriptionMaxHeight}"
+
+                               TextTrimming="CharacterEllipsis"
+
+                               Visibility="{Binding DescriptionVisibility}"/>
+
+                </StackPanel>
+
+            </DockPanel>
+
+        </DataTemplate>
+
+    </UserControl.Resources>
+
+    <Grid x:Name="RootGrid" VerticalAlignment="Stretch">
+
+        <Grid.ColumnDefinitions>
+
+            <ColumnDefinition Width="*" MinWidth="160"/>
+
+            <ColumnDefinition x:Name="SideEditColumn" Width="0"/>
+
+        </Grid.ColumnDefinitions>
+
+        <Grid.RowDefinitions>
+
+            <RowDefinition Height="Auto"/>
+
+            <RowDefinition Height="*"/>
+
+            <RowDefinition Height="Auto"/>
+
+        </Grid.RowDefinitions>
+
+
+
+        <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,8">
+
+            <WrapPanel x:Name="EntityFilterPanel" Margin="0,0,0,8"/>
+
+            <DockPanel Margin="0,0,0,8">
+                <Menu DockPanel.Dock="Right" Background="Transparent" VerticalAlignment="Center">
+                    <MenuItem Header="Sort" Padding="8,4">
+                        <MenuItem Header="Name" Click="SortName_Click"/>
+                        <MenuItem Header="Recently edited" Click="SortRecentlyEdited_Click"/>
+                        <MenuItem x:Name="PinSortMenuItem" Header="Pinned first" Click="SortPinnedFirst_Click"/>
+                    </MenuItem>
+                </Menu>
+                <TextBox x:Name="EntitySearchBox"
+                         MinHeight="28"
+                         VerticalContentAlignment="Center"
+                         TextChanged="EntitySearchBox_TextChanged"
+                         ToolTip="Filter entities by name, role, tags, or description"/>
+            </DockPanel>
+
+            <WrapPanel x:Name="EntityActionsRow" Margin="0,0,0,8">
+
+                <Button Content="Add" Padding="8,4" Margin="0,0,6,4" Click="AddEntity_Click"/>
+
+                <Button Content="Edit" Padding="8,4" Margin="0,0,6,4" Click="EditEntity_Click"/>
+
+                <Button Content="Delete" Padding="8,4" Margin="0,0,6,4" Click="DeleteEntity_Click"/>
+
+                <Menu x:Name="EntityMoreMenu" Background="Transparent" VerticalAlignment="Center" Margin="0,0,0,4">
+
+                    <MenuItem x:Name="EntityMoreMenuItem" Header="More entity actionsΓÇª" Padding="8,4">
+
+                        <MenuItem x:Name="PinEntityMenuItem" Header="Pin / Unpin" Click="TogglePinEntity_Click"/>
+
+                        <MenuItem x:Name="RenameEntityMenuItem" Header="RenameΓÇª" Click="RenameEntity_Click"/>
+
+                        <MenuItem x:Name="MergeEntityMenuItem" Header="Merge intoΓÇª" Click="MergeEntity_Click"/>
+
+                        <MenuItem x:Name="RetireEntityMenuItem" Header="RetireΓÇª" Click="RetireEntity_Click"/>
+
+                        <MenuItem x:Name="SuggestEntitiesMenuItem" Header="Suggest entities (AI)"
+
+                                  Click="SuggestEntities_Click"
+
+                                  ToolTip="Requires a linked Project and a recent play exchange"/>
+
+                        <MenuItem x:Name="SuggestEntitiesWithAttachmentsMenuItem" Header="Suggest entities with reference files…"
+
+                                  Click="SuggestEntitiesWithAttachments_Click"
+
+                                  ToolTip="Attach reference files for packet embed or DOM attach on the utility worker lane. For full entities.json revision with Project source publish + pointer, use Revise entities.json (AI) instead."/>
+
+                        <MenuItem x:Name="ProposeEntitiesFileMenuItem" Header="Revise entities.json (AI)"
+
+                                  Click="ProposeEntitiesFile_Click"
+
+                                  ToolTip="Publish entities.json to Project sources, run an ephemeral utility chat, and return a downloadable revised file for review"/>
+
+                        <MenuItem x:Name="ExpandEntityMenuItem" Header="Expand selected (AI)"
+
+                                  Click="ExpandEntity_Click"
+
+                                  ToolTip="Enrich the selected entity with AI"/>
+
+                        <MenuItem x:Name="ProposeEntityStateMenuItem" Header="Propose entity state (AI)"
+                                  Click="ProposeEntityState_Click"
+                                  ToolTip="Queue internal state proposals for selected entities"/>
+                        <MenuItem x:Name="ProposeCanonEvolutionMenuItem" Header="Propose canon evolution (AI)"
+                                  Click="ProposeCanonEvolution_Click"
+                                  ToolTip="Propose durable canon profile updates from play context"/>
+
+                    </MenuItem>
+
+                </Menu>
+
+            </WrapPanel>
+
+        </StackPanel>
+
+
+
+        <Border x:Name="EntityListHost"
+
+                Grid.Row="1"
+
+                Grid.Column="0"
+
+                Style="{StaticResource ShellCardStyle}"
+
+                Padding="4"
+
+                MinHeight="80"
+
+                     ToolTip="Double-click or right-click an entry for actions">
+            <Grid>
+            <ListBox x:Name="EntityList"
+
+                     VerticalAlignment="Stretch"
+
+                     Background="Transparent"
+
+                     BorderThickness="0"
+
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+
+                     ItemContainerStyle="{StaticResource ShellLibraryListItemStyle}"
+
+                     ItemTemplate="{StaticResource EntityRowTemplateAdaptive}"
+                     SelectionMode="Extended"
+
+                     SelectionChanged="EntityList_SelectionChanged"
+
+                     PreviewMouseRightButtonDown="EntityList_PreviewMouseRightButtonDown"
+
+                     MouseDoubleClick="EntityList_MouseDoubleClick">
+
+                <ListBox.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Edit" Click="EditEntity_Click"/>
+                        <MenuItem Header="Delete" Click="DeleteEntity_Click"/>
+                        <Separator/>
+                        <MenuItem x:Name="EntityRowPinMenuItem" Header="Pin / Unpin" Click="TogglePinEntity_Click"/>
+                        <MenuItem Header="RenameΓÇª" Click="RenameEntity_Click"/>
+                        <MenuItem Header="Merge intoΓÇª" Click="MergeEntity_Click"/>
+                        <MenuItem Header="RetireΓÇª" Click="RetireEntity_Click"/>
+                    </ContextMenu>
+                </ListBox.ContextMenu>
+
+            </ListBox>
+
+            <StackPanel x:Name="EmptyStatePanel"
+                        Visibility="Collapsed"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="12">
+                <TextBlock x:Name="EmptyStateText"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           FontSize="{StaticResource FontSizeHint}"/>
+            </StackPanel>
+            </Grid>
+
+        </Border>
+
+
+
+        <Border x:Name="InlineEditHost"
+
+                Grid.Row="2"
+
+                Grid.Column="0"
+
+                Grid.ColumnSpan="2"
+
+                Style="{StaticResource ShellCardStyle}"
+
+                Padding="10"
+
+                Margin="0,8,0,0"
+
+                Visibility="Collapsed">
+
+            <ScrollViewer Style="{StaticResource ShellFormScrollViewerStyle}" MaxHeight="420">
+
+                <local:EntityEditFormHost x:Name="InlineEditForm" ShowInlineActions="True"/>
+
+            </ScrollViewer>
+
+        </Border>
+
+
+
+        <Border x:Name="SideEditHost"
+
+                Grid.Row="1"
+
+                Grid.Column="1"
+
+                Style="{StaticResource ShellCardStyle}"
+
+                Padding="10"
+
+                Margin="8,0,0,0"
+
+                MinWidth="240"
+
+                Visibility="Collapsed">
+
+            <local:EntityWorkspaceHost x:Name="SideWorkspace" VerticalAlignment="Stretch"/>
+
+        </Border>
+
+    </Grid>
+
+</UserControl>
+
+

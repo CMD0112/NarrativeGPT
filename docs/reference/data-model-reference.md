@@ -1,0 +1,528 @@
+# Data Model Reference
+
+All persistence is **JSON files** on disk. No database. Schema version: `AdventureJson.SchemaVersion` (see `Adventure/AdventureJson.cs`).
+
+> **Reference hub:** [api-and-data-models-index.md](api-and-data-models-index.md)  
+> **Satellite files** (context-index, utility-outbox, thread logs, diagnostics): [data-model-secondary-files.md](data-model-secondary-files.md)
+
+---
+
+## On-disk layout
+
+Root: `%LocalAppData%\ChatGPTWrapper\`
+
+```
+ChatGPTWrapper/
+├── ui-chrome.json                 # Browse UI settings
+├── WebView2UserData/              # Browser profile (cookies)
+├── styles/
+│   └── user-overrides.css         # Optional user CSS
+├── adventures/
+│   └── {guid}/
+│       ├── adventure.json         # AdventureMetadata
+│       ├── scenario.json
+│       ├── log.json
+│       ├── summary.json
+│       ├── state.json
+│       ├── memory.json
+│       ├── entities.json
+│       ├── cards.json
+│       ├── continuity.json
+│       ├── prompt-history.json
+│       ├── utility-exchanges.json
+│       ├── design-workspace.json  # Adventure design wizard state (when Status=Designing)
+│       ├── source-manifest.json
+│       ├── notes.txt
+│       └── sources/               # Exported markdown for Project sync
+├── libraries/
+│   ├── scenarios/index.json + {guid}.json
+│   ├── worlds/
+│   ├── characters/
+│   ├── presets/
+│   └── templates/
+├── backups/                       # Adventure backup zips
+└── (diagnostic logs)              # See troubleshooting.md
+```
+
+`AppDirectories.cs` defines all paths. Tests may set `AppDirectories.TestRootOverride`.
+
+---
+
+## AdventureBundle (aggregate root)
+
+`Adventure/Models/AdventureBundle.cs` — loaded/saved by `AdventureStore`.
+
+| Property | Type | File |
+|----------|------|------|
+| `Metadata` | `AdventureMetadata` | `adventure.json` |
+| `Scenario` | `ScenarioDocument` | `scenario.json` |
+| `Log` | `LogDocument` | `log.json` |
+| `Summary` | `SummaryDocument` | `summary.json` |
+| `State` | `StateDocument` | `state.json` |
+| `Memory` | `MemoryDocument` | `memory.json` |
+| `Entities` | `EntitiesDocument` | `entities.json` |
+| `Cards` | `CardsDocument` | `cards.json` |
+| `Continuity` | `ContinuityDocument` | `continuity.json` |
+| `PromptHistory` | `PromptHistoryDocument` | `prompt-history.json` |
+| `UtilityExchanges` | `UtilityExchangesDocument` | `utility-exchanges.json` |
+| `DesignWorkspace` | `AdventureDesignWorkspace` | `design-workspace.json` |
+| `Notes` | `string` | `notes.txt` |
+| `SourceManifest` | `SourceManifest` | `source-manifest.json` |
+| `ContinuationQueue` | `List<string>` | (in memory; saved with bundle ops) |
+| `CurrentSessionId` | `Guid?` | runtime session pointer |
+
+### Canonical play record
+
+| Source | Role |
+|--------|------|
+| ChatGPT thread (per registry entry) | **Narrative source of truth** — live transcript the model sees |
+| `thread-logs/{threadEntryId}/events.jsonl` + `raw/` | **Ingest index + canonical raw capture** per sync |
+| `thread-logs/{threadEntryId}/projections/` | Branch JSON when API raw unavailable |
+| `thread-logs/{threadEntryId}/rolling.jsonl` | Branch reconciliation + superseded audit |
+| `thread-logs/{threadEntryId}/snapshots/` | **Explicit branch snapshots** — immutable point-in-time captures |
+| `thread-logs/{threadEntryId}/manifest.json` | Per-thread sync cursor, ingest index, branch tail, snapshot paths |
+| `thread-logs/{threadEntryId}/dumps/` | Manual full-conversation JSON snapshots |
+| `log.json` | **Legacy** — migrated into thread log on load; no longer written on send |
+| `thread-metadata.json` | **Legacy** — migrated on load; superseded by thread log |
+| `prompt-history.json` | Audit of merged packets sent (not a substitute for thread log) |
+
+Rolling sync runs after send, edit invalidation, and play session load (`ThreadConversationLogService`). Authors can **Dump thread log** from Play More actions for a full API snapshot. Utility and injected-context messages are flagged in JSONL entries. See [thread-conversation-log-adr.md](../adr/thread-conversation-log-adr.md) and [thread-conversation-log.md](../developer/thread-conversation-log.md).
+
+Correct logged text via continuous-view surrogate edit; invalidation triggers API rolling sync.
+
+---
+
+## AdventureMetadata
+
+`adventure.json` — identity, linking, utility sessions, settings.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `schemaVersion` | `int` | Migration marker (6 = registry-only thread binding, CMD-253) |
+| `id` | `Guid` | Adventure id (folder name) |
+| `title` | `string` | Display title |
+| `genre` | `string` | Genre tag |
+| `scenarioSummary` | `string` | Short summary |
+| `createdAt` | `DateTimeOffset` | Creation time |
+| `lastPlayedAt` | `DateTimeOffset` | Last play activity |
+| `status` | `AdventureStatus` | `Active`, `Paused`, `Completed` |
+| `archived` | `bool` | Hidden from default dashboard list |
+| `tags` | `string[]` | User tags |
+| `linkedConversationId` | `string?` | **Legacy** — migrated to play registry entry; stripped at schema 6 |
+| `linkedProjectId` | `string?` | ChatGPT Project (gizmo) id |
+| `linkedProjectHint` | `string?` | Display hint for project |
+| `pinnedPlayTabKey` | `string?` | **Legacy** — migrated to play registry entry; stripped at schema 6 |
+| `pinnedPlayTabTitle` | `string?` | **Legacy** tab title |
+| `pinnedPlayTabUrl` | `string?` | **Legacy** tab URL snapshot |
+| `pinnedUtilityTabKey` | `string?` | **Retired** (CMD-248) |
+| `pinnedUtilityTabTitle` | `string?` | **Retired** utility tab title |
+| `projectLink` | `ProjectLink?` | Extended link metadata (gizmo id + canonical URL; no `playConversationId` at schema 6) |
+| `utilitySessions` | `dict<string, GenerationUtilitySession>` | **Legacy** per-job threads; design counters moved to `AdventureThreadEntry.designJobState`; stripped at schema 6 |
+| `utilitySessionArchive` | `GenerationUtilitySessionArchive[]` | Rotated sessions |
+| `entityUtility` | `EntityUtilitySession?` | Legacy — migrated on load |
+| `entityUtilityArchive` | legacy archive | Migrated on load |
+| `entityExtractGuideSyncedVersion` | `int` | Legacy guide version |
+| `guideSyncedVersions` | `dict<string, int>` | Per-job guide seed versions |
+| `utilityJobLastErrors` | `dict<string, string>` | Persisted job errors |
+| `lastProjectInstructionsSyncedAt` | `DateTimeOffset?` | Instruction sync timestamp |
+| `lastProjectInstructionsSyncedHash` | `string?` | Instruction content hash |
+| `instructionsManuallyPublishedAt` | `DateTimeOffset?` | Manual publish time |
+| `instructionsManuallyPublishedHash` | `string?` | Manual publish hash |
+| `utilityJobGuideOverrides` | `dict<string, UtilityJobGuideOverride>` | Custom job instructions |
+| `threadRegistry` | `AdventureThreadEntry[]` | Registered play/design threads (source of truth) |
+| `activeThreadIds` | `dict<string, Guid>` | Active entry id per kind (`Play`, `Design`) |
+| `threadRegistryMigratedAt` | `DateTimeOffset?` | Legacy pin migration marker |
+| `pinnedDesignTabKey` | `string?` | **Legacy** — stripped at schema 6 |
+| `pinnedDesignTabTitle` | `string?` | **Legacy** design tab title |
+| `pinnedDesignTabUrl` | `string?` | **Legacy** design tab URL |
+| `playThreadArchive` | `PlayThreadArchiveEntry[]` | **Legacy** — migrated into registry; stripped at schema 6 |
+| `settings` | `AdventureSettings` | Play/sync/automation settings |
+
+### AdventureSettings
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `maxPacketChars` | 28000 | Packet size limit |
+| `adventureAutomationEnabled` | true | DOM automation for play |
+| `offerStartOnPlay` | true | Prompt to start adventure |
+| `forceInlineLore` (`forceFatPackets` JSON alias) | false | Debug: always inline fallback lore |
+| `useContextTags` | true | `[[cgw:…]]` packet markers |
+| `tone`, `perspective`, `tense`, `detailLevel`, `violenceLevel`, `difficulty` | see code | Narrator contract |
+| `contentBoundaries` | `[]` | Global content boundaries (one per line) |
+| `characterPortrayalRules` | `[]` | Per-subject portrayal rules (`CharacterPortrayalRule`: `subject`, `rule`) |
+| `instructionAddendum` | `""` | Optional extra narrator-contract text |
+| `playTurnOverrides` | object | Next-send overrides (`responseLength`, `detailLevel`, `tone`, `difficulty`, `turnDirective`, emphasis flags) |
+| `sessionNarratorOverrides` | `dict<string, PlaySessionNarratorOverrides>` | Session-scoped overrides keyed by play session id |
+| `playSidePanelCollapsed` | false | Play UI layout |
+| `playSidePanelWidth` | 300 | Panel width (DIP) |
+| `autoExtractEntities` | false | Post-turn entity job |
+| `autoProposeMemories` | false | Post-turn memory job |
+| `autoUpdateSummary` | false | Periodic summary job |
+| `summaryUpdateIntervalTurns` | 5 | Summary interval |
+| `autoContinuityCheck` | false | Continuity job |
+| `autoSyncProjectInstructions` | false | Push instructions via API |
+| `sourcePublishMode` | `Manual` | Always `Manual` after load (`ApiSync` migrated) |
+| `utilityStoryContext` | object | Story context for utility jobs |
+| `utilityDeliveryMode` | `SeparateThread` | `SeparateThread` or `Inline` |
+| `hideInlineUtilityDuringPlay` | true | Hide utility traffic in UI |
+| `showInlineUtilityTraffic` | false | Peek utility traffic |
+| `lastUtilityScopeHash` | null | Dedup bundled utility runs |
+| `useEphemeralUtilityWorkerChat` | false | CMD-412: per-job ephemeral project chats for utility worker (recommended). File revision jobs always use ephemeral source-pointer I/O regardless. |
+| `forceUtilityWorkerDomAttach` | false | CMD-424 QA: DOM composer attach for manual reference-file runs (requires ephemeral mode; not entities file revision) |
+| `autoSpillToWorker` | false | Overflow utility context to worker when lane available |
+
+### Enums
+
+- `AdventureStatus`: `Active`, `Paused`, `Completed`
+- `SourcePublishMode`: `Manual` only (legacy `ApiSync` value migrated on load)
+- `UtilityDeliveryMode`: `SeparateThread`, `Inline` (see `UtilityDeliveryMode.cs`)
+
+---
+
+## ScenarioDocument
+
+| Field | Description |
+|-------|-------------|
+| `setting` | World/setting description |
+| `playerRole` | Who the player is |
+| `genre`, `tone` | Style metadata |
+| `openingSituation` | Starting scenario |
+| `majorConflicts` | Central conflicts |
+| `startingConstraints` | Limits at start |
+| `plotEssentials` | Must-not-forget plot |
+| `worldRules` | Physics/magic/society rules |
+| `authorsNote` | Style note (no new facts) |
+| `sourceEditReviewQueue` | AI-proposed source edits pending review |
+
+---
+
+## LogDocument
+
+| Field | Description |
+|-------|-------------|
+| `turns` | `TurnRecord[]` — story timeline |
+| `sessions` | `PlaySession[]` — play session groupings |
+| `chapters` | `StoryChapter[]` — chapter markers |
+
+### TurnRecord
+
+| Field | Description |
+|-------|-------------|
+| `id` | Turn guid |
+| `index` | Monotonic turn index |
+| `at` | Timestamp |
+| `playerText` | Player input (Do/Say/Story) |
+| `narratorText` | Accepted narrator response |
+| `status` | `TurnStatus` enum |
+| `parentTurnId` | Branch parent |
+| `attempts` | `ResponseAttempt[]` — retries/regenerates |
+| `sessionId`, `chapterId` | Grouping |
+| `promptPacketHash` | Hash of sent packet |
+
+### TurnStatus
+
+`Pending` → `AwaitingResponse` → `Review` → `Accepted` / `Rejected`
+
+### ResponseAttempt
+
+| Field | Description |
+|-------|-------------|
+| `narratorText` | Captured text for this attempt |
+| `accepted` | Whether this attempt was accepted |
+| `fromRegenerate` | From regenerate action |
+
+### PlaySession
+
+`id`, `startedAt`, `endedAt`, `turnIds[]`
+
+### StoryChapter
+
+`id`, `title`, `startTurnIndex`
+
+---
+
+## StateDocument
+
+Tracker fields: `currentLocation`, `playerCondition`, `activeThreats`, `openObjectives`, `unresolvedMysteries`, `recentConsequences`, `mapNotes`.
+
+Nested:
+
+- **SceneState** — `location`, `participants`, `immediateConflict`, `atmosphere`, `availableExits`, `visibleClues`, `activeDangers`
+- **TimeState** — `inWorldTime`, `deadlines`, `scheduledConsequences`
+
+---
+
+## SummaryDocument
+
+| Field | Description |
+|-------|-------------|
+| `rollingSummary` | Accepted rolling summary text |
+| `pendingReview` | AI proposal awaiting review |
+| `proposedSummary` | Proposed replacement text |
+
+---
+
+## MemoryDocument
+
+| Field | Description |
+|-------|-------------|
+| `entries` | `MemoryEntry[]` — accepted memories |
+| `reviewQueue` | Proposed memories pending review |
+
+### MemoryEntry
+
+`id`, `text`, `pinned`, `tags[]`, `outcome`, `anchor` (`MemoryAnchor`), `createdAt`
+
+---
+
+## EntitiesDocument
+
+**Schema version:** `EntitiesDocument.CurrentSchemaVersion` (3 as of CMD-312). Version 1–2 adventures migrate on load via `EntitiesDocumentMigration`. Each entry type may include `extendedFields` (`Dictionary<string, string>`) for schema-defined attributes beyond typed properties.
+
+**Player character sheet** (`player`): includes `imagePath`, `tags`, `aliases`, and `extendedFields` alongside background, appearance, goals, and other profile fields. Field groups (`identity`, `story`, `capabilities`, `relations`, `custom`) drive grouped sections in `EntityEditDialog`.
+
+**Canon schema version:** `AdventureMetadata.CanonSchemaVersion` (1 as of CMD-205). Bumped on adventure load when the bundled `canon-schema.json` registry version advances via `CanonSchemaMigrationService`.
+
+Structured trackers:
+
+| Collection | Entry type |
+|------------|------------|
+| `player` | `PlayerCharacterSheet` |
+| `characters` | `CharacterEntry` |
+| `party` | `CompanionEntry` |
+| `locations` | `LocationEntry` |
+| `inventory` | `InventoryEntry` |
+| `quests` | `QuestEntry` |
+| `factions` | `FactionEntry` |
+| `concepts` | `ConceptEntry` |
+| `relationships` | `RelationshipEntry` |
+| `mysteries` | `MysteryEntry` |
+| `conflicts` | `ConflictEntry` |
+| `consequences` | `ConsequenceEntry` |
+| `reviewQueue` | `EntityReviewItem` — AI proposals |
+
+Common entry fields: `id`, `name`, `description`, `status`, `tags`, `pinned` (where applicable).
+
+---
+
+## CardsDocument
+
+| Field | Description |
+|-------|-------------|
+| `cards` | `StoryCard[]` |
+| `reviewQueue` | `CardReviewItem[]` |
+
+### StoryCard
+
+`id`, `name`, `type` (`StoryCardType` enum), `triggers[]`, `content`, `enabled`, `tags[]`
+
+**StoryCardType:** `Character`, `Place`, `Faction`, `Item`, `Rule`, `Creature`, `Organization`, `Lore`
+
+---
+
+## ContinuityDocument
+
+| Field | Description |
+|-------|-------------|
+| `warnings` | `ContinuityWarningEntry[]` |
+| `lastCheckedAt` | Last continuity check time |
+
+---
+
+## PromptHistoryDocument
+
+**File:** `prompt-history.json`  
+**Model:** `PromptHistoryDocument` / `PromptHistoryEntry` — see `Adventure/Models/PromptHistoryDocument.cs`, `FlightRecordModels.cs`  
+**ADR:** [narrative-flight-recorder-adr.md](../adr/narrative-flight-recorder-adr.md) (SVA-03, [CMD-402](https://linear.app/cmd0112/issue/CMD-402))
+
+Per-turn **audit of merged packets actually sent** to ChatGPT after verified delivery. Distinct from `log.json` (accepted player + narrator transcript) and from the ephemeral **Next send** preview.
+
+| Document field | Type | Description |
+|----------------|------|-------------|
+| `schemaVersion` | `int` | **3** = thread ingest correlation; **2** = flight recorder v2; **1** migrates on load |
+| `entries` | `PromptHistoryEntry[]` | Newest appended at send; UI sorts by `at` descending |
+
+### PromptHistoryEntry (schema v2+)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `Guid` | Entry id |
+| `turnId` | `Guid?` | Links to `TurnRecord.Id` in `log.json` |
+| `at` | `DateTimeOffset` | Capture timestamp (UTC) |
+| `kind` | `FlightRecordKind` | `PlaySend` (default), `Start`, `Handoff`, `UtilityInline` (future) |
+| `playerLine` | `string` | Resolved player line at send |
+| `packetText` | `string` | Delivered merged packet bytes |
+| `packetHash` | `string?` | SHA-256 of `packetText` (matches `PreparedSendArtifact.Hash`) |
+| `playSendTraceRunId` | `string?` | `PlaySendTrace` run id (full GUID) |
+| `utilityJobIds` | `Guid[]` | Run ids of utility jobs bundled in this packet |
+| `utilityRuns` | `FlightUtilityRunSnapshot[]` | Job id, channel, `UtilityContextManifestRecord` at capture |
+| `injection` | `FlightInjectionSnapshot?` | Section manifest + pointers (null on migrated v1 entries) |
+| `delivery` | `FlightDeliverySnapshot?` | Channel, outcome, verified flag, conversation id |
+
+**Schema v3** (thread ingest correlation — [thread-log-ingest-refactor-adr.md](../adr/thread-log-ingest-refactor-adr.md)):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `threadEntryId` | `Guid?` | Registry thread entry |
+| `threadIngestEventId` | `Guid?` | Ingest fact at send/sync |
+| `threadRawPath` | `string?` | Relative `raw/…` under thread log dir |
+| `threadProjectionPath` | `string?` | Relative `projections/…` when branch-only |
+| `threadSnapshotPath` | `string?` | Relative `snapshots/…` when snapshot captured |
+
+### FlightInjectionSnapshot
+
+| Field | Description |
+|-------|-------------|
+| `profile`, `delegationMode`, `attachmentMode` | `PacketProfile`, delegation, attachment send mode (string enums) |
+| `wasTrimmed` | Budget trim applied |
+| `mergedCharCount`, `contextCharCount` | Size metrics |
+| `hasUtilityInjection`, `utilitySectionCount` | Bundled utility flags |
+| `sections` | Mirror of `InjectionSection` at send (id, kind, included, char estimate, note, omission reason) |
+| `trimmed` | `TrimmedSection` ids + reasons |
+| `baselinePointers`, `thisTurnPointers` | Lean `ContextPointer` records (no `BodyCache`) |
+
+### FlightDeliverySnapshot
+
+| Field | Description |
+|-------|-------------|
+| `channel` | `Api`, `DomBootstrap`, `DomFallback`, etc. |
+| `outcome` | `ok`, `failed`, `blocked` |
+| `failureCode` | Diagnostic code when unverified |
+| `conversationId` | ChatGPT conversation id when known |
+| `verified` | `true` only after orchestrator delivery verification |
+
+### Migration
+
+`PromptHistoryMigration` runs in `AdventureStore.Load`: v1 entries keep `packetText` / `packetHash`; `injection` and `delivery` are null; `kind` defaults to `PlaySend`.
+
+### Export / backup
+
+`ExportService.ExportFullJson` serializes the full `PromptHistory` document including v2 fields. Zip backup uses the same adventure folder layout — no separate strip policy.
+
+### Author UI
+
+**Play settings → History** tab (`FlightRecorderPanel`): virtualized timeline, injection manifest, pointer lists, utility/trace correlation, compare vs prior send. See [adventure-panel.md — Flight recorder](../user/adventure-panel.md#flight-recorder-play-settings--history).
+
+### Reverse links
+
+`UtilityJobRunRecord.linkedFlightRecordId` is set when a bundled utility run completes or when an existing run file is found at capture (`FlightRecordCaptureService` / `UtilityJobResultStore`).
+
+---
+
+## UtilityExchangesDocument
+
+Records utility job exchanges (`UtilityExchangeRecord[]`) — job id, prompts, responses, timestamps.
+
+---
+
+## Source manifest
+
+`source-manifest.json` — see also [user-projects-and-sync.md](../user/user-projects-and-sync.md).
+
+### SourceManifest
+
+| Field | Description |
+|-------|-------------|
+| `schemaVersion` | Current: 5 (`SourceManifest.CurrentSchemaVersion`) |
+| `synced` | All entries `InSync` |
+| `lastRemoteSyncAt` | Last successful sync |
+| `apiProfileVersion` | API profile fingerprint |
+| `lastKnownDuplicateRemotes` | Duplicate remote file count |
+| `entries` | `SourceManifestEntry[]` |
+
+### SourceManifestEntry
+
+| Field | Description |
+|-------|-------------|
+| `relativePath` | Path under `sources/` |
+| `localSha256` / `sha256` | Local content hash |
+| `remoteSha256` | Remote content hash |
+| `baselineSha256` | Last agreed baseline |
+| `syncState` | `SourceSyncState` enum |
+| `plannedAction` | `SourceSyncAction` enum |
+| `remoteFileId`, `remoteFileName` | ChatGPT file refs |
+| `lastPushedAt`, `lastPulledAt` | Sync timestamps |
+| `manuallyPublishedAt`, `manuallyPublishedSha256` | Manual mode tracking |
+| `lastRemoteProbedAt`, `remoteProbeMatch` | Remote probe metadata |
+
+### Sync enums
+
+**SourceSyncState:** `InSync`, `LocalNewer`, `RemoteNewer`, `Conflict`, `LocalOnly`, `MissingRemote`, `RemoteOnly`
+
+**SourceSyncAction:** `Skip`, `Pull`, `PushReplace`, `NeedsResolution`
+
+**SourceConflictResolution:** `None`, `KeepLocal`, `KeepRemote`, `Skip`
+
+---
+
+## ProjectLink
+
+| Field | Description |
+|-------|-------------|
+| `gizmoId` | Project id |
+| `canonicalUrl` | Project URL |
+| `playConversationId` | Bound play conversation |
+| `lastSyncedAt`, `linkedAt` | Timestamps |
+
+---
+
+## Utility sessions
+
+### GenerationUtilitySession
+
+Per utility job thread: `conversationId`, `sequence`, `seedVersion`, `jobCount`, `consecutiveParseFailures`, `createdAt`, `lastUsedAt`
+
+### GenerationJobId constants
+
+| ID | Purpose |
+|----|---------|
+| `extract_entities` | Entity extraction |
+| `expand_entity` | Expand single entity |
+| `propose_memories` | Memory proposals |
+| `update_summary` | Rolling summary update |
+| `bootstrap_lore` | Initial lore/cards |
+| `expand_story_card` | Expand story card |
+| `continuity_check` | Continuity warnings |
+| `propose_source_edits` | Source file edit proposals |
+| `process_turn` | Legacy bundled turn processing |
+| `generate_recap` | Obsolete — local recap only |
+
+---
+
+## UiChromeSettings
+
+`ui-chrome.json` — see [user-guide.md](../user/user-guide.md#ui-chrome-persistence).
+
+---
+
+## Libraries
+
+`LibraryStore` kinds: `Scenarios`, `Worlds`, `Characters`, `Presets`, `Templates`
+
+Each kind: `index.json` (`LibraryIndexFile` with `LibraryItem[]`) + `{guid}.json` item payloads.
+
+**LibraryItem:** `id`, `name`, `genre`, `tone`, `tags`, `updatedAt`
+
+---
+
+## Migrations
+
+`AdventureMetadataMigration` runs on every `AdventureStore.Load`:
+
+| Method | Purpose |
+|--------|---------|
+| `MigrateUtilitySessions` | `EntityUtility` → `UtilitySessions` dict |
+| `MigrateGuideSyncedVersions` | Legacy single version → per-job dict |
+| `EnsureSettingsDefaults` | Default utility story context settings |
+| `MigrateSourcePublishMode` | Schema 2→3 publish mode defaults |
+| `PromptHistoryMigration` | v1 `prompt-history.json` → schema 2 flight records on load |
+
+`SourceManifestHelper.MigrateManifest` handles manifest schema bumps.
+
+---
+
+## Related documentation
+
+- [Adventure Panel §6–7](../user/adventure-panel.md)
+- [Services Reference](services-reference.md)
+- [Instruction vs Sources Paradigm](../user/instruction-sources-paradigm.md)

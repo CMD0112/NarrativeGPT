@@ -37,6 +37,40 @@ public sealed class ContextTagFormatTests
     }
 
     [Fact]
+    public void FormatStructuredPreview_shows_meta_attributes_when_body_empty()
+    {
+        var packet = ContextTagFormat.WrapMeta(PacketMode.Fat, 3)
+                     + "\n\n"
+                     + ContextTagFormat.WrapBlock("instructions", "Be vivid.")
+                     + "\n\nlook around";
+
+        var preview = ContextTagFormat.FormatStructuredPreview(packet);
+        Assert.Contains("[meta]", preview);
+        Assert.Contains("turn=3", preview);
+        Assert.Contains("mode=inline", preview);
+        Assert.Contains("[instructions]", preview);
+        Assert.Contains("[user]", preview);
+    }
+
+    [Fact]
+    public void ExtractTagAttributes_reads_meta_turn_and_mode()
+    {
+        var packet = ContextTagFormat.WrapMeta(PacketProfile.MinimalLocal, 5);
+        var attrs = ContextTagFormat.ExtractTagAttributes(packet, "meta");
+        Assert.Equal("5", attrs["turn"]);
+        Assert.Equal("minimal", attrs["mode"]);
+    }
+
+    [Fact]
+    public void WrapMeta_emits_delegated_mode()
+    {
+        var packet = ContextTagFormat.WrapMeta(PacketProfile.SourceDelegated, 7);
+        var attrs = ContextTagFormat.ExtractTagAttributes(packet, "meta");
+        Assert.Equal("7", attrs["turn"]);
+        Assert.Equal("delegated", attrs["mode"]);
+    }
+
+    [Fact]
     public void FormatStructuredPreview_shows_legacy_player_tag()
     {
         var packet = ContextTagFormat.WrapBlock("instructions", "Be vivid.")
@@ -254,6 +288,25 @@ public sealed class PlayContextSessionCacheTests
     }
 
     [Fact]
+    public void ShouldSkipReensureForSource_false_on_wrong_project_conversation_url()
+    {
+        const string convId = "thread-1";
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                Id = Guid.NewGuid(),
+                LinkedProjectId = "g-p-test",
+                LinkedConversationId = convId,
+            },
+        };
+
+        var wrongProjectUrl = ChatGptUrls.BuildProjectConversationUrl(convId, "g-p-other");
+
+        Assert.False(PlayContextSessionCache.ShouldSkipReensureForSource(bundle, wrongProjectUrl));
+    }
+
+    [Fact]
     public void ShouldSkipReensureForSource_false_on_project_page_when_play_thread_linked()
     {
         var bundle = new AdventureBundle
@@ -282,6 +335,7 @@ public sealed class PlayContextSessionCacheTests
                 LinkedProjectId = "g-p-test",
             },
         };
+        ProjectChatDraftService.BeginPlayDraft(bundle);
 
         var source = ChatGptUrls.BuildProjectUrl("g-p-test");
 

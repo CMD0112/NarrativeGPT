@@ -23,11 +23,19 @@ public enum UtilityTrimStrategy
     TranscriptOnly,
 }
 
+/// <summary>How utility jobs slice the play transcript into scoped exchange context.</summary>
 public enum UtilityLookbackAnchor
 {
+    /// <summary>Take the newest N turn pairs from the end — default for post-turn canon profile, play state, and session jobs.</summary>
     FromEnd,
+
+    /// <summary>Include turns after the last accepted turn — useful when replaying or catching up mid-session.</summary>
     SinceLastAcceptedTurn,
+
+    /// <summary>Include turns from a fixed turn index onward — manual or advanced replay windows.</summary>
     SinceTurnIndex,
+
+    /// <summary>All accepted turns in the log — wide narrative jobs (digest, continuity).</summary>
     AcceptedOnly,
 }
 

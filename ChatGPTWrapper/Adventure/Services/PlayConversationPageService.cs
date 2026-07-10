@@ -47,14 +47,12 @@ internal static class PlayConversationPageService
         if (!IsAdoptablePlayConversationUrl(bundle, source, parsed))
             return false;
 
-        if (string.Equals(bundle.Metadata.LinkedConversationId, parsed, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(PlayThreadBindingService.GetActiveConversationId(bundle), parsed, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        var previous = bundle.Metadata.LinkedConversationId;
+        var previous = PlayThreadBindingService.GetActiveConversationId(bundle);
         PlayTurnScopeService.OnPlayThreadChanged(bundle, previous, parsed);
-        bundle.Metadata.LinkedConversationId = parsed;
-        if (bundle.Metadata.ProjectLink is not null)
-            bundle.Metadata.ProjectLink.PlayConversationId = parsed;
+        PlayThreadBindingService.MarkPendingPin(bundle, parsed);
 
         if (ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id) == ProjectChatDraftKind.Play)
             ProjectChatDraftService.Complete(bundle);
@@ -117,10 +115,10 @@ internal static class PlayConversationPageService
 
             ProjectLinkDiagnostics.Log(
                 $"Play send: access denied on browser conversation {browserConversationId}; "
-                + $"stored={bundle.Metadata.LinkedConversationId} href={href}");
+                + $"stored={PlayThreadBindingService.GetActiveConversationId(bundle)} href={href}");
         }
 
-        var storedConversationId = bundle.Metadata.LinkedConversationId;
+        var storedConversationId = PlayThreadBindingService.GetActiveConversationId(bundle);
         if (string.IsNullOrWhiteSpace(storedConversationId)
             || ProjectChatDraftService.ShouldStayOnProjectPage(bundle, href))
         {

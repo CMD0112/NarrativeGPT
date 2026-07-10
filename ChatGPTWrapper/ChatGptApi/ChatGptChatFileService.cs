@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using ChatGPTWrapper.ChatGptApi.ChatFileTransport;
 using Microsoft.Web.WebView2.Core;
 
 namespace ChatGPTWrapper.ChatGptApi;
@@ -12,16 +13,38 @@ public sealed class ChatGptChatFileService
     private readonly ChatGptApiBridgeInjection _bridge;
     private readonly ChatGptProjectApiService _projectApi;
     private readonly ChatGptConversationSendService _conversationSend;
+    private readonly ChatFileTransportRegistry _transport;
 
     public ChatGptChatFileService(
         ChatGptApiBridgeInjection bridge,
         ChatGptProjectApiService projectApi,
-        ChatGptConversationSendService conversationSend)
+        ChatGptConversationSendService conversationSend,
+        DomAttachmentSendDelegate? domSend = null)
     {
         _bridge = bridge;
         _projectApi = projectApi;
         _conversationSend = conversationSend;
+        _transport = new ChatFileTransportRegistry(
+            projectApi,
+            bridge,
+            conversationSend,
+            domSend ?? DefaultDomSend);
+        conversationSend.BindContextStore(_transport.ContextStore);
     }
+
+    public ChatFileTransportRegistry Transport => _transport;
+
+    private Task<ConversationSendResult> DefaultDomSend(
+        SendWithAttachmentsRequest request,
+        IReadOnlyList<DomAttachmentPayload> domAttachments,
+        CancellationToken cancellationToken) =>
+        _conversationSend.SendUserMessageWithAttachmentsAsync(
+            request.Core,
+            request.ConversationId,
+            request.GizmoId,
+            request.MessageText,
+            request.Attachments,
+            cancellationToken);
 
     public async Task<ChatAttachmentUploadResult> UploadChatAttachmentAsync(
         CoreWebView2 core,
@@ -30,6 +53,8 @@ public sealed class ChatGptChatFileService
         string mimeType,
         int? width = null,
         int? height = null,
+        string? conversationId = null,
+        string? parentMessageId = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(fileName))
@@ -39,12 +64,14 @@ public sealed class ChatGptChatFileService
             return new ChatAttachmentUploadResult { Success = false, Error = "missing_content" };
 
         mimeType = string.IsNullOrWhiteSpace(mimeType) ? "application/octet-stream" : mimeType;
-        var uploaded = await _projectApi.UploadChatAttachmentBytesAsync(
+        var uploaded = await _transport.Upload.UploadChatAttachmentBytesAsync(
             core,
             fileName,
             content,
             mimeType,
-            cancellationToken);
+            cancellationToken,
+            conversationId,
+            parentMessageId);
 
         if (uploaded is null)
             return new ChatAttachmentUploadResult { Success = false, Error = "upload_failed" };
@@ -78,6 +105,7 @@ public sealed class ChatGptChatFileService
             FileName = uploaded.Name ?? fileName,
             MimeType = mimeType,
             SizeBytes = content.LongLength,
+            FileTokenSize = ChatAttachmentTokenSize.Resolve(content, mimeType, uploaded.FileTokenSize),
             Width = dims?.Width,
             Height = dims?.Height,
         };
@@ -90,13 +118,51 @@ public sealed class ChatGptChatFileService
         string messageText,
         IReadOnlyList<ChatAttachmentRef> attachments,
         CancellationToken cancellationToken = default) =>
-        _conversationSend.SendUserMessageWithAttachmentsAsync(
+        SendWithAttachmentsAsync(
+            ChatFileTransportPlan.ApiOnly,
             core,
             conversationId,
             gizmoId,
             messageText,
             attachments,
             cancellationToken);
+
+    public async Task<ConversationSendResult> SendWithAttachmentsAsync(
+        ChatFileTransportPlan plan,
+        CoreWebView2 core,
+        string conversationId,
+        string? gizmoId,
+        string messageText,
+        IReadOnlyList<ChatAttachmentRef> attachments,
+        CancellationToken cancellationToken = default)
+    {
+        var transportResult = await _transport.SendWithAttachmentsAsync(
+            plan,
+            new SendWithAttachmentsRequest
+            {
+                Core = core,
+                ConversationId = conversationId,
+                GizmoId = gizmoId,
+                MessageText = messageText,
+                Attachments = attachments,
+            },
+            cancellationToken);
+
+        return transportResult.Send
+               ?? new ConversationSendResult
+               {
+                   Success = false,
+                   Error = transportResult.Error ?? "send_failed",
+               };
+    }
+
+    public Task<SendWarmupResult> WarmupSendContextAsync(
+        CoreWebView2 core,
+        string conversationId,
+        string? gizmoId,
+        bool includeSentinel,
+        CancellationToken cancellationToken = default) =>
+        _transport.Warmup.RunAsync(core, conversationId, gizmoId, includeSentinel, cancellationToken);
 
     public async Task<IReadOnlyList<ConversationFileRef>> ListConversationFilesAsync(
         CoreWebView2 core,
@@ -114,8 +180,24 @@ public sealed class ChatGptChatFileService
         CoreWebView2 core,
         ConversationFileRef file,
         string? gizmoId = null,
-        CancellationToken cancellationToken = default)
+        string? conversationId = null,
+        CancellationToken cancellationToken = default,
+        long? expectedMinBytes = null)
     {
+        var sandboxPath = file.SandboxPath
+                            ?? (file.FileId.StartsWith("/mnt/data/", StringComparison.Ordinal) ? file.FileId : null);
+        if (!string.IsNullOrWhiteSpace(sandboxPath)
+            && !string.IsNullOrWhiteSpace(file.MessageId)
+            && !string.IsNullOrWhiteSpace(conversationId))
+        {
+            return await _transport.Download.DownloadInterpreterSandboxFileAsync(
+                core,
+                conversationId,
+                file.MessageId,
+                sandboxPath,
+                cancellationToken);
+        }
+
         if (string.IsNullOrWhiteSpace(file.FileId))
             throw new ChatGptApiException("Missing file id.", ChatGptApiEndpoints.FileDownload(""));
 
@@ -124,12 +206,13 @@ public sealed class ChatGptChatFileService
                 "File cite tokens are display markers only; use API file_id refs for download.",
                 ChatGptApiEndpoints.FileDownload(file.FileId));
 
-        return await _projectApi.DownloadFileAsync(
+        return await _transport.Download.DownloadFileAsync(
             core,
             file.FileId,
             cancellationToken,
             gizmoId,
-            file.Location);
+            file.Location,
+            expectedMinBytes: expectedMinBytes);
     }
 
     public async Task DownloadConversationFileToPathAsync(
@@ -137,9 +220,10 @@ public sealed class ChatGptChatFileService
         ConversationFileRef file,
         string destPath,
         string? gizmoId = null,
+        string? conversationId = null,
         CancellationToken cancellationToken = default)
     {
-        var bytes = await DownloadConversationFileAsync(core, file, gizmoId, cancellationToken);
+        var bytes = await DownloadConversationFileAsync(core, file, gizmoId, conversationId, cancellationToken);
         Directory.CreateDirectory(Path.GetDirectoryName(destPath) ?? AppDirectories.Root);
         await File.WriteAllBytesAsync(destPath, bytes, cancellationToken);
     }

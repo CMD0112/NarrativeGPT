@@ -1,11 +1,12 @@
 using System.IO;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using ChatGPTWrapper.ChatGptApi;
 using Microsoft.Win32;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class ConversationFilesDialog : Window
+public partial class ConversationFilesDialog : ShellDialogWindow
 {
     private readonly Func<ConversationFileRef, Task<byte[]>>? _downloadFile;
     private readonly IReadOnlyList<ConversationFileRef> _files;

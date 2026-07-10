@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using System.Windows.Media;
 using ChatGPTWrapper.Adventure.Models;
@@ -8,7 +9,7 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class JsonImportReviewDialog : Window
+public partial class JsonImportReviewDialog : ShellDialogWindow
 {
     private readonly Guid _adventureId;
     private readonly ObservableCollection<JsonImportReviewRow> _rows = [];
@@ -107,7 +108,7 @@ public partial class JsonImportReviewDialog : Window
             PreviewWarningsPanel.Items.Add(new TextBlock
             {
                 Text = warning,
-                Foreground = (Brush)FindResource("MutedTextBrush"),
+                Foreground = (Brush)FindResource("TextMutedBrush"),
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 11,
                 Margin = new Thickness(0, 0, 0, 4),
@@ -225,7 +226,7 @@ public partial class JsonImportReviewDialog : Window
         JsonImportConflictSeverity.Unsupported => (Brush)FindResource("ErrorBrush"),
         JsonImportConflictSeverity.Drift => (Brush)FindResource("WarningBrush"),
         JsonImportConflictSeverity.Supported => (Brush)FindResource("SuccessBrush"),
-        _ => (Brush)FindResource("MutedTextBrush"),
+        _ => (Brush)FindResource("TextMutedBrush"),
     };
 
     private void AcceptSelected_Click(object sender, RoutedEventArgs e)

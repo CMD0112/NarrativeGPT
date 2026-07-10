@@ -1,0 +1,68 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.SessionTopBar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:ChatGPTWrapper.WinUI.Controls">
+
+    <Grid ColumnSpacing="{ThemeResource SpaceSm}" VerticalAlignment="Center">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" MinWidth="120" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <Button x:Name="BackButton"
+                Grid.Column="0"
+                Style="{ThemeResource ShellGhostButtonStyle}"
+                Content="← Library"
+                Click="BackButton_Click" />
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="{ThemeResource SpaceSm}"
+                    VerticalAlignment="Center"
+                    Margin="4,0">
+            <controls:StatusChip x:Name="BridgeChip"
+                                 Label="Bridge"
+                                 Kind="Neutral"
+                                 Click="BridgeChip_Click" />
+            <TextBlock x:Name="SessionTitle"
+                       Style="{ThemeResource ShellAppTitleStyle}"
+                       TextTrimming="CharacterEllipsis"
+                       MaxWidth="320" />
+        </StackPanel>
+
+        <controls:SegmentedControl x:Name="SessionModeSegment"
+                                   Grid.Column="2"
+                                   Margin="4,0,0,0"
+                                   SelectionChanged="SessionModeSegment_SelectionChanged" />
+
+        <StackPanel Grid.Column="3"
+                    Orientation="Horizontal"
+                    Spacing="{ThemeResource SpaceXs}"
+                    VerticalAlignment="Center"
+                    Margin="8,0,0,0">
+            <Button x:Name="FocusChatButton"
+                    Style="{ThemeResource ShellGhostButtonStyle}"
+                    Content="Focus chat"
+                    Click="FocusChatButton_Click" />
+            <controls:StatusChip x:Name="ReviewChip"
+                                 Label="Review"
+                                 Kind="Attention"
+                                 Click="ReviewChip_Click" />
+            <controls:StatusChip x:Name="LinkChip"
+                                 Label="Link"
+                                 Kind="Attention"
+                                 Click="LinkChip_Click" />
+            <controls:StatusChip x:Name="JobChip"
+                                 Label="Working"
+                                 Kind="Running"
+                                 Click="JobChip_Click" />
+            <Button x:Name="SessionOverflowButton"
+                    Style="{ThemeResource ShellIconButtonStyle}"
+                    Content="&#xE712;"
+                    Click="SessionOverflowButton_Click" />
+        </StackPanel>
+    </Grid>
+</UserControl>

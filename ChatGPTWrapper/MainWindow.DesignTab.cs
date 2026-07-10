@@ -57,7 +57,9 @@ public partial class MainWindow
         if (bundle is null)
             return;
 
-        _designView.SetThreadStatus(DesignTabPinService.FormatDesignThreadStatus(bundle));
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        _designView.SetThreadStatus(AdventureThreadRegistryService.FormatConnectionSummary(bundle));
+        _designView.ApplyCombinedDraftModeBanner(DesignTabPinService.FormatDesignDraftBanner(bundle));
     }
 
     private WebView2? ResolveDesignWebView(AdventureBundle? bundle)
@@ -76,6 +78,9 @@ public partial class MainWindow
 
         if (DesignTabPinService.TryFindWebViewOnEligibleDesignConversation(ChatTabs, bundle) is { } sessionTab)
             return sessionTab;
+
+        if (ThreadWebViewResolver.TryFindExisting(ChatTabs, bundle, AdventureThreadKind.Design) is { } resolved)
+            return resolved;
 
         if (_appMode == AppMode.Design && GetActiveWebView() is { } active)
         {
@@ -112,15 +117,12 @@ public partial class MainWindow
             AdventureNavigationService.SyncLinkedFields(bundle);
             if (!preserveCurrentPage && wv.CoreWebView2 is { } coreBeforeNav)
             {
-                if (ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, coreBeforeNav.Source, wv, ChatTabs))
-                    UpdateDesignLinkStatus();
-
                 var browseUrl = AdventureNavigationService.ResolveDesignBrowseUrl(bundle, preferThread: ensureThread);
                 if (browseUrl is not null
                     && AdventureNavigationService.ShouldNavigateToDesignTarget(coreBeforeNav.Source, bundle, browseUrl))
                 {
                     coreBeforeNav.Navigate(browseUrl);
-                    await WaitForChatGptNavigationAsync(coreBeforeNav);
+                    await WaitForChatGptNavigationAsync(coreBeforeNav, expectedDestination: browseUrl);
                 }
             }
 
@@ -132,6 +134,11 @@ public partial class MainWindow
             if (selectTab)
                 SelectTabForWebView(wv);
             return wv;
+        }
+
+        if (!ThreadWebViewResolver.HasPersistedSession(bundle, AdventureThreadKind.Design))
+        {
+            return null;
         }
 
         wv = await RestoreDesignWebViewAsync(bundle, selectTab, ensureThread, preserveCurrentPage);
@@ -191,7 +198,7 @@ public partial class MainWindow
             && AdventureNavigationService.ShouldNavigateToDesignTarget(navCore.Source, bundle, targetUrl))
         {
             navCore.Navigate(targetUrl);
-            await WaitForChatGptNavigationAsync(navCore);
+            await WaitForChatGptNavigationAsync(navCore, expectedDestination: targetUrl);
         }
     }
 
@@ -201,18 +208,9 @@ public partial class MainWindow
         bool ensureThread,
         bool preserveCurrentPage = false)
     {
-        WebView2? wv = GetActiveWebView();
-        if (wv is null)
-        {
-            foreach (var item in ChatTabs.Items)
-            {
-                if (item is TabItem { Content: WebView2 existing })
-                {
-                    wv = existing;
-                    break;
-                }
-            }
-        }
+        await EnsureChatWebViewEnvironmentReadyAsync();
+
+        WebView2? wv = ThreadWebViewResolver.SelectForRestore(ChatTabs, bundle, AdventureThreadKind.Design);
 
         if (wv is null)
         {
@@ -232,6 +230,8 @@ public partial class MainWindow
             await WireDesignWebViewWithoutNavigationAsync(wv);
         else
             await ApplyDesignWebViewNavigationAsync(bundle, wv, ensureThread);
+
+        DesignTabPinService.TryRestorePinFromWebView(bundle, wv, ChatTabs);
 
         if (selectTab)
             SelectTabForWebView(wv);
@@ -433,10 +433,11 @@ public partial class MainWindow
         if (!AdventureNavigationService.IsOnLinkedProjectPage(core.Source, reloaded))
         {
             core.Navigate(projectUrl);
-            await WaitForChatGptNavigationAsync(core);
+            await WaitForChatGptNavigationAsync(core, expectedDestination: projectUrl);
         }
 
         reloaded = AdventureStore.Load(adventureId) ?? reloaded;
+        ProjectChatDraftService.NoteDraftTab(reloaded, wv, ChatTabs);
         UpdateDesignLinkStatus();
         _designView?.SetStatus(AdventureDesignContextService.FormatDesignModeOpenStatus(reloaded));
 
@@ -523,7 +524,7 @@ public partial class MainWindow
             AdventureDesignContextService.ApplyLocalSourcesEditEntry(bundle);
         else
             AdventureDesignContextService.ApplyLocalSourcesResumeStep(bundle);
-        AdventureStore.Save(bundle);
+        AdventureStore.Save(bundle, AdventureSaveScope.DesignSessionSwitch);
 
         _designView ??= new AdventureDesignView();
         WireDesignView(_designView);
@@ -550,9 +551,12 @@ public partial class MainWindow
         bundle = AdventureStore.Load(adventureId) ?? bundle;
         if (_designView is not null)
         {
-            _designView.SetStatus(localSourcesEdit
+            var status = localSourcesEdit
                 ? AdventureDesignContextService.FormatLocalSourcesEditStatus(bundle)
-                : AdventureDesignContextService.FormatDesignModeOpenStatus(bundle));
+                : AdventureDesignContextService.FormatDesignModeOpenStatus(bundle);
+            if (!string.IsNullOrWhiteSpace(bundle.DesignWorkspace.PendingBootstrapNotice))
+                status = $"{bundle.DesignWorkspace.PendingBootstrapNotice} {status}";
+            _designView.SetStatus(status);
         }
 
         UpdateDesignLinkStatus();
@@ -564,8 +568,8 @@ public partial class MainWindow
         AdventureColumn.MinWidth = 280;
         AdventureColumn.Width = new GridLength(defaultWidth);
         AdventureHost.Visibility = Visibility.Visible;
-        PlaySidePanelSplitterColumn.MinWidth = 4;
-        PlaySidePanelSplitterColumn.Width = new GridLength(4);
+        PlaySidePanelSplitterColumn.MinWidth = 12;
+        PlaySidePanelSplitterColumn.Width = new GridLength(12);
         PlaySidePanelSplitter.Visibility = Visibility.Visible;
         NotesColumn.Width = new GridLength(0);
         NotesColumn.MinWidth = 0;
@@ -584,6 +588,10 @@ public partial class MainWindow
         view.PinDesignTabRequested += OnDesignPinTabRequested;
         view.StartNewDesignThreadRequested -= OnDesignStartNewThreadRequested;
         view.StartNewDesignThreadRequested += OnDesignStartNewThreadRequested;
+        view.ManageThreadsRequested -= OnDesignManageThreadsRequested;
+        view.ManageThreadsRequested += OnDesignManageThreadsRequested;
+        view.DesignStatusRefreshRequested -= OnDesignStatusRefreshRequested;
+        view.DesignStatusRefreshRequested += OnDesignStatusRefreshRequested;
         view.SendStepBriefAsync = text => RunDesignChatAsync(view.AdventureId!.Value, text);
         view.SendSourceFilePromptAsync = path => RunDesignSourceFilePromptAsync(view.AdventureId!.Value, path);
         view.RefineInstructionsAsync = notes => RunRefineInstructionsAsync(view.AdventureId!.Value, notes);
@@ -608,17 +616,19 @@ public partial class MainWindow
                 SetAppMode(AppMode.Adventures);
             _dashboardView?.RefreshList();
         };
+        view.OpenSourceManagerAsync = async () => { await OpenSourceManagerDialogAsync(view.AdventureId!.Value); };
+        view.GetPhraseHighlightRules = () => _chrome.PhraseHighlightRules;
+        view.CommitPhraseHighlightRules = CommitPhraseHighlightRules;
     }
 
     private void OnDesignBack(object? sender, EventArgs e)
     {
-        ChatGptWebViewFileDiagnostics.DownloadCompleted -= OnDesignChatDownloadCompleted;
-        if (_activeAdventureId is { } prevAdventureId)
-            AdventureLinkedNavigationGuard.Reset(prevAdventureId);
-        _activeAdventureId = null;
-        _designWebView = null;
+        LeaveActiveAdventureSession();
         SetAppMode(AppMode.Adventures);
     }
+
+    private void OnDesignStatusRefreshRequested(object? sender, EventArgs e) =>
+        UpdateDesignLinkStatus();
 
     private void OnDesignChatDownloadCompleted(object? sender, ChatGptWebViewFileDiagnostics.ChatDownloadCompletedEventArgs e)
     {
@@ -742,5 +752,13 @@ public partial class MainWindow
             return;
 
         await StartNewDesignThreadAsync(id);
+    }
+
+    private void OnDesignManageThreadsRequested(object? sender, EventArgs e)
+    {
+        if (_designView?.AdventureId is not { } id)
+            return;
+
+        OpenThreadManagerDialog(id, AdventureThreadKind.Design);
     }
 }

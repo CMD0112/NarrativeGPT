@@ -7,7 +7,33 @@ internal static class ContextPointerResolver
     public static ContextResolveResult Resolve(
         AdventureBundle bundle,
         ContextSignalBag signals,
-        bool fatFallback)
+        bool fatFallback,
+        bool freshNarrativeBootstrap = false)
+    {
+        var baseline = freshNarrativeBootstrap
+            ? BuildNarrativeStartBaseline(bundle, signals)
+            : BuildBaseline(bundle, signals, freshNarrativeBootstrap);
+        return ResolveCore(bundle, signals, fatFallback, baseline);
+    }
+
+    /// <summary>Task-scoped pointers for utility worker lore (CMD-394) — no narrator ALWAYS RETRIEVE set.</summary>
+    public static ContextResolveResult ResolveTaskScoped(
+        AdventureBundle bundle,
+        ContextSignalBag signals,
+        bool includeMinimalCanonBaseline,
+        bool fatFallback = false)
+    {
+        var baseline = includeMinimalCanonBaseline
+            ? BuildUtilityMinimalBaseline(bundle, signals)
+            : [];
+        return ResolveCore(bundle, signals, fatFallback, baseline);
+    }
+
+    private static ContextResolveResult ResolveCore(
+        AdventureBundle bundle,
+        ContextSignalBag signals,
+        bool fatFallback,
+        IReadOnlyList<ContextPointer> baselinePointers)
     {
         var index = new SectionAliasIndex(bundle);
         var candidates = new Dictionary<string, ContextPointer>(StringComparer.OrdinalIgnoreCase);
@@ -24,13 +50,11 @@ internal static class ContextPointerResolver
             candidates[pointer.MachineId] = pointer;
         }
 
-        foreach (var baselinePointer in BuildBaseline(bundle, signals))
+        foreach (var baselinePointer in baselinePointers)
             Add(baselinePointer);
 
         foreach (var indexed in index.All.Where(i => i.Section.Pinned))
-        {
             Add(MakePointer(indexed, 40, PointerSource.Pin, signals));
-        }
 
         if (!string.IsNullOrWhiteSpace(signals.StateLocation))
         {
@@ -44,6 +68,9 @@ internal static class ContextPointerResolver
         var combined = signals.PlayerText + " " + signals.SummaryText;
         foreach (var indexed in index.MatchAlias(combined))
         {
+            if (IsNonBaselineScoringExcluded(indexed.FileName))
+                continue;
+
             var inPlayer = indexed.Section.Aliases.Any(a => SectionSlugHelper.ContainsToken(signals.PlayerText, a))
                            || SectionSlugHelper.ContainsToken(signals.PlayerText, indexed.Section.Title);
             var score = inPlayer ? 35 : 15;
@@ -60,7 +87,7 @@ internal static class ContextPointerResolver
                 continue;
 
             var indexed = ResolveTarget(index, entry.Target);
-            if (indexed is null)
+            if (indexed is null || IsNonBaselineScoringExcluded(indexed.FileName))
                 continue;
 
             Add(MakePointer(indexed, triggerHit ? 25 : 10, PointerSource.Trigger, signals));
@@ -69,7 +96,12 @@ internal static class ContextPointerResolver
         if (!string.IsNullOrWhiteSpace(signals.AttachmentTokens))
         {
             foreach (var indexed in index.MatchAlias(signals.AttachmentTokens))
+            {
+                if (IsNonBaselineScoringExcluded(indexed.FileName))
+                    continue;
+
                 Add(MakePointer(indexed, 20, PointerSource.Attachment, signals));
+            }
         }
 
         var filtered = candidates.Values
@@ -94,8 +126,42 @@ internal static class ContextPointerResolver
         };
     }
 
-    private static List<ContextPointer> BuildBaseline(AdventureBundle bundle, ContextSignalBag signals)
+    private static List<ContextPointer> BuildUtilityMinimalBaseline(
+        AdventureBundle bundle,
+        ContextSignalBag signals)
     {
+        var list = new List<ContextPointer>();
+        var index = new SectionAliasIndex(bundle);
+
+        void TryBaseline(string file, string sectionId)
+        {
+            var indexed = index.All.FirstOrDefault(i =>
+                string.Equals(i.FileName, file, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(i.Section.Id, sectionId, StringComparison.OrdinalIgnoreCase));
+            if (indexed is null)
+                return;
+
+            if (sectionId == "opening" && !IncludeOpening(bundle, signals, indexed.Section))
+                return;
+            if (sectionId == "rules" && !IncludeRules(signals, indexed.Section))
+                return;
+
+            list.Add(MakePointer(indexed, 100, PointerSource.Baseline, signals));
+        }
+
+        TryBaseline(SectionSchema.WorldFile, "rules");
+        TryBaseline(SectionSchema.ScenarioFile, "opening");
+        return list;
+    }
+
+    private static List<ContextPointer> BuildBaseline(
+        AdventureBundle bundle,
+        ContextSignalBag signals,
+        bool freshNarrativeBootstrap = false)
+    {
+        if (freshNarrativeBootstrap)
+            return BuildNarrativeStartBaseline(bundle, signals);
+
         var list = new List<ContextPointer>();
         var index = new SectionAliasIndex(bundle);
 
@@ -118,6 +184,24 @@ internal static class ContextPointerResolver
         TryBaseline(SectionSchema.ScenarioFile, "opening");
         TryBaseline(SectionSchema.WorldFile, "rules");
         TryBaseline(SectionSchema.CastFile, "player");
+
+        return list;
+    }
+
+    private static List<ContextPointer> BuildNarrativeStartBaseline(AdventureBundle bundle, ContextSignalBag signals)
+    {
+        var list = new List<ContextPointer>();
+        var index = new SectionAliasIndex(bundle);
+
+        foreach (var file in AdventureBootstrapService.NarrativeStartSourcePaths())
+        {
+            foreach (var indexed in index.All
+                         .Where(i => string.Equals(i.FileName, file, StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(i => i.Section.Id, StringComparer.Ordinal))
+            {
+                list.Add(MakePointer(indexed, 100, PointerSource.Baseline, signals));
+            }
+        }
 
         return list;
     }
@@ -146,6 +230,12 @@ internal static class ContextPointerResolver
         return string.IsNullOrWhiteSpace(phrase)
                || !signals.SummaryText.Contains(phrase, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Reference files (narrator-scales.md, canon-format.md) are Project RAG canon — never score-match for inline excerpts.
+    /// </summary>
+    private static bool IsNonBaselineScoringExcluded(string fileName) =>
+        SectionSchema.IsReferenceSourceFile(fileName);
 
     private static ContextPointer MakePointer(
         IndexedSection indexed,

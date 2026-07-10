@@ -30,6 +30,24 @@ public sealed class ContextRenderPolicyTests
     }
 
     [Fact]
+    public void PickRenderMode_reference_file_never_inlines_even_in_fat_fallback()
+    {
+        var pointer = new ContextPointer
+        {
+            MachineId = "narrator-scales.md#narration-scales",
+            FileName = SectionSchema.NarratorScalesFile,
+            SectionId = "narration-scales",
+            Title = "narration scales",
+            Kind = "reference",
+            Score = 100,
+            Source = PointerSource.NameMatch,
+            BodyCache = new string('x', 4000),
+        };
+
+        Assert.Equal(RenderMode.PointerOnly, ContextRenderPolicy.PickRenderMode(pointer, fatFallback: true));
+    }
+
+    [Fact]
     public void Baseline_always_pointer_only()
     {
         var pointer = new ContextPointer

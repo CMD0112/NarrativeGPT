@@ -136,7 +136,8 @@ public sealed class ChatGptContextTagsInjection : IPageFeature
         "globalThis.__cgwHideContextTags = " + JsonSerializer.Serialize(hideContextTags) + ";" +
         "globalThis.__cgwExpandHiddenContext = " + JsonSerializer.Serialize(expandHiddenContext) + ";" +
         "if (typeof globalThis.__cgwApplyContextTagCollapse === 'function') globalThis.__cgwApplyContextTagCollapse();" +
-        "if (typeof globalThis.__cgwApplyContextTagDisplay === 'function') globalThis.__cgwApplyContextTagDisplay();";
+        "if (typeof globalThis.__cgwForceReprocessAllPacketTurns === 'function') globalThis.__cgwForceReprocessAllPacketTurns({ immediate: true });" +
+        "else if (typeof globalThis.__cgwApplyContextTagDisplay === 'function') globalThis.__cgwApplyContextTagDisplay();";
 
     public static string BuildPacketNavigateScript(bool hideContextTags, bool expandHiddenContext) =>
         "globalThis.__cgwHideContextTags = " + JsonSerializer.Serialize(hideContextTags) + ";" +

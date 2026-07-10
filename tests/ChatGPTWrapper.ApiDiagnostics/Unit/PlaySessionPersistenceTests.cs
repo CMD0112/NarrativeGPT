@@ -6,17 +6,18 @@ using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
+[Collection(FileLockAwareCollectionNames.Name)]
 [Trait("Category", "Unit")]
-public sealed class PlaySessionPersistenceTests
+public sealed class PlaySessionPersistenceTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void Save_preserves_link_metadata_when_stale_bundle_overwrites()
     {
         var bundle = AdventureStore.CreateNew("Linked adventure");
         bundle.Metadata.LinkedProjectId = "g-p-test";
-        bundle.Metadata.LinkedConversationId = "thread-1";
-        bundle.Metadata.PinnedPlayTabUrl =
+        PlayThreadBindingService.MarkVerified(bundle, "thread-1");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play).PinnedTabUrl =
             ChatGptUrls.BuildProjectConversationUrl("thread-1", "g-p-test");
         AdventureStore.Save(bundle);
 
@@ -31,10 +32,11 @@ public sealed class PlaySessionPersistenceTests
 
         var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
         Assert.Equal("g-p-test", reloaded.Metadata.LinkedProjectId);
-        Assert.Equal("thread-1", reloaded.Metadata.LinkedConversationId);
+        Assert.Equal("thread-1", PlayThreadBindingService.GetActiveConversationId(reloaded));
+        AdventureThreadRegistryService.EnsureMigrated(reloaded);
         Assert.Equal(
             ChatGptUrls.BuildProjectConversationUrl("thread-1", "g-p-test"),
-            reloaded.Metadata.PinnedPlayTabUrl);
+            AdventureThreadRegistryService.GetActiveEntry(reloaded, AdventureThreadKind.Play)?.PinnedTabUrl);
         Assert.Equal("Updated title", reloaded.Metadata.Title);
     }
 
@@ -54,7 +56,7 @@ public sealed class PlaySessionPersistenceTests
 
         var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
         Assert.Equal("g-p-legacy", reloaded.Metadata.LinkedProjectId);
-        Assert.Equal("conv-legacy", reloaded.Metadata.LinkedConversationId);
+        Assert.Equal("conv-legacy", PlayThreadBindingService.GetActiveConversationId(reloaded));
     }
 
     [Fact]
@@ -65,9 +67,10 @@ public sealed class PlaySessionPersistenceTests
             Metadata = new AdventureMetadata
             {
                 LinkedProjectId = "g-p-x",
-                LinkedConversationId = "c-1",
             },
         };
+
+        PlayThreadBindingService.MarkVerified(bundle, "c-1");
 
         Assert.Equal(
             ChatGptUrls.BuildProjectConversationUrl("c-1", "g-p-x"),
@@ -82,7 +85,7 @@ public sealed class PlaySessionPersistenceTests
 
         Assert.True(PlayTabPinService.TryBindProjectSessionFromSource(bundle, url));
         Assert.Equal("g-p-bind", bundle.Metadata.LinkedProjectId);
-        Assert.Equal("conv-abc", bundle.Metadata.LinkedConversationId);
+        Assert.Equal("conv-abc", PlayThreadBindingService.GetActiveConversationId(bundle));
         Assert.NotNull(bundle.Metadata.ProjectLink);
     }
 
@@ -147,11 +150,11 @@ public sealed class PlaySessionPersistenceTests
             Metadata = new AdventureMetadata
             {
                 LinkedProjectId = "g-p-test",
-                LinkedConversationId = "conv-1",
             },
         };
 
-        Assert.False(PlayTabPinService.ShouldOfferPinPromptOnOpen(bundle));
+        PlayThreadBindingService.MarkPendingPin(bundle, "conv-1");
+        Assert.True(PlayTabPinService.ShouldOfferPinPromptOnOpen(bundle));
     }
 
     [Fact]
@@ -237,7 +240,7 @@ public sealed class PlaySessionPersistenceTests
     {
         var bundle = AdventureStore.CreateNew("Rotate test");
         bundle.Metadata.LinkedProjectId = "g-p-test";
-        bundle.Metadata.LinkedConversationId = "thread-old";
+        PlayThreadBindingService.MarkVerified(bundle, "thread-old");
         bundle.Metadata.PinnedPlayTabKey = "pin-key";
         bundle.Metadata.PinnedPlayTabUrl =
             ChatGptUrls.BuildProjectConversationUrl("thread-old", "g-p-test");
@@ -296,7 +299,7 @@ public sealed class PlaySessionPersistenceTests
     {
         var bundle = AdventureStore.CreateNew("Rebind test");
         bundle.Metadata.LinkedProjectId = "g-p-test";
-        bundle.Metadata.LinkedConversationId = "thread-old";
+        PlayThreadBindingService.MarkVerified(bundle, "thread-old");
         AdventureSessionService.EnsureSession(bundle);
         var oldSessionId = bundle.CurrentSessionId;
 
@@ -304,7 +307,7 @@ public sealed class PlaySessionPersistenceTests
 
         var url = ChatGptUrls.BuildProjectConversationUrl("thread-new", "g-p-test");
         Assert.True(PlayTabPinService.TryBindProjectSessionFromSource(bundle, url));
-        Assert.Equal("thread-new", bundle.Metadata.LinkedConversationId);
+        Assert.Equal("thread-new", PlayThreadBindingService.GetActiveConversationId(bundle));
         Assert.NotEqual(oldSessionId, bundle.CurrentSessionId);
         Assert.Equal(1, PlayTurnScopeService.GetNextPacketTurnIndex(bundle));
     }
@@ -314,7 +317,7 @@ public sealed class PlaySessionPersistenceTests
     {
         var bundle = AdventureStore.CreateNew("Reload scope");
         bundle.Metadata.LinkedProjectId = "g-p-test";
-        bundle.Metadata.LinkedConversationId = "thread-old";
+        PlayThreadBindingService.MarkVerified(bundle, "thread-old");
         AdventureSessionService.EnsureSession(bundle);
         var oldSessionId = bundle.CurrentSessionId;
 
@@ -329,6 +332,7 @@ public sealed class PlaySessionPersistenceTests
         var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
 
         Assert.Null(reloaded.Metadata.LinkedConversationId);
+        Assert.True(string.IsNullOrWhiteSpace(PlayThreadBindingService.GetActiveConversationId(reloaded)));
         Assert.NotEqual(oldSessionId, reloaded.CurrentSessionId);
         Assert.Equal(1, PlayTurnScopeService.GetNextPacketTurnIndex(reloaded));
     }
@@ -374,7 +378,108 @@ public sealed class PlaySessionPersistenceTests
             ChatGptUrls.BuildProjectConversationUrl("abc-123", "g-p-test"));
 
         Assert.True(bound);
-        Assert.Equal("abc-123", bundle.Metadata.LinkedConversationId);
+        Assert.Equal("abc-123", PlayThreadBindingService.GetActiveConversationId(bundle));
         Assert.Equal("g-p-test", bundle.Metadata.LinkedProjectId);
+    }
+
+    [Fact]
+    public void SanitizeOnPlayOpen_clears_pending_play_binding_when_fresh_and_unpinned()
+    {
+        var bundle = AdventureStore.CreateNew("Sanitize");
+        bundle.Metadata.LinkedProjectId = "g-p-test";
+        PlayThreadBindingService.MarkPendingPin(bundle, "conv-pending");
+        AdventureStore.Save(bundle, allowLinkMetadataOverwrite: true);
+
+        var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
+        Assert.True(PlayThreadBindingService.SanitizeOnPlayOpen(reloaded));
+
+        var cleared = AdventureStore.Load(bundle.Metadata.Id)!;
+        Assert.False(PlayThreadBindingService.IsVerified(cleared));
+        Assert.True(string.IsNullOrWhiteSpace(PlayThreadBindingService.GetActiveConversationId(cleared)));
+    }
+
+    [Fact]
+    public void GetPlayPinKey_reads_registry_after_schema6_strips_metadata()
+    {
+        var bundle = AdventureStore.CreateNew("Registry pin");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play);
+        entry.PinnedTabKey = "registry-pin-key";
+        entry.PinnedTabTitle = "Play thread tab";
+        bundle.Metadata.PinnedPlayTabKey = "legacy-key";
+        AdventureStore.Save(bundle);
+
+        var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
+        Assert.Null(reloaded.Metadata.PinnedPlayTabKey);
+        Assert.Equal("registry-pin-key", PlayTabPinService.GetPlayPinKey(reloaded));
+        Assert.Equal("Play thread tab", PlayTabPinService.GetPlayPinTitle(reloaded));
+        Assert.True(PlayTabPinService.PreferPinnedPlayWebView(true, reloaded));
+    }
+
+    [Fact]
+    public void TryBindProjectSessionFromSource_rejects_design_thread()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Play design guard");
+        bundle.Metadata.LinkedProjectId = "g-p-test";
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var designEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        designEntry.ConversationId = "design-thread-id";
+
+        var designUrl = ChatGptUrls.BuildProjectConversationUrl("design-thread-id", "g-p-test");
+        Assert.False(PlayTabPinService.TryBindProjectSessionFromSource(bundle, designUrl));
+        Assert.Null(PlayThreadBindingService.GetActiveConversationId(bundle));
+
+        var playUrl = ChatGptUrls.BuildProjectConversationUrl("play-thread-id", "g-p-test");
+        Assert.True(PlayTabPinService.TryBindProjectSessionFromSource(bundle, playUrl));
+        Assert.Equal("play-thread-id", PlayThreadBindingService.GetActiveConversationId(bundle));
+    }
+
+    [Fact]
+    public void MarkVerified_rejects_design_conversation_id()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Verified guard");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var designEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        designEntry.ConversationId = "shared-design";
+
+        PlayThreadBindingService.MarkVerified(bundle, "shared-design");
+
+        Assert.False(PlayThreadBindingService.IsVerified(bundle));
+        Assert.True(string.IsNullOrWhiteSpace(PlayThreadBindingService.GetActiveConversationId(bundle)));
+    }
+
+    [Fact]
+    public void SanitizeDesignCollision_restores_play_from_pin_when_design_ids_match()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Collision restore");
+        bundle.Metadata.LinkedProjectId = "g-p-test";
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+
+        var playEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play);
+        playEntry.ConversationId = "design-thread-id";
+        playEntry.BindingTrust = PlayThreadBindingTrust.Verified;
+        playEntry.PinnedTabUrl = ChatGptUrls.BuildProjectConversationUrl("play-thread-id", "g-p-test");
+
+        var designEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        designEntry.ConversationId = "design-thread-id";
+
+        Assert.True(PlayThreadBindingService.SanitizeDesignCollision(bundle));
+        Assert.Equal("play-thread-id", PlayThreadBindingService.GetActiveConversationId(bundle));
+        Assert.True(PlayThreadBindingService.IsVerified(bundle));
+    }
+
+    [Fact]
+    public void TryResolvePlayConversationFromSource_rejects_design_thread()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("Resolve guard");
+        bundle.Metadata.LinkedProjectId = "g-p-test";
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var designEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Design);
+        designEntry.ConversationId = "design-thread-id";
+
+        var designUrl = ChatGptUrls.BuildProjectConversationUrl("design-thread-id", "g-p-test");
+        Assert.False(
+            PlayTabPinService.TryResolvePlayConversationFromSource(bundle, designUrl, out _, out var error));
+        Assert.Equal("play_same_as_design_thread", error);
     }
 }

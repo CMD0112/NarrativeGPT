@@ -1,0 +1,31 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.RecapPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid RowSpacing="12" MinWidth="440" MinHeight="280">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBox x:Name="RecapBox"
+                 Grid.Row="0"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 IsReadOnly="True"
+                 MinHeight="240" />
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8">
+            <Button Content="Copy"
+                    Style="{ThemeResource ShellGhostButtonStyle}"
+                    Click="Copy_Click" />
+            <Button Content="Close"
+                    Style="{ThemeResource ShellPrimaryButtonStyle}"
+                    Click="Close_Click" />
+        </StackPanel>
+    </Grid>
+</UserControl>

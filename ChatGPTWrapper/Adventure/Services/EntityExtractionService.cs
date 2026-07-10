@@ -1,20 +1,120 @@
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 using ChatGPTWrapper.ChatGptApi;
+using Microsoft.Web.WebView2.Core;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
 internal static class EntityExtractionService
 {
-    public const int SeedVersion = 2;
+    public const int SeedVersion = 5;
 
     public const int MaxJobsPerSession = 50;
 
     public const int MaxConsecutiveParseFailures = 3;
 
     public const string UtilityTitlePrefix = "[CGW:entity]";
+
+    public static IReadOnlyList<string> GetPublishableReferenceFileNames(string jobId) => jobId switch
+    {
+        GenerationJobId.ExpandEntity =>
+        [
+            SourceJsonImportService.EntitiesJsonFileName,
+        ],
+        GenerationJobId.ProposeEntityState =>
+        [
+            EntityInternalStateService.FileName,
+        ],
+        GenerationJobId.ExtractEntities =>
+        [
+            SourceJsonImportService.EntitiesJsonFileName,
+            SourceJsonImportService.ScenarioJsonFileName,
+        ],
+        _ => [],
+    };
+
+    public static string BuildCanonicalInputRemotePath(
+        AdventureBundle bundle,
+        string jobId,
+        Guid runId,
+        string fileName) =>
+        UtilitySourceFileNaming.BuildInputRemotePath(
+            bundle.Metadata.Id,
+            jobId,
+            runId,
+            fileName);
+
+    public static string LocalReferencePath(AdventureBundle bundle, string fileName) =>
+        Path.Combine(AppDirectories.AdventureDirectory(bundle.Metadata.Id), fileName);
+
+    public static async Task<(bool Success, string? Error, IReadOnlyList<string> RemotePaths)> PublishReferenceFilesToProjectAsync(
+        ChatGptProjectApiService api,
+        CoreWebView2 core,
+        AdventureBundle bundle,
+        string jobId,
+        Guid runId,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        await UtilityPublishSession.PublishJobInputsAsync(
+            api,
+            core,
+            bundle,
+            jobId,
+            runId,
+            progress,
+            cancellationToken);
+
+    public static string? BuildSourcesBlockForPrompt(
+        AdventureBundle bundle,
+        string jobId,
+        Guid runId,
+        string? gizmoId = null)
+    {
+        gizmoId ??= AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
+        if (string.IsNullOrWhiteSpace(gizmoId))
+            return null;
+
+        var published = new List<(string RemotePath, string? TaskHint)>();
+        foreach (var fileName in GetPublishableReferenceFileNames(jobId))
+        {
+            if (!File.Exists(LocalReferencePath(bundle, fileName)))
+                continue;
+
+            published.Add((
+                BuildCanonicalInputRemotePath(bundle, jobId, runId, fileName),
+                fileName switch
+                {
+                    _ when string.Equals(fileName, SourceJsonImportService.EntitiesJsonFileName, StringComparison.OrdinalIgnoreCase) =>
+                        "Canonical entities.json schema and id reference for this extraction job",
+                    _ when string.Equals(fileName, SourceJsonImportService.ScenarioJsonFileName, StringComparison.OrdinalIgnoreCase) =>
+                        "Scenario canon baseline for this extraction job",
+                    _ => $"Reference input {fileName} for this job",
+                }));
+        }
+
+        return published.Count == 0
+            ? null
+            : UtilitySourceFileIoService.BuildUtilitySourcesBlock(gizmoId, published);
+    }
+
+    public static string BuildSourceRetrieveLines(AdventureBundle bundle, string jobId, Guid runId)
+    {
+        var lines = new List<string>();
+        foreach (var fileName in GetPublishableReferenceFileNames(jobId))
+        {
+            if (!File.Exists(LocalReferencePath(bundle, fileName)))
+                continue;
+
+            lines.Add(UtilitySourceFileIoService.BuildSourceRetrieveLine(
+                BuildCanonicalInputRemotePath(bundle, jobId, runId, fileName)));
+        }
+
+        return lines.Count == 0 ? "" : string.Join(Environment.NewLine, lines);
+    }
 
     public static string BuildUtilityTitleLine(AdventureBundle bundle, int sequence) =>
         $"{UtilityTitlePrefix} {bundle.Metadata.Title} · {bundle.Metadata.Id:N} · #{sequence}";
@@ -24,21 +124,41 @@ internal static class EntityExtractionService
         You are a structured entity extractor for a tabletop-style narrative adventure.
         Entities are durable world-model referents (people, places, things, factions, quests, concepts) — not play-by-play events.
         Events belong in memories, not here. Story cards are separate keyword-triggered lore blocks.
-        Respond to extraction jobs with JSON only — a single JSON array, no markdown fences or commentary.
+        Respond to extraction jobs with JSON only — a single JSON object, no markdown fences or commentary.
 
-        Each array element must include:
-        - entityType: "person" | "place" | "thing" | "faction" | "quest" | "concept"
-          (aliases accepted: character, location, item, idea)
+        Response contract:
+        {
+          "extractions": [ ...new entities... ],
+          "updates": [ ...partial updates for existing entities... ]
+        }
+        Always include both arrays. Use [] when empty.
+
+        Extractions array elements must include:
+        - entityType: "person" | "place" | "thing" | "faction" | "quest" | "concept" | "vehicle" | "mystery" | "conflict" | "consequence"
+          (aliases accepted: character, location, item, idea, vessel, mount)
         - name: string (required)
         - description: string
         - roleOrStatus: string (optional)
-        - category: string (optional; especially for concepts)
-        - action: "create" | "update" | "noop" (optional; default create)
+        - category: string (optional; especially for concepts and inventory items)
 
-        concept = cultural/metaphysical/system ideas. thing = physical objects. mystery = unresolved plot question (use sparingly).
+        Updates array elements must include:
+        - id: entity id when known (preferred)
+        - entityType + name fallback if id unavailable
+        - changed fields only (description, roleOrStatus, category, etc)
+        - optional rationale
+
+        Internal/psychological state (mood, injuries, trust, quest progress) belongs in propose_entity_state — NOT here.
+        concept = cultural/metaphysical/system ideas. thing = physical handheld objects. vehicle = ships, mounts, wagons.
+        mystery/conflict/consequence = plot structures tracked in entities.json when extracted.
         Prefer updates over duplicates when an entity clearly matches the current index.
-        If nothing new or changed, return [].
-        """;
+        If nothing new or changed, return { "extractions": [], "updates": [] }.
+
+        Cast-aligned typed fields (when extracting people from cast-like prose):
+        - Prefer labeled lines in description using canon labels: Role, Relationship, Motives, Personality, Author guidance (out-of-character notes for running scenes — not in-world Role or Motives).
+        - Party companions use Condition (Role alias), Attitude (Status alias), Goals (Motives alias), Personality, Abilities, Weaknesses.
+        - Novel attributes without a typed field: use `Label: value` lines in description (import promotes to extendedFields) or include extendedFields in updates as { "key": "value" }.
+        - Do not put internal play state (mood, injuries, trust shifts) here — use propose_entity_state.
+        """ + Environment.NewLine + CanonFieldReferenceService.BuildPromptCastFieldSummary();
 
     public static string BuildSeedPrompt(AdventureBundle bundle, int sequence) =>
         GenerationJobHandlers.BuildSeedPrompt(bundle, GenerationJobId.ExtractEntities, sequence);
@@ -61,6 +181,22 @@ internal static class EntityExtractionService
             FormatIndexLine(q.Title, compact, q.Status.ToString(), q.Description)));
         AppendIndexSection(sb, "Concepts", entities.Concepts.Select(c =>
             FormatIndexLine(c.Name, compact, c.Category, c.Description)));
+        AppendIndexSection(sb, "Party", entities.Party.Select(c =>
+            FormatIndexLine(c.Name, compact, c.Relationship, c.Goals)));
+        AppendIndexSection(sb, "Vehicles", entities.Vehicles.Select(v =>
+            FormatIndexLine(v.Name, compact, v.VehicleType, v.Description)));
+        AppendIndexSection(sb, "Mysteries", entities.Mysteries.Select(m =>
+            FormatIndexLine(m.Question, compact, m.Resolved ? "resolved" : "open", m.Clues)));
+        AppendIndexSection(sb, "Conflicts", entities.Conflicts.Select(c =>
+            FormatIndexLine(c.Title, compact, c.Status, c.Description)));
+        AppendIndexSection(sb, "Consequences", entities.Consequences.Select(c =>
+            FormatIndexLine(c.Trigger, compact, c.Resolved ? "resolved" : "pending", c.Effect)));
+
+        if (!string.IsNullOrWhiteSpace(entities.Player.Name))
+        {
+            sb.AppendLine("Player:");
+            sb.AppendLine(FormatIndexLine(entities.Player.Name, compact, null, entities.Player.Background));
+        }
 
         return sb.Length == 0 ? "(none)" : sb.ToString().TrimEnd();
     }
@@ -94,7 +230,7 @@ internal static class EntityExtractionService
         return lines.Count == 0 ? "(none)" : string.Join(Environment.NewLine, lines);
     }
 
-    public static string BuildExtractionPrompt(AdventureBundle bundle, TurnRecord turn) =>
+    public static string BuildExtractionPrompt(AdventureBundle bundle, TurnRecord turn, Guid? runId = null) =>
         BuildScopedExtractionPrompt(bundle, new UtilityTranscriptScope
         {
             TargetPair = new TranscriptTurnPair
@@ -111,9 +247,13 @@ internal static class EntityExtractionService
                     NarratorText = turn.NarratorText ?? "",
                 },
                 pairOffset: 0),
-        });
+        },
+        runId);
 
-    public static string BuildScopedExtractionPrompt(AdventureBundle bundle, UtilityTranscriptScope scope)
+    public static string BuildScopedExtractionPrompt(
+        AdventureBundle bundle,
+        UtilityTranscriptScope scope,
+        Guid? runId = null)
     {
         var pair = scope.TargetPair;
         var scopeBlock = UtilityTranscriptScopeService.FormatScopeBlock(scope);
@@ -126,9 +266,25 @@ internal static class EntityExtractionService
               NARRATOR: {pair.NarratorText}
               """;
 
+        var sourcesBlock = runId is { } rid
+            ? BuildSourcesBlockForPrompt(bundle, GenerationJobId.ExtractEntities, rid)
+            : null;
+        var retrieveLines = runId is { } rid2
+            ? BuildSourceRetrieveLines(bundle, GenerationJobId.ExtractEntities, rid2)
+            : "";
+        var sourcesPrefix = string.IsNullOrWhiteSpace(sourcesBlock)
+            ? ""
+            : $"""
+              {sourcesBlock}
+              {retrieveLines}
+
+              """;
+
         return $"""
-            === EXTRACTION JOB ===
-            Return JSON only: array of objects with entityType (person|place|thing|faction|quest|concept), name, description, optional roleOrStatus, optional category, optional action.
+            {sourcesPrefix}=== EXTRACTION JOB ===
+            Return JSON only: object with arrays named "extractions" and "updates".
+            extractions: new entities only.
+            updates: existing entities only (id-first; partial fields only).
 
             {scopeBlock}
 
@@ -139,11 +295,29 @@ internal static class EntityExtractionService
             """;
     }
 
-    public static string BuildExpandEntityPrompt(AdventureBundle bundle, string entityKind, Guid entityId)
+    public static string BuildExpandEntityPrompt(
+        AdventureBundle bundle,
+        string entityKind,
+        Guid entityId,
+        Guid? runId = null)
     {
         var (name, type, description, role, category) = ResolveEntityFields(bundle, entityKind, entityId);
+        var sourcesBlock = runId is { } rid
+            ? BuildSourcesBlockForPrompt(bundle, GenerationJobId.ExpandEntity, rid)
+            : null;
+        var retrieveLines = runId is { } rid2
+            ? BuildSourceRetrieveLines(bundle, GenerationJobId.ExpandEntity, rid2)
+            : "";
+        var sourcesPrefix = string.IsNullOrWhiteSpace(sourcesBlock)
+            ? ""
+            : $"""
+              {sourcesBlock}
+              {retrieveLines}
+
+              """;
+
         return $"""
-            === EXPAND ENTITY JOB ===
+            {sourcesPrefix}=== EXPAND ENTITY JOB ===
             Enrich this entity with richer world-model detail. Return JSON array with one entity object.
 
             entityType: {type}
@@ -239,10 +413,14 @@ internal static class EntityExtractionService
         if (string.IsNullOrWhiteSpace(normalized))
             return null;
 
+        var valid = UtilityJsonRepairService.TryEnsureValidJson(normalized);
+        if (string.IsNullOrWhiteSpace(valid))
+            return null;
+
         try
         {
-            using var doc = JsonDocument.Parse(normalized);
-            return doc.RootElement.ValueKind == JsonValueKind.Object ? normalized : null;
+            using var doc = JsonDocument.Parse(valid);
+            return doc.RootElement.ValueKind == JsonValueKind.Object ? valid : null;
         }
         catch (JsonException)
         {
@@ -258,41 +436,37 @@ internal static class EntityExtractionService
         var fenced = StripMarkdownFence(response);
         if (!string.IsNullOrWhiteSpace(fenced))
         {
-            try
-            {
-                using var fullDoc = JsonDocument.Parse(fenced);
-                var fromFull = fullDoc.RootElement.ValueKind switch
-                {
-                    JsonValueKind.Array => FilterArrayToObjectElementsJson(fullDoc.RootElement),
-                    JsonValueKind.Object => UnwrapObjectToArrayJson(fullDoc.RootElement),
-                    _ => null,
-                };
-                if (!string.IsNullOrWhiteSpace(fromFull))
-                    return fromFull;
-            }
-            catch (JsonException)
-            {
-                /* fall through */
-            }
+            var fromFenced = TryNormalizeParsedJsonRoot(fenced);
+            if (!string.IsNullOrWhiteSpace(fromFenced))
+                return fromFenced;
         }
 
         var normalized = TryNormalizeJsonResponse(response);
         if (string.IsNullOrWhiteSpace(normalized))
             return null;
 
+        return TryNormalizeParsedJsonRoot(normalized);
+    }
+
+    private static string? TryNormalizeParsedJsonRoot(string text)
+    {
+        var valid = UtilityJsonRepairService.TryEnsureValidJson(text);
+        if (string.IsNullOrWhiteSpace(valid))
+            return null;
+
         try
         {
-            using var doc = JsonDocument.Parse(normalized);
+            using var doc = JsonDocument.Parse(valid);
             return doc.RootElement.ValueKind switch
             {
                 JsonValueKind.Array => FilterArrayToObjectElementsJson(doc.RootElement),
                 JsonValueKind.Object => UnwrapObjectToArrayJson(doc.RootElement),
-                _ => normalized,
+                _ => null,
             };
         }
         catch (JsonException)
         {
-            return normalized;
+            return null;
         }
     }
 
@@ -327,7 +501,7 @@ internal static class EntityExtractionService
 
     private static string? UnwrapObjectToArrayJson(JsonElement root)
     {
-        foreach (var propertyName in new[] { "entities", "memories", "items", "proposals", "data", "results", "warnings" })
+        foreach (var propertyName in new[] { "entities", "extractions", "updates", "events", "memories", "items", "proposals", "data", "results", "warnings" })
         {
             if (!root.TryGetProperty(propertyName, out var value)
                 || value.ValueKind == JsonValueKind.Null
@@ -357,55 +531,89 @@ internal static class EntityExtractionService
         return "[" + string.Join(",", objects.Select(o => o.GetRawText())) + "]";
     }
 
-    public static IReadOnlyList<EntityReviewItem> ParseExtractionResponse(string response)
+    public sealed class EntityDualSectionResult
     {
-        var normalized = TryNormalizeJsonArrayResponse(response);
+        public List<EntityReviewItem> Extractions { get; } = [];
+
+        public List<EntityReviewItem> Updates { get; } = [];
+    }
+
+    public static EntityDualSectionResult ParseDualSectionResponse(string response)
+    {
+        var result = new EntityDualSectionResult();
+        var normalized = TryNormalizeJsonResponse(response);
         if (string.IsNullOrWhiteSpace(normalized))
-            return [];
+            return result;
 
         try
         {
             using var doc = JsonDocument.Parse(normalized);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array)
-                return [];
-
-            var items = new List<EntityReviewItem>();
-            foreach (var element in JsonElementParsing.EnumerateObjectElements(doc.RootElement))
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Array)
             {
-                var type = EntityTypeNormalizer.Normalize(JsonElementParsing.GetStringProperty(element, "entityType"));
-                var name = JsonElementParsing.GetStringProperty(element, "name") ?? "";
-                var description = JsonElementParsing.GetStringProperty(element, "description") ?? "";
-                var role = JsonElementParsing.GetStringProperty(element, "roleOrStatus") ?? "";
-                var category = JsonElementParsing.GetStringProperty(element, "category") ?? "";
-                var action = JsonElementParsing.GetStringProperty(element, "action") ?? "create";
-
-                if (string.IsNullOrWhiteSpace(name))
-                    continue;
-
-                if (string.Equals(action, "noop", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                items.Add(new EntityReviewItem
-                {
-                    EntityType = type,
-                    ProposedChange = JsonSerializer.Serialize(new
-                    {
-                        entityType = type,
-                        name,
-                        description,
-                        roleOrStatus = role,
-                        category,
-                        action,
-                    }),
-                });
+                result.Extractions.AddRange(ParseEntityReviewItems(root, defaultAction: "create"));
+                return result;
             }
 
-            return items;
+            if (root.ValueKind != JsonValueKind.Object)
+                return result;
+
+            if (root.TryGetProperty("extractions", out var extractions) && extractions.ValueKind == JsonValueKind.Array)
+                result.Extractions.AddRange(ParseEntityReviewItems(extractions, defaultAction: "create"));
+            if (root.TryGetProperty("updates", out var updates) && updates.ValueKind == JsonValueKind.Array)
+                result.Updates.AddRange(ParseEntityReviewItems(updates, defaultAction: "update"));
+
+            return result;
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        catch (JsonException)
         {
-            return [];
+            return result;
         }
+    }
+
+    public static IReadOnlyList<EntityReviewItem> ParseExtractionResponse(string response)
+    {
+        var dual = ParseDualSectionResponse(response);
+        return dual.Extractions;
+    }
+
+    private static List<EntityReviewItem> ParseEntityReviewItems(JsonElement array, string defaultAction)
+    {
+        var items = new List<EntityReviewItem>();
+        foreach (var element in JsonElementParsing.EnumerateObjectElements(array))
+        {
+            var type = EntityTypeNormalizer.Normalize(JsonElementParsing.GetStringProperty(element, "entityType"));
+            var name = JsonElementParsing.GetStringProperty(element, "name") ?? "";
+            var id = JsonElementParsing.GetStringProperty(element, "id") ?? "";
+            var description = JsonElementParsing.GetStringProperty(element, "description") ?? "";
+            var role = JsonElementParsing.GetStringProperty(element, "roleOrStatus") ?? "";
+            var category = JsonElementParsing.GetStringProperty(element, "category") ?? "";
+            var rationale = JsonElementParsing.GetStringProperty(element, "rationale") ?? "";
+            var action = JsonElementParsing.GetStringProperty(element, "action") ?? defaultAction;
+
+            if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(id))
+                continue;
+            if (string.Equals(action, "noop", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            items.Add(new EntityReviewItem
+            {
+                EntityType = type,
+                ProposedChange = JsonSerializer.Serialize(new
+                {
+                    id = string.IsNullOrWhiteSpace(id) ? null : id,
+                    entityType = type,
+                    name,
+                    description,
+                    roleOrStatus = role,
+                    category,
+                    rationale = string.IsNullOrWhiteSpace(rationale) ? null : rationale,
+                    action,
+                }),
+            });
+        }
+
+        return items;
     }
 
     public static string FormatUtilityStatus(AdventureBundle bundle) =>
@@ -414,7 +622,12 @@ internal static class EntityExtractionService
     public static void EnqueueProposals(EntitiesDocument entities, IEnumerable<EntityReviewItem> proposals)
     {
         foreach (var item in proposals)
+        {
+            if (!EntityCanonStateGuardService.TryValidateEntityExtractProposal(item.ProposedChange, out _))
+                continue;
+
             entities.ReviewQueue.Add(item);
+        }
     }
 
     public static bool ApplyAcceptedReviewItem(EntitiesDocument entities, EntityReviewItem item)
@@ -429,6 +642,7 @@ internal static class EntityExtractionService
             var type = EntityTypeNormalizer.Normalize(
                 root.TryGetProperty("entityType", out var typeEl) ? typeEl.GetString() : item.EntityType);
             var name = root.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
+            var id = root.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "";
             var description = root.TryGetProperty("description", out var descEl) ? descEl.GetString() ?? "" : "";
             var role = root.TryGetProperty("roleOrStatus", out var roleEl) ? roleEl.GetString() ?? "" : "";
             var category = root.TryGetProperty("category", out var catEl) ? catEl.GetString() ?? "" : "";
@@ -436,17 +650,17 @@ internal static class EntityExtractionService
                 ? actEl.GetString() ?? "create"
                 : "create";
 
-            if (string.IsNullOrWhiteSpace(name))
+            if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(id))
                 return false;
 
             return type switch
             {
-                "person" => ApplyPerson(entities, name, description, role, action),
-                "place" => ApplyPlace(entities, name, description, role, action),
-                "thing" => ApplyThing(entities, name, description, role, action),
-                "faction" => ApplyFaction(entities, name, description, role, action),
-                "quest" => ApplyQuest(entities, name, description, role, action),
-                "concept" => ApplyConcept(entities, name, description, category, action),
+                "person" => ApplyPerson(entities, id, name, description, role, action),
+                "place" => ApplyPlace(entities, id, name, description, role, action),
+                "thing" => ApplyThing(entities, id, name, description, role, action),
+                "faction" => ApplyFaction(entities, id, name, description, role, action),
+                "quest" => ApplyQuest(entities, id, name, description, role, action),
+                "concept" => ApplyConcept(entities, id, name, description, category, action),
                 _ => false,
             };
         }
@@ -456,94 +670,152 @@ internal static class EntityExtractionService
         }
     }
 
-    private static bool ApplyPerson(EntitiesDocument entities, string name, string desc, string role, string action)
+    public static int ApplyEntityUpdates(EntitiesDocument entities, IEnumerable<EntityReviewItem> updates)
     {
-        var existing = entities.Characters.FirstOrDefault(c =>
-            string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+        var count = 0;
+        foreach (var update in updates)
+        {
+            if (ApplyAcceptedReviewItem(entities, update))
+                count++;
+        }
+
+        return count;
+    }
+
+    private static bool ApplyPerson(EntitiesDocument entities, string id, string name, string desc, string role, string action)
+    {
+        var existing = TryResolveById(entities.Characters, id, c => c.Id)
+            ?? entities.Characters.FirstOrDefault(c =>
+                string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (existing is not null && string.Equals(action, "update", StringComparison.OrdinalIgnoreCase))
         {
             if (!string.IsNullOrWhiteSpace(desc)) existing.Description = desc;
             if (!string.IsNullOrWhiteSpace(role)) existing.Role = role;
+            if (!string.IsNullOrWhiteSpace(name)) existing.Name = name;
+            PromoteStructuredFields(existing, CanonSchemaRegistry.Npc);
             return true;
         }
 
-        entities.Characters.Add(new CharacterEntry { Name = name, Description = desc, Role = role });
+        var created = new CharacterEntry { Name = name, Description = desc, Role = role };
+        PromoteStructuredFields(created, CanonSchemaRegistry.Npc);
+        entities.Characters.Add(created);
         return true;
     }
 
-    private static bool ApplyPlace(EntitiesDocument entities, string name, string desc, string role, string action)
+    private static bool ApplyPlace(EntitiesDocument entities, string id, string name, string desc, string role, string action)
     {
-        var existing = entities.Locations.FirstOrDefault(c =>
-            string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+        var existing = TryResolveById(entities.Locations, id, c => c.Id)
+            ?? entities.Locations.FirstOrDefault(c =>
+                string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (existing is not null && string.Equals(action, "update", StringComparison.OrdinalIgnoreCase))
         {
             if (!string.IsNullOrWhiteSpace(desc)) existing.Description = desc;
             if (!string.IsNullOrWhiteSpace(role)) existing.Status = role;
+            if (!string.IsNullOrWhiteSpace(name)) existing.Name = name;
+            PromoteStructuredFields(existing, CanonSchemaRegistry.Location);
             return true;
         }
 
-        entities.Locations.Add(new LocationEntry { Name = name, Description = desc, Status = role });
+        var created = new LocationEntry { Name = name, Description = desc, Status = role };
+        PromoteStructuredFields(created, CanonSchemaRegistry.Location);
+        entities.Locations.Add(created);
         return true;
     }
 
-    private static bool ApplyThing(EntitiesDocument entities, string name, string desc, string role, string action)
+    private static bool ApplyThing(EntitiesDocument entities, string id, string name, string desc, string role, string action)
     {
-        var existing = entities.Inventory.FirstOrDefault(c =>
-            string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+        var existing = TryResolveById(entities.Inventory, id, c => c.Id)
+            ?? entities.Inventory.FirstOrDefault(c =>
+                string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (existing is not null && string.Equals(action, "update", StringComparison.OrdinalIgnoreCase))
         {
             if (!string.IsNullOrWhiteSpace(desc)) existing.Description = desc;
             if (!string.IsNullOrWhiteSpace(role)) existing.Status = role;
+            if (!string.IsNullOrWhiteSpace(name)) existing.Name = name;
+            PromoteStructuredFields(existing, CanonSchemaRegistry.Inventory);
             return true;
         }
 
-        entities.Inventory.Add(new InventoryEntry { Name = name, Description = desc, Status = role });
+        var created = new InventoryEntry { Name = name, Description = desc, Status = role };
+        PromoteStructuredFields(created, CanonSchemaRegistry.Inventory);
+        entities.Inventory.Add(created);
         return true;
     }
 
-    private static bool ApplyFaction(EntitiesDocument entities, string name, string desc, string role, string action)
+    private static bool ApplyFaction(EntitiesDocument entities, string id, string name, string desc, string role, string action)
     {
-        var existing = entities.Factions.FirstOrDefault(c =>
-            string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+        var existing = TryResolveById(entities.Factions, id, c => c.Id)
+            ?? entities.Factions.FirstOrDefault(c =>
+                string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (existing is not null && string.Equals(action, "update", StringComparison.OrdinalIgnoreCase))
         {
             if (!string.IsNullOrWhiteSpace(desc)) existing.Goals = desc;
             if (!string.IsNullOrWhiteSpace(role)) existing.Reputation = role;
+            if (!string.IsNullOrWhiteSpace(name)) existing.Name = name;
+            PromoteStructuredFields(existing, CanonSchemaRegistry.Faction);
             return true;
         }
 
-        entities.Factions.Add(new FactionEntry { Name = name, Goals = desc, Reputation = role });
+        var created = new FactionEntry { Name = name, Goals = desc, Reputation = role };
+        PromoteStructuredFields(created, CanonSchemaRegistry.Faction);
+        entities.Factions.Add(created);
         return true;
     }
 
-    private static bool ApplyQuest(EntitiesDocument entities, string name, string desc, string role, string action)
+    private static bool ApplyQuest(EntitiesDocument entities, string id, string name, string desc, string role, string action)
     {
-        var existing = entities.Quests.FirstOrDefault(c =>
-            string.Equals(c.Title, name, StringComparison.OrdinalIgnoreCase));
+        var existing = TryResolveById(entities.Quests, id, c => c.Id)
+            ?? entities.Quests.FirstOrDefault(c =>
+                string.Equals(c.Title, name, StringComparison.OrdinalIgnoreCase));
         if (existing is not null && string.Equals(action, "update", StringComparison.OrdinalIgnoreCase))
         {
             if (!string.IsNullOrWhiteSpace(desc)) existing.Description = desc;
             if (!string.IsNullOrWhiteSpace(role)) existing.Notes = role;
+            if (!string.IsNullOrWhiteSpace(name)) existing.Title = name;
+            PromoteStructuredFields(existing, CanonSchemaRegistry.Quest);
             return true;
         }
 
-        entities.Quests.Add(new QuestEntry { Title = name, Description = desc, Notes = role });
+        var created = new QuestEntry { Title = name, Description = desc, Notes = role };
+        PromoteStructuredFields(created, CanonSchemaRegistry.Quest);
+        entities.Quests.Add(created);
         return true;
     }
 
-    private static bool ApplyConcept(EntitiesDocument entities, string name, string desc, string category, string action)
+    private static bool ApplyConcept(EntitiesDocument entities, string id, string name, string desc, string category, string action)
     {
-        var existing = entities.Concepts.FirstOrDefault(c =>
-            string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(name)
+            && EntitiesCanonHygieneService.NameOwnedByOtherCategory(entities, name, out _))
+            return false;
+
+        var existing = TryResolveById(entities.Concepts, id, c => c.Id)
+            ?? entities.Concepts.FirstOrDefault(c =>
+                string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (existing is not null && string.Equals(action, "update", StringComparison.OrdinalIgnoreCase))
         {
             if (!string.IsNullOrWhiteSpace(desc)) existing.Description = desc;
             if (!string.IsNullOrWhiteSpace(category)) existing.Category = category;
+            if (!string.IsNullOrWhiteSpace(name)) existing.Name = name;
+            PromoteStructuredFields(existing, CanonSchemaRegistry.Concept);
             return true;
         }
 
-        entities.Concepts.Add(new ConceptEntry { Name = name, Description = desc, Category = category });
+        var created = new ConceptEntry { Name = name, Description = desc, Category = category };
+        PromoteStructuredFields(created, CanonSchemaRegistry.Concept);
+        entities.Concepts.Add(created);
         return true;
+    }
+
+    private static void PromoteStructuredFields(object entity, CanonEntityKindSpec spec) =>
+        CanonFieldMapper.TryPromoteStructuredFieldsFromBody(entity, spec);
+
+    private static T? TryResolveById<T>(IEnumerable<T> entries, string id, Func<T, Guid> selector)
+        where T : class
+    {
+        if (!Guid.TryParse(id, out var gid))
+            return null;
+
+        return entries.FirstOrDefault(e => selector(e) == gid);
     }
 
     private static void AppendIndexSection(StringBuilder sb, string heading, IEnumerable<string> lines)

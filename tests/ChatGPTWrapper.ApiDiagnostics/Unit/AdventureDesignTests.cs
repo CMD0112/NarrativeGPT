@@ -4,8 +4,8 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class AdventureDesignTests
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class AdventureDesignTests : IClassFixture<FileLockAwareFixture>
 {
 
     [Fact]

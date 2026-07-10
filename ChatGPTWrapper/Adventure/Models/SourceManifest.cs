@@ -4,11 +4,17 @@ using ChatGPTWrapper.ChatGptApi;
 
 public sealed class SourceManifest
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
     public bool Synced { get; set; }
+
+    /// <summary>One-shot play-packet notify after canon reconciliation.</summary>
+    public CanonChangeNotifyState CanonChangeNotify { get; set; } = new();
+
+    /// <summary>Staged entity change plans awaiting author apply (CMD-240).</summary>
+    public List<EntityChangePlan> PendingEntityChangePlans { get; set; } = [];
 
     public DateTimeOffset? LastRemoteSyncAt { get; set; }
 
@@ -148,4 +154,32 @@ public sealed class SourceSyncPlanItem
     public required SourceManifestEntry Entry { get; init; }
 
     public SourceConflictResolution Resolution { get; set; } = SourceConflictResolution.None;
+}
+
+public sealed class CanonChangeNotifyState
+{
+    public bool Active { get; set; }
+
+    public DateTimeOffset? SetAt { get; set; }
+
+    public string? TriggerSummary { get; set; }
+
+    public List<CanonChangeHint> Hints { get; set; } = [];
+
+    public bool UnresolvedDrift { get; set; }
+}
+
+public sealed class CanonChangeHint
+{
+    public string FileName { get; set; } = "";
+
+    public List<string> SectionIds { get; set; } = [];
+
+    public List<string> EntityIds { get; set; } = [];
+
+    public string ChangeKind { get; set; } = "";
+
+    public string? PriorName { get; set; }
+
+    public string? NewName { get; set; }
 }

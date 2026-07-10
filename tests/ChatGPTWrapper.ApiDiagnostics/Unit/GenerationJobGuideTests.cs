@@ -1,3 +1,4 @@
+using System.Linq;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 
@@ -73,16 +74,26 @@ public sealed class GenerationJobGuideTests
     [Theory]
     [InlineData(GenerationJobId.ExtractEntities)]
     [InlineData(GenerationJobId.ProposeMemories)]
+    [InlineData(GenerationJobId.UpdateState)]
     [InlineData(GenerationJobId.UpdateSummary)]
-    [InlineData(GenerationJobId.BootstrapLore)]
     [InlineData(GenerationJobId.ContinuityCheck)]
     [InlineData(GenerationJobId.ProcessTurn)]
+    [InlineData(GenerationJobId.DesignAdventure)]
     [InlineData(GenerationJobId.ProposeSourceEdits)]
-    [InlineData(GenerationJobId.ProposeJsonImport)]
     public void EditableUtilityJobIds_have_non_empty_defaults(string jobId)
     {
         Assert.False(string.IsNullOrWhiteSpace(GenerationJobGuideService.BuildDefaultInstructionBody(jobId)));
         Assert.Contains(jobId, GenerationJobGuideService.EditableUtilityJobIds);
+    }
+
+    [Fact]
+    public void EditableUtilityJobIds_have_catalog_metadata()
+    {
+        foreach (var jobId in GenerationJobGuideService.EditablePlayUtilityJobIds.Concat(GenerationJobGuideService.EditableDesignUtilityJobIds))
+        {
+            Assert.False(string.IsNullOrWhiteSpace(GenerationJobGuideService.GetCatalogCategory(jobId)));
+            Assert.False(string.IsNullOrWhiteSpace(GenerationJobGuideService.GetCatalogDescription(jobId)));
+        }
     }
 
     [Fact]

@@ -1,7 +1,3 @@
-using System.IO;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
 
 namespace ChatGPTWrapper.Adventure.Services;
@@ -23,45 +19,35 @@ public static class SummarizationMigrationService
 {
     public static SummarizationMigrationCheckpoint BuildCheckpoint(AdventureBundle bundle)
     {
-        var turns = bundle.Log.Turns.Count(t => t.Status == TurnStatus.Accepted);
-        var summary = bundle.Summary.RollingSummary ?? "";
-        var messages = ThreadMetadataService.ActiveMessages(bundle).Count;
-
-        var packet = $"""
-            === MIGRATION CHECKPOINT ===
-            Adventure: {bundle.Metadata.Title}
-            Accepted turns: {turns}
-            Thread messages: {messages}
-
-            === ROLLING SUMMARY ===
-            {summary}
-
-            === RECENT TRANSCRIPT ===
-            {UtilityStoryContextBuilder.FormatTranscript(
-                ThreadMetadataService.ToTranscriptPairs(bundle),
-                bundle.Metadata.Settings.UtilityStoryContext)}
-            """;
-
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(packet)));
+        var snapshot = PlayHandoffService.CaptureSnapshot(bundle);
+        var options = new PlayHandoffOptions();
+        var handoff = PlayHandoffService.BuildCheckpoint(bundle, snapshot, options);
 
         return new SummarizationMigrationCheckpoint
         {
-            CheckpointHash = hash,
-            TurnCount = turns,
-            ThreadMessageCount = messages,
-            RollingSummary = summary,
-            MigrationPacket = packet,
+            CheckpointHash = handoff.CheckpointHash,
+            TurnCount = handoff.TurnCount,
+            ThreadMessageCount = handoff.ThreadMessageCount,
+            RollingSummary = handoff.RollingSummary,
+            MigrationPacket = handoff.HandoffPacket,
         };
     }
 
     public static string ComputePacketHash(string packet) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(packet ?? "")));
+        PlayHandoffService.ComputePacketHash(packet);
 
     public static void SaveCheckpointSidecar(AdventureBundle bundle, SummarizationMigrationCheckpoint checkpoint)
     {
-        var path = Path.Combine(bundle.DirectoryPath, "migration-checkpoint.json");
-        File.WriteAllText(
-            path,
-            JsonSerializer.Serialize(checkpoint, AdventureJson.Options));
+        PlayHandoffService.SaveCheckpointSidecar(
+            bundle,
+            new PlayHandoffCheckpoint
+            {
+                SchemaVersion = 2,
+                CheckpointHash = checkpoint.CheckpointHash,
+                TurnCount = checkpoint.TurnCount,
+                ThreadMessageCount = checkpoint.ThreadMessageCount,
+                RollingSummary = checkpoint.RollingSummary,
+                HandoffPacket = checkpoint.MigrationPacket,
+            });
     }
 }

@@ -42,11 +42,17 @@ public sealed class ProjectSourceSyncResult
 public sealed class ProjectSourceSyncService
 {
     private readonly ChatGptProjectApiService _api;
+    private readonly ProjectSourceUploadService _upload;
 
     public ProjectSourceSyncService(ChatGptProjectApiService api)
     {
         _api = api;
+        _upload = new ProjectSourceUploadService(api);
     }
+
+    public ProjectSourceUploadService Upload => _upload;
+
+    public ChatGptProjectApiService Api => _api;
 
     public Task<SourceSyncPlan> BuildPlanAsync(
         CoreWebView2 core,
@@ -285,8 +291,6 @@ public sealed class ProjectSourceSyncService
         }
 
         var filesToAttach = attachedFiles.ToList();
-        var newlyUploadedFiles = new List<GizmoFileRef>();
-        var hadPushUploads = false;
 
         var willHavePushUploads = plan.Items.Any(item =>
         {
@@ -336,9 +340,6 @@ public sealed class ProjectSourceSyncService
 
         if (ensureProjectPage)
             await _api.EnsureProjectPageAsync(core, gizmoId, cancellationToken);
-
-        var deferredDeletes = new List<(string GizmoId, string FileId)>();
-        var attachUsedUpsertFallback = false;
 
         var pullItems = new List<(SourceSyncPlanItem Item, string LocalPath, string? Location)>();
         foreach (var item in plan.Items)
@@ -408,265 +409,43 @@ public sealed class ProjectSourceSyncService
             pullPhase.SetOutcome("ok", new { pulled });
         }
 
-        using var uploadPhase = ProjectSyncTrace.BeginPhase(SyncTracePhase.Upload);
-        foreach (var item in plan.Items)
+        var uploadResult = await _upload.ExecutePushReplacePhaseAsync(
+            core,
+            gizmoId,
+            bundle,
+            plan,
+            dir,
+            autoSafeOnly,
+            filesToAttach,
+            progress,
+            cancellationToken);
+
+        uploaded += uploadResult.Uploaded;
+        replaced += uploadResult.Replaced;
+        skipped += uploadResult.Skipped;
+        warnings.AddRange(uploadResult.Warnings);
+
+        if (uploadResult.Failed)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var action = ProjectFileSyncPlanner.ResolveAction(item);
-            if (autoSafeOnly && !ProjectFileSyncPlanner.IsAutoSafe(item))
+            return Finish(new ProjectSourceSyncResult
             {
-                skipped++;
-                continue;
-            }
-
-            if (action == SourceSyncAction.NeedsResolution || action == SourceSyncAction.Skip || action == SourceSyncAction.Pull)
-            {
-                if (action == SourceSyncAction.Skip || action == SourceSyncAction.NeedsResolution)
-                    skipped++;
-                continue;
-            }
-
-            var entry = item.Entry;
-            var localPath = Path.Combine(dir, entry.RelativePath);
-
-            try
-            {
-                if (action == SourceSyncAction.PushReplace)
-                {
-                    if (!File.Exists(localPath))
-                    {
-                        skipped++;
-                        continue;
-                    }
-
-                    progress?.Report($"Uploading {entry.RelativePath}…");
-                    ProjectSyncTrace.Event(
-                        ProjectSyncTraceEvents.UploadStart,
-                        SyncTraceCategory.Upload,
-                        SyncTraceLevel.Info,
-                        $"Upload starting {entry.RelativePath}",
-                        phase: SyncTracePhase.Upload,
-                        data: new { path = entry.RelativePath, action = "push_replace" });
-                    ProjectLinkDiagnostics.Log(
-                        $"Sync upload starting {entry.RelativePath} for {gizmoId}");
-                    var bytes = await File.ReadAllBytesAsync(localPath, cancellationToken);
-                    var mime = entry.RelativePath.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-                        ? "text/markdown"
-                        : "application/octet-stream";
-
-                    if (!string.IsNullOrWhiteSpace(entry.RemoteFileId)
-                        && attachedFiles.Any(f =>
-                            string.Equals(f.FileId, entry.RemoteFileId, StringComparison.Ordinal)))
-                    {
-                        var previousRemoteId = entry.RemoteFileId;
-                        deferredDeletes.Add((gizmoId, previousRemoteId));
-
-                        filesToAttach.RemoveAll(f =>
-                            string.Equals(f.FileId, previousRemoteId, StringComparison.Ordinal));
-
-                        replaced++;
-                    }
-
-                    var uploadedRef = await _api.UploadProjectFileBytesAsync(
-                        core,
-                        gizmoId,
-                        entry.RelativePath,
-                        bytes,
-                        mime,
-                        cancellationToken);
-
-                    if (uploadedRef is null)
-                    {
-                        return Finish(new ProjectSourceSyncResult
-                        {
-                            Success = false,
-                            Error = $"upload_no_file_id path={entry.RelativePath}",
-                            Uploaded = uploaded,
-                            Pulled = pulled,
-                            Replaced = replaced,
-                            Conflicts = plan.ConflictCount,
-                            Skipped = skipped,
-                            Partial = uploaded + pulled > 0,
-                            Plan = plan,
-                            Warnings = warnings,
-                        }, "failed");
-                    }
-
-                    ProjectSyncTrace.Event(
-                        ProjectSyncTraceEvents.UploadOk,
-                        SyncTraceCategory.Upload,
-                        SyncTraceLevel.Info,
-                        $"Upload ok {entry.RelativePath}",
-                        phase: SyncTracePhase.Upload,
-                        data: new
-                        {
-                            path = entry.RelativePath,
-                            fileId = uploadedRef.FileId,
-                            bytes = bytes.Length,
-                        });
-                    ProjectLinkDiagnostics.Log(
-                        $"Sync upload ok {entry.RelativePath} file_id={uploadedRef.FileId} for {gizmoId}");
-                    filesToAttach.Add(uploadedRef);
-                    newlyUploadedFiles.Add(uploadedRef);
-                    hadPushUploads = true;
-                    entry.RemoteFileId = uploadedRef.FileId;
-                    entry.RemoteFileName = entry.RelativePath;
-                    entry.LocalSha256 = ProjectSourceExportService.ComputeSha256(localPath);
-                    entry.Sha256 = entry.LocalSha256;
-                    entry.BaselineSha256 = entry.LocalSha256;
-                    entry.RemoteSha256 = entry.LocalSha256;
-                    entry.SyncState = SourceSyncState.InSync;
-                    entry.PlannedAction = SourceSyncAction.Skip;
-                    entry.LastPushedAt = DateTimeOffset.UtcNow;
-                    uploaded++;
-                }
-            }
-            catch (ChatGptApiException ex)
-            {
-                uploadPhase.SetOutcome("failed", new { path = entry.RelativePath, error = ex.Message });
-                ProjectSyncTrace.Event(
-                    ProjectSyncTraceEvents.UploadFailed,
-                    SyncTraceCategory.Upload,
-                    SyncTraceLevel.Error,
-                    $"Upload failed {entry.RelativePath}: {ex.Message}",
-                    phase: SyncTracePhase.Upload,
-                    outcome: "failed",
-                    data: new { path = entry.RelativePath, error = ex.Message });
-                return Finish(new ProjectSourceSyncResult
-                {
-                    Success = false,
-                    Error = ex.Message,
-                    Uploaded = uploaded,
-                    Pulled = pulled,
-                    Replaced = replaced,
-                    Conflicts = plan.ConflictCount,
-                    Skipped = skipped,
-                    Partial = uploaded + pulled > 0,
-                    Plan = plan,
-                }, "failed");
-            }
+                Success = false,
+                Error = uploadResult.Error,
+                Uploaded = uploaded,
+                Pulled = pulled,
+                Replaced = replaced,
+                Conflicts = plan.ConflictCount,
+                Skipped = skipped,
+                Partial = uploadResult.Partial || pulled > 0,
+                Plan = plan,
+                Warnings = warnings,
+            }, "failed");
         }
 
-        uploadPhase.SetOutcome("ok", new { uploaded, pulled, replaced, skipped });
-
+        var hadPushUploads = uploadResult.HadPushUploads;
+        var attachUsedUpsertFallback = uploadResult.AttachUsedUpsertFallback;
         if (hadPushUploads)
-        {
-            using var attachPreflightPhase = ProjectSyncTrace.BeginPhase(SyncTracePhase.Preflight);
-            var attachPreflight = await _api.ValidateAttachFileOwnershipPreflightAsync(
-                core,
-                gizmoId,
-                newlyUploadedFiles.Select(f => f.FileId),
-                cancellationToken);
-            if (!attachPreflight.Allowed)
-            {
-                attachPreflightPhase.SetOutcome("blocked", new { reason = attachPreflight.Message });
-                return Finish(new ProjectSourceSyncResult
-                {
-                    Success = false,
-                    Error = attachPreflight.Message ?? attachPreflight.ErrorCode ?? "sync_blocked",
-                    Uploaded = uploaded,
-                    Pulled = pulled,
-                    Replaced = replaced,
-                    Conflicts = plan.ConflictCount,
-                    Skipped = skipped,
-                    Partial = uploaded + pulled > 0,
-                    Plan = plan,
-                }, "blocked");
-            }
-
-            attachPreflightPhase.SetOutcome("ok");
-
-            var filesNeedingAttach = newlyUploadedFiles
-                .Where(f => !f.FromLibraryUpload)
-                .ToList();
-            var libraryUploaded = newlyUploadedFiles
-                .Where(f => f.FromLibraryUpload)
-                .ToList();
-
-            using var attachPhase = ProjectSyncTrace.BeginPhase(SyncTracePhase.Attach);
-            try
-            {
-                if (filesNeedingAttach.Count > 0)
-                {
-                    progress?.Report("Attaching sources to ChatGPT project…");
-                    ProjectLinkDiagnostics.Log(
-                        $"Sync attach starting {filesNeedingAttach.Count} file(s) for {gizmoId} "
-                        + $"(library_skipped={libraryUploaded.Count})");
-                    attachUsedUpsertFallback = await _api.AttachProjectFilesViaUpsertAsync(
-                        core,
-                        gizmoId,
-                        filesNeedingAttach,
-                        projectTitle: null,
-                        projectInstructions: null,
-                        adventureId: bundle.Metadata.Id,
-                        caller: "SyncAttach",
-                        knownExistingFiles: attachedFiles,
-                        skipPreflight: ChatGptProjectApiService.IsPlanPreflightFresh(plan, gizmoId),
-                        cancellationToken);
-                }
-                else
-                {
-                    ProjectLinkDiagnostics.Log(
-                        $"Sync attach skipped; {libraryUploaded.Count} file(s) uploaded via project library for {gizmoId}");
-                }
-
-                if (libraryUploaded.Count > 0)
-                {
-                    await _api.VerifyUploadedProjectFilesDownloadableAsync(
-                        core,
-                        gizmoId,
-                        libraryUploaded,
-                        cancellationToken);
-                }
-
-                attachPhase.SetOutcome("ok", new
-                {
-                    files = newlyUploadedFiles.Count,
-                    attached = filesNeedingAttach.Count,
-                    library = libraryUploaded.Count,
-                });
-
-                foreach (var (deleteGizmoId, deleteFileId) in deferredDeletes)
-                {
-                    try
-                    {
-                        await _api.DeleteProjectFileAsync(core, deleteGizmoId, deleteFileId, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        var warning = $"deferred_delete_failed: file_id={deleteFileId} ({ex.Message})";
-                        warnings.Add(warning);
-                        ProjectLinkDiagnostics.Log(
-                            $"Deferred delete failed file_id={deleteFileId} for {deleteGizmoId}: {ex.Message}");
-                    }
-                }
-
-                foreach (var uploadedRef in newlyUploadedFiles)
-                {
-                    filesToAttach.RemoveAll(f =>
-                        string.Equals(f.Name, uploadedRef.Name, StringComparison.OrdinalIgnoreCase));
-                    filesToAttach.Add(uploadedRef);
-                }
-
-                plan.DetectedRemoteFiles = filesToAttach.ToList();
-            }
-            catch (ChatGptApiException ex)
-            {
-                attachPhase.SetOutcome("failed", new { error = ex.Message });
-                return Finish(new ProjectSourceSyncResult
-                {
-                    Success = false,
-                    Error = ex.Message,
-                    Uploaded = uploaded,
-                    Pulled = pulled,
-                    Replaced = replaced,
-                    Conflicts = plan.ConflictCount,
-                    Skipped = skipped,
-                    Partial = uploaded + pulled > 0,
-                    Plan = plan,
-                }, "failed");
-            }
-        }
+            plan.DetectedRemoteFiles = filesToAttach.ToList();
 
         bundle.SourceManifest.RefreshSyncedFlag();
         bundle.SourceManifest.LastRemoteSyncAt = DateTimeOffset.UtcNow;

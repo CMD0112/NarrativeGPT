@@ -1,0 +1,26 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Controls.StatusChip"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Button x:Name="ChipButton"
+            Click="ChipButton_Click"
+            Padding="8,4"
+            CornerRadius="{ThemeResource RadiusControl}"
+            BorderThickness="0">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock x:Name="LabelText"
+                       VerticalAlignment="Center"
+                       FontSize="{ThemeResource FontSizeHint}" />
+            <Border x:Name="CountBadge"
+                    Background="{ThemeResource BgElevatedBrush}"
+                    CornerRadius="8"
+                    Padding="6,2"
+                    Visibility="Collapsed">
+                <TextBlock x:Name="CountText"
+                           FontSize="10"
+                           FontWeight="SemiBold" />
+            </Border>
+        </StackPanel>
+    </Button>
+</UserControl>

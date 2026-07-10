@@ -1,12 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.NarratorScales;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
 /// <summary>
 /// Delegation rules for Project custom instructions vs source files.
-/// See docs/instruction-sources-paradigm.md.
+/// See docs/user/instruction-sources-paradigm.md.
 /// </summary>
 internal static class InstructionSourcesPolicy
 {
@@ -14,6 +15,7 @@ internal static class InstructionSourcesPolicy
 
     public static string BuildStaticInstructionsBody(AdventureBundle bundle)
     {
+        UtilityStoryContextSettingsService.EnsureDefaults(bundle.Metadata);
         var settings = bundle.Metadata.Settings;
         var parts = new List<string>
         {
@@ -24,10 +26,16 @@ internal static class InstructionSourcesPolicy
         };
 
         if (!string.IsNullOrWhiteSpace(settings.Difficulty))
-            parts.Add("Difficulty: " + settings.Difficulty.Trim());
+            parts.Add(NarratorScaleLabels.CombatDifficulty + ": " + settings.Difficulty.Trim());
 
         if (!string.IsNullOrWhiteSpace(settings.ViolenceLevel))
-            parts.Add("Violence level: " + settings.ViolenceLevel.Trim());
+            parts.Add(NarratorScaleLabels.ViolenceLevel + ": " + settings.ViolenceLevel.Trim());
+
+        if (!string.IsNullOrWhiteSpace(settings.NarrativePacing))
+            parts.Add(NarratorScaleLabels.NarrativePacing + ": " + settings.NarrativePacing.Trim());
+
+        if (!string.IsNullOrWhiteSpace(settings.ConsequenceWeight))
+            parts.Add(NarratorScaleLabels.ConsequenceWeight + ": " + settings.ConsequenceWeight.Trim());
 
         if (!string.IsNullOrWhiteSpace(bundle.Scenario.AuthorsNote))
             parts.Add("Author's note (style only): " + bundle.Scenario.AuthorsNote.Trim());
@@ -38,6 +46,9 @@ internal static class InstructionSourcesPolicy
         var contractSections = InstructionContractService.BuildContractSections(bundle);
         if (!string.IsNullOrWhiteSpace(contractSections))
             parts.Add(contractSections);
+
+        parts.Add(NarratorScalesResolver.BuildInstructionsScalePointer());
+        parts.Add(NarratorScalesResolver.BuildBaselineQuickReferenceBlock(bundle));
 
         return string.Join("\n\n", parts);
     }
@@ -106,22 +117,9 @@ internal static class InstructionSourcesPolicy
         if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
             return "";
 
-        if (bundle.Metadata.Settings.SourcePublishMode == SourcePublishMode.Manual)
-        {
-            if (!InstructionDomainChanged(bundle))
-                return "Instructions: copy to ChatGPT Project settings when you change perspective, tone, or boundaries.";
-
-            return "Instructions changed locally — use Copy instructions and paste into your ChatGPT Project settings.";
-        }
-
         if (!InstructionDomainChanged(bundle))
-        {
-            if (bundle.Metadata.LastProjectInstructionsSyncedAt is { } at)
-                return $"Project instructions up to date (last push {at.LocalDateTime:g}).";
-            return "Project instructions not pushed yet — link with Push narrator instructions or enable auto-sync.";
-        }
+            return "Instructions: copy to ChatGPT Project settings when you change perspective, tone, or boundaries.";
 
-        return "Project instructions may be stale — instruction-domain fields changed since last push. "
-               + "Enable auto-sync on OK or re-link with Push narrator instructions.";
+        return "Instructions changed locally — use Copy instructions and paste into your ChatGPT Project settings.";
     }
 }

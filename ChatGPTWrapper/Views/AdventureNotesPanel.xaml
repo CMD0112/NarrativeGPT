@@ -1,18 +1,139 @@
 <UserControl x:Class="ChatGPTWrapper.Views.AdventureNotesPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Background="{StaticResource DialogBgBrush}">
-    <DockPanel Margin="12">
-        <TextBlock DockPanel.Dock="Top"
-                   Text="Player notes — not sent to ChatGPT"
-                   Foreground="{StaticResource MutedTextBrush}"
-                   FontSize="11"
-                   TextWrapping="Wrap"
-                   Margin="0,0,0,8"/>
-        <TextBox x:Name="NotesBox"
-                 AcceptsReturn="True"
-                 TextWrapping="Wrap"
-                 VerticalScrollBarVisibility="Auto"
-                 LostFocus="NotesBox_LostFocus"/>
-    </DockPanel>
+             Background="{DynamicResource BgBaseBrush}">
+    <Border x:Name="NotesHostBorder" Style="{StaticResource ShellCardStyle}" Margin="12" Padding="10">
+        <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                <TextBlock Text="Player notes"
+                           Style="{StaticResource ShellSectionHeaderStyle}"/>
+                <TextBlock Text="Not sent to ChatGPT — local only"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           FontSize="{StaticResource FontSizeHint}"
+                           TextWrapping="Wrap"
+                           Margin="0,2,0,0"/>
+            </StackPanel>
+            <WrapPanel x:Name="NotesToolbar"
+                       DockPanel.Dock="Top"
+                       Margin="0,0,0,6">
+                <Button x:Name="FindToggleButton"
+                        Content="Find"
+                        Padding="8,3"
+                        Margin="0,0,4,4"
+                        ToolTip="Find in notes (Ctrl+F)"
+                        Click="FindToggleButton_Click"/>
+                <Button x:Name="InsertMenuButton"
+                        Content="Insert"
+                        Padding="8,3"
+                        Margin="0,0,4,4"
+                        ToolTip="Insert snippet at caret"
+                        Click="InsertMenuButton_Click"/>
+                <ComboBox x:Name="SectionJumpCombo"
+                          MinWidth="80"
+                          Margin="0,0,4,4"
+                          Visibility="Collapsed"
+                          DisplayMemberPath="Title"
+                          SelectionChanged="SectionJumpCombo_SelectionChanged"
+                          ToolTip="Jump to section"/>
+                <Button x:Name="MoreMenuButton"
+                        Content="More…"
+                        Padding="8,3"
+                        Margin="0,0,0,4"
+                        ToolTip="Copy, export, or jump to section"
+                        Click="MoreMenuButton_Click"/>
+            </WrapPanel>
+            <Border x:Name="FindRow"
+                    DockPanel.Dock="Top"
+                    Margin="0,0,0,6"
+                    Visibility="Collapsed"
+                    Padding="6"
+                    Background="{DynamicResource BgSurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="FindQueryBox"
+                                 Grid.Column="0"
+                                 Margin="0,0,4,0"
+                                 ToolTip="Search text (Enter: next, Shift+Enter: previous, Esc: close)"
+                                 TextChanged="FindQueryBox_TextChanged"
+                                 KeyDown="FindQueryBox_KeyDown"/>
+                        <ToggleButton x:Name="FindCaseSensitiveToggle"
+                                      Grid.Column="1"
+                                      Content="Aa"
+                                      Padding="6,3"
+                                      Margin="0,0,4,0"
+                                      ToolTip="Match case"
+                                      Checked="FindCaseSensitiveToggle_Changed"
+                                      Unchecked="FindCaseSensitiveToggle_Changed"/>
+                        <Button x:Name="FindPrevButton"
+                                Grid.Column="2"
+                                Content="Prev"
+                                Padding="6,3"
+                                Margin="0,0,4,0"
+                                ToolTip="Previous match (Shift+Enter)"
+                                Click="FindPrevButton_Click"/>
+                        <Button x:Name="FindNextButton"
+                                Grid.Column="3"
+                                Content="Next"
+                                Padding="6,3"
+                                Margin="0,0,4,0"
+                                ToolTip="Next match (Enter)"
+                                Click="FindNextButton_Click"/>
+                        <Button x:Name="FindCloseButton"
+                                Grid.Column="4"
+                                Content="×"
+                                Padding="6,3"
+                                ToolTip="Close find (Esc)"
+                                Click="FindCloseButton_Click"/>
+                    </Grid>
+                    <TextBlock x:Name="FindMatchCountBlock"
+                               Grid.Row="1"
+                               Margin="0,4,0,0"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="{StaticResource FontSizeHint}"
+                               Text=""/>
+                </Grid>
+            </Border>
+            <Grid DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="NotesWordCountBlock"
+                           Grid.Column="0"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           FontSize="{StaticResource FontSizeHint}"
+                           Text="0 words"/>
+                <TextBlock x:Name="NotesSaveStatusBlock"
+                           Grid.Column="1"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           FontSize="{StaticResource FontSizeHint}"
+                           Text=""/>
+            </Grid>
+            <TextBox x:Name="NotesBox"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     Background="{DynamicResource BgSurfaceBrush}"
+                     BorderBrush="{DynamicResource BorderSubtleBrush}"
+                     Foreground="{DynamicResource TextPrimaryBrush}"
+                     TextChanged="NotesBox_TextChanged"
+                     SelectionChanged="NotesBox_SelectionChanged"
+                     LostFocus="NotesBox_LostFocus"
+                     PreviewKeyDown="NotesBox_PreviewKeyDown"/>
+        </DockPanel>
+    </Border>
 </UserControl>

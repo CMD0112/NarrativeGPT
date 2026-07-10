@@ -46,53 +46,21 @@ public sealed class PlayComposeNativeUploadService
                 return false;
             }
 
-            var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var deadline = DateTime.UtcNow.AddMinutes(2);
-            while (DateTime.UtcNow < deadline)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var poll = await PollAttachmentReadyAsync(core, startedAt, cancellationToken);
-                if (poll.Ready)
-                {
-                    var elapsedMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - startedAt;
-                    if (poll.Via == "preview" && elapsedMs < 3000)
-                    {
-                        await Task.Delay(250, cancellationToken);
-                        continue;
-                    }
-
-                    PlaySendTrace.Event(
-                        PlaySendTraceEvents.BridgeSubmitInvoke,
-                        PlaySendCategory.Bridge,
-                        PlaySendLevel.Info,
-                        "Compose attachment pre-upload ready",
-                        outcome: "upload_ready",
-                        data: new { via = poll.Via, attachmentCount = attachments.Count });
-                    return true;
-                }
-
-                if (!string.IsNullOrWhiteSpace(poll.Error))
-                {
-                    PlaySendTrace.Event(
-                        PlaySendTraceEvents.BridgeSubmitInvoke,
-                        PlaySendCategory.Bridge,
-                        PlaySendLevel.Warn,
-                        "Compose attachment pre-upload failed",
-                        outcome: "upload_failed",
-                        data: new { error = poll.Error, attachmentCount = attachments.Count });
-                    return false;
-                }
-
-                await Task.Delay(250, cancellationToken);
-            }
+            var totalBytes = attachments.Sum(a => a.Content.Length);
+            var uploadReady = await NativeComposerFileStaging.WaitForUploadReadyAsync(
+                core,
+                totalBytes,
+                cancellationToken: cancellationToken);
+            if (uploadReady.Success)
+                return true;
 
             PlaySendTrace.Event(
                 PlaySendTraceEvents.BridgeSubmitInvoke,
                 PlaySendCategory.Bridge,
                 PlaySendLevel.Warn,
-                "Compose attachment pre-upload timed out",
-                outcome: "upload_timeout",
-                data: new { attachmentCount = attachments.Count });
+                "Compose attachment pre-upload failed or timed out",
+                outcome: "upload_failed",
+                data: new { error = uploadReady.Error, attachmentCount = attachments.Count });
             return false;
         }
         finally
@@ -152,44 +120,6 @@ public sealed class PlayComposeNativeUploadService
         catch
         {
             /* page may be navigating */
-        }
-    }
-
-    private static async Task<(bool Ready, string? Via, string? Error)> PollAttachmentReadyAsync(
-        CoreWebView2 core,
-        long startedAtMs,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var raw = await core.ExecuteScriptAsync(
-            $$"""
-             (function(){
-               var failFn = globalThis.__cgwAdventurePollUploadFailure;
-               var uploadFailure = typeof failFn === 'function' ? failFn() : null;
-               if (uploadFailure) return { ready: false, error: uploadFailure };
-               var readyFn = globalThis.__cgwAdventurePollAttachmentReady;
-               if (typeof readyFn !== 'function') return { ready: false, error: 'bridge_missing' };
-               var r = readyFn({{startedAtMs}});
-               return { ready: !!(r && r.ready), via: r && r.via ? r.via : null, error: null };
-             })()
-             """);
-
-        try
-        {
-            using var doc = JsonDocument.Parse(raw);
-            var root = doc.RootElement;
-            var ready = root.TryGetProperty("ready", out var readyEl) && readyEl.GetBoolean();
-            var via = root.TryGetProperty("via", out var viaEl) && viaEl.ValueKind == JsonValueKind.String
-                ? viaEl.GetString()
-                : null;
-            var error = root.TryGetProperty("error", out var errEl) && errEl.ValueKind == JsonValueKind.String
-                ? errEl.GetString()
-                : null;
-            return (ready, via, error);
-        }
-        catch
-        {
-            return (false, null, "poll_parse_failed");
         }
     }
 }

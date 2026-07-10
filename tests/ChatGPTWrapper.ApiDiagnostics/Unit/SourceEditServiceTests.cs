@@ -4,8 +4,8 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class SourceEditServiceTests
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class SourceEditServiceTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void TryParseImportRemovalContent_parses_npc_removal_line()
@@ -80,7 +80,6 @@ public sealed class SourceEditServiceTests
                 SectionSchema.CastFile);
             File.WriteAllText(castPath, "# Cast\n\n## player\n\n**Name:** Alex\n");
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             ProjectSourceImportService.Import(bundle);
             ProjectSourceImportService.Import(bundle);
 

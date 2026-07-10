@@ -14,12 +14,15 @@ public sealed class SourceFileHistoryServiceTests : IDisposable
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "ChatGPTWrapper-History-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempRoot);
+        AppDirectories.ResetStoresForTests();
         AppDirectories.TestRootOverride = _tempRoot;
     }
 
     public void Dispose()
     {
+        AppDirectories.ResetStoresForTests();
         AppDirectories.TestRootOverride = null;
+        AppDirectories.ResetStoresForTests();
         try
         {
             if (Directory.Exists(_tempRoot))

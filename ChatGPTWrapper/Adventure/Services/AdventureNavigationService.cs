@@ -10,8 +10,13 @@ internal enum AdventureNavigationIntent
 
 internal static class AdventureNavigationService
 {
-    public static void SyncLinkedFields(AdventureBundle bundle) =>
+    public static void SyncLinkedFields(AdventureBundle? bundle)
+    {
+        if (bundle is null)
+            return;
+
         AdventureProjectBindingService.SyncLinkedProjectFields(bundle.Metadata);
+    }
 
     public static bool HasLinkedProject(AdventureBundle bundle) =>
         AdventureProjectBindingService.HasLinkedProject(bundle);
@@ -92,39 +97,8 @@ internal static class AdventureNavigationService
                && ChatGptUrls.GizmoIdsEqual(parsed, gizmoId);
     }
 
-    public static bool ShouldNavigateToPlayTarget(string? source, AdventureBundle bundle, string targetUrl)
-    {
-        if (PlayTabPinService.IsOnPlayTarget(source, bundle))
-            return false;
-
-        var conversationId = bundle.Metadata.LinkedConversationId;
-        var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
-        if (!string.IsNullOrWhiteSpace(conversationId)
-            && !string.IsNullOrWhiteSpace(gizmoId)
-            && AdventurePlayContextService.IsOnPlayConversationPage(source, conversationId, gizmoId))
-        {
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(conversationId)
-            && !string.IsNullOrWhiteSpace(gizmoId)
-            && IsOnLinkedProjectPage(source, bundle))
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(gizmoId)
-            && IsOnLinkedProjectPage(source, bundle)
-            && ProjectChatDraftService.ShouldStayOnProjectPage(bundle, source))
-        {
-            return false;
-        }
-
-        if (IsGenericHomepage(source))
-            return true;
-
-        return !string.Equals(source, targetUrl, StringComparison.OrdinalIgnoreCase);
-    }
+    public static bool ShouldNavigateToPlayTarget(string? source, AdventureBundle bundle, string targetUrl) =>
+        PlaySessionNavigationService.ShouldNavigateToBrowseTarget(source, bundle, targetUrl);
 
     public static bool ShouldNavigateToDesignTarget(string? source, AdventureBundle bundle, string targetUrl)
     {
@@ -136,20 +110,8 @@ internal static class AdventureNavigationService
         if (IsGenericHomepage(source))
             return true;
 
-        if (!string.IsNullOrWhiteSpace(DesignTabPinService.GetDesignConversationId(bundle))
-            && IsOnLinkedProjectPage(source, bundle))
-        {
-            if (ProjectChatDraftService.ShouldStayOnProjectPage(bundle, source))
-                return false;
-
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(DesignTabPinService.GetDesignConversationId(bundle))
-            && IsOnLinkedProjectPage(source, bundle))
-        {
+        if (IsOnLinkedProjectPage(source, bundle))
             return false;
-        }
 
         return !string.Equals(source, targetUrl, StringComparison.OrdinalIgnoreCase);
     }
@@ -242,6 +204,9 @@ internal static class AdventureNavigationService
             if (ProjectChatDraftService.IsValidDraftTarget(bundle, source, intent))
                 return true;
 
+            if (IsOnLinkedProjectPage(source, bundle))
+                return true;
+
             if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
             {
                 var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
@@ -293,17 +258,29 @@ internal static class AdventureNavigationService
         SyncLinkedFields(bundle);
 
         if (intent == AdventureNavigationIntent.Play
-            && !string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId)
             && !AdventureProjectBindingService.ShouldDeferLinkedPlayContextAfterProjectLink(bundle)
             && !ProjectChatDraftService.IsActive(bundle))
         {
+            var conversationId = PlayThreadBindingService.GetActiveConversationId(bundle);
             var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
-            if (!string.IsNullOrWhiteSpace(gizmoId))
+            if (!string.IsNullOrWhiteSpace(conversationId)
+                && !string.IsNullOrWhiteSpace(gizmoId)
+                && !PlayThreadBindingService.IsRejectedConversationId(bundle, conversationId)
+                && PlayThreadBindingService.HasBrowsablePlayTarget(bundle))
             {
+                var entry = PlayThreadBindingService.GetActivePlayEntry(bundle);
+                if (!string.IsNullOrWhiteSpace(entry?.PinnedTabUrl)
+                    && Uri.TryCreate(entry.PinnedTabUrl, UriKind.Absolute, out var pinnedUri)
+                    && ChatGptUrls.TryParseConversationId(pinnedUri, out var pinnedConv)
+                    && string.Equals(pinnedConv, conversationId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return entry.PinnedTabUrl;
+                }
+
                 return ChatGptUrls.ResolveProjectConversationUrl(
-                    bundle.Metadata.LinkedConversationId,
+                    conversationId,
                     gizmoId,
-                    bundle.Metadata.PinnedPlayTabUrl);
+                    entry?.PinnedTabUrl);
             }
         }
 

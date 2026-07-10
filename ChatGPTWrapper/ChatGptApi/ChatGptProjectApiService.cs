@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.ChatGptApi.ProjectSource;
 using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
 
@@ -15,7 +16,18 @@ public sealed class ChatGptProjectApiService
     public ChatGptProjectApiService(ChatGptApiBridgeInjection bridge)
     {
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
+        SourcePublication = new ProjectSourcePublicationPipeline(this);
+        DomPublication = new ProjectDomPublicationService(this);
     }
+
+    public ProjectSourcePublicationPipeline SourcePublication { get; }
+
+    internal ChatGptApiBridgeInjection Bridge => _bridge;
+
+    internal ProjectDomPublicationService DomPublication { get; }
+
+    public ChatGptChatFileService CreateFileService(ChatGptConversationSendService conversationSend) =>
+        new(_bridge, this, conversationSend);
 
     public async Task<ChatGptSessionInfo> GetSessionAsync(
         CoreWebView2 core,
@@ -87,6 +99,167 @@ public sealed class ChatGptProjectApiService
         return GizmoResponseParser.ParseGizmoNode(json, json);
     }
 
+    public async Task<ProjectSettingsDetail?> GetProjectSettingsAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureProjectPageAsync(core, gizmoId, cancellationToken);
+
+        var path = ChatGptApiEndpoints.ProjectDetail(gizmoId);
+        var msg = await _bridge.SendAsync(
+            core,
+            ApiCommand("GET", path),
+            cancellationToken: cancellationToken);
+
+        if (msg.Status == 404)
+            return null;
+
+        EnsureOk(msg, path);
+        ChatGptApiDiscovery.RecordSuccess(path, "GET");
+
+        return msg.Json is { } json
+            ? ParseProjectSettings(json, gizmoId)
+            : null;
+    }
+
+    public async Task<ProjectSettingsDetail> UpdateProjectSettingsAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string name,
+        string instructions,
+        string? emoji = null,
+        string? theme = null,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureProjectPageAsync(core, gizmoId, cancellationToken);
+
+        var path = ChatGptApiEndpoints.ProjectDetail(gizmoId);
+        var msg = await _bridge.SendAsync(
+            core,
+            ApiCommand("PATCH", path, body: BuildProjectSettingsPatchBody(name, instructions, emoji, theme)),
+            cancellationToken: cancellationToken);
+
+        EnsureOk(msg, path);
+        ChatGptApiDiscovery.RecordSuccess(path, "PATCH");
+
+        return ParseProjectSettings(msg.Json ?? default, gizmoId)
+               ?? new ProjectSettingsDetail
+               {
+                   ProjectId = gizmoId,
+                   Name = name,
+                   Instructions = instructions,
+                   Emoji = emoji,
+                   Theme = theme,
+               };
+    }
+
+    internal static object BuildProjectSettingsPatchBody(
+        string name,
+        string instructions,
+        string? emoji,
+        string? theme)
+    {
+        var body = new Dictionary<string, object?>
+        {
+            ["name"] = name,
+            ["instructions"] = instructions,
+        };
+
+        if (emoji is not null)
+            body["emoji"] = emoji;
+
+        if (theme is not null)
+            body["theme"] = theme;
+
+        return body;
+    }
+
+    internal static ProjectSettingsDetail? ParseProjectSettings(JsonElement json, string fallbackProjectId)
+    {
+        if (json.ValueKind != JsonValueKind.Object)
+            return null;
+
+        if (json.TryGetProperty("resource", out var resource)
+            && resource.TryGetProperty("gizmo", out var gizmo))
+        {
+            return ParseProjectSettingsFromGizmoNode(gizmo, fallbackProjectId);
+        }
+
+        if (json.TryGetProperty("gizmo", out var wrap))
+        {
+            if (wrap.TryGetProperty("gizmo", out var inner))
+                return ParseProjectSettingsFromGizmoNode(inner, fallbackProjectId);
+            return ParseProjectSettingsFromGizmoNode(wrap, fallbackProjectId);
+        }
+
+        return ParseProjectSettingsFlat(json, fallbackProjectId);
+    }
+
+    private static ProjectSettingsDetail? ParseProjectSettingsFromGizmoNode(
+        JsonElement gizmo,
+        string fallbackProjectId)
+    {
+        var projectId = gizmo.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+        if (string.IsNullOrWhiteSpace(projectId))
+            projectId = fallbackProjectId;
+
+        var name = gizmo.TryGetProperty("display", out var display)
+                   && display.TryGetProperty("name", out var nameEl)
+            ? nameEl.GetString()
+            : gizmo.TryGetProperty("name", out var flatName)
+                ? flatName.GetString()
+                : null;
+
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        var instructions = gizmo.TryGetProperty("instructions", out var instrEl)
+            ? instrEl.GetString() ?? ""
+            : "";
+
+        string? emoji = null;
+        string? theme = null;
+        if (display.ValueKind == JsonValueKind.Object)
+        {
+            if (display.TryGetProperty("emoji", out var emojiEl))
+                emoji = emojiEl.GetString();
+            if (display.TryGetProperty("theme", out var themeEl))
+                theme = themeEl.GetString();
+        }
+
+        emoji ??= gizmo.TryGetProperty("emoji", out var flatEmoji) ? flatEmoji.GetString() : null;
+        theme ??= gizmo.TryGetProperty("theme", out var flatTheme) ? flatTheme.GetString() : null;
+
+        return new ProjectSettingsDetail
+        {
+            ProjectId = projectId,
+            Name = name,
+            Instructions = instructions,
+            Emoji = emoji,
+            Theme = theme,
+        };
+    }
+
+    private static ProjectSettingsDetail? ParseProjectSettingsFlat(JsonElement json, string fallbackProjectId)
+    {
+        var projectId = json.TryGetProperty("id", out var idEl) ? idEl.GetString() : fallbackProjectId;
+        var name = json.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        return new ProjectSettingsDetail
+        {
+            ProjectId = projectId ?? fallbackProjectId,
+            Name = name,
+            Instructions = json.TryGetProperty("instructions", out var instrEl)
+                ? instrEl.GetString() ?? ""
+                : "",
+            Emoji = json.TryGetProperty("emoji", out var emojiEl) ? emojiEl.GetString() : null,
+            Theme = json.TryGetProperty("theme", out var themeEl) ? themeEl.GetString() : null,
+        };
+    }
+
     public async Task EnsureProjectPageAsync(
         CoreWebView2 core,
         string gizmoId,
@@ -113,6 +286,139 @@ public sealed class ChatGptProjectApiService
         await _bridge.InjectAsync(core);
         await TryCaptureAccountIdAsync(core, cancellationToken);
         await SeedProjectClientHeadersAsync(core, targetUrl);
+    }
+
+    public async Task EnsureProjectConversationPageAsync(
+        CoreWebView2 core,
+        string conversationId,
+        string gizmoId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId) || string.IsNullOrWhiteSpace(gizmoId))
+            throw new ArgumentException("conversationId and gizmoId are required");
+
+        await PrepareForApiAsync(core, cancellationToken);
+        gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
+        conversationId = conversationId.Trim();
+
+        if (!ChatGptUrls.IsOnProjectConversationPage(core.Source, conversationId, gizmoId))
+        {
+            var nav = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
+                core,
+                conversationId,
+                gizmoId,
+                cancellationToken);
+            if (!nav.Success)
+            {
+                throw new ChatGptApiException(
+                    nav.Error ?? "project_conversation_page_not_ready",
+                    ChatGptApiEndpoints.ConversationGet(conversationId));
+            }
+        }
+
+        await WaitForDocumentReadyAsync(core, cancellationToken);
+        await _bridge.InjectAsync(core);
+
+        if (!ChatGptUrls.IsOnProjectConversationPage(core.Source, conversationId, gizmoId))
+        {
+            throw new ChatGptApiException(
+                $"Expected project conversation page but landed on {core.Source}",
+                ChatGptApiEndpoints.ConversationGet(conversationId));
+        }
+    }
+
+    /// <summary>
+    /// Navigates to <see cref="ChatGptUrls.BuildProjectUrl"/> when the WebView is on a conversation
+    /// thread or other non-canonical project URL. Required for project-knowledge DOM uploads.
+    /// </summary>
+    public async Task EnsureCanonicalProjectHomeAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        CancellationToken cancellationToken = default)
+    {
+        await PrepareForApiAsync(core, cancellationToken);
+
+        var targetUrl = ChatGptUrls.BuildProjectUrl(gizmoId);
+        Uri.TryCreate(core.Source, UriKind.Absolute, out var current);
+        if (!ChatGptUrls.IsCanonicalProjectHome(current, gizmoId))
+        {
+            ProjectLinkDiagnostics.Log(
+                $"Publication DOM navigating to canonical project home {targetUrl} from {core.Source}");
+            core.Navigate(targetUrl);
+            await WaitForCanonicalProjectHomeAsync(core, gizmoId, cancellationToken);
+        }
+
+        await WaitForDocumentReadyAsync(core, cancellationToken);
+        await _bridge.InjectAsync(core);
+        await TryCaptureAccountIdAsync(core, cancellationToken);
+        await SeedProjectClientHeadersAsync(core, targetUrl);
+    }
+
+    private static async Task WaitForCanonicalProjectHomeAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        CancellationToken cancellationToken)
+    {
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Handler(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        {
+            if (!e.IsSuccess)
+                return;
+
+            if (Uri.TryCreate(core.Source, UriKind.Absolute, out var uri)
+                && ChatGptUrls.IsCanonicalProjectHome(uri, gizmoId))
+            {
+                tcs.TrySetResult();
+            }
+        }
+
+        core.NavigationCompleted += Handler;
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(45);
+            while (DateTime.UtcNow < deadline)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Uri.TryCreate(core.Source, UriKind.Absolute, out var uri)
+                    && ChatGptUrls.IsCanonicalProjectHome(uri, gizmoId))
+                {
+                    return;
+                }
+
+                var remaining = deadline - DateTime.UtcNow;
+                if (remaining <= TimeSpan.Zero)
+                    break;
+
+                var waitSlice = remaining < TimeSpan.FromMilliseconds(500)
+                    ? remaining
+                    : TimeSpan.FromMilliseconds(500);
+
+                var completed = await Task.WhenAny(tcs.Task, Task.Delay(waitSlice, cancellationToken));
+                if (completed == tcs.Task)
+                {
+                    await tcs.Task;
+                    return;
+                }
+            }
+
+            ProjectLinkDiagnostics.Log(
+                $"Canonical project home navigation slow; source={core.Source} "
+                + $"target={ChatGptUrls.BuildProjectUrl(gizmoId)}");
+
+            if (Uri.TryCreate(core.Source, UriKind.Absolute, out var final)
+                && ChatGptUrls.IsCanonicalProjectHome(final, gizmoId))
+            {
+                return;
+            }
+
+            throw new ChatGptApiException(
+                $"Timed out opening canonical project home for {gizmoId}. Last URL: {core.Source}",
+                ChatGptApiEndpoints.GizmoDetail(gizmoId));
+        }
+        finally
+        {
+            core.NavigationCompleted -= Handler;
+        }
     }
 
     private async Task TryCaptureAccountIdAsync(
@@ -1115,6 +1421,41 @@ public sealed class ChatGptProjectApiService
         return result.ConversationId;
     }
 
+    public async Task<CreateProjectConversationResult> RegisterClientProjectConversationAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string? conversationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(gizmoId))
+            return new CreateProjectConversationResult { Error = "missing_gizmo_id" };
+
+        gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
+        await PrepareForApiAsync(core, cancellationToken);
+
+        conversationId = string.IsNullOrWhiteSpace(conversationId)
+            ? Guid.NewGuid().ToString()
+            : conversationId.Trim();
+
+        var register = await TryRegisterClientConversationAsync(core, gizmoId, conversationId, cancellationToken);
+        if (!register.Success)
+        {
+            return new CreateProjectConversationResult
+            {
+                Error = register.Error ?? "conversation_init_register_failed",
+                ConversationId = conversationId,
+            };
+        }
+
+        ProjectLinkDiagnostics.Log(
+            $"Registered ephemeral client conversation {conversationId} for project {gizmoId}");
+        return new CreateProjectConversationResult
+        {
+            ConversationId = conversationId,
+            InitRegistered = true,
+        };
+    }
+
     public async Task<CreateProjectConversationResult> CreateProjectConversationDetailedAsync(
         CoreWebView2 core,
         string gizmoId,
@@ -1133,24 +1474,7 @@ public sealed class ChatGptProjectApiService
         string? initError = null;
         if (options?.UiCreateOnly != true)
         {
-            var initBody = new Dictionary<string, object?>
-            {
-                ["gizmo_id"] = gizmoId,
-                ["requested_default_model"] = null,
-                ["conversation_id"] = null,
-                ["timezone_offset_min"] = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes,
-            };
-
-            var initMsg = await _bridge.SendAsync(
-                core,
-                new
-                {
-                    action = "apiRequest",
-                    method = "POST",
-                    path = ChatGptApiEndpoints.ConversationInit,
-                    body = initBody,
-                },
-                cancellationToken: cancellationToken);
+            var initMsg = await SendConversationInitAsync(core, gizmoId, null, cancellationToken);
 
             if (initMsg.Ok)
             {
@@ -1174,40 +1498,43 @@ public sealed class ChatGptProjectApiService
                 ChatGptApiDiscovery.RecordFailure(ChatGptApiEndpoints.ConversationInit, "POST", initMsg.Status);
             }
 
-            var legacyBody = new Dictionary<string, object?>
+            if (options?.SkipLegacyApiCreate != true)
             {
-                ["gizmo_id"] = gizmoId,
-                ["model"] = "auto",
-            };
-
-            var legacyMsg = await _bridge.SendAsync(
-                core,
-                new
+                var legacyBody = new Dictionary<string, object?>
                 {
-                    action = "apiRequest",
-                    method = "POST",
-                    path = ChatGptApiEndpoints.ConversationsCreate,
-                    body = legacyBody,
-                },
-                cancellationToken: cancellationToken);
+                    ["gizmo_id"] = gizmoId,
+                    ["model"] = "auto",
+                };
 
-            if (legacyMsg.Ok)
-            {
-                ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.ConversationsCreate, "POST");
-                var fromLegacy = TryReadConversationId(legacyMsg.Json);
-                if (!string.IsNullOrWhiteSpace(fromLegacy))
+                var legacyMsg = await _bridge.SendAsync(
+                    core,
+                    new
+                    {
+                        action = "apiRequest",
+                        method = "POST",
+                        path = ChatGptApiEndpoints.ConversationsCreate,
+                        body = legacyBody,
+                    },
+                    cancellationToken: cancellationToken);
+
+                if (legacyMsg.Ok)
                 {
-                    if (legacyMsg.Json is { } legacyJson)
-                        ChatGptConversationSendService.TrySeedParentCache(fromLegacy, legacyJson);
-                    EnsureConversationParentBootstrapped(fromLegacy);
-                    return new CreateProjectConversationResult { ConversationId = fromLegacy };
+                    ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.ConversationsCreate, "POST");
+                    var fromLegacy = TryReadConversationId(legacyMsg.Json);
+                    if (!string.IsNullOrWhiteSpace(fromLegacy))
+                    {
+                        if (legacyMsg.Json is { } legacyJson)
+                            ChatGptConversationSendService.TrySeedParentCache(fromLegacy, legacyJson);
+                        EnsureConversationParentBootstrapped(fromLegacy);
+                        return new CreateProjectConversationResult { ConversationId = fromLegacy };
+                    }
                 }
-            }
-            else
-            {
-                ProjectLinkDiagnostics.Log(
-                    $"ConversationsCreate failed for {gizmoId} status={legacyMsg.Status} error={legacyMsg.Error}");
-                ChatGptApiDiscovery.RecordFailure(ChatGptApiEndpoints.ConversationsCreate, "POST", legacyMsg.Status);
+                else
+                {
+                    ProjectLinkDiagnostics.Log(
+                        $"ConversationsCreate failed for {gizmoId} status={legacyMsg.Status} error={legacyMsg.Error}");
+                    ChatGptApiDiscovery.RecordFailure(ChatGptApiEndpoints.ConversationsCreate, "POST", legacyMsg.Status);
+                }
             }
         }
 
@@ -1215,8 +1542,17 @@ public sealed class ChatGptProjectApiService
         if (!string.IsNullOrWhiteSpace(uiResult.ConversationId))
             return uiResult;
 
+        if (options?.SkipClientBootstrap == true)
+        {
+            return new CreateProjectConversationResult
+            {
+                Error = initError ?? "play_provision_no_conversation",
+            };
+        }
+
         var clientId = Guid.NewGuid().ToString();
-        if (await TryRegisterClientConversationAsync(core, gizmoId, clientId, cancellationToken))
+        var register = await TryRegisterClientConversationAsync(core, gizmoId, clientId, cancellationToken);
+        if (register.Success)
         {
             ProjectLinkDiagnostics.Log(
                 $"Registered client conversation {clientId} for project {gizmoId} via conversation/init");
@@ -1224,6 +1560,7 @@ public sealed class ChatGptProjectApiService
             {
                 ConversationId = clientId,
                 ClientBootstrapped = true,
+                InitRegistered = true,
                 Error = initError,
             };
         }
@@ -1237,7 +1574,7 @@ public sealed class ChatGptProjectApiService
         {
             ConversationId = clientId,
             ClientBootstrapped = true,
-            Error = initError ?? "conversation_init_register_failed",
+            Error = register.Error ?? initError ?? "conversation_init_register_failed",
         };
     }
 
@@ -1270,21 +1607,76 @@ public sealed class ChatGptProjectApiService
         }
     }
 
-    private async Task<bool> TryRegisterClientConversationAsync(
+    private async Task<(bool Success, string? Error)> TryRegisterClientConversationAsync(
         CoreWebView2 core,
         string gizmoId,
         string clientConversationId,
+        CancellationToken cancellationToken)
+    {
+        // Browser registers via POST conversation/init from project home, then the SPA routes to /c/{id}.
+        // Deep-linking an unregistered client UUID redirects back to /project.
+        await EnsureProjectPageAsync(core, gizmoId, cancellationToken);
+
+        var warmup = await SendConversationInitAsync(core, gizmoId, null, cancellationToken);
+        if (!warmup.Ok)
+        {
+            ProjectLinkDiagnostics.Log(
+                $"conversation/init warmup status={warmup.Status} error={warmup.Error} before register");
+        }
+
+        var initMsg = await SendConversationInitAsync(
+            core,
+            gizmoId,
+            clientConversationId,
+            cancellationToken);
+
+        if (!initMsg.Ok)
+        {
+            var error = $"conversation_init_http_{initMsg.Status}";
+            if (!string.IsNullOrWhiteSpace(initMsg.Error))
+                error += $": {initMsg.Error}";
+
+            ProjectLinkDiagnostics.Log(
+                $"conversation/init register failed status={initMsg.Status} error={initMsg.Error}"
+                + $" conv={clientConversationId}");
+            return (false, error);
+        }
+
+        ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.ConversationInit, "POST");
+        if (initMsg.Json is { } initJson)
+            ChatGptConversationSendService.TrySeedParentCache(clientConversationId, initJson);
+        EnsureConversationParentBootstrapped(clientConversationId);
+
+        var nav = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
+            core,
+            clientConversationId,
+            gizmoId,
+            cancellationToken);
+        if (!nav.Success)
+        {
+            ProjectLinkDiagnostics.Log(
+                $"conversation URL navigation optional miss ({nav.Error}); API send may still work from project home");
+        }
+
+        return (true, null);
+    }
+
+    private async Task<ApiBridgeMessage> SendConversationInitAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string? conversationId,
         CancellationToken cancellationToken)
     {
         var initBody = new Dictionary<string, object?>
         {
             ["gizmo_id"] = gizmoId,
             ["requested_default_model"] = null,
-            ["conversation_id"] = clientConversationId,
+            ["conversation_id"] = conversationId,
             ["timezone_offset_min"] = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes,
+            ["conversation_origin"] = null,
         };
 
-        var initMsg = await _bridge.SendAsync(
+        return await _bridge.SendAsync(
             core,
             new
             {
@@ -1294,15 +1686,6 @@ public sealed class ChatGptProjectApiService
                 body = initBody,
             },
             cancellationToken: cancellationToken);
-
-        if (!initMsg.Ok)
-            return false;
-
-        ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.ConversationInit, "POST");
-        if (initMsg.Json is { } initJson)
-            ChatGptConversationSendService.TrySeedParentCache(clientConversationId, initJson);
-        EnsureConversationParentBootstrapped(clientConversationId);
-        return true;
     }
 
     private static void EnsureConversationParentBootstrapped(string conversationId)
@@ -1343,10 +1726,18 @@ public sealed class ChatGptProjectApiService
         CoreWebView2 core,
         string gizmoId,
         CancellationToken cancellationToken = default,
-        bool ensureProjectPage = true)
+        bool ensureProjectPage = true,
+        bool bypassCache = false)
     {
+        if (!bypassCache && ProjectRemoteListCache.TryGet(gizmoId, out var cached))
+        {
+            ProjectLinkDiagnostics.Log(
+                $"Project file list cache hit for {gizmoId} count={cached.Count}");
+            return cached;
+        }
+
         if (ensureProjectPage)
-        await EnsureProjectPageAsync(core, gizmoId, cancellationToken);
+            await EnsureProjectPageAsync(core, gizmoId, cancellationToken);
         else
             await PrepareForApiAsync(core, cancellationToken);
 
@@ -1366,14 +1757,15 @@ public sealed class ChatGptProjectApiService
                     ["gizmo_files"] = "skipped:0",
                     ["bootstrap"] = "0:0",
                     ["merged"] = merged.Count.ToString(),
+                    ["cache"] = bypassCache ? "bypass" : "miss",
                 };
                 WriteFileListProbe(gizmoId, fastProbe, merged);
                 ProjectLinkDiagnostics.Log(
                     $"Merged {merged.Count} project file(s) for {gizmoId} "
                     + $"sidebar={fastProbe["sidebar"]} detail={fastProbe["detail"]} "
                     + $"projects_files={fastProbe["projects_files"]} gizmo_files={fastProbe["gizmo_files"]} "
-                    + $"bootstrap={fastProbe["bootstrap"]}");
-                return merged;
+                    + $"bootstrap={fastProbe["bootstrap"]} cache={fastProbe["cache"]}");
+                return CacheProjectFileList(gizmoId, merged);
             }
 
             var (projectsStatus, projectsFiles) = await TryGetFilesFromApiPathWithStatusAsync(
@@ -1408,6 +1800,7 @@ public sealed class ChatGptProjectApiService
                 ["gizmo_files"] = $"{gizmoStatus}:{gizmoFiles.Count}",
                 ["bootstrap"] = $"{(bootstrapCount > 0 ? 200 : 0)}:{bootstrapCount}",
                 ["merged"] = merged.Count.ToString(),
+                ["cache"] = bypassCache ? "bypass" : "miss",
             };
             WriteFileListProbe(gizmoId, probe, merged);
 
@@ -1417,8 +1810,8 @@ public sealed class ChatGptProjectApiService
                     $"Merged {merged.Count} project file(s) for {gizmoId} "
                     + $"sidebar={probe["sidebar"]} detail={probe["detail"]} "
                     + $"projects_files={probe["projects_files"]} gizmo_files={probe["gizmo_files"]} "
-                    + $"bootstrap={probe["bootstrap"]}");
-                return merged;
+                    + $"bootstrap={probe["bootstrap"]} cache={probe["cache"]}");
+                return CacheProjectFileList(gizmoId, merged);
             }
         }
         else
@@ -1447,18 +1840,28 @@ public sealed class ChatGptProjectApiService
 
             var merged = MergeFileRefsById(collected);
             probe["merged"] = merged.Count.ToString();
+            probe["cache"] = bypassCache ? "bypass" : "miss";
             WriteFileListProbe(gizmoId, probe, merged);
 
             if (merged.Count > 0)
-                return merged;
+                return CacheProjectFileList(gizmoId, merged);
         }
 
         ProjectLinkDiagnostics.Log($"No project files found for {gizmoId} after all list strategies.");
         WriteFileListProbe(gizmoId, new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["merged"] = "0",
+            ["cache"] = bypassCache ? "bypass" : "miss",
         }, []);
         return [];
+    }
+
+    private static IReadOnlyList<GizmoFileRef> CacheProjectFileList(
+        string gizmoId,
+        IReadOnlyList<GizmoFileRef> merged)
+    {
+        ProjectRemoteListCache.Set(gizmoId, merged);
+        return merged;
     }
 
     private async Task<(int Status, IReadOnlyList<GizmoFileRef> Files)> TryGetGizmoDetailFilesAsync(
@@ -1604,17 +2007,71 @@ public sealed class ChatGptProjectApiService
         var collected = new List<GizmoFileRef>();
         foreach (var ownedOnly in new[] { true, false })
         {
-            foreach (var project in await FetchSidebarPagesAsync(core, ownedOnly, cancellationToken))
+            var (found, files) = await TryFetchGizmoFilesFromSidebarPagesAsync(
+                core,
+                gizmoId,
+                ownedOnly,
+                cancellationToken);
+            if (found)
             {
-                if (ChatGptUrls.GizmoIdsEqual(project.Id, gizmoId) && project.Files.Count > 0)
-                    collected.AddRange(project.Files);
-            }
-
-            if (collected.Count > 0)
+                if (files.Count > 0)
+                    collected.AddRange(files);
                 break;
+            }
         }
 
         return MergeFileRefsById(collected);
+    }
+
+    private async Task<(bool Found, IReadOnlyList<GizmoFileRef> Files)> TryFetchGizmoFilesFromSidebarPagesAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        bool ownedOnly,
+        CancellationToken cancellationToken)
+    {
+        string? cursor = null;
+
+        for (var page = 0; page < 50; page++)
+        {
+            var query = new Dictionary<string, string>
+            {
+                ["owned_only"] = ownedOnly ? "true" : "false",
+                ["conversations_per_gizmo"] = "0",
+            };
+            if (!string.IsNullOrEmpty(cursor))
+                query["cursor"] = cursor;
+
+            var msg = await _bridge.SendAsync(
+                core,
+                ApiCommand("GET", ChatGptApiEndpoints.ProjectsSidebar, query),
+                cancellationToken: cancellationToken);
+
+            EnsureOk(msg, ChatGptApiEndpoints.ProjectsSidebar);
+            ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.ProjectsSidebar, "GET");
+
+            if (msg.Json is not { } root)
+                break;
+
+            if (root.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in items.EnumerateArray())
+                {
+                    var summary = GizmoResponseParser.TryParseSidebarItem(item);
+                    if (summary is null)
+                        continue;
+
+                    if (ChatGptUrls.GizmoIdsEqual(summary.Id, gizmoId))
+                        return (true, summary.Files);
+                }
+            }
+
+            if (!TryGetSidebarNextCursor(root, out var next))
+                break;
+
+            cursor = next;
+        }
+
+        return (false, []);
     }
 
     public async Task<ApiProbeResult> ProbeSidebarAsync(
@@ -1708,7 +2165,8 @@ public sealed class ChatGptProjectApiService
         CancellationToken cancellationToken = default,
         string? gizmoId = null,
         string? location = null,
-        bool failFast = false)
+        bool failFast = false,
+        long? expectedMinBytes = null)
     {
         if (!string.IsNullOrWhiteSpace(gizmoId))
         {
@@ -1724,7 +2182,7 @@ public sealed class ChatGptProjectApiService
         var paths = ChatGptApiEndpoints.BuildFileDownloadPathCandidates(fileId, gizmoId, location);
         var msg = await _bridge.SendAsync(
             core,
-            new { action = "downloadFile", fileId, gizmoId, location, paths, failFast },
+            new { action = "downloadFile", fileId, gizmoId, location, paths, failFast, expectedMinBytes },
             timeoutMs: 120000,
             cancellationToken: cancellationToken);
 
@@ -1770,6 +2228,57 @@ public sealed class ChatGptProjectApiService
         }
 
         throw new ChatGptApiException("File download returned no payload.", ChatGptApiEndpoints.FileDownload(fileId));
+    }
+
+    public async Task<byte[]> DownloadInterpreterSandboxFileAsync(
+        CoreWebView2 core,
+        string conversationId,
+        string messageId,
+        string sandboxPath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId))
+            throw new ChatGptApiException("Missing conversation id.", ChatGptApiEndpoints.ConversationGet(""));
+        if (string.IsNullOrWhiteSpace(messageId))
+            throw new ChatGptApiException("Missing message id.", ChatGptApiEndpoints.ConversationGet(conversationId));
+        if (string.IsNullOrWhiteSpace(sandboxPath))
+            throw new ChatGptApiException("Missing sandbox path.", ChatGptApiEndpoints.ConversationGet(conversationId));
+
+        var path = ChatGptApiEndpoints.ConversationInterpreterDownload(conversationId, messageId, sandboxPath);
+        var msg = await _bridge.SendAsync(
+            core,
+            new { action = "downloadInterpreterFile", conversationId, messageId, sandboxPath, path },
+            timeoutMs: 120000,
+            cancellationToken: cancellationToken);
+
+        if (!msg.Ok)
+        {
+            var message = FormatDownloadFailureMessage(
+                msg.Message ?? msg.Error ?? "interpreter_download_failed",
+                msg,
+                sandboxPath,
+                [path],
+                allAttemptsNotFound: AreAllDownloadAttemptsNotFound(msg));
+            throw new ChatGptApiException(message, path, msg.Status, ResolveDownloadFailureDetail(msg));
+        }
+
+        if (msg.Root.TryGetProperty("base64", out var b64) && b64.ValueKind == JsonValueKind.String)
+        {
+            var s = b64.GetString();
+            if (!string.IsNullOrEmpty(s))
+                return Convert.FromBase64String(s);
+        }
+
+        if (msg.Root.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+        {
+            var s = text.GetString();
+            if (s is not null)
+                return System.Text.Encoding.UTF8.GetBytes(s);
+        }
+
+        throw new ChatGptApiException(
+            "Interpreter sandbox download returned no payload.",
+            path);
     }
 
     public async Task DownloadFileToPathAsync(
@@ -1897,7 +2406,11 @@ public sealed class ChatGptProjectApiService
         bool allAttemptsNotFound)
     {
         var attempted = FormatAttemptedPathsForMessage(msg, paths);
-        var prefix = allAttemptsNotFound ? "download_not_available" : "download_failed";
+        var prefix = baseMessage.StartsWith("download_stub", StringComparison.Ordinal)
+            ? "download_stub"
+            : allAttemptsNotFound
+                ? "download_not_available"
+                : "download_failed";
         var status = msg.Status?.ToString() ?? "0";
         var lastPath = ResolveDownloadFailureEndpoint(baseMessage, msg, fileId, paths);
         return $"{prefix} {status} paths={paths.Count} attempted={attempted};last={lastPath}";
@@ -2190,7 +2703,8 @@ public sealed class ChatGptProjectApiService
         string fileName,
         byte[] content,
         string mimeType = "text/markdown",
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int timeoutMs = 180_000)
     {
         var useCase = ResolveProjectSourceUploadUseCase(mimeType);
         var msg = await _bridge.SendAsync(
@@ -2203,10 +2717,11 @@ public sealed class ChatGptProjectApiService
                 mimeType,
                 base64 = Convert.ToBase64String(content),
                 useCase,
-                useProjectLibrary = IsSnorlaxProjectId(gizmoId),
+                // Library upload can list on the project before the blob is finalized (ghost refs).
+                useProjectLibrary = false,
                 skipProjectAttach = true,
             },
-            timeoutMs: 180000,
+            timeoutMs: timeoutMs,
             cancellationToken: cancellationToken);
 
         if (!msg.Ok)
@@ -2245,12 +2760,346 @@ public sealed class ChatGptProjectApiService
         };
     }
 
+    /// <summary>
+    /// HAR-aligned project Sources upload: register → Azure blob → process stream → POST project files.
+    /// </summary>
+    public async Task<GizmoFileRef?> UploadProjectSourceFilePureApiAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string fileName,
+        byte[] content,
+        string mimeType = "text/markdown",
+        CancellationToken cancellationToken = default,
+        int timeoutMs = 180_000)
+    {
+        var msg = await _bridge.SendAsync(
+            core,
+            new
+            {
+                action = "uploadFile",
+                gizmoId,
+                fileName,
+                mimeType,
+                base64 = Convert.ToBase64String(content),
+                useCase = "agent",
+                entrySurface = "project_sources",
+                pureApiProjectSources = true,
+                fileSize = content.Length,
+                skipProjectAttach = true,
+            },
+            timeoutMs: timeoutMs,
+            cancellationToken: cancellationToken);
+
+        if (!msg.Ok)
+        {
+            ChatGptApiDiscovery.RecordFailure(ChatGptApiEndpoints.FilesUpload, "POST", msg.Status);
+            throw new ChatGptApiException(
+                FormatBridgeError(msg, "pure_api_upload_failed"),
+                ChatGptApiEndpoints.FilesUpload,
+                msg.Status,
+                msg.BodyText);
+        }
+
+        ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.FilesUpload, "POST");
+
+        var fileId = ExtractUploadedFileId(msg);
+        if (string.IsNullOrWhiteSpace(fileId))
+            return null;
+
+        ProjectLinkDiagnostics.Log(
+            $"Pure API project source upload ok file={fileName} file_id={fileId} gizmo={gizmoId}");
+
+        return new GizmoFileRef
+        {
+            FileId = fileId,
+            Name = fileName,
+            Location = DefaultUpsertFileLocation,
+        };
+    }
+
+    /// <summary>
+    /// Explicit project Sources attach (POST projects/…/files). Used when stream bind did not list the file.
+    /// </summary>
+    internal async Task<bool> TryAttachProjectSourceFileAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef file,
+        long fileSize,
+        string mimeType,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(file.FileId))
+            return false;
+
+        var msg = await _bridge.SendAsync(
+            core,
+            new
+            {
+                action = "attachProjectFile",
+                gizmoId,
+                fileId = file.FileId,
+                fileName = file.Name,
+                mimeType,
+                fileSize,
+                useCase = "agent",
+                entrySurface = "project_sources",
+                pureApiProjectSources = true,
+            },
+            cancellationToken: cancellationToken);
+
+        if (!msg.Ok)
+        {
+            ProjectLinkDiagnostics.Log(
+                $"Publication pure API attach failed file={file.Name} file_id={file.FileId} "
+                + $"status={msg.Status} error={msg.Message}");
+            return false;
+        }
+
+        ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.ProjectFilesAttach(gizmoId), "POST");
+        ProjectLinkDiagnostics.Log(
+            $"Publication pure API attach ok file={file.Name} file_id={file.FileId} gizmo={gizmoId}");
+        return true;
+    }
+
+    /// <summary>
+    /// One cohesive publish step for a project source file: upload bytes, bind to the
+    /// linked project, then verify the file is downloadable.
+    /// </summary>
+    public async Task<ProjectSourcePublishResult> PublishProjectSourceFileAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string fileName,
+        byte[] content,
+        string mimeType,
+        Guid? adventureId = null,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await SourcePublication.PublishAsync(
+            core,
+            new ProjectSourcePublicationRequest
+            {
+                GizmoId = gizmoId,
+                RemoteFileName = fileName,
+                Content = content,
+                MimeType = mimeType,
+                AdventureId = adventureId,
+            },
+            progress,
+            cancellationToken);
+
+        return new ProjectSourcePublishResult
+        {
+            File = result.File,
+            UsedAttachFallback = result.BindingStrategy.UsedUpsertFallback(),
+        };
+    }
+
+    /// <summary>
+    /// Publication bind entry point. Snorlax projects use project-files attach only —
+    /// detail upsert rewrites the full project graph and can fork duplicate sidebar projects.
+    /// </summary>
+    internal async Task<ProjectSourceBindingStrategy> BindSourceFileForPublicationAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef file,
+        Guid? adventureId,
+        CancellationToken cancellationToken)
+    {
+        if (IsSnorlaxProjectId(gizmoId))
+        {
+            await BindSnorlaxSourceFileViaProjectFilesApiAsync(
+                core,
+                gizmoId,
+                file,
+                cancellationToken);
+            return ProjectSourceBindingStrategy.SnorlaxProjectFilesApi;
+        }
+
+        await AttachProjectFilesViaUpsertAsync(
+            core,
+            gizmoId,
+            [file],
+            adventureId: adventureId,
+            caller: "SourcePublication",
+            skipPreflight: true,
+            cancellationToken: cancellationToken);
+
+        return ProjectSourceBindingStrategy.LegacyUpsert;
+    }
+
+    private async Task BindSnorlaxSourceFileViaProjectFilesApiAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef file,
+        CancellationToken cancellationToken)
+    {
+        var attachBaseline = await SnapshotSnorlaxProjectIdsAsync(core, cancellationToken);
+
+        ProjectLinkDiagnostics.Log(
+            $"Source publication project-files bind file={file.Name} file_id={file.FileId} for {gizmoId}");
+
+        var attached = await TryAttachSnorlaxFileViaProjectFilesApiAsync(
+            core,
+            gizmoId,
+            file,
+            attachBaseline,
+            strictSyncAttach: false,
+            skipSecondSidebarPoll: true,
+            SnorlaxAttachOptions.Publication,
+            cancellationToken);
+
+        if (!attached)
+        {
+            throw new ChatGptApiException(
+                $"publication_attach_failed: project-files attach exhausted file={file.Name} file_id={file.FileId}",
+                ChatGptApiEndpoints.ProjectFilesAttach(gizmoId));
+        }
+    }
+
+    /// <summary>
+    /// Browser-native library upload for Snorlax projects (auto-attaches to project knowledge).
+    /// Used as publication escalation when register+upsert verify fails.
+    /// </summary>
+    internal async Task<GizmoFileRef?> UploadProjectFileBytesViaLibraryAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string fileName,
+        byte[] content,
+        string mimeType = "text/markdown",
+        CancellationToken cancellationToken = default,
+        int timeoutMs = 180_000)
+    {
+        var useCase = ResolveProjectSourceUploadUseCase(mimeType);
+        var msg = await _bridge.SendAsync(
+            core,
+            new
+            {
+                action = "uploadFile",
+                gizmoId,
+                fileName,
+                mimeType,
+                base64 = Convert.ToBase64String(content),
+                useCase,
+                useProjectLibrary = true,
+                waitForLibraryFinalize = true,
+                skipProjectAttach = true,
+            },
+            timeoutMs: timeoutMs,
+            cancellationToken: cancellationToken);
+
+        if (!msg.Ok)
+        {
+            ChatGptApiDiscovery.RecordFailure(ChatGptApiEndpoints.FilesUpload, "POST", msg.Status);
+            throw new ChatGptApiException(
+                FormatBridgeError(msg, "library_upload_failed"),
+                ChatGptApiEndpoints.FilesUpload,
+                msg.Status,
+                msg.BodyText);
+        }
+
+        ChatGptApiDiscovery.RecordSuccess(ChatGptApiEndpoints.FilesUpload, "POST");
+
+        var fileId = ExtractUploadedFileId(msg);
+        if (string.IsNullOrWhiteSpace(fileId))
+            return null;
+
+        return new GizmoFileRef
+        {
+            FileId = fileId,
+            Name = fileName,
+            Location = ResolveUploadedProjectFileLocation(msg, useCase),
+            FromLibraryUpload = true,
+        };
+    }
+
+    internal async Task<GizmoFileRef> EnrichUploadedFileFromProjectDetailAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef uploaded,
+        CancellationToken cancellationToken)
+    {
+        var detailJson = await GetGizmoDetailJsonAsync(core, gizmoId, cancellationToken, ensureProjectPage: false);
+        if (detailJson is not { } json)
+            return uploaded;
+
+        var detailFiles = GizmoResponseParser.CollectFileRefsDeep(json);
+        var probes = new List<GizmoFileRef>
+        {
+            new()
+            {
+                FileId = uploaded.FileId,
+                Name = uploaded.Name,
+                Location = uploaded.Location,
+            },
+        };
+        EnrichFileRefsFromDetail(probes, detailFiles);
+
+        var enriched = probes[0];
+        if (!string.IsNullOrWhiteSpace(enriched.Location))
+            return enriched;
+
+        var inferred = InferAttachFileLocationFromDetail(detailFiles);
+        if (string.IsNullOrWhiteSpace(inferred))
+            return uploaded;
+
+        return new GizmoFileRef
+        {
+            FileId = uploaded.FileId,
+            Name = uploaded.Name,
+            Location = inferred,
+            FromLibraryUpload = uploaded.FromLibraryUpload,
+        };
+    }
+
+    internal async Task TryCleanupFailedSourcePublishAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef file,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(file.FileId))
+            return;
+
+        try
+        {
+            ProjectLinkDiagnostics.Log(
+                $"Source publish cleanup deleting ghost file={file.Name} file_id={file.FileId} for {gizmoId}");
+            await DeleteProjectFileAsync(core, gizmoId, file.FileId, cancellationToken);
+            ProjectRemoteListCache.Invalidate(gizmoId);
+        }
+        catch (Exception ex)
+        {
+            ProjectLinkDiagnostics.Log(
+                $"Source publish cleanup failed file_id={file.FileId}: {ex.Message}");
+        }
+    }
+
+    public async Task<bool> IsSourceFileVisibleOnProjectAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        GizmoFileRef file,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(file.FileId))
+            return false;
+
+        var remoteFiles = await GetProjectFilesDirectAsync(
+            core,
+            gizmoId,
+            cancellationToken,
+            ensureProjectPage: false);
+        return RemoteFilesContainById(remoteFiles, file.FileId);
+    }
+
     public async Task<GizmoFileRef?> UploadChatAttachmentBytesAsync(
         CoreWebView2 core,
         string fileName,
         byte[] content,
         string mimeType = "application/octet-stream",
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? conversationId = null,
+        string? parentMessageId = null)
     {
         var useCase = ResolveUploadUseCase(mimeType);
         var msg = await _bridge.SendAsync(
@@ -2264,6 +3113,9 @@ public sealed class ChatGptProjectApiService
                 useCase,
                 useProjectLibrary = false,
                 skipProjectAttach = true,
+                entrySurface = "chat_composer",
+                conversationId,
+                parentMessageId,
             },
             timeoutMs: 180000,
             cancellationToken: cancellationToken);
@@ -2290,6 +3142,7 @@ public sealed class ChatGptProjectApiService
             FileId = fileId,
             Name = fileName,
             Location = location,
+            FileTokenSize = ExtractUploadedFileTokenSize(msg),
         };
     }
 
@@ -3589,6 +4442,68 @@ public sealed class ChatGptProjectApiService
         CancellationToken cancellationToken) =>
         VerifyFilesDownloadableAfterAttachAsync(core, gizmoId, files, cancellationToken);
 
+    internal async Task<byte[]> DownloadFileProjectScopedAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string fileId,
+        CancellationToken cancellationToken,
+        long? expectedMinBytes = null)
+    {
+        var paths = ChatGptApiEndpoints.BuildProjectScopedDownloadPathCandidates(fileId, gizmoId);
+        var msg = await _bridge.SendAsync(
+            core,
+            new
+            {
+                action = "downloadFile",
+                fileId,
+                gizmoId,
+                paths,
+                requireProjectPaths = true,
+                expectedMinBytes,
+            },
+            timeoutMs: 120_000,
+            cancellationToken: cancellationToken);
+
+        if (!msg.Ok)
+        {
+            var message = FormatDownloadFailureMessage(
+                msg.Message ?? msg.Error ?? "download_failed",
+                msg,
+                fileId,
+                paths,
+                allAttemptsNotFound: AreAllDownloadAttemptsNotFound(msg));
+            throw new ChatGptApiException(
+                message,
+                ResolveDownloadFailureEndpoint(message, msg, fileId, paths),
+                msg.Status,
+                ResolveDownloadFailureDetail(msg));
+        }
+
+        var payload = TryReadDownloadPayload(msg, fileId);
+        if (payload is null or { Length: 0 })
+        {
+            throw new ChatGptApiException(
+                "download_not_available: project-scoped download returned no payload",
+                ChatGptApiEndpoints.ProjectFileDownload(gizmoId, fileId));
+        }
+
+        return payload;
+    }
+
+    /// <summary>
+    /// Download a project source file using project-scoped paths (ChatGPT Sources UI contract).
+    /// </summary>
+    public Task<byte[]> DownloadProjectSourceFileAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        string fileId,
+        CancellationToken cancellationToken = default,
+        long? expectedMinBytes = null) =>
+        DownloadFileProjectScopedAsync(core, gizmoId, fileId, cancellationToken, expectedMinBytes);
+
+    internal static bool IsLikelyApiErrorJsonPayload(byte[] bytes) =>
+        ProjectSourceIntegrityVerifier.IsLikelyApiErrorJsonPayload(bytes);
+
     private async Task VerifyFilesDownloadableAfterAttachAsync(
         CoreWebView2 core,
         string gizmoId,
@@ -3839,20 +4754,50 @@ public sealed class ChatGptProjectApiService
         return null;
     }
 
-    private async Task ConfirmAttachedFilesOnProjectAsync(
+    internal async Task<bool> TryConfirmAttachedFilesOnProjectAsync(
         CoreWebView2 core,
         string gizmoId,
         IReadOnlyList<GizmoFileRef> expectedFiles,
         CancellationToken cancellationToken,
-        bool ensureProjectPage = true)
+        bool ensureProjectPage = true,
+        int maxAttempts = 3,
+        int retryDelayMs = 1500)
     {
-        for (var attempt = 0; attempt < 3; attempt++)
+        try
+        {
+            await ConfirmAttachedFilesOnProjectAsync(
+                core,
+                gizmoId,
+                expectedFiles,
+                cancellationToken,
+                ensureProjectPage,
+                maxAttempts,
+                retryDelayMs);
+            return true;
+        }
+        catch (ChatGptApiException)
+        {
+            return false;
+        }
+    }
+
+    internal async Task ConfirmAttachedFilesOnProjectAsync(
+        CoreWebView2 core,
+        string gizmoId,
+        IReadOnlyList<GizmoFileRef> expectedFiles,
+        CancellationToken cancellationToken,
+        bool ensureProjectPage = true,
+        int maxAttempts = 3,
+        int retryDelayMs = 1500)
+    {
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             var remoteFiles = await GetProjectFilesDirectAsync(
                 core,
                 gizmoId,
                 cancellationToken,
-                ensureProjectPage: ensureProjectPage && attempt == 0);
+                ensureProjectPage: ensureProjectPage && attempt == 0,
+                bypassCache: true);
 
             if (expectedFiles.All(f => RemoteFilesContainById(remoteFiles, f.FileId)))
             {
@@ -3861,8 +4806,8 @@ public sealed class ChatGptProjectApiService
                 return;
             }
 
-            if (attempt < 2)
-                await Task.Delay(1500, cancellationToken);
+            if (attempt + 1 < maxAttempts && retryDelayMs > 0)
+                await Task.Delay(retryDelayMs, cancellationToken);
         }
 
         ProjectLinkDiagnostics.Log(
@@ -4372,6 +5317,29 @@ public sealed class ChatGptProjectApiService
         {
             return JsonElementParsing.GetStringOrNull(json, "file_id")
                    ?? JsonElementParsing.GetStringOrNull(json, "id");
+        }
+
+        return null;
+    }
+
+    private static int? ExtractUploadedFileTokenSize(ApiBridgeMessage msg)
+    {
+        if (msg.Json is not { } json)
+            return null;
+
+        return TryReadFileTokenSize(json)
+               ?? (json.TryGetProperty("file", out var file) ? TryReadFileTokenSize(file) : null);
+    }
+
+    private static int? TryReadFileTokenSize(JsonElement json)
+    {
+        foreach (var name in new[] { "file_token_size", "fileTokenSize", "token_size", "tokenSize" })
+        {
+            if (!json.TryGetProperty(name, out var el))
+                continue;
+
+            if (el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var n) && n > 0)
+                return n;
         }
 
         return null;

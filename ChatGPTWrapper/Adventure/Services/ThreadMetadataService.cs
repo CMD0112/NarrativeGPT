@@ -1,178 +1,143 @@
 using ChatGPTWrapper.Adventure.Models;
-using ChatGPTWrapper.ChatGptApi;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
 internal static class ThreadMetadataService
 {
-    public static void RecordPlayTurnExchange(
+    public static void RecordNarratorComposerRevision(
         AdventureBundle bundle,
-        TurnRecord turn,
-        string playerText,
-        string? narratorText,
-        string? packetHash = null,
-        string? conversationId = null)
-    {
-        ArgumentNullException.ThrowIfNull(bundle);
-        ArgumentNullException.ThrowIfNull(turn);
-
-        if (!string.IsNullOrWhiteSpace(conversationId))
-            bundle.ThreadMetadata.ConversationId = conversationId;
-
-        var userId = $"turn:{turn.Id}:user";
-        var assistantId = $"turn:{turn.Id}:assistant";
-
-        AppendMessage(bundle, new ThreadMessageRecord
-        {
-            MessageId = userId,
-            Role = "user",
-            PlayerLine = string.IsNullOrWhiteSpace(playerText) ? null : playerText.Trim(),
-            PacketHash = packetHash,
-            IsInjectedContext = ConversationStreamParser.IsInjectedContextUserMessage(playerText),
-            IsUtility = ConversationStreamParser.IsUtilityUserMessage(playerText),
-            LinkedTurnId = turn.Id,
-        });
-
-        if (!string.IsNullOrWhiteSpace(narratorText))
-        {
-            AppendMessage(bundle, new ThreadMessageRecord
-            {
-                MessageId = assistantId,
-                Role = "assistant",
-                BodyText = narratorText.Trim(),
-                IsUtility = ConversationStreamParser.IsUtilityAssistantMessage(narratorText),
-                LinkedTurnId = turn.Id,
-            });
-        }
-    }
-
-    public static IReadOnlyList<TranscriptTurnPair> ToTranscriptPairs(AdventureBundle bundle)
-    {
-        var pairs = new List<TranscriptTurnPair>();
-        string? pendingPlayer = null;
-        int? pendingIndex = null;
-
-        foreach (var msg in ActiveMessages(bundle))
-        {
-            if (msg.IsUtility)
-                continue;
-
-            if (msg.Role == "user")
-            {
-                pendingPlayer = msg.PlayerLine ?? "";
-                pendingIndex = ResolveTurnIndex(bundle, msg.LinkedTurnId);
-                continue;
-            }
-
-            if (msg.Role != "assistant")
-                continue;
-
-            var narrator = msg.BodyText ?? "";
-            if (string.IsNullOrWhiteSpace(pendingPlayer) && string.IsNullOrWhiteSpace(narrator))
-                continue;
-
-            pairs.Add(new TranscriptTurnPair
-            {
-                PlayerText = pendingPlayer ?? "",
-                NarratorText = narrator,
-                TurnIndex = pendingIndex,
-            });
-            pendingPlayer = null;
-            pendingIndex = null;
-        }
-
-        return pairs;
-    }
-
-    public static void RecordUtilityExchange(
-        AdventureBundle bundle,
-        string jobId,
-        string userPrompt,
-        string? assistantResponse,
-        string? conversationId = null)
+        int? logTurnIndex,
+        string? revisionGroupId,
+        string? revisionPromptText,
+        string? assistantDomTurnId,
+        string? replacementText)
     {
         ArgumentNullException.ThrowIfNull(bundle);
 
-        if (!string.IsNullOrWhiteSpace(conversationId))
-            bundle.ThreadMetadata.ConversationId = conversationId;
+        revisionGroupId = string.IsNullOrWhiteSpace(revisionGroupId)
+            ? Guid.NewGuid().ToString("N")
+            : revisionGroupId;
 
-        var stamp = Guid.NewGuid();
-        AppendMessage(bundle, new ThreadMessageRecord
-        {
-            MessageId = $"utility:{jobId}:{stamp}:user",
-            Role = "user",
-            IsUtility = true,
-            HiddenInDisplay = true,
-            PlayerLine = TranscriptTextSanitizer.Sanitize(userPrompt),
-        });
+        bundle.ThreadMetadata.RevisionAssistantDomTurnIds ??= new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(assistantDomTurnId))
+            bundle.ThreadMetadata.RevisionAssistantDomTurnIds[revisionGroupId] = assistantDomTurnId;
 
-        if (!string.IsNullOrWhiteSpace(assistantResponse))
+        Guid? linkedTurnId = null;
+        if (logTurnIndex is >= 0)
         {
-            AppendMessage(bundle, new ThreadMessageRecord
+            var turns = PlayTurnScopeService.GetPacketContextTurns(bundle);
+            if (logTurnIndex.Value < turns.Count)
+                linkedTurnId = turns[logTurnIndex.Value].Id;
+        }
+
+        var messages = bundle.ThreadMetadata.Messages;
+        var nextOrdinal = messages.Count > 0 ? messages.Max(m => m.Ordinal) + 1 : 0;
+
+        if (!string.IsNullOrWhiteSpace(revisionPromptText))
+        {
+            messages.Add(new ThreadMessageRecord
             {
-                MessageId = $"utility:{jobId}:{stamp}:assistant",
-                Role = "assistant",
-                BodyText = assistantResponse.Trim(),
-                IsUtility = true,
+                MessageId = $"rev-prompt-{revisionGroupId}",
+                Ordinal = nextOrdinal++,
+                Role = "user",
+                BodyText = revisionPromptText,
+                MessageKind = ThreadMessageKind.NarratorRevisionPrompt,
+                RevisionGroupId = revisionGroupId,
                 HiddenInDisplay = true,
+                LinkedTurnId = linkedTurnId,
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(assistantDomTurnId))
+        {
+            messages.Add(new ThreadMessageRecord
+            {
+                MessageId = $"rev-original-{revisionGroupId}",
+                Ordinal = nextOrdinal++,
+                Role = "assistant",
+                MessageKind = ThreadMessageKind.NarratorOriginal,
+                RevisionGroupId = revisionGroupId,
+                HiddenInDisplay = true,
+                LinkedTurnId = linkedTurnId,
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(replacementText))
+        {
+            messages.Add(new ThreadMessageRecord
+            {
+                MessageId = $"rev-replacement-{revisionGroupId}",
+                Ordinal = nextOrdinal++,
+                Role = "assistant",
+                BodyText = replacementText,
+                MessageKind = ThreadMessageKind.NarratorReplacement,
+                RevisionGroupId = revisionGroupId,
+                HiddenInDisplay = false,
+                LinkedTurnId = linkedTurnId,
             });
         }
     }
 
-    public static void MarkTurnSuperseded(AdventureBundle bundle, Guid turnId)
+    public static IReadOnlyList<RevisionHideEntry> BuildRevisionHideEntries(AdventureBundle bundle)
     {
+        ArgumentNullException.ThrowIfNull(bundle);
+
+        var entries = new List<RevisionHideEntry>();
+        var seenAssistantDomIds = new HashSet<string>(StringComparer.Ordinal);
+
         foreach (var msg in bundle.ThreadMetadata.Messages)
         {
-            if (msg.LinkedTurnId == turnId)
-                msg.SupersededByEdit = true;
+            if (!msg.HiddenInDisplay && !ThreadMessageKind.IsRevisionArtifact(msg.MessageKind))
+                continue;
+
+            entries.Add(new RevisionHideEntry
+            {
+                MessageId = msg.MessageId,
+                MessageKind = msg.MessageKind,
+                PromptPrefix = string.Equals(
+                    msg.MessageKind,
+                    ThreadMessageKind.NarratorRevisionPrompt,
+                    StringComparison.Ordinal)
+                    ? NarratorRevisionPrompt.Prefix
+                    : null,
+            });
         }
-    }
 
-    public static IReadOnlyList<ThreadMessageRecord> ActiveMessages(AdventureBundle bundle) =>
-        bundle.ThreadMetadata.Messages
-            .Where(m => !m.SupersededByEdit)
-            .OrderBy(m => m.Ordinal)
-            .ToList();
-
-    public static IReadOnlyDictionary<string, int> BuildOrdinalMap(AdventureBundle bundle)
-    {
-        var map = ActiveMessages(bundle)
-            .Where(m => !string.IsNullOrWhiteSpace(m.MessageId))
-            .ToDictionary(m => m.MessageId!, m => m.Ordinal, StringComparer.Ordinal);
-
-        var accepted = bundle.Log.Turns
-            .Where(t => t.Status == TurnStatus.Accepted)
-            .OrderBy(t => t.Index)
-            .ToList();
-
-        for (var i = 0; i < accepted.Count; i++)
+        if (bundle.ThreadMetadata.RevisionAssistantDomTurnIds is { Count: > 0 } domMap)
         {
-            var turn = accepted[i];
-            var userDomKey = $"dom:{(i * 2) + 1}";
-            var assistantDomKey = $"dom:{(i * 2) + 2}";
-            if (map.TryGetValue($"turn:{turn.Id}:user", out var userOrdinal))
-                map[userDomKey] = userOrdinal;
-            if (map.TryGetValue($"turn:{turn.Id}:assistant", out var assistantOrdinal))
-                map[assistantDomKey] = assistantOrdinal;
+            foreach (var domTurnId in domMap.Values)
+            {
+                if (string.IsNullOrWhiteSpace(domTurnId) || !seenAssistantDomIds.Add(domTurnId))
+                    continue;
+
+                entries.Add(new RevisionHideEntry
+                {
+                    AssistantDomTurnId = domTurnId,
+                    MessageKind = ThreadMessageKind.NarratorOriginal,
+                });
+            }
         }
 
-        return map;
-    }
+        if (ThreadConversationLogReader.HasActivePlayLog(bundle))
+        {
+            var entry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play)!;
+            foreach (var branchMsg in ThreadConversationLogReader.GetActiveBranchOrLatestSnapshot(bundle, entry))
+            {
+                if (!string.Equals(branchMsg.Role, "user", StringComparison.OrdinalIgnoreCase))
+                    continue;
 
-    private static int? ResolveTurnIndex(AdventureBundle bundle, Guid? turnId)
-    {
-        if (turnId is null)
-            return null;
+                var text = branchMsg.DisplayText ?? branchMsg.RawText;
+                if (!NarratorRevisionPrompt.IsRevisionPromptUserMessage(text))
+                    continue;
 
-        return bundle.Log.Turns.FirstOrDefault(t => t.Id == turnId)?.Index;
-    }
+                entries.Add(new RevisionHideEntry
+                {
+                    MessageKind = ThreadMessageKind.NarratorRevisionPrompt,
+                    PromptPrefix = NarratorRevisionPrompt.Prefix,
+                });
+            }
+        }
 
-    private static void AppendMessage(AdventureBundle bundle, ThreadMessageRecord record)
-    {
-        record.Ordinal = bundle.ThreadMetadata.Messages.Count > 0
-            ? bundle.ThreadMetadata.Messages.Max(m => m.Ordinal) + 1
-            : 0;
-        record.RecordedAt = DateTimeOffset.UtcNow;
-        bundle.ThreadMetadata.Messages.Add(record);
+        return entries;
     }
 }

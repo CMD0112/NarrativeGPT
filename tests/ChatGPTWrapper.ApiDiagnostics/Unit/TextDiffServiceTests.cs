@@ -28,7 +28,7 @@ public sealed class TextDiffServiceTests
 
         Assert.Contains("--- canonical", formatted);
         Assert.Contains("+++ mirror", formatted);
-        Assert.Contains("-old", formatted);
-        Assert.Contains("+new", formatted);
+        Assert.Contains("  old", formatted);
+        Assert.Contains("  new", formatted);
     }
 }

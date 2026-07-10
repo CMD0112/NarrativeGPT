@@ -6,7 +6,7 @@ namespace ChatGPTWrapper.Adventure.Services;
 
 /// <summary>
 /// Canonical narrator instruction contract: boundaries, portrayal rules, and design/play sync.
-/// See docs/instruction-sources-paradigm.md.
+/// See docs/user/instruction-sources-paradigm.md.
 /// </summary>
 internal static class InstructionContractService
 {
@@ -50,7 +50,9 @@ internal static class InstructionContractService
         IReadOnlyList<CharacterPortrayalRule> portrayalRules,
         string instructionAddendum,
         string difficulty,
-        string violenceLevel)
+        string violenceLevel,
+        string narrativePacing,
+        string consequenceWeight)
     {
         var settings = bundle.Metadata.Settings;
         settings.Perspective = perspective.Trim();
@@ -59,6 +61,8 @@ internal static class InstructionContractService
         settings.Tone = tone.Trim();
         settings.Difficulty = difficulty.Trim();
         settings.ViolenceLevel = violenceLevel.Trim();
+        settings.NarrativePacing = narrativePacing.Trim();
+        settings.ConsequenceWeight = consequenceWeight.Trim();
         bundle.Scenario.AuthorsNote = authorsNote.Trim();
         settings.ContentBoundaries = globalBoundaries
             .Where(line => !string.IsNullOrWhiteSpace(line))
@@ -77,13 +81,14 @@ internal static class InstructionContractService
 
     public static string BuildContractSections(AdventureBundle bundle)
     {
+        UtilityStoryContextSettingsService.EnsureDefaults(bundle.Metadata);
         var settings = bundle.Metadata.Settings;
         var parts = new List<string>();
 
-        if (settings.ContentBoundaries.Count > 0)
+        if (settings.ContentBoundaries is { Count: > 0 })
             parts.Add("Content boundaries:\n" + string.Join("\n", settings.ContentBoundaries));
 
-        var portrayal = FormatCharacterPortrayalRules(settings.CharacterPortrayalRules);
+        var portrayal = FormatCharacterPortrayalRules(settings.CharacterPortrayalRules ?? []);
         if (!string.IsNullOrWhiteSpace(portrayal))
             parts.Add("Character portrayal:\n" + portrayal);
 
@@ -95,6 +100,7 @@ internal static class InstructionContractService
 
     public static string BuildInstructionDomainCanonical(AdventureBundle bundle)
     {
+        UtilityStoryContextSettingsService.EnsureDefaults(bundle.Metadata);
         var settings = bundle.Metadata.Settings;
         return string.Join("\n",
         [
@@ -104,8 +110,10 @@ internal static class InstructionContractService
             settings.Tone ?? "",
             settings.Difficulty ?? "",
             settings.ViolenceLevel ?? "",
-            string.Join("|", settings.ContentBoundaries),
-            SerializeCharacterPortrayalRules(settings.CharacterPortrayalRules),
+            settings.NarrativePacing ?? "",
+            settings.ConsequenceWeight ?? "",
+            string.Join("|", settings.ContentBoundaries ?? []),
+            SerializeCharacterPortrayalRules(settings.CharacterPortrayalRules ?? []),
             settings.InstructionAddendum ?? "",
             bundle.Scenario.AuthorsNote ?? "",
         ]);
@@ -349,17 +357,17 @@ internal static class InstructionContractService
         return rules;
     }
 
-    public static string SerializeCharacterPortrayalRules(IEnumerable<CharacterPortrayalRule> rules) =>
+    public static string SerializeCharacterPortrayalRules(IEnumerable<CharacterPortrayalRule>? rules) =>
         string.Join(
             Environment.NewLine,
-            rules
+            (rules ?? [])
                 .Where(r => !string.IsNullOrWhiteSpace(r.Subject) && !string.IsNullOrWhiteSpace(r.Rule))
                 .Select(r => $"{r.Subject}: {r.Rule}"));
 
-    public static string FormatCharacterPortrayalRules(IEnumerable<CharacterPortrayalRule> rules) =>
+    public static string FormatCharacterPortrayalRules(IEnumerable<CharacterPortrayalRule>? rules) =>
         string.Join(
             "\n",
-            rules
+            (rules ?? [])
                 .Where(r => !string.IsNullOrWhiteSpace(r.Subject) && !string.IsNullOrWhiteSpace(r.Rule))
                 .Select(r => $"{r.Subject}: {r.Rule}"));
 

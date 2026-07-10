@@ -4,6 +4,7 @@ using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
+using ChatGPTWrapper.ChatGptApi.ProjectSource;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -111,7 +112,13 @@ public partial class MainWindow
 
     private async Task TryRecoverAdventureNavigationAsync(WebView2 wv)
     {
+        if (Volatile.Read(ref _utilityWorkerSetupDepth) > 0)
+            return;
+
         if (Volatile.Read(ref _activePlaySendCount) > 0)
+            return;
+
+        if (ProjectDomPublicationGuard.IsActive)
             return;
 
         if (_activeAdventureId is not { } adventureId)
@@ -130,24 +137,36 @@ public partial class MainWindow
         if (wv.CoreWebView2 is not { } core)
             return;
 
-        if (ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, core.Source, wv, ChatTabs))
+        if (_appMode == AppMode.Play)
         {
-            if (_appMode == AppMode.Play)
-                UpdatePlayLinkStatus();
-            else if (_appMode == AppMode.Design)
-                UpdateDesignLinkStatus();
+            if (!ProjectChatDraftService.ShouldSuppressPinnedThreadReroute(
+                    bundle,
+                    core.Source,
+                    AdventureNavigationIntent.Play))
+            {
+                ProjectChatDraftService.TryCancelAutoEnteredDraft(bundle);
+            }
+        }
+        else if (_appMode == AppMode.Design)
+        {
+            ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, core.Source, wv, ChatTabs);
         }
 
+        var guardIntent = _appMode == AppMode.Design
+            ? AdventureNavigationIntent.Design
+            : AdventureNavigationIntent.Play;
+
         if (ProjectChatDraftService.IsActive(bundle)
-            && (ProjectChatDraftService.ShouldStayOnProjectPage(bundle, core.Source)
-                || ProjectChatDraftService.IsDraftTab(bundle, wv, ChatTabs)))
+            && (ProjectChatDraftService.IsDraftTab(bundle, wv, ChatTabs)
+                || ProjectChatDraftService.ShouldSuppressPinnedThreadReroute(bundle, core.Source, guardIntent)))
         {
+            if (_appMode == AppMode.Play)
+                RefreshPlayComposeNavigationState(wv, bundle);
+
             return;
         }
 
-        var intent = _appMode == AppMode.Design
-            ? AdventureNavigationIntent.Design
-            : AdventureNavigationIntent.Play;
+        var intent = guardIntent;
 
         var accessDenied = await AdventureNavigationRecoveryProbe.ShowsAccessDeniedAsync(core);
 
@@ -155,6 +174,8 @@ public partial class MainWindow
             && !await AdventureNavigationRecoveryProbe.RequiresRecoveryAsync(core, bundle, intent))
         {
             ClearAdventureNavigationRecoveryError();
+            if (_appMode == AppMode.Play)
+                RefreshPlayComposeNavigationState(wv, bundle);
             return;
         }
 
@@ -171,6 +192,41 @@ public partial class MainWindow
             return;
 
         string? recoveryUrl;
+        if (intent == AdventureNavigationIntent.Play && _projectApiService is not null)
+        {
+            if (accessDenied)
+            {
+                PlayConversationPageService.ReleaseStalePlayThread(bundle);
+                AdventureStore.Save(bundle);
+            }
+
+            ProjectLinkDiagnostics.Log(
+                $"Adventure nav recovery: play coordinator adventure={adventureId} from={core.Source}");
+
+            ClearAdventureNavigationRecoveryError();
+            PlayContextSessionCache.Invalidate(adventureId);
+
+            WireProjectServices(wv);
+            if (_turnService is null)
+                GetOrCreateTurnService(wv);
+
+            var nav = await PlaySessionNavigationService.RecoverSessionAsync(
+                core,
+                bundle,
+                _projectApiService,
+                _turnService);
+
+            SelectTabForWebView(wv);
+
+            if (!nav.Success
+                && await AdventureNavigationRecoveryProbe.RequiresRecoveryAsync(core, bundle, intent))
+            {
+                SetAdventureNavigationRecoveryError(intent);
+            }
+
+            return;
+        }
+
         if (accessDenied && intent == AdventureNavigationIntent.Play)
         {
             PlayConversationPageService.ReleaseStalePlayThread(bundle);
@@ -218,7 +274,8 @@ public partial class MainWindow
             ProjectLinkDiagnostics.Log(
                 $"Adventure nav recovery: navigating to thread {recoveryUrl} from {core.Source}");
             core.Navigate(recoveryUrl);
-            await WaitForChatGptNavigationAsync(core, timeoutMs: 30000);
+            await WaitForChatGptNavigationAsync(core, timeoutMs: 30000, expectedDestination: recoveryUrl);
+            SelectTabForWebView(wv);
 
             if (_activeAdventureId is { } adventureId)
             {
@@ -264,18 +321,26 @@ public partial class MainWindow
             recoveryUrl = ChatGptUrls.BuildProjectUrl(gizmoId);
 
         core.Navigate(recoveryUrl);
-        await WaitForChatGptNavigationAsync(core, timeoutMs: 30000);
+        await WaitForChatGptNavigationAsync(core, timeoutMs: 30000, expectedDestination: recoveryUrl);
+        SelectTabForWebView(wv);
 
         return !AdventureNavigationService.IsGenericHomepage(core.Source);
     }
 
     private bool IsAdventureContextWebView(WebView2 wv, AdventureBundle bundle)
     {
+        if (ReferenceEquals(wv, _utilityWorkerWebView))
+            return false;
+
+        if (IsUtilityWorkerSetupTab(wv))
+            return false;
+
         if (ReferenceEquals(wv, _playWebView) || ReferenceEquals(wv, _designWebView))
             return true;
 
-        if (!string.IsNullOrWhiteSpace(bundle.Metadata.PinnedPlayTabKey)
-            && PlayTabPinService.FindWebViewByPinKey(ChatTabs, bundle.Metadata.PinnedPlayTabKey) == wv)
+        var playPinKey = PlayTabPinService.GetPlayPinKey(bundle);
+        if (!string.IsNullOrWhiteSpace(playPinKey)
+            && PlayTabPinService.FindWebViewByPinKey(ChatTabs, playPinKey) == wv)
         {
             return true;
         }
@@ -284,6 +349,22 @@ public partial class MainWindow
             return true;
 
         return ReferenceEquals(GetActiveWebView(), wv);
+    }
+
+    private bool IsUtilityWorkerSetupTab(WebView2 wv)
+    {
+        foreach (var item in ChatTabs.Items)
+        {
+            if (item is not TabItem { Content: WebView2 tabWv, Header: string header })
+                continue;
+
+            if (!ReferenceEquals(tabWv, wv))
+                continue;
+
+            return header.Contains("Utility worker", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     private void SetAdventureNavigationRecoveryError(AdventureNavigationIntent intent)

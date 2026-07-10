@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings.PlaySettingsSourcesTab"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings"
+    SizeChanged="OnCardsGridSizeChanged">
+    <Grid x:Name="CardsGrid" ColumnSpacing="12" RowSpacing="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <local:PlaySettingsSectionCard x:Name="ReadinessCard"
+                                       Title="Publication readiness"
+                                       Hint="Whether your adventure can delegate static content to linked Project files."
+                                       ScopeLabel="Project">
+            <StackPanel Spacing="8">
+                <TextBlock x:Name="SourceAutosaveLine" Style="{ThemeResource ShellSectionHintStyle}" />
+                <InfoBar x:Name="ReadinessInfoBar" IsOpen="True" IsClosable="False" />
+                <TextBlock x:Name="CanonicalPathLine" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard x:Name="ActionsCard"
+                                       Title="Actions"
+                                       Hint="Export, probe, and sync project source files."
+                                       ScopeLabel="Project">
+            <StackPanel Spacing="6">
+                <Button Content="Refresh export" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="RefreshExport_Click" />
+                <Button Content="Open sources folder" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="OpenSourcesFolder_Click" />
+                <Button x:Name="ProbeProjectButton" Content="Probe project" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="ProbeProject_Click" />
+                <Button x:Name="ApiSyncDiagnosticsButton" Content="API sync diagnostics…" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="ApiSyncDiagnostics_Click" />
+                <Button Content="Sync sources from JSON" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="SyncSourcesFromJson_Click" />
+                <Button Content="Open project settings" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="OpenProjectSettings_Click" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard x:Name="SourceFilesCard"
+                                       Title="Source files"
+                                       Hint="Published files are included as thin pointers in play packets when ready."
+                                       ScopeLabel="Project">
+            <StackPanel Spacing="10">
+                <ListView x:Name="SourcesList" MinHeight="180" SelectionChanged="SourcesList_SelectionChanged">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnSpacing="8" Padding="0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="Auto" MinWidth="110" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding RelativePath}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding LocalStatus}" Style="{ThemeResource ShellSectionHintStyle}" VerticalAlignment="Center" />
+                                <CheckBox Grid.Column="2"
+                                          Content="Published"
+                                          MinWidth="110"
+                                          IsChecked="{Binding IsPublished, Mode=TwoWay}"
+                                          VerticalAlignment="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="ProbeFileButton" Content="Probe selected" Style="{ThemeResource ShellGhostButtonStyle}" Click="ProbeFile_Click" />
+                    <Button Content="Synthesize with AI…" Style="{ThemeResource ShellGhostButtonStyle}" Click="SynthesizeSource_Click" />
+                    <Button Content="Review source edits…" Style="{ThemeResource ShellGhostButtonStyle}" Tag="SourceEdit" Click="ReviewAll_Click" />
+                </StackPanel>
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard x:Name="InstructionsCard"
+                                       Title="Project instructions"
+                                       Hint="Instruction addendum and manual publish tracking."
+                                       ScopeLabel="Project">
+            <StackPanel Spacing="8">
+                <TextBlock x:Name="InstructionsPastedLine" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Copy instructions" Style="{ThemeResource ShellGhostButtonStyle}" Click="CopyInstructions_Click" />
+                    <Button Content="Mark instructions pasted" Style="{ThemeResource ShellGhostButtonStyle}" Click="MarkInstructionsPasted_Click" />
+                </StackPanel>
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+    </Grid>
+</UserControl>

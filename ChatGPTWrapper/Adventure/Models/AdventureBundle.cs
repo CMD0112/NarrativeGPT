@@ -1,3 +1,5 @@
+using ChatGPTWrapper.Adventure;
+
 namespace ChatGPTWrapper.Adventure.Models;
 
 /// <summary>All per-adventure documents loaded together.</summary>
@@ -35,10 +37,13 @@ public sealed class AdventureBundle
 
     public AdventureDesignWorkspace DesignWorkspace { get; set; } = new();
 
+    /// <summary>Mutable per-entity internal state (mood, injuries, quest progress, etc.).</summary>
+    public EntityInternalStateDocument EntityInternalState { get; set; } = new();
+
     public List<string> ContinuationQueue { get; set; } = [];
 
     public Guid? CurrentSessionId { get; set; }
 
     public string DirectoryPath =>
-        AppDirectories.AdventureDirectory(Metadata.Id);
+        AdventureRootPaths.AdventureDirectory(Metadata.Id);
 }

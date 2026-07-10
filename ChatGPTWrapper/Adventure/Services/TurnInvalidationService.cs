@@ -1,74 +1,77 @@
 using ChatGPTWrapper.Adventure.Models;
-using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
 internal static class TurnInvalidationService
 {
+    public static TurnRecord? ResolveTurn(
+        AdventureBundle bundle,
+        int? logTurnIndex,
+        string? domTurnId)
+    {
+        if (logTurnIndex is >= 0)
+        {
+            var turns = PlayTurnScopeService.GetPacketContextTurns(bundle);
+            if (logTurnIndex.Value < turns.Count)
+                return turns[logTurnIndex.Value];
+        }
+
+        return ResolveTurnByDomId(bundle, domTurnId);
+    }
+
     public static TurnRecord? ResolveTurnByDomId(AdventureBundle bundle, string? domTurnId)
     {
         if (string.IsNullOrWhiteSpace(domTurnId) || !int.TryParse(domTurnId, out var n) || n < 1)
             return null;
 
-        var accepted = bundle.Log.Turns
-            .Where(t => t.Status == TurnStatus.Accepted)
-            .OrderBy(t => t.Index)
-            .ToList();
-
+        var accepted = PlayTurnScopeService.GetPacketContextTurns(bundle);
         var idx = Math.Min(n - 1, accepted.Count - 1);
         return idx >= 0 && accepted.Count > 0 ? accepted[idx] : null;
     }
 
     public static void HandleDomTurnInvalidated(
         AdventureBundle bundle,
+        int? logTurnIndex,
         string? domTurnId,
         string? reason,
-        string? revisedNarratorText = null)
+        string? revisedText = null,
+        string? editRole = null,
+        string? revisionGroupId = null,
+        string? revisionPromptText = null,
+        string? assistantDomTurnId = null)
     {
-        var turn = ResolveTurnByDomId(bundle, domTurnId);
-        if (turn is null)
+        ArgumentNullException.ThrowIfNull(bundle);
+
+        if (!string.Equals(reason, "composer_revision", StringComparison.Ordinal))
             return;
 
-        if (string.Equals(reason, "regenerate", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(revisedNarratorText))
-        {
-            TurnTimelineService.ArchiveAlternate(turn, turn.NarratorText ?? "", fromRegenerate: true);
-            TurnTimelineService.EditTurn(turn, null, revisedNarratorText);
-            ThreadMetadataService.MarkTurnSuperseded(bundle, turn.Id);
-            ThreadMetadataService.RecordPlayTurnExchange(
-                bundle,
-                turn,
-                turn.PlayerText,
-                revisedNarratorText,
-                turn.PromptPacketHash);
+        if (!string.Equals(editRole, "assistant", StringComparison.Ordinal))
             return;
-        }
 
-        ThreadMetadataService.MarkTurnSuperseded(bundle, turn.Id);
-
-        if (!string.IsNullOrWhiteSpace(revisedNarratorText))
+        var resolvedLogTurnIndex = logTurnIndex;
+        if (resolvedLogTurnIndex is null or < 0)
         {
-            TurnTimelineService.EditTurn(turn, null, revisedNarratorText);
-            ThreadMetadataService.RecordPlayTurnExchange(
-                bundle,
-                turn,
-                turn.PlayerText,
-                revisedNarratorText,
-                turn.PromptPacketHash);
+            var turn = ResolveTurn(bundle, logTurnIndex, domTurnId);
+            if (turn is not null)
+            {
+                var turns = PlayTurnScopeService.GetPacketContextTurns(bundle);
+                for (var i = 0; i < turns.Count; i++)
+                {
+                    if (turns[i].Id == turn.Id)
+                    {
+                        resolvedLogTurnIndex = i;
+                        break;
+                    }
+                }
+            }
         }
-    }
 
-    public static void SupersedeTurnsFromIndex(AdventureBundle bundle, int fromTurnIndex)
-    {
-        foreach (var turn in bundle.Log.Turns.Where(t =>
-                     t.Status == TurnStatus.Accepted && t.Index >= fromTurnIndex))
-        {
-            ThreadMetadataService.MarkTurnSuperseded(bundle, turn.Id);
-        }
-    }
-
-    public static void SaveIfActive(AdventureBundle bundle, Guid adventureId)
-    {
-        AdventureStore.Save(bundle);
+        ThreadMetadataService.RecordNarratorComposerRevision(
+            bundle,
+            resolvedLogTurnIndex,
+            revisionGroupId,
+            revisionPromptText,
+            assistantDomTurnId ?? domTurnId,
+            revisedText);
     }
 }

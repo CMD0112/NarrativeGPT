@@ -24,7 +24,7 @@ public sealed class InlineUtilityWorkflowTests
 
     [Theory]
     [InlineData(UtilityDeliveryMode.InlinePlayThread, true)]
-    [InlineData(UtilityDeliveryMode.SeparateThread, false)]
+    [InlineData(UtilityDeliveryMode.SeparateThread, true)]
     public void UtilityDeliveryModeService_UsesInlineDelivery(UtilityDeliveryMode mode, bool expected)
     {
         var bundle = new AdventureBundle
@@ -61,6 +61,31 @@ public sealed class InlineUtilityWorkflowTests
         Assert.True(GenerationJobHandlers.IsSettledJobResponse(
             GenerationJobId.ProposeMemories,
             wrapped,
+            streamComplete: true));
+    }
+
+    [Fact]
+    public void IsSettledJobResponse_accepts_continuity_check_warnings_object()
+    {
+        const string json = """{"warnings":[{"message":"Summary stale.","severity":"medium"}]}""";
+        var wrapped = ContextTagFormat.WrapUtilityResponse(GenerationJobId.ContinuityCheck, json);
+
+        Assert.True(GenerationJobHandlers.IsSettledJobResponse(
+            GenerationJobId.ContinuityCheck,
+            wrapped,
+            streamComplete: true));
+        Assert.False(AdventureTurnService.IsUtilityCapturePremature(
+            GenerationJobId.ContinuityCheck,
+            ContextTagFormat.UnwrapUtilityJobResponse(wrapped)));
+    }
+
+    [Fact]
+    public void IsSettledJobResponse_accepts_empty_continuity_warnings_when_stream_complete()
+    {
+        const string json = """{"warnings":[]}""";
+        Assert.True(GenerationJobHandlers.IsSettledJobResponse(
+            GenerationJobId.ContinuityCheck,
+            json,
             streamComplete: true));
     }
 }

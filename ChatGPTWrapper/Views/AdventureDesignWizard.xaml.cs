@@ -1,4 +1,5 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using System.Windows.Controls;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
@@ -6,7 +7,7 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class AdventureDesignWizard : Window
+public partial class AdventureDesignWizard : ShellDialogWindow
 {
     private readonly Dictionary<string, TextBox> _fieldBoxes = new(StringComparer.OrdinalIgnoreCase);
     private AdventureBundle? _bundle;

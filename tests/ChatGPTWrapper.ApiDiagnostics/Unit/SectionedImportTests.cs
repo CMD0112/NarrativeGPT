@@ -5,8 +5,8 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class SectionedImportTests
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class SectionedImportTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void Import_updates_scenario_opening_from_scenario_md()
@@ -27,7 +27,6 @@ public sealed class SectionedImportTests
                 StringComparison.Ordinal);
             File.WriteAllText(scenarioPath, text);
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             var result = ProjectSourceImportService.Import(bundle);
             AdventureStore.Save(bundle);
 
@@ -74,7 +73,6 @@ public sealed class SectionedImportTests
                 """;
             File.WriteAllText(castPath, cast);
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             ProjectSourceImportService.Import(bundle);
             AdventureStore.Save(bundle);
 
@@ -116,7 +114,6 @@ public sealed class SectionedImportTests
                 SectionSchema.CastFile);
             File.WriteAllText(castPath, "# Cast\n\n## player\n\n**Name:** Alex\n");
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             var result = ProjectSourceImportService.Import(bundle);
             AdventureStore.Save(bundle);
 
@@ -147,7 +144,6 @@ public sealed class SectionedImportTests
             text = text.Replace("Original rules", "Updated naming rules", StringComparison.Ordinal);
             File.WriteAllText(lexiconPath, text);
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             ProjectSourceImportService.Import(bundle);
             AdventureStore.Save(bundle);
 
@@ -179,7 +175,6 @@ public sealed class SectionedImportTests
                 StringComparison.Ordinal);
             File.WriteAllText(scenarioPath, text);
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             ProjectSourceImportService.Import(bundle);
             AdventureStore.Save(bundle);
 
@@ -232,7 +227,6 @@ public sealed class SectionedImportTests
                 """;
             File.WriteAllText(worldPath, world);
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             var result = ProjectSourceImportService.Import(bundle);
             AdventureStore.Save(bundle);
 
@@ -319,7 +313,6 @@ public sealed class SectionedImportTests
                 StringComparison.Ordinal);
             File.WriteAllText(scenarioPath, text);
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             var result = ProjectSourceImportService.Import(bundle);
             AdventureStore.Save(bundle);
 
@@ -353,7 +346,6 @@ public sealed class SectionedImportTests
                 StringComparison.Ordinal);
             File.WriteAllText(scenarioPath, text);
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             var preview = ProjectSourceImportService.Import(bundle, new SourceImportOptions { DryRun = true });
             Assert.True(preview.Success);
             Assert.Contains("Dry run", preview.Summary, StringComparison.OrdinalIgnoreCase);
@@ -408,7 +400,6 @@ public sealed class SectionedImportTests
                 StringComparison.Ordinal);
             File.WriteAllText(scenarioPath, text);
 
-            bundle = AdventureStore.Load(bundle.Metadata.Id)!;
             var preview = ProjectSourceImportService.Import(bundle, new SourceImportOptions { DryRun = true });
 
             Assert.True(preview.Success);

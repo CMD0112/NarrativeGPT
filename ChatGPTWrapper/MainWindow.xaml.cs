@@ -1,5 +1,9 @@
+using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Theme;
 using Microsoft.Web.WebView2.Wpf;
 
 namespace ChatGPTWrapper;
@@ -14,13 +18,21 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _chrome = UiChromeStore.Load();
+        ApplyThemeOnStartup();
         _suppressChromeEvents = true;
-        ContinuousViewCheckBox.IsChecked = _chrome.ContinuousViewEnabled;
+        SyncTranscriptModeSegmentSelection();
         _suppressChromeEvents = false;
+        ConfigureChatTabsChrome();
+        WireShellStatusBarHandlers();
+        InitializeShellSegments();
+        SyncTranscriptModeSegmentSelection();
         UpdateModeButtonStyles();
+        InitializeShellShortcuts();
 
         Loaded += (_, _) =>
         {
+            RegisterProjectDomCompositor();
+            PhraseHighlightRulesChanged += OnPhraseHighlightRulesChanged;
             StartBrowserTabsInitialization(async () =>
             {
                 InitializeAdventureUi();
@@ -32,11 +44,27 @@ public partial class MainWindow : Window
             ApplyStyleToActiveTab();
             ApplyContinuousViewToActiveTab();
             UpdateModeButtonStyles();
+            SyncTranscriptModeSegmentSelection();
             if (_appMode == AppMode.Play && GetActiveWebView() is { } active)
             {
                 GetOrRegisterAdventureBridge(active);
                 ApplyWrapperComposerToPlayTab(true);
             }
+
+            if (GetActiveWebView() is { } wv && DiagnosticsOptions.Extended)
+            {
+                UiEventLogger.Debug(
+                    "chat_tab_selected",
+                    "Active ChatGPT tab changed",
+                    new
+                    {
+                        tabKey = PlayTabPinService.GetTabKey(wv, ChatTabs),
+                        source = wv.CoreWebView2?.Source,
+                        appMode = _appMode.ToString(),
+                    });
+            }
+
+            SyncUtilityWorkerWebViewParking();
         };
     }
 
@@ -52,19 +80,108 @@ public partial class MainWindow : Window
     private void CloseTabButton_Click(object sender, RoutedEventArgs e) =>
         CloseActiveChatTab();
 
+    private void SetTranscriptViewMode(TranscriptViewMode mode)
+    {
+        if (_suppressChromeEvents)
+            return;
+
+        _chrome.TranscriptViewMode = mode;
+        UiChromeStore.Save(_chrome);
+        ChromePreferencesApplier.ApplyChromeToTrustedTabs(this, _chrome, persist: true);
+
+        _suppressChromeEvents = true;
+        SyncTranscriptModeSegmentSelection();
+        ContinuousViewCheckBox.IsChecked = mode == TranscriptViewMode.Continuous;
+        _suppressChromeEvents = false;
+    }
+
+    private void TranscriptModeSegment_SelectionChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppressChromeEvents || TranscriptModeSegment.SelectedTag is not TranscriptViewMode mode)
+            return;
+
+        if (mode == _chrome.TranscriptViewMode)
+            return;
+
+        _chrome.TranscriptViewMode = mode;
+        UiChromeStore.Save(_chrome);
+        ChromePreferencesApplier.ApplyChromeToTrustedTabs(this, _chrome, persist: true);
+
+        _suppressChromeEvents = true;
+        ContinuousViewCheckBox.IsChecked = mode == TranscriptViewMode.Continuous;
+        _suppressChromeEvents = false;
+    }
+
+    private void SyncTranscriptModeSegmentSelection()
+    {
+        if (TranscriptModeSegment is null)
+            return;
+
+        TranscriptModeSegment.SelectedIndex = _chrome.TranscriptViewMode switch
+        {
+            TranscriptViewMode.Native => 0,
+            TranscriptViewMode.Continuous => 1,
+            TranscriptViewMode.Weave => 2,
+            _ => 0,
+        };
+    }
+
     private void ContinuousViewCheckBox_Changed(object sender, RoutedEventArgs e)
     {
         if (_suppressChromeEvents)
             return;
 
-        _chrome.ContinuousViewEnabled = ContinuousViewCheckBox.IsChecked == true;
-        UiChromeStore.Save(_chrome);
-        ChromePreferencesApplier.ApplyChromeToTrustedTabs(this, _chrome, persist: true);
+        var enabled = ContinuousViewCheckBox.IsChecked == true;
+        SetTranscriptViewMode(enabled ? TranscriptViewMode.Continuous : TranscriptViewMode.Native);
+    }
+
+    private void ContinuousViewMenuItem_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressChromeEvents)
+            return;
+
+        _suppressChromeEvents = true;
+        ContinuousViewCheckBox.IsChecked = ContinuousViewCheckBox.IsChecked;
+        _suppressChromeEvents = false;
+        ContinuousViewCheckBox_Changed(ContinuousViewCheckBox, e);
+    }
+
+    private void PreferencesMenuItem_Click(object sender, RoutedEventArgs e) =>
+        OpenPreferencesHub();
+
+    private void LocalInferenceLabMenuItem_Click(object sender, RoutedEventArgs e) =>
+        Views.LocalInferenceLabDialog.ShowForOwner(this);
+
+    private void OpenPreferencesHub()
+    {
+        var dialog = new Views.PreferencesHubDialog(
+            _chrome,
+            ResolveActiveAdventureIdForFormatImport,
+            (settings, persist, preview) => ApplyDialogSettings(settings, persist, preview),
+            ApplyThemeSettings,
+            OpenThreadsHubFromPreferences,
+            () => _appMode == AppMode.Design,
+            GetPlayThreadUserMessageCountAsync)
+        {
+            Owner = this,
+        };
+        dialog.ShowDialog();
+    }
+
+    private void OpenThreadsHubFromPreferences()
+    {
+        if (_activeAdventureId is not { } id)
+            return;
+
+        var kind = _appMode == AppMode.Design
+            ? AdventureThreadKind.Design
+            : AdventureThreadKind.Play;
+        OpenThreadManagerDialog(id, kind);
     }
 
     private void FormatButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new ContinuousViewFormatDialog(_chrome, ApplyDialogSettings)
+        var dialog = new ContinuousViewFormatDialog(_chrome, ApplyDialogSettings, ResolveActiveAdventureIdForFormatImport)
         {
             Owner = this,
         };
@@ -77,19 +194,20 @@ public partial class MainWindow : Window
 
     private void ApplyDialogSettings(UiChromeSettings settings, bool persist, int? previewRevision = null)
     {
-        _chrome.ProseEnhancementsEnabled = settings.ProseEnhancementsEnabled;
-        _chrome.HideAssistantEditArtifacts = settings.HideAssistantEditArtifacts;
-        _chrome.HideContextTagsInThread = settings.HideContextTagsInThread;
-        _chrome.ExpandHiddenContextInThread = settings.ExpandHiddenContextInThread;
-        _chrome.PhraseHighlightsEnabled = settings.PhraseHighlightsEnabled;
-        _chrome.PhraseHighlightRules = (settings.PhraseHighlightRules ?? []).Select(r => r.Clone()).ToList();
-        _chrome.ContinuousViewFormat = (settings.ContinuousViewFormat ?? ContinuousViewFormatSettings.CreateDefaults()).Clone();
+        TranscriptViewModeSettingsExtensions.CopyAllModeSettings(settings, _chrome);
+        _chrome.ActiveHighlightColorProfileId = settings.ActiveHighlightColorProfileId;
+        _chrome.HighlightColorProfiles = settings.HighlightColorProfiles.Select(p => p.Clone()).ToList();
+        _chrome.HighlightColorCustomOptions = settings.HighlightColorCustomOptions.Clone();
+        _chrome.ActiveHighlightColorGroupingProfileId = settings.ActiveHighlightColorGroupingProfileId;
+        _chrome.HighlightColorGroupingProfiles = settings.HighlightColorGroupingProfiles.Select(p => p.Clone()).ToList();
+        _chrome.HighlightColorGroupingCustomProfile = settings.HighlightColorGroupingCustomProfile.Clone();
 
-        if (settings.ContinuousViewEnabled != _chrome.ContinuousViewEnabled)
+        if (settings.TranscriptViewMode != _chrome.TranscriptViewMode)
         {
             _suppressChromeEvents = true;
-            _chrome.ContinuousViewEnabled = settings.ContinuousViewEnabled;
-            ContinuousViewCheckBox.IsChecked = settings.ContinuousViewEnabled;
+            _chrome.TranscriptViewMode = settings.TranscriptViewMode;
+            ContinuousViewCheckBox.IsChecked = settings.TranscriptViewMode == TranscriptViewMode.Continuous;
+            SyncTranscriptModeSegmentSelection();
             _suppressChromeEvents = false;
         }
 
@@ -120,7 +238,7 @@ public partial class MainWindow : Window
                 || !ChatGptUrls.IsTrustedChatGptTopLevelUri(uri))
                 continue;
 
-            _ = ChatGptStyleInjection.ReapplyAsync(core, _chrome.ProseEnhancementsEnabled);
+            _ = ChatGptStyleInjection.ReapplyAsync(core);
         }
     }
 
@@ -132,6 +250,9 @@ public partial class MainWindow : Window
 
     internal void ApplyPacketDisplayToAllTabs()
     {
+        if (_chrome.IsTranscriptOverlayActive)
+            return;
+
         var script = ChatGptContextTagsInjection.BuildPreferenceScript(
             _chrome.HideContextTagsInThread,
             _chrome.ExpandHiddenContextInThread);
@@ -158,7 +279,7 @@ public partial class MainWindow : Window
             || !ChatGptUrls.IsTrustedChatGptTopLevelUri(uri))
             return;
 
-        _ = ChatGptStyleInjection.ReapplyAsync(core, _chrome.ProseEnhancementsEnabled);
+        _ = ChatGptStyleInjection.ReapplyAsync(core);
     }
 
     internal void ApplyContinuousViewToActiveTab()
@@ -177,5 +298,11 @@ public partial class MainWindow : Window
                 _chrome,
                 _chrome.ChromePreferencesRevision);
         }
+    }
+
+    private void OnPhraseHighlightRulesChanged(object? sender, EventArgs e)
+    {
+        _playView?.RefreshActiveEntityHighlightState();
+        _designView?.RefreshActiveEntityHighlightState();
     }
 }

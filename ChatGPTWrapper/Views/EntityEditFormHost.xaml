@@ -1,0 +1,199 @@
+<UserControl x:Class="ChatGPTWrapper.Views.EntityEditFormHost"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="156"/>
+            <ColumnDefinition Width="16"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0">
+            <Border Width="140"
+                    Height="168"
+                    CornerRadius="{StaticResource RadiusCard}"
+                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                    BorderThickness="1"
+                    Background="{DynamicResource BgElevatedBrush}"
+                    ClipToBounds="True">
+                <Grid>
+                    <Image x:Name="PortraitImage"
+                           Stretch="UniformToFill"
+                           Visibility="Collapsed"/>
+                    <TextBlock x:Name="PortraitPlaceholder"
+                               Text="No portrait"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="{StaticResource FontSizeHint}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               TextAlignment="Center"
+                               Margin="8"/>
+                </Grid>
+            </Border>
+            <Button x:Name="ChoosePortraitButton"
+                    Content="Choose image…"
+                    Padding="8,4"
+                    Margin="0,8,0,4"
+                    HorizontalAlignment="Stretch"
+                    Click="ChoosePortrait_Click"/>
+            <Button x:Name="ClearPortraitButton"
+                    Content="Remove image"
+                    Padding="8,4"
+                    HorizontalAlignment="Stretch"
+                    Visibility="Collapsed"
+                    Click="ClearPortrait_Click"/>
+            <TextBlock Text="PNG, JPG, WebP, GIF"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       FontSize="10"
+                       TextWrapping="Wrap"
+                       Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Column="2">
+            <TextBlock Text="Name" Margin="0,0,0,4"/>
+            <TextBox x:Name="NameBox" Margin="0,0,0,10"/>
+
+            <TextBlock x:Name="SecondaryLabelBlock" Text="Role" Margin="0,0,0,4"/>
+            <TextBox x:Name="RoleBox" Margin="0,0,0,10"/>
+
+            <StackPanel x:Name="QuestStatusPanel" Margin="0,0,0,10" Visibility="Collapsed">
+                <TextBlock Text="Quest status" Margin="0,0,0,4"/>
+                <ComboBox x:Name="QuestStatusBox" MinHeight="28"/>
+            </StackPanel>
+
+            <StackPanel x:Name="TagsPanel" Margin="0,0,0,10" Visibility="Collapsed">
+                <TextBlock Text="Tags" Margin="0,0,0,4"/>
+                <TextBox x:Name="TagsBox" Margin="0,0,0,2"/>
+                <TextBlock Text="Comma-separated labels for filtering and context."
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           FontSize="10"/>
+            </StackPanel>
+
+            <StackPanel x:Name="AliasesPanel" Margin="0,0,0,10" Visibility="Collapsed">
+                <TextBlock Text="Aliases" Margin="0,0,0,4"/>
+                <TextBox x:Name="AliasesBox" Margin="0,0,0,2"/>
+                <TextBlock Text="Alternate names, comma-separated."
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           FontSize="10"/>
+            </StackPanel>
+
+            <TextBlock Text="Description" Margin="0,0,0,4"/>
+            <TextBox x:Name="DescriptionBox"
+                     MinHeight="100"
+                     Margin="0,0,0,10"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"/>
+
+            <StackPanel x:Name="ExtraFieldsPanel"/>
+
+            <CheckBox x:Name="PinnedCheck"
+                      Content="Pinned — include in play packets when matched"
+                      Margin="0,4,0,0"/>
+
+            <Border x:Name="HighlightPanel"
+                    Margin="0,12,0,0"
+                    Style="{StaticResource ShellCardStyle}"
+                    Padding="12"
+                    Visibility="Collapsed">
+                <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Phrase highlight"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock x:Name="HighlightSyncHintText"
+                                   Grid.Column="1"
+                                   Text="Synced with Format"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="10"
+                                   VerticalAlignment="Center"/>
+                    </Grid>
+                    <TextBlock Text="Uses the same rules as Format → Highlights. Saves to format settings only — not adventure source files."
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,10"/>
+                    <CheckBox x:Name="HighlightEnabledCheck"
+                              Content="Highlight this name in continuous view"
+                              Margin="0,0,0,10"
+                              Checked="HighlightField_Changed"
+                              Unchecked="HighlightField_Changed"/>
+
+                    <StackPanel x:Name="HighlightColorPanel" Margin="0,0,0,10">
+                        <TextBlock Text="Preview"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="10"
+                                   Margin="0,0,0,4"/>
+                        <Border x:Name="HighlightPreviewBorder"
+                                Padding="8,6"
+                                CornerRadius="4"
+                                Background="{DynamicResource BgInsetBrush}"
+                                Margin="0,0,0,8">
+                            <TextBlock x:Name="HighlightPreviewText"
+                                       TextWrapping="Wrap"
+                                       FontSize="{StaticResource FontSizeBody}"/>
+                        </Border>
+
+                        <TextBlock Text="Text color"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   FontSize="10"
+                                   Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Border x:Name="HighlightColorSwatch"
+                                    Width="24"
+                                    Height="24"
+                                    CornerRadius="4"
+                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                    BorderThickness="1"
+                                    Margin="0,0,8,0"/>
+                            <TextBox x:Name="HighlightColorBox"
+                                     Width="88"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,8,0"
+                                     TextChanged="HighlightColorBox_TextChanged"/>
+                            <Button x:Name="HighlightPickColorButton"
+                                    Content="Pick…"
+                                    Padding="8,4"
+                                    Click="HighlightPickColor_Click"/>
+                        </StackPanel>
+                        <WrapPanel x:Name="HighlightPresetSwatchesPanel" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="HighlightContrastHintText"
+                                   Foreground="{DynamicResource WarningBrush}"
+                                   FontSize="10"
+                                   TextWrapping="Wrap"
+                                   Visibility="Collapsed"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="HighlightPhraseHintText"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="10"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <StackPanel x:Name="InlineActionsPanel"
+                        Orientation="Horizontal"
+                        Margin="0,12,0,0"
+                        Visibility="Collapsed">
+                <Button x:Name="InlineDeleteButton"
+                        Content="Delete…"
+                        Padding="10,5"
+                        Margin="0,0,8,0"
+                        Visibility="Collapsed"
+                        Click="InlineDelete_Click"/>
+                <Button Content="Cancel"
+                        Padding="10,5"
+                        Margin="0,0,8,0"
+                        Click="InlineCancel_Click"/>
+                <Button Content="Save"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Padding="10,5"
+                        MinWidth="72"
+                        Click="InlineSave_Click"/>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</UserControl>

@@ -20,9 +20,16 @@ internal static class ContextRenderPolicy
         return fatFallback ? Math.Max(20, thin - 10) : thin;
     }
 
+    public static bool IsReferencePointer(ContextPointer pointer) =>
+        string.Equals(pointer.Kind, "reference", StringComparison.OrdinalIgnoreCase)
+        || SectionSchema.IsReferenceSourceFile(pointer.FileName);
+
     public static RenderMode PickRenderMode(ContextPointer pointer, bool fatFallback)
     {
         if (pointer.Source == PointerSource.Baseline)
+            return RenderMode.PointerOnly;
+
+        if (IsReferencePointer(pointer))
             return RenderMode.PointerOnly;
 
         if (pointer.Mode == RenderMode.ClusterSummary)

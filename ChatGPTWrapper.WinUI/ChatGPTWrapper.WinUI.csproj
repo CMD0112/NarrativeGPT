@@ -1,0 +1,149 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+
+
+  <PropertyGroup>
+
+    <OutputType>WinExe</OutputType>
+
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+
+    <Nullable>enable</Nullable>
+
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <UseWinUI>true</UseWinUI>
+
+    <EnableMsixTooling>true</EnableMsixTooling>
+
+    <WindowsPackageType>None</WindowsPackageType>
+
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <Platforms>x64</Platforms>
+
+    <PlatformTarget>x64</PlatformTarget>
+
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+
+
+
+    <AssemblyName>ChatGPT Wrapper WinUI</AssemblyName>
+
+    <RootNamespace>ChatGPTWrapper.WinUI</RootNamespace>
+
+    <ApplicationTitle>ChatGPT Wrapper</ApplicationTitle>
+
+    <AssemblyTitle>ChatGPT Wrapper (WinUI)</AssemblyTitle>
+
+    <Product>ChatGPT Wrapper</Product>
+
+    <Version>1.0.0</Version>
+
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+
+    <!-- WinUI PRI249: skip Playwright browser bundle (vite hashed assets look like invalid qualifiers). -->
+    <PlaywrightPlatform>none</PlaywrightPlatform>
+
+  </PropertyGroup>
+
+
+
+  <ItemGroup>
+    <Content Include="Assets\app.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+
+
+  <ItemGroup>
+
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.240923002" />
+
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
+
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3912.50" />
+
+  </ItemGroup>
+
+
+
+  <ItemGroup>
+
+    <ProjectReference Include="..\ChatGPTWrapper\ChatGPTWrapper.csproj" />
+
+    <ProjectReference Include="..\ChatGPTWrapper.Core\ChatGPTWrapper.Core.csproj" />
+
+    <ProjectReference Include="..\ChatGPTWrapper.Diagnostics\ChatGPTWrapper.Diagnostics.csproj" />
+
+    <ProjectReference Include="..\ChatGPTWrapper.Shell\ChatGPTWrapper.Shell.csproj" />
+
+    <ProjectReference Include="..\ChatGPTWrapper.Theme\ChatGPTWrapper.Theme.csproj" />
+
+    <ProjectReference Include="..\ChatGPTWrapper.Adventure\ChatGPTWrapper.Adventure.csproj" />
+
+    <ProjectReference Include="..\ChatGPTWrapper.WebView\ChatGPTWrapper.WebView.csproj" />
+
+  </ItemGroup>
+
+
+
+  <ItemGroup>
+
+    <None Include="..\ChatGPT_files\**\*"
+          Link="wrapper-assets\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+
+  </ItemGroup>
+
+
+
+  <ItemGroup>
+
+    <Manifest Include="$(ApplicationManifest)" />
+
+  </ItemGroup>
+
+  <!-- Prevent Playwright content (always adds playwright.ps1; .playwright when platform != none) from WinUI output/PRI. -->
+  <Target Name="StripPlaywrightContentItems" AfterTargets="CopyPlaywrightFilesToOutput">
+    <ItemGroup>
+      <Content Remove="@(Content)"
+               Condition="$([System.String]::Copy('%(Content.Link)').StartsWith('.playwright')) OR '%(Content.Link)' == 'playwright.ps1'" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Safety net: delete any transitive .playwright folder before PRI generation. -->
+  <Target Name="RemovePlaywrightFromWinUiOutput"
+          AfterTargets="CopyFilesToOutputDirectory"
+          BeforeTargets="WinAppSdkGenerateProjectPriFile">
+    <RemoveDir Directories="$(TargetDir).playwright" Condition="Exists('$(TargetDir).playwright')" />
+    <Delete Files="$(TargetDir)playwright.ps1" Condition="Exists('$(TargetDir)playwright.ps1')" />
+  </Target>
+
+  <!-- WinUI output root carries the UAP WebView2.Core shim; play compose needs lib_manual in managed/. -->
+  <Target Name="CopyManagedWebView2CoreForPlay"
+          AfterTargets="CopyFilesToOutputDirectory">
+    <PropertyGroup>
+      <_ManagedWebView2CoreSource>$(NuGetPackageRoot)microsoft.web.webview2\1.0.3912.50\lib_manual\netcoreapp3.0\Microsoft.Web.WebView2.Core.dll</_ManagedWebView2CoreSource>
+      <_ManagedWebView2CoreDest>$(TargetDir)managed\Microsoft.Web.WebView2.Core.dll</_ManagedWebView2CoreDest>
+    </PropertyGroup>
+    <MakeDir Directories="$(TargetDir)managed" Condition="!Exists('$(TargetDir)managed')" />
+    <Copy SourceFiles="$(_ManagedWebView2CoreSource)"
+          DestinationFiles="$(_ManagedWebView2CoreDest)"
+          SkipUnchangedFiles="false"
+          Condition="Exists('$(_ManagedWebView2CoreSource)')" />
+    <Warning Text="Managed WebView2 Core not found at $(_ManagedWebView2CoreSource). Play compose injection will fail."
+             Condition="!Exists('$(_ManagedWebView2CoreSource)')" />
+  </Target>
+
+</Project>
+
+
+

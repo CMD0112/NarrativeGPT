@@ -101,17 +101,25 @@ internal static class UtilityTranscriptScopeService
             Player hint: {scope.Anchor.PlayerHint ?? "(none)"}
             """;
 
-    public static bool IsDuplicateMemory(MemoryDocument memory, MemoryEntry candidate)
+    public static bool IsDuplicateMemory(MemoryDocument memory, MemoryEntry candidate, GenerationJobContext? context = null)
     {
+        IEnumerable<MemoryEntry> candidates = memory.ReviewQueue.Concat(memory.Entries);
+        if (context?.AllowCrossSourceDuplicates == true
+            && !string.IsNullOrWhiteSpace(context.InferenceSource))
+        {
+            candidates = candidates.Where(e =>
+                string.Equals(e.InferenceSource, context.InferenceSource, StringComparison.OrdinalIgnoreCase));
+        }
+
         if (candidate.Anchor?.ContentHash is { } hash
-            && memory.ReviewQueue.Concat(memory.Entries).Any(e =>
+            && candidates.Any(e =>
                 string.Equals(e.Anchor?.ContentHash, hash, StringComparison.Ordinal)
                 && string.Equals(NormalizeText(e.Text), NormalizeText(candidate.Text), StringComparison.OrdinalIgnoreCase)))
         {
             return true;
         }
 
-        return memory.ReviewQueue.Concat(memory.Entries).Any(e =>
+        return candidates.Any(e =>
             e.Anchor is not null
             && candidate.Anchor is not null
             && e.Anchor.PairOffset == candidate.Anchor.PairOffset

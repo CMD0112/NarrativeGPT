@@ -1,0 +1,14 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.EntityRetirePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Spacing="12" MaxWidth="520">
+        <TextBlock x:Name="RetireSummaryLine" TextWrapping="WrapWholeWords" />
+        <CheckBox x:Name="AliasOnlyCheck"
+                  Content="Keep name as alias only in lexicon (soft retire)" />
+        <TextBlock Text="Retiring adds a “retired” tag and refreshes source export. The entity remains in JSON for history."
+                   Style="{ThemeResource ShellSectionHintStyle}"
+                   TextWrapping="WrapWholeWords" />
+    </StackPanel>
+</UserControl>

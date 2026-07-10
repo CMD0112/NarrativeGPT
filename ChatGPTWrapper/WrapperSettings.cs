@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using ChatGPTWrapper.Adventure.Models;
+
 namespace ChatGPTWrapper;
 
 public sealed class WrapperSettings
@@ -7,4 +10,11 @@ public sealed class WrapperSettings
     /// When null, uses %LocalAppData%\ChatGPTWrapper\adventures\.
     /// </summary>
     public string? AdventuresDirectoryOverride { get; set; }
+
+    /// <summary>
+    /// Default publication lab upload transport when an adventure has no explicit override.
+    /// </summary>
+    [JsonConverter(typeof(ProjectSourceUploadMethodJsonConverter))]
+    public ProjectSourceUploadMethod PublicationLabDomUploadMethod { get; set; } =
+        ProjectSourceUploadMethod.HeadlessBrowser;
 }

@@ -24,5 +24,8 @@ jobs:
       - name: Build
         run: dotnet build chatgpt-wrapper.sln -c Release --no-restore
 
+      - name: Build WinUI host (smoke)
+        run: dotnet build ChatGPTWrapper.WinUI/ChatGPTWrapper.WinUI.csproj -c Release --no-restore
+
       - name: Test
         run: dotnet test tests/ChatGPTWrapper.ApiDiagnostics/ChatGPTWrapper.ApiDiagnostics.csproj -c Release --no-build --filter "Category=Unit"

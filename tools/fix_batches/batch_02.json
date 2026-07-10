@@ -1,0 +1,103 @@
+[
+  {
+    "id": "CMD-144",
+    "labels": [
+      "Sources",
+      "WPF",
+      "Play",
+      "Feature",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-145",
+    "labels": [
+      "Improvement",
+      "Play",
+      "Sources",
+      "C#",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-146",
+    "labels": [
+      "Feature",
+      "Browse",
+      "Continuous View",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-147",
+    "labels": [
+      "Feature",
+      "Browse",
+      "Continuous View",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-148",
+    "labels": [
+      "Feature",
+      "Browse",
+      "Continuous View",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-15",
+    "description": "## Context\nThere are padding and margin issues cutting off buttons in the adventure rename dialog.\n\n## Acceptance criteria\n- [ ] Deliverables in description below are complete and verified\n\nThere are padding and margin issues cutting off buttons in the adventure rename dialog.\n\n## Scope\n\n* `AdventureRenameDialog` or equivalent change-name UI\n* Button row clipped on smaller window sizes or high DPI\n\n## Status\n\nBacklog \u2014 cosmetic layout bug, low urgency."
+  },
+  {
+    "id": "CMD-18",
+    "labels": [
+      "Has Tests",
+      "Sources",
+      "C#",
+      "Design",
+      "Feature",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-19",
+    "labels": [
+      "Sources",
+      "Design",
+      "Optional",
+      "Feature",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-21",
+    "labels": [
+      "Spike",
+      "Management",
+      "WPF"
+    ],
+    "description": "## Context\nConsider combining the Play surface and Design surface for less friction in switching between the two. This might be done via toggle or more sophisticated tab handling.\n\n## Acceptance criteria\n- [ ] Deliverables in description below are complete and verified\n\nConsider combining the Play surface and Design surface for less friction in switching between the two. This might be done via toggle or more sophisticated tab handling.\n\n**Related:** <issue id=\"4b9b3b2e-ae15-430d-84c2-5d769e79aaa5\" href=\"https://linear.app/cmd0112/issue/CMD-26/play-open-re-prompts-to-link-project-despite-adventure-already-linked\">CMD-26</issue> (play open friction)"
+  },
+  {
+    "id": "CMD-22",
+    "description": "## Context\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n## Acceptance criteria\n- [ ] Deliverables in description below are complete and verified\n\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n**Parent:** <issue id=\"b6ef647e-59bc-4f8e-a8ec-537ac66dc5db\" href=\"https://linear.app/cmd0112/issue/CMD-13/adventure-design-instructions-customizability\">CMD-13</issue> (instruction contract model)\n\n**Docs:** `docs/user/instruction-contract-guide.md`"
+  },
+  {
+    "id": "CMD-29",
+    "labels": [
+      "Epic",
+      "Metadata",
+      "C#",
+      "Management"
+    ]
+  },
+  {
+    "id": "CMD-42",
+    "state": "Backlog",
+    "removeBlockedBy": [
+      "CMD-27"
+    ]
+  }
+]

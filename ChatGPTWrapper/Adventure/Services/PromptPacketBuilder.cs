@@ -2,6 +2,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.NarratorScales;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -24,6 +25,14 @@ internal sealed class PromptPacketResult
     public bool WasTrimmed { get; init; }
 
     public PacketMode Mode { get; init; } = PacketMode.Fat;
+
+    public PacketProfile Profile { get; init; } = PacketProfile.InlineFallback;
+
+    public List<TrimmedSection> BudgetTrimmed { get; init; } = [];
+
+    public List<ContextPointer> BaselinePointers { get; init; } = [];
+
+    public List<ContextPointer> ThisTurnPointers { get; init; } = [];
 }
 
 internal sealed class PromptPacketContextResult
@@ -36,26 +45,43 @@ internal sealed class PromptPacketContextResult
 
     public PacketMode Mode { get; init; } = PacketMode.Fat;
 
+    public PacketProfile Profile { get; init; } = PacketProfile.InlineFallback;
+
     public int MaxChars { get; init; }
 
     public bool UseContextTags { get; init; }
+
+    public List<TrimmedSection> BudgetTrimmed { get; init; } = [];
+
+    public List<ContextPointer> BaselinePointers { get; init; } = [];
+
+    public List<ContextPointer> ThisTurnPointers { get; init; } = [];
 }
 
 internal static class PromptPacketBuilder
 {
     public static bool UseThinPackets(AdventureBundle bundle) =>
-        ProjectSourceInjectionService.CanDelegateStaticContent(bundle);
+        PacketProfileResolver.Resolve(bundle) != PacketProfile.InlineFallback;
 
     public static PromptPacketContextResult BuildContext(
         AdventureBundle bundle,
         string searchHint = "",
         AttachmentContextMode contextMode = AttachmentContextMode.Auto,
         AttachmentContext? attachment = null,
-        int? packetTurnIndexOverride = null)
+        int? packetTurnIndexOverride = null,
+        PlayHandoffContext? handoff = null,
+        bool freshNarrativeBootstrap = false,
+        bool userChoseInlineFallback = false)
     {
-        return UseThinPackets(bundle)
-            ? BuildSourceDelegatedContext(bundle, searchHint, contextMode, attachment, packetTurnIndexOverride)
-            : BuildFatContext(bundle, searchHint, contextMode, attachment, packetTurnIndexOverride);
+        return PacketProfileResolver.Resolve(bundle, userChoseInlineFallback) switch
+        {
+            PacketProfile.SourceDelegated => BuildSourceDelegatedContext(
+                bundle, searchHint, contextMode, attachment, packetTurnIndexOverride, handoff, freshNarrativeBootstrap),
+            PacketProfile.MinimalLocal => BuildMinimalLocalContext(
+                bundle, searchHint, contextMode, attachment, packetTurnIndexOverride, handoff, freshNarrativeBootstrap),
+            _ => BuildInlineFallbackContext(
+                bundle, searchHint, contextMode, attachment, packetTurnIndexOverride, handoff, freshNarrativeBootstrap),
+        };
     }
 
     public static string AssembleWithUser(string contextText, string userText, bool useContextTags)
@@ -81,9 +107,14 @@ internal static class PromptPacketBuilder
         string playerInput,
         AttachmentContextMode contextMode = AttachmentContextMode.Auto,
         AttachmentContext? attachment = null,
-        int? packetTurnIndexOverride = null)
+        int? packetTurnIndexOverride = null,
+        PlayHandoffContext? handoff = null,
+        bool freshNarrativeBootstrap = false,
+        bool userChoseInlineFallback = false)
     {
-        var ctx = BuildContext(bundle, playerInput, contextMode, attachment, packetTurnIndexOverride);
+        var ctx = BuildContext(
+            bundle, playerInput, contextMode, attachment, packetTurnIndexOverride, handoff,
+            freshNarrativeBootstrap, userChoseInlineFallback);
         var merged = AssembleWithUser(ctx.ContextText, playerInput, ctx.UseContextTags);
         var trimmed = merged.Length > ctx.MaxChars;
         if (trimmed && !AttachmentSendPolicy.ShouldSkipTrim(contextMode))
@@ -97,34 +128,158 @@ internal static class PromptPacketBuilder
             ResolvedSectionPointers = ctx.ResolvedSectionPointers,
             WasTrimmed = trimmed,
             Mode = ctx.Mode,
+            Profile = ctx.Profile,
+            BudgetTrimmed = ctx.BudgetTrimmed,
+            BaselinePointers = ctx.BaselinePointers,
+            ThisTurnPointers = ctx.ThisTurnPointers,
         };
     }
 
-    private static bool UseSectionInjection(AdventureBundle bundle) =>
-        bundle.Metadata.Settings.UseSectionInjection;
-
-    private static PromptPacketContextResult BuildFatContext(
+    private static PromptPacketContextResult BuildSourceDelegatedContext(
         AdventureBundle bundle,
         string searchHint,
         AttachmentContextMode contextMode,
         AttachmentContext? attachment,
-        int? packetTurnIndexOverride = null)
+        int? packetTurnIndexOverride = null,
+        PlayHandoffContext? handoff = null,
+        bool freshNarrativeBootstrap = false)
     {
-        if (UseSectionInjection(bundle))
-            return BuildFatContextSectionInjection(bundle, searchHint, contextMode, attachment, packetTurnIndexOverride);
+        var settings = bundle.Metadata.Settings;
+        var policy = PlayInjectionPolicyService.Resolve(settings);
+        var readiness = ProjectSourceInjectionService.Evaluate(bundle);
+        var profile = PacketProfile.SourceDelegated;
+        var mode = PacketProfileResolver.ToPacketMode(profile);
+        InjectionPolicyGuard.EnforceMandatorySections(settings, readiness.CanDelegateStaticContent);
+
+        var signals = ContextSignalBuilder.Build(bundle, searchHint, contextMode, attachment);
+        var resolved = ContextPointerResolver.Resolve(
+            bundle, signals, fatFallback: false, freshNarrativeBootstrap);
+        if (!policy.IncludeTriggeredCards)
+            FilterTriggerPointers(resolved);
+        var maxChars = PacketProfileResolver.ResolveMaxChars(profile, settings);
+        var budgetResult = ContextBudgetAllocator.ApplyBudget(resolved.All, maxChars, fatFallback: false);
 
         var sections = new List<string>();
-        var settings = bundle.Metadata.Settings;
-        var searchText = (searchHint + " " + bundle.Summary.RollingSummary).ToLowerInvariant();
+        if (policy.IncludeSourcesPointers)
+            sections.Add(ContextPointerRenderer.BuildSourcesV2Block(
+                bundle, resolved, profile, readiness, settings.UseContextTags));
+        sections.Add("You are the narrator for this interactive fiction adventure. Obey ChatGPT Project custom instructions and retrieved project sources for world lore. Do not break character.");
+        sections.Add(NarratorScalesResolver.BuildQuickReferenceBlock(bundle));
 
-        sections.Add("You are the narrator for an interactive fiction adventure. Respond in vivid prose. Do not break character or mention being an AI.");
-        sections.Add($"Perspective: {settings.Perspective}. Tense: {settings.Tense}. Detail: {settings.DetailLevel}. Tone: {settings.Tone ?? bundle.Scenario.Tone}. Difficulty: {settings.Difficulty}.");
+        var carryForward = ResolveCarryForwardSummary(bundle, handoff, freshNarrativeBootstrap);
+        if (!string.IsNullOrWhiteSpace(carryForward))
+            sections.Add("=== STORY SO FAR (local cache) ===\n\n" + carryForward.Trim());
+
+        if (policy.IncludeState)
+        {
+            var stateBlock = BuildStateBlock(bundle);
+            if (!string.IsNullOrWhiteSpace(stateBlock))
+                sections.Add("=== STATE DELTA ===\n\n" + stateBlock);
+
+            var entityStateBlock = BuildEntityStateSkimBlock(bundle);
+            if (!string.IsNullOrWhiteSpace(entityStateBlock))
+                sections.Add(entityStateBlock);
+        }
+
+        AppendMemoryAndTranscript(bundle, sections, contextMode, attachment, handoff, freshNarrativeBootstrap, mode);
+
+        var result = FinalizeContext(
+            bundle, sections, [], settings, profile, mode, maxChars,
+            labels: resolved.ResolvedLabels,
+            packetTurnIndexOverride: packetTurnIndexOverride,
+            handoff: handoff,
+            freshNarrativeBootstrap: freshNarrativeBootstrap,
+            budgetTrimmed: budgetResult.Trimmed,
+            baselinePointers: resolved.Baseline,
+            thisTurnPointers: resolved.ThisTurn);
+#if DEBUG
+        if (readiness.CanDelegateStaticContent)
+            InjectionPolicyGuard.AssertThinDelegationPolicy(result.ContextText);
+#endif
+        return result;
+    }
+
+    private static PromptPacketContextResult BuildMinimalLocalContext(
+        AdventureBundle bundle,
+        string searchHint,
+        AttachmentContextMode contextMode,
+        AttachmentContext? attachment,
+        int? packetTurnIndexOverride = null,
+        PlayHandoffContext? handoff = null,
+        bool freshNarrativeBootstrap = false)
+    {
+        var settings = bundle.Metadata.Settings;
+        var policy = PlayInjectionPolicyService.Resolve(settings);
+        var profile = PacketProfile.MinimalLocal;
+        var mode = PacketProfileResolver.ToPacketMode(profile);
+        var maxChars = PacketProfileResolver.ResolveMaxChars(profile, settings);
+
+        var sections = new List<string>();
+        if (policy.IncludeSourcesPointers)
+            sections.Add(ContextPointerRenderer.BuildMinimalLocalSourcesBlock(settings.UseContextTags));
+        sections.Add("You are the narrator for this interactive fiction adventure. Respond in vivid prose. Do not break character or mention being an AI. Link a ChatGPT Project and publish sources for full world lore retrieval.");
+        sections.Add(NarratorScalesResolver.BuildQuickReferenceBlock(bundle));
+
+        var scenarioSection = BuildScenarioSection(bundle, freshNarrativeBootstrap);
+        if (!string.IsNullOrWhiteSpace(scenarioSection))
+            sections.Add(scenarioSection);
+
+        var carryForward = ResolveCarryForwardSummary(bundle, handoff, freshNarrativeBootstrap);
+        if (!string.IsNullOrWhiteSpace(carryForward))
+            sections.Add("=== STORY SO FAR (local cache) ===\n\n" + carryForward.Trim());
+
+        if (policy.IncludeState)
+        {
+            var stateBlock = BuildStateBlock(bundle);
+            if (!string.IsNullOrWhiteSpace(stateBlock))
+                sections.Add("=== STATE DELTA ===\n\n" + stateBlock);
+        }
+
+        AppendMemoryAndTranscript(bundle, sections, contextMode, attachment, handoff, freshNarrativeBootstrap, mode);
+
+        return FinalizeContext(
+            bundle, sections, [], settings, profile, mode, maxChars,
+            packetTurnIndexOverride: packetTurnIndexOverride,
+            handoff: handoff,
+            freshNarrativeBootstrap: freshNarrativeBootstrap);
+    }
+
+    private static PromptPacketContextResult BuildInlineFallbackContext(
+        AdventureBundle bundle,
+        string searchHint,
+        AttachmentContextMode contextMode,
+        AttachmentContext? attachment,
+        int? packetTurnIndexOverride = null,
+        PlayHandoffContext? handoff = null,
+        bool freshNarrativeBootstrap = false)
+    {
+        var settings = bundle.Metadata.Settings;
+        var policy = PlayInjectionPolicyService.Resolve(settings);
+        var readiness = ProjectSourceInjectionService.Evaluate(bundle);
+        var profile = PacketProfile.InlineFallback;
+        var mode = PacketProfileResolver.ToPacketMode(profile);
+        var maxChars = PacketProfileResolver.ResolveMaxChars(profile, settings);
+
+        var signals = ContextSignalBuilder.Build(bundle, searchHint, contextMode, attachment);
+        var resolved = ContextPointerResolver.Resolve(
+            bundle, signals, fatFallback: true, freshNarrativeBootstrap);
+        if (!policy.IncludeTriggeredCards)
+            FilterTriggerPointers(resolved);
+        var budgetResult = ContextBudgetAllocator.ApplyBudget(resolved.All, maxChars, fatFallback: true);
+
+        var sections = new List<string>();
+        if (policy.IncludeSourcesPointers || !readiness.CanDelegateStaticContent)
+            sections.Add(ContextPointerRenderer.BuildSourcesV2Block(
+                bundle, resolved, profile, readiness, settings.UseContextTags));
+        sections.Add("You are the narrator for this interactive fiction adventure. Respond in vivid prose. Do not break character or mention being an AI.");
+        sections.Add($"Perspective: {settings.Perspective}. Tense: {settings.Tense}. Detail: {settings.DetailLevel}. Tone: {settings.Tone ?? bundle.Scenario.Tone}. {NarratorScaleLabels.CombatDifficulty}: {settings.Difficulty}.");
+        sections.Add(NarratorScalesResolver.BuildQuickReferenceBlock(bundle));
 
         var contractSections = InstructionContractService.BuildContractSections(bundle);
         if (!string.IsNullOrWhiteSpace(contractSections))
             sections.Add(contractSections);
 
-        var scenarioSection = BuildScenarioSection(bundle);
+        var scenarioSection = BuildScenarioSection(bundle, freshNarrativeBootstrap);
         if (!string.IsNullOrWhiteSpace(scenarioSection))
             sections.Add(scenarioSection);
 
@@ -137,177 +292,109 @@ internal static class PromptPacketBuilder
         if (!string.IsNullOrWhiteSpace(bundle.Scenario.AuthorsNote))
             sections.Add("=== AUTHOR'S NOTE (style only, not new facts) ===\n" + bundle.Scenario.AuthorsNote.Trim());
 
-        if (!string.IsNullOrWhiteSpace(bundle.Summary.RollingSummary))
-            sections.Add("=== STORY SO FAR ===\n\n" + bundle.Summary.RollingSummary.Trim());
+        var carryForward = ResolveCarryForwardSummary(bundle, handoff, freshNarrativeBootstrap);
+        if (!string.IsNullOrWhiteSpace(carryForward))
+            sections.Add("=== STORY SO FAR ===\n\n" + carryForward.Trim());
 
-        var stateBlock = BuildStateBlock(bundle);
-        if (!string.IsNullOrWhiteSpace(stateBlock))
-            sections.Add("=== CURRENT STATE ===\n\n" + stateBlock);
+        if (policy.IncludeState)
+        {
+            var stateBlock = BuildStateBlock(bundle);
+            if (!string.IsNullOrWhiteSpace(stateBlock))
+                sections.Add("=== CURRENT STATE ===\n\n" + stateBlock);
 
+            var entityStateBlock = BuildEntityStateSkimBlock(bundle);
+            if (!string.IsNullOrWhiteSpace(entityStateBlock))
+                sections.Add(entityStateBlock);
+        }
+
+        var searchText = (searchHint + " " + bundle.Summary.RollingSummary).ToLowerInvariant();
         var maxCards = AttachmentSendPolicy.MaxLoreCards(contextMode, attachment);
-        var triggered = HasExportedLoreSources(bundle)
+        var triggered = policy.IncludeTriggeredCards && HasExportedLoreSources(bundle)
             ? TriggerStoryCards(bundle, searchText, maxCards)
             : [];
         if (triggered.Count > 0)
             sections.Add("=== RELEVANT LORE CARDS ===\n" + string.Join("\n\n", triggered));
 
-        var pinnedMemory = bundle.Memory.Entries.Where(m => m.Pinned).Select(m => "- " + m.Text).ToList();
-        if (pinnedMemory.Count > 0)
-            sections.Add("=== PINNED MEMORY ===\n" + string.Join("\n", pinnedMemory));
+        AppendMemoryAndTranscript(bundle, sections, contextMode, attachment, handoff, freshNarrativeBootstrap, mode);
 
-        var entityExcerpt = HasExportedLoreSources(bundle)
-            ? BuildEntityExcerpts(bundle, searchText)
-            : "";
-        if (!string.IsNullOrWhiteSpace(entityExcerpt))
-            sections.Add("=== ENTITIES ===\n" + entityExcerpt);
-
-        if (!AttachmentSendPolicy.ShouldOmitTranscript(contextMode, attachment))
-        {
-            var transcript = BuildRecentTranscriptSection(bundle);
-            if (!string.IsNullOrWhiteSpace(transcript))
-                sections.Add(transcript);
-        }
-
-        return FinalizeContext(bundle, sections, triggered, settings, PacketMode.Fat, packetTurnIndexOverride: packetTurnIndexOverride);
+        return FinalizeContext(
+            bundle, sections, triggered, settings, profile, mode, maxChars,
+            labels: resolved.ResolvedLabels,
+            packetTurnIndexOverride: packetTurnIndexOverride,
+            handoff: handoff,
+            freshNarrativeBootstrap: freshNarrativeBootstrap,
+            budgetTrimmed: budgetResult.Trimmed,
+            baselinePointers: resolved.Baseline,
+            thisTurnPointers: resolved.ThisTurn);
     }
 
-    private static PromptPacketContextResult BuildSourceDelegatedContext(
-        AdventureBundle bundle,
-        string searchHint,
-        AttachmentContextMode contextMode,
-        AttachmentContext? attachment,
-        int? packetTurnIndexOverride = null)
+    private static void FilterTriggerPointers(ContextResolveResult resolved)
     {
-        if (UseSectionInjection(bundle))
-            return BuildThinContextSectionInjection(bundle, searchHint, contextMode, attachment, packetTurnIndexOverride);
-
-        var sections = new List<string>();
-        var settings = bundle.Metadata.Settings;
-        var searchText = (searchHint + " " + bundle.Summary.RollingSummary).ToLowerInvariant();
-        var readiness = ProjectSourceInjectionService.Evaluate(bundle);
-
-        var sourcesSection = ProjectSourceInjectionService.BuildProjectSourcesSection(bundle, readiness);
-        if (!string.IsNullOrWhiteSpace(sourcesSection))
-            sections.Add(sourcesSection);
-
-        sections.Add("You are the narrator for this interactive fiction adventure. Obey ChatGPT Project custom instructions and retrieved project sources for world lore. Do not break character.");
-
-        if (!string.IsNullOrWhiteSpace(bundle.Summary.RollingSummary))
-            sections.Add("=== STORY SO FAR (local cache) ===\n\n" + bundle.Summary.RollingSummary.Trim());
-
-        var stateBlock = BuildStateBlock(bundle);
-        if (!string.IsNullOrWhiteSpace(stateBlock))
-            sections.Add("=== STATE DELTA ===\n\n" + stateBlock);
-
-        var maxCards = AttachmentSendPolicy.MaxLoreCards(contextMode, attachment);
-        var triggered = HasExportedLoreSources(bundle)
-            ? TriggerStoryCards(bundle, searchText, maxCards)
-            : [];
-        if (triggered.Count > 0)
-        {
-            var names = triggered.Select(t => t.Split('\n')[0]).ToList();
-            sections.Add("=== TRIGGERED CARDS (details in story-cards.md) ===\n" + string.Join(", ", names));
-        }
-
-        var pinnedMemory = bundle.Memory.Entries.Where(m => m.Pinned).Select(m => "- " + m.Text).ToList();
-        if (pinnedMemory.Count > 0)
-            sections.Add("=== PINNED MEMORY ===\n" + string.Join("\n", pinnedMemory));
-
-        if (!AttachmentSendPolicy.ShouldOmitTranscript(contextMode, attachment))
-        {
-            var transcript = BuildRecentTranscriptSection(bundle);
-            if (!string.IsNullOrWhiteSpace(transcript))
-                sections.Add(transcript);
-        }
-
-        var thinMax = Math.Min(settings.MaxPacketChars, 8000);
-        return FinalizeContext(bundle, sections, triggered, settings, PacketMode.Thin, thinMax, packetTurnIndexOverride: packetTurnIndexOverride);
-    }
-
-    private static PromptPacketContextResult BuildFatContextSectionInjection(
-        AdventureBundle bundle,
-        string searchHint,
-        AttachmentContextMode contextMode,
-        AttachmentContext? attachment,
-        int? packetTurnIndexOverride = null)
-    {
-        var settings = bundle.Metadata.Settings;
-        var readiness = ProjectSourceInjectionService.Evaluate(bundle);
-        var signals = ContextSignalBuilder.Build(bundle, searchHint, contextMode, attachment);
-        var resolved = ContextPointerResolver.Resolve(bundle, signals, fatFallback: true);
-        ContextBudgetAllocator.ApplyBudget(resolved.All, settings.MaxPacketChars, fatFallback: true);
-
-        var sections = new List<string>
-        {
-            ContextPointerRenderer.BuildFatSourcesBlock(bundle, resolved, settings.UseContextTags, readiness),
-            "You are the narrator for an interactive fiction adventure. Respond in vivid prose. Do not break character or mention being an AI.",
-            $"Perspective: {settings.Perspective}. Tense: {settings.Tense}. Detail: {settings.DetailLevel}. Tone: {settings.Tone ?? bundle.Scenario.Tone}. Difficulty: {settings.Difficulty}.",
-        };
-
-        var contractSections = InstructionContractService.BuildContractSections(bundle);
-        if (!string.IsNullOrWhiteSpace(contractSections))
-            sections.Add(contractSections);
-
-        if (!string.IsNullOrWhiteSpace(bundle.Summary.RollingSummary))
-            sections.Add("=== STORY SO FAR ===\n\n" + bundle.Summary.RollingSummary.Trim());
-
-        var stateBlock = BuildStateBlock(bundle);
-        if (!string.IsNullOrWhiteSpace(stateBlock))
-            sections.Add("=== CURRENT STATE ===\n\n" + stateBlock);
-
-        AppendMemoryAndTranscript(bundle, sections, contextMode, attachment);
-
-        return FinalizeContext(bundle, sections, [], settings, PacketMode.Fat, labels: resolved.ResolvedLabels, packetTurnIndexOverride: packetTurnIndexOverride);
-    }
-
-    private static PromptPacketContextResult BuildThinContextSectionInjection(
-        AdventureBundle bundle,
-        string searchHint,
-        AttachmentContextMode contextMode,
-        AttachmentContext? attachment,
-        int? packetTurnIndexOverride = null)
-    {
-        var settings = bundle.Metadata.Settings;
-        var readiness = ProjectSourceInjectionService.Evaluate(bundle);
-        var signals = ContextSignalBuilder.Build(bundle, searchHint, contextMode, attachment);
-        var resolved = ContextPointerResolver.Resolve(bundle, signals, fatFallback: false);
-        var thinMax = Math.Min(settings.MaxPacketChars, 8000);
-        ContextBudgetAllocator.ApplyBudget(resolved.All, thinMax, fatFallback: false);
-
-        var sections = new List<string>
-        {
-            ContextPointerRenderer.BuildSourcesV2Block(bundle, resolved, PacketMode.Thin, readiness, settings.UseContextTags),
-            "You are the narrator for this interactive fiction adventure. Obey ChatGPT Project custom instructions and retrieved project sources for world lore. Do not break character.",
-        };
-
-        if (!string.IsNullOrWhiteSpace(bundle.Summary.RollingSummary))
-            sections.Add("=== STORY SO FAR (local cache) ===\n\n" + bundle.Summary.RollingSummary.Trim());
-
-        var stateBlock = BuildStateBlock(bundle);
-        if (!string.IsNullOrWhiteSpace(stateBlock))
-            sections.Add("=== STATE DELTA ===\n\n" + stateBlock);
-
-        AppendMemoryAndTranscript(bundle, sections, contextMode, attachment);
-
-        return FinalizeContext(bundle, sections, [], settings, PacketMode.Thin, thinMax, labels: resolved.ResolvedLabels, packetTurnIndexOverride: packetTurnIndexOverride);
+        resolved.All.RemoveAll(p => p.Source == PointerSource.Trigger);
+        resolved.ThisTurn.RemoveAll(p => p.Source == PointerSource.Trigger);
+        resolved.Baseline.RemoveAll(p => p.Source == PointerSource.Trigger);
     }
 
     private static void AppendMemoryAndTranscript(
         AdventureBundle bundle,
         List<string> sections,
         AttachmentContextMode contextMode,
-        AttachmentContext? attachment)
+        AttachmentContext? attachment,
+        PlayHandoffContext? handoff = null,
+        bool freshNarrativeBootstrap = false,
+        PacketMode mode = PacketMode.Fat)
     {
-        var pinnedMemory = bundle.Memory.Entries.Where(m => m.Pinned).Select(m => "- " + m.Text).ToList();
-        if (pinnedMemory.Count > 0)
-            sections.Add("=== PINNED MEMORY ===\n" + string.Join("\n", pinnedMemory));
-
-        if (!AttachmentSendPolicy.ShouldOmitTranscript(contextMode, attachment))
+        var policy = PlayInjectionPolicyService.Resolve(bundle.Metadata.Settings);
+        if (policy.IncludePinnedMemory)
         {
-            var transcript = BuildRecentTranscriptSection(bundle);
-            if (!string.IsNullOrWhiteSpace(transcript))
-                sections.Add(transcript);
+            var pinnedMemory = bundle.Memory.Entries.Where(m => m.Pinned).Select(m => "- " + m.Text).ToList();
+            if (pinnedMemory.Count > 0)
+                sections.Add("=== PINNED MEMORY ===\n" + string.Join("\n", pinnedMemory));
         }
+
+        AppendTranscriptSection(bundle, sections, contextMode, attachment, handoff, freshNarrativeBootstrap, mode);
+    }
+
+    private static void AppendTranscriptSection(
+        AdventureBundle bundle,
+        List<string> sections,
+        AttachmentContextMode contextMode,
+        AttachmentContext? attachment,
+        PlayHandoffContext? handoff,
+        bool freshNarrativeBootstrap = false,
+        PacketMode mode = PacketMode.Fat)
+    {
+        if (freshNarrativeBootstrap)
+            return;
+
+        if (!PlayInjectionPolicyService.Resolve(bundle.Metadata.Settings).IncludeTranscript)
+            return;
+
+        if (AttachmentSendPolicy.ShouldOmitTranscript(contextMode, attachment))
+            return;
+
+        var transcript = handoff is not null
+            ? BuildHandoffTranscriptSection(handoff)
+            : BuildRecentTranscriptSection(bundle, mode);
+
+        if (!string.IsNullOrWhiteSpace(transcript))
+            sections.Add(transcript);
+    }
+
+    private static string? ResolveCarryForwardSummary(
+        AdventureBundle bundle,
+        PlayHandoffContext? handoff,
+        bool freshNarrativeBootstrap = false)
+    {
+        if (freshNarrativeBootstrap)
+            return null;
+
+        if (!PlayInjectionPolicyService.Resolve(bundle.Metadata.Settings).IncludeSummary)
+            return null;
+
+        return handoff is not null
+            ? handoff.CarryForwardSummary
+            : bundle.Summary.RollingSummary;
     }
 
     private static string BuildPlayerSection(string playerInput) =>
@@ -318,12 +405,18 @@ internal static class PromptPacketBuilder
         List<string> sections,
         List<string> triggered,
         AdventureSettings settings,
+        PacketProfile profile,
         PacketMode mode,
-        int? maxOverride = null,
+        int maxChars,
         List<string>? labels = null,
-        int? packetTurnIndexOverride = null)
+        int? packetTurnIndexOverride = null,
+        PlayHandoffContext? handoff = null,
+        bool freshNarrativeBootstrap = false,
+        IReadOnlyList<TrimmedSection>? budgetTrimmed = null,
+        IReadOnlyList<ContextPointer>? baselinePointers = null,
+        IReadOnlyList<ContextPointer>? thisTurnPointers = null)
     {
-        var contextText = AssembleContextText(bundle, sections, mode, packetTurnIndexOverride);
+        var contextText = AssembleContextText(bundle, sections, profile, packetTurnIndexOverride, handoff);
         var resolvedLabels = labels ?? triggered.Select(t => t.Split('\n')[0]).ToList();
         return new PromptPacketContextResult
         {
@@ -331,22 +424,34 @@ internal static class PromptPacketBuilder
             TriggeredCardNames = resolvedLabels,
             ResolvedSectionPointers = resolvedLabels,
             Mode = mode,
-            MaxChars = Math.Max(4000, maxOverride ?? settings.MaxPacketChars),
+            Profile = profile,
+            MaxChars = maxChars,
             UseContextTags = settings.UseContextTags,
+            BudgetTrimmed = budgetTrimmed?.ToList() ?? [],
+            BaselinePointers = baselinePointers?.ToList() ?? [],
+            ThisTurnPointers = thisTurnPointers?.ToList() ?? [],
         };
     }
 
     private static string AssembleContextText(
         AdventureBundle bundle,
         List<string> sections,
-        PacketMode mode,
-        int? packetTurnIndexOverride = null)
+        PacketProfile profile,
+        int? packetTurnIndexOverride = null,
+        PlayHandoffContext? handoff = null)
     {
         if (!bundle.Metadata.Settings.UseContextTags)
             return string.Join("\n\n", sections);
 
         var turnIndex = packetTurnIndexOverride ?? PlayTurnScopeService.GetNextPacketTurnIndex(bundle);
-        var blocks = new List<string> { ContextTagFormat.WrapMeta(mode, turnIndex) };
+        var blocks = new List<string>
+        {
+            ContextTagFormat.WrapMeta(
+                profile,
+                turnIndex,
+                continuation: handoff is not null,
+                adventureTurn: handoff?.AdventureTurnOrdinal),
+        };
 
         string? sources = null;
         string? instructions = null;
@@ -437,10 +542,35 @@ internal static class PromptPacketBuilder
         return TaggedSectionKind.Instructions;
     }
 
-    private static string? BuildRecentTranscriptSection(AdventureBundle bundle)
+    private static string? BuildHandoffTranscriptSection(PlayHandoffContext handoff)
     {
+        if (!handoff.IncludeTranscript || handoff.TranscriptTurns.Count == 0)
+            return null;
+
+        var lines = handoff.TranscriptTurns
+            .Select(t =>
+            {
+                var narrator = (t.NarratorText ?? "").Trim();
+                if (PlayTurnScopeService.IsIncompleteNarratorCapture(narrator))
+                    narrator = "";
+
+                return $"Player: {t.PlayerText.Trim()}\nNarrator: {narrator}";
+            })
+            .Where(line => !string.IsNullOrWhiteSpace(line.Replace("Narrator:", "", StringComparison.Ordinal).Trim()));
+
+        var body = string.Join("\n\n", lines);
+        return string.IsNullOrWhiteSpace(body)
+            ? null
+            : "=== RECENT TRANSCRIPT ===\n\n" + body;
+    }
+
+    private static string? BuildRecentTranscriptSection(AdventureBundle bundle, PacketMode mode)
+    {
+        var maxTurns = PlayInjectionPolicyService.ResolveTranscriptMaxTurns(bundle.Metadata.Settings, mode);
+        var policy = PlayInjectionPolicyService.Resolve(bundle.Metadata.Settings);
+
         var turns = PlayTurnScopeService.GetPacketContextTurns(bundle)
-            .TakeLast(InstructionSourcesPolicy.ThinTranscriptTurnCount)
+            .TakeLast(maxTurns)
             .ToList();
 
         if (turns.Count == 0)
@@ -458,9 +588,13 @@ internal static class PromptPacketBuilder
             .Where(line => !string.IsNullOrWhiteSpace(line.Replace("Narrator:", "", StringComparison.Ordinal).Trim()));
 
         var body = string.Join("\n\n", lines);
-        return string.IsNullOrWhiteSpace(body)
-            ? null
-            : "=== RECENT TRANSCRIPT ===\n\n" + body;
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+
+        if (policy.TranscriptMaxChars > 0 && body.Length > policy.TranscriptMaxChars)
+            body = body[..policy.TranscriptMaxChars] + "…";
+
+        return "=== RECENT TRANSCRIPT ===\n\n" + body;
     }
 
     private static string FormatTaggedSectionBody(string section)
@@ -507,10 +641,12 @@ internal static class PromptPacketBuilder
     public static string Preview(AdventureBundle bundle, string playerInput) =>
         Build(bundle, playerInput).Text;
 
-    private static string BuildScenarioSection(AdventureBundle bundle)
+    private static string BuildScenarioSection(AdventureBundle bundle, bool freshNarrativeBootstrap = false)
     {
         var s = bundle.Scenario;
-        var accepted = bundle.Log.Turns.Count(t => t.Status == TurnStatus.Accepted);
+        var accepted = freshNarrativeBootstrap
+            ? 0
+            : bundle.Log.Turns.Count(t => t.Status == TurnStatus.Accepted);
         var includeFull = accepted == 0 || accepted <= 3;
 
         if (!includeFull && string.IsNullOrWhiteSpace(s.PlotEssentials))
@@ -559,6 +695,32 @@ internal static class PromptPacketBuilder
         return string.Join("\n", parts);
     }
 
+    private static string BuildEntityStateSkimBlock(AdventureBundle bundle)
+    {
+        var lines = new List<string>();
+        foreach (var record in bundle.EntityInternalState.Entries)
+        {
+            if (!EntityCanonStateOverlapService.ShouldIncludeInPlaySkim(bundle, record))
+                continue;
+
+            var state = EntityInternalStateService.GetStateObject(record, record.KindId);
+            if (state is null)
+                continue;
+
+            var summary = EntityInternalStateSummary.Build(record.KindId, state);
+            if (string.IsNullOrWhiteSpace(summary))
+                continue;
+
+            var name = EntityCanonStateOverlapService.ResolveEntityName(bundle, record.KindId, record.EntityId);
+            lines.Add($"- {name}: {summary}");
+        }
+
+        if (lines.Count == 0)
+            return "";
+
+        return "=== ENTITY PLAY STATE ===\n" + string.Join("\n", lines);
+    }
+
     private static bool HasExportedLoreSources(AdventureBundle bundle)
     {
         var dir = ProjectSourceExportService.SourcesDirectory(bundle);
@@ -590,25 +752,6 @@ internal static class PromptPacketBuilder
 
         return result;
     }
-
-    private static string BuildEntityExcerpts(AdventureBundle bundle, string searchText)
-    {
-        var lines = new List<string>();
-        foreach (var c in bundle.Entities.Characters.Where(c => c.Pinned || Matches(c.Name, searchText)))
-            lines.Add($"Character {c.Name}: {c.Description}");
-
-        foreach (var l in bundle.Entities.Locations.Where(l => l.Pinned || Matches(l.Name, searchText)))
-            lines.Add($"Location {l.Name}: {l.Description}");
-
-        foreach (var q in bundle.Entities.Quests.Where(q => q.Status == QuestStatus.Active))
-            lines.Add($"Quest {q.Title}: {q.Description}");
-
-        return string.Join("\n", lines.Take(20));
-    }
-
-    private static bool Matches(string name, string haystack) =>
-        !string.IsNullOrWhiteSpace(name) &&
-        haystack.Contains(name.Trim().ToLowerInvariant(), StringComparison.Ordinal);
 
     private static string TrimPacket(string text, int maxChars)
     {

@@ -1,0 +1,50 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.AppearanceThemePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    MinWidth="560"
+    MinHeight="480">
+
+    <UserControl.Resources>
+        <DataTemplate x:Key="PresetItemTemplate">
+            <StackPanel Spacing="2" Padding="4,6">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Description}"
+                           Style="{ThemeResource ShellSectionHintStyle}"
+                           TextWrapping="Wrap" />
+                <TextBlock Text="{Binding Category}"
+                           Style="{ThemeResource ShellSectionHintStyle}"
+                           FontSize="10" />
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid Padding="16" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="240" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Style="{ThemeResource ShellSectionHintStyle}"
+                   TextWrapping="Wrap"
+                   Text="Pick a starting palette. Changes preview live on shell chrome and chat tabs; Save writes to ui-chrome.json." />
+
+        <TextBox x:Name="PresetSearchBox"
+                 Grid.Row="1"
+                 PlaceholderText="Filter presets…"
+                 TextChanged="PresetSearchBox_TextChanged" />
+
+        <ListView x:Name="PresetList"
+                  Grid.Row="2"
+                  ItemTemplate="{StaticResource PresetItemTemplate}"
+                  SelectionChanged="PresetList_SelectionChanged" />
+
+        <TextBlock x:Name="PresetStatusText"
+                   Grid.Row="3"
+                   Style="{ThemeResource ShellSectionHintStyle}"
+                   TextWrapping="Wrap" />
+    </Grid>
+</UserControl>

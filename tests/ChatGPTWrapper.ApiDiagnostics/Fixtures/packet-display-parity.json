@@ -27,14 +27,14 @@
     "sectionNames": ["state"]
   },
   {
-    "name": "multiple_sections",
+    "name": "canon_update_trail_after_player",
     "blocks": [
-      { "tag": "instructions", "body": "Stay in character." },
-      { "tag": "state", "body": "Rain falls." },
-      { "tag": "meta", "body": "" }
+      { "tag": "meta", "body": "" },
+      { "tag": "sources", "body": "ALWAYS RETRIEVE:\n- cast.md" },
+      { "tag": "instructions", "body": "Narrate vividly." }
     ],
-    "suffix": "knock on the door",
-    "userLine": "knock on the door",
-    "sectionNames": ["instructions", "state"]
+    "suffix": "My eyes move to the gate.\n\n\"Aye. Garran Holt.\"\n\n=== CANON UPDATE (check sources) ===\n\nRe-retrieve: cast.md\n\nSummary: Updated canon in cast.md",
+    "userLine": "My eyes move to the gate.\n\n\"Aye. Garran Holt.\"",
+    "sectionNames": ["instructions", "sources"]
   }
 ]

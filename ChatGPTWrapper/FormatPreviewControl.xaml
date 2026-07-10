@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="ChatGPTWrapper.FormatPreviewControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             MinHeight="160">
+    <StackPanel>
+        <Border x:Name="UserSegment"
+                Padding="10,8"
+                Margin="0,0,0,8"
+                BorderThickness="3,0,0,0"
+                CornerRadius="6"
+                Background="{StaticResource BgInsetBrush}">
+            <StackPanel>
+                <TextBlock x:Name="UserLabel"
+                           Text="YOU"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           Margin="0,0,0,4"
+                           Visibility="Collapsed"/>
+                <TextBlock x:Name="UserSampleText"
+                           Text="I examine the ancient door carefully, tracing the worn glyphs with my fingertips before deciding how to proceed."
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+        <Border x:Name="AssistantSegment"
+                Padding="10,8"
+                Margin="0,0,0,8"
+                BorderThickness="3,0,0,0"
+                CornerRadius="6"
+                Background="{StaticResource BgInsetBrush}">
+            <StackPanel>
+                <TextBlock x:Name="AssistantLabel"
+                           Text="ASSISTANT"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           Margin="0,0,0,4"
+                           Visibility="Collapsed"/>
+                <TextBlock x:Name="AssistantHeadingSample"
+                           Text="The Archive Door"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,6"/>
+                <TextBlock x:Name="AssistantSampleText"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,8">
+                    <Run Text="The hinges groan as you lean closer. See also "/>
+                    <Run x:Name="AssistantLinkRun" Text="the archive notes" TextDecorations="Underline"/>
+                    <Run Text=" and inline "/>
+                    <Run x:Name="AssistantCodeRun" Text="rune" Background="#333333" FontFamily="Consolas"/>
+                    <Run Text=" markings."/>
+                </TextBlock>
+                <Border x:Name="AssistantCodeBlock"
+                        Background="#1E1E22"
+                        BorderBrush="#3A3A42"
+                        BorderThickness="1"
+                        Padding="10,8"
+                        CornerRadius="8"
+                        Margin="0,0,0,8">
+                    <TextBlock x:Name="AssistantCodeBlockText"
+                               FontFamily="Consolas"
+                               Text="if (seal.intact) {&#x0a;  ward.flicker();&#x0a;}"
+                               TextWrapping="Wrap"/>
+                </Border>
+                <TextBlock x:Name="AssistantHighlightSampleText"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,0"/>
+            </StackPanel>
+        </Border>
+        <Border x:Name="AssistantSegment2"
+                Padding="10,8"
+                BorderThickness="3,0,0,0"
+                CornerRadius="6"
+                Background="{StaticResource BgInsetBrush}">
+            <StackPanel>
+                <TextBlock x:Name="AssistantLabel2"
+                           Text="ASSISTANT"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           Margin="0,0,0,4"
+                           Visibility="Collapsed"/>
+                <TextBlock x:Name="AssistantSampleText2"
+                           Text="A draft of cold air slips through the gap, carrying the scent of dust and old ink."
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

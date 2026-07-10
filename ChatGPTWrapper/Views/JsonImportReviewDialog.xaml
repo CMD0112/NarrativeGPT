@@ -1,15 +1,15 @@
-<Window x:Class="ChatGPTWrapper.Views.JsonImportReviewDialog"
+<shell:ShellDialogWindow xmlns:shell="clr-namespace:ChatGPTWrapper.Shell" x:Class="ChatGPTWrapper.Views.JsonImportReviewDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Review JSON import proposals"
         Height="640"
         Width="920"
-        MinHeight="480"
-        MinWidth="720"
+        MinHeight="520"
+        MinWidth="640"
         ResizeMode="CanResizeWithGrip"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource DialogBgBrush}"
-        Foreground="{StaticResource TextBrush}">
+        Background="{StaticResource BgBaseBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -20,33 +20,33 @@
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,8"
-                   Foreground="{StaticResource MutedTextBrush}"
+                   Foreground="{StaticResource TextMutedBrush}"
                    Text="Review AI-proposed updates to scenario.json and entities.json before accepting. Compare full files, check source conflicts, then accept or reject individual changes."/>
 
         <TextBlock x:Name="StatusLine" Grid.Row="1" Margin="0,0,0,8"
-                   Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"/>
+                   Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
 
-        <Grid Grid.Row="2" Margin="0,0,0,8">
+        <Grid Grid.Row="2" Margin="0,0,0,8" MinHeight="280">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" MinWidth="240"/>
                 <ColumnDefinition Width="2*" MinWidth="320"/>
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrushDark}"
-                    BorderThickness="1" Background="{StaticResource PanelBgBrush}" Padding="4">
+            <Border Grid.Column="0" BorderBrush="{StaticResource BorderStrongBrush}"
+                    BorderThickness="1" Background="{StaticResource BgSurfaceBrush}" Padding="4">
                 <ListBox x:Name="ProposalList" BorderThickness="0"
                          Background="Transparent"
                          SelectionChanged="ProposalList_SelectionChanged"/>
             </Border>
 
             <Border Grid.Column="1" Margin="12,0,0,0"
-                    BorderBrush="{StaticResource BorderBrushDark}"
-                    BorderThickness="1" Background="{StaticResource PanelBgBrush}" Padding="12">
+                    BorderBrush="{StaticResource BorderStrongBrush}"
+                    BorderThickness="1" Background="{StaticResource BgSurfaceBrush}" Padding="12">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel x:Name="DetailPanel">
                         <TextBlock x:Name="DetailPlaceholder"
                                    Text="Select a proposal to inspect conflicts and source excerpts."
-                                   Foreground="{StaticResource MutedTextBrush}"
+                                   Foreground="{StaticResource TextMutedBrush}"
                                    TextWrapping="Wrap"/>
                         <TextBlock x:Name="DetailSummary" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"/>
                         <TextBlock x:Name="DetailConflict" TextWrapping="Wrap" Margin="0,0,0,8"/>
@@ -102,4 +102,4 @@
             </WrapPanel>
         </Grid>
     </Grid>
-</Window>
+</shell:ShellDialogWindow>

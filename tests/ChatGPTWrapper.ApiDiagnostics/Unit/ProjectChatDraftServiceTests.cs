@@ -84,9 +84,70 @@ public sealed class ProjectChatDraftServiceTests
 
         ProjectChatDraftService.Cancel(bundle);
 
-        Assert.Equal("conv-old", bundle.Metadata.LinkedConversationId);
-        Assert.Equal("tab-1", bundle.Metadata.PinnedPlayTabKey);
+        Assert.Equal("conv-old", PlayThreadBindingService.GetActiveConversationId(bundle));
+        Assert.Equal(
+            "tab-1",
+            AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)?.PinnedTabKey);
         Assert.False(ProjectChatDraftService.IsActive(bundle));
+    }
+
+    [Fact]
+    public void ShouldSuppressPlayAutomation_on_project_page_when_stored_play_thread_without_draft()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-util",
+                LinkedConversationId = "conv-play",
+            },
+        };
+
+        var source = ChatGptUrls.BuildProjectUrl("g-p-util");
+
+        Assert.True(ProjectChatDraftService.ShouldSuppressPlayAutomation(bundle, null, null, source));
+    }
+
+    [Fact]
+    public void ShouldSuppressPlayAutomation_false_on_bound_play_thread_conversation()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-play",
+                LinkedConversationId = "conv-play",
+            },
+        };
+
+        var source = ChatGptUrls.BuildProjectConversationUrl("conv-play", "g-p-play");
+
+        Assert.False(ProjectChatDraftService.ShouldSuppressPlayAutomation(bundle, null, null, source));
+    }
+
+    [Fact]
+    public void ShouldSuppressPlayAutomation_false_on_project_page_during_play_rotation()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-rotate",
+            },
+        };
+
+        ProjectChatDraftService.BeginPlayDraft(bundle);
+
+        try
+        {
+            var source = ChatGptUrls.BuildProjectUrl("g-p-rotate");
+
+            Assert.False(ProjectChatDraftService.ShouldSuppressPlayAutomation(bundle, null, null, source));
+        }
+        finally
+        {
+            ProjectChatDraftService.Complete(bundle);
+        }
     }
 
     [Fact]
@@ -127,22 +188,32 @@ public sealed class ProjectChatDraftServiceTests
             },
         };
 
-        ProjectChatDraftService.BeginUtilityDraft(bundle);
+        var source = ChatGptUrls.BuildProjectUrl("g-p-valid");
 
-        try
-        {
-            var source = ChatGptUrls.BuildProjectUrl("g-p-valid");
+        Assert.True(
+            AdventureNavigationService.IsOnValidAdventureWebTarget(
+                source,
+                bundle,
+                AdventureNavigationIntent.Play));
+    }
 
-            Assert.True(
-                AdventureNavigationService.IsOnValidAdventureWebTarget(
-                    source,
-                    bundle,
-                    AdventureNavigationIntent.Play));
-        }
-        finally
+    [Fact]
+    public void TryAutoBeginOnProjectPage_skips_when_play_mode_active()
+    {
+        var bundle = new AdventureBundle
         {
-            ProjectChatDraftService.Complete(bundle);
-        }
+            Metadata = new AdventureMetadata
+            {
+                Id = Guid.NewGuid(),
+                LinkedProjectId = "g-p-auto",
+                LinkedConversationId = "conv-play",
+            },
+        };
+
+        var source = ChatGptUrls.BuildProjectUrl("g-p-auto");
+
+        Assert.False(ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, source, playModeActive: true));
+        Assert.False(ProjectChatDraftService.IsActive(bundle));
     }
 
     [Fact]
@@ -193,5 +264,75 @@ public sealed class ProjectChatDraftServiceTests
 
         Assert.False(ProjectChatDraftService.TryAutoBeginOnProjectPage(bundle, source));
         Assert.False(ProjectChatDraftService.IsActive(bundle));
+    }
+
+    [Fact]
+    public void ShouldNavigateToPlayTarget_false_on_linked_project_page_without_draft()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-pause",
+                LinkedConversationId = "conv-play",
+            },
+        };
+
+        var source = ChatGptUrls.BuildProjectUrl("g-p-pause");
+        var target = AdventureNavigationService.ResolvePlayBrowseUrl(bundle)!;
+
+        Assert.False(AdventureNavigationService.ShouldNavigateToPlayTarget(source, bundle, target));
+    }
+
+    [Fact]
+    public void ShouldSuppressPinnedThreadReroute_true_on_new_project_conversation_during_design_draft()
+    {
+        var bundle = AdventureDesignService.CreateDesigningAdventure("New conv draft");
+        bundle.Metadata.LinkedProjectId = "g-p-design";
+        ProjectChatDraftService.BeginDesignDraft(bundle);
+
+        try
+        {
+            var source = ChatGptUrls.BuildProjectConversationUrl("conv-new", "g-p-design");
+
+            Assert.True(ProjectChatDraftService.ShouldSuppressPinnedThreadReroute(
+                bundle,
+                source,
+                AdventureNavigationIntent.Design));
+            Assert.True(ProjectChatDraftService.IsDraftWorkspaceConversation(bundle, source));
+        }
+        finally
+        {
+            ProjectChatDraftService.Complete(bundle);
+        }
+    }
+
+    [Fact]
+    public void IsValidDraftTarget_true_on_new_project_conversation_during_play_rotation_draft()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-rotate",
+            },
+        };
+
+        ProjectChatDraftService.BeginPlayDraft(bundle);
+
+        try
+        {
+            var source = ChatGptUrls.BuildProjectConversationUrl("conv-fresh", "g-p-rotate");
+
+            Assert.True(
+                AdventureNavigationService.IsOnValidAdventureWebTarget(
+                    source,
+                    bundle,
+                    AdventureNavigationIntent.Play));
+        }
+        finally
+        {
+            ProjectChatDraftService.Complete(bundle);
+        }
     }
 }

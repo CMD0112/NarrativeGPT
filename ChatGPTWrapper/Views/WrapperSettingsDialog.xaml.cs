@@ -1,11 +1,18 @@
 using System.IO;
 using System.Windows;
+using ChatGPTWrapper.Shell;
 using Microsoft.Win32;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class WrapperSettingsDialog : Window
+public partial class WrapperSettingsDialog : ShellDialogWindow
 {
+    protected override bool PersistLayout => false;
+
+    protected override bool ApplyDesignSizeOnOpen => false;
+
+    protected override bool RestorePersistedSizeOnOpen => false;
+
     public WrapperSettingsDialog()
     {
         InitializeComponent();
@@ -50,7 +57,8 @@ public partial class WrapperSettingsDialog : Window
             var currentRoot = Path.GetFullPath(AppDirectories.AdventuresDirectory);
             if (!string.Equals(normalized, currentRoot, StringComparison.OrdinalIgnoreCase)
                 && Directory.Exists(currentRoot)
-                && Directory.EnumerateDirectories(currentRoot).Any())
+                && Directory.EnumerateDirectories(currentRoot).Any(d =>
+                    !AppDirectories.IsReservedAdventuresDirectory(Path.GetFileName(d))))
             {
                 var warn = MessageBox.Show(
                     this,
@@ -69,6 +77,7 @@ public partial class WrapperSettingsDialog : Window
         ResultSettings = new WrapperSettings
         {
             AdventuresDirectoryOverride = normalized,
+            PublicationLabDomUploadMethod = WrapperSettingsStore.Current.PublicationLabDomUploadMethod,
         };
         DialogResult = true;
         Close();

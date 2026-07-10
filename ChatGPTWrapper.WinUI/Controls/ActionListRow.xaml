@@ -1,0 +1,34 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Controls.ActionListRow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Border x:Name="ChromeBorder"
+            Background="{ThemeResource BgSurfaceBrush}"
+            BorderBrush="{ThemeResource BorderSubtleBrush}"
+            BorderThickness="1"
+            CornerRadius="{ThemeResource RadiusCard}"
+            Padding="10,8"
+            Margin="0,0,0,6">
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="2">
+                <TextBlock x:Name="TitleText"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap" />
+                <TextBlock x:Name="HintText"
+                           Foreground="{ThemeResource TextMutedBrush}"
+                           FontSize="{ThemeResource FontSizeHint}"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+            <Button Grid.Column="1"
+                    x:Name="RunButton"
+                    Style="{ThemeResource ShellGhostButtonStyle}"
+                    VerticalAlignment="Center"
+                    Click="RunButton_Click" />
+        </Grid>
+    </Border>
+</UserControl>

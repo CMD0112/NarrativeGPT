@@ -5,9 +5,9 @@ using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
-[Collection(nameof(IsolatedAppRootCollection))]
+[Collection(FileLockAwareCollectionNames.Name)]
 [Trait("Category", "Unit")]
-public sealed class AdventureNavigationServiceTests
+public sealed class AdventureNavigationServiceTests : IClassFixture<FileLockAwareFixture>
 {
     [Fact]
     public void ResolveTrustedFallbackUrl_uses_project_page_not_homepage_when_linked()
@@ -30,9 +30,9 @@ public sealed class AdventureNavigationServiceTests
             Metadata = new AdventureMetadata
             {
                 LinkedProjectId = "g-p-nav",
-                LinkedConversationId = "conv-play",
             },
         };
+        PlayThreadBindingService.MarkVerified(bundle, "conv-play");
 
         Assert.Equal(
             ChatGptUrls.BuildProjectConversationUrl("conv-play", "g-p-nav"),
@@ -44,16 +44,7 @@ public sealed class AdventureNavigationServiceTests
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Design nav");
         bundle.Metadata.LinkedProjectId = "g-p-design";
-        bundle.Metadata.UtilitySessions = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase)
-        {
-            [GenerationJobId.DesignAdventure] = new GenerationUtilitySession
-            {
-                ConversationId = "design-conv",
-                Sequence = 1,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastUsedAt = DateTimeOffset.UtcNow,
-            },
-        };
+        AdventureThreadRegistryService.BindActiveConversation(bundle, AdventureThreadKind.Design, "design-conv");
 
         Assert.Equal(
             ChatGptUrls.BuildProjectConversationUrl("design-conv", "g-p-design"),
@@ -68,9 +59,9 @@ public sealed class AdventureNavigationServiceTests
             Metadata = new AdventureMetadata
             {
                 LinkedProjectId = "g-p-nav",
-                LinkedConversationId = "conv-1",
             },
         };
+        PlayThreadBindingService.MarkVerified(bundle, "conv-1");
 
         var target = AdventureNavigationService.ResolvePlayBrowseUrl(bundle)!;
 
@@ -85,9 +76,9 @@ public sealed class AdventureNavigationServiceTests
             Metadata = new AdventureMetadata
             {
                 LinkedProjectId = "g-p-nav",
-                LinkedConversationId = "conv-1",
             },
         };
+        PlayThreadBindingService.MarkVerified(bundle, "conv-1");
 
         var source = ChatGptUrls.BuildProjectConversationUrl("conv-1", "g-p-nav");
         var target = AdventureNavigationService.ResolvePlayBrowseUrl(bundle)!;
@@ -103,14 +94,32 @@ public sealed class AdventureNavigationServiceTests
             Metadata = new AdventureMetadata
             {
                 LinkedProjectId = "g-p-nav",
-                LinkedConversationId = "conv-1",
             },
         };
+        PlayThreadBindingService.MarkVerified(bundle, "conv-1");
 
         var source = ChatGptUrls.BuildConversationUrl("conv-1");
         var target = AdventureNavigationService.ResolvePlayBrowseUrl(bundle)!;
 
         Assert.False(AdventureNavigationService.ShouldNavigateToPlayTarget(source, bundle, target));
+    }
+
+    [Fact]
+    public void IsOnPlayTarget_false_on_other_project_conversation_url()
+    {
+        const string convId = "conv-1";
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-nav",
+                LinkedConversationId = convId,
+            },
+        };
+
+        var otherProjectUrl = ChatGptUrls.BuildProjectConversationUrl(convId, "g-p-other");
+
+        Assert.False(PlayTabPinService.IsOnPlayTarget(otherProjectUrl, bundle));
     }
 
     [Fact]
@@ -167,7 +176,25 @@ public sealed class AdventureNavigationServiceTests
     }
 
     [Fact]
-    public void ShouldNavigateToDesignTarget_true_from_project_page_when_design_session_exists()
+    public void ShouldNavigateToPlayTarget_false_on_project_page_when_stored_play_thread()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-nav",
+            },
+        };
+        PlayThreadBindingService.MarkVerified(bundle, "conv-1");
+
+        var source = ChatGptUrls.BuildProjectUrl("g-p-nav");
+        var target = AdventureNavigationService.ResolvePlayBrowseUrl(bundle)!;
+
+        Assert.False(AdventureNavigationService.ShouldNavigateToPlayTarget(source, bundle, target));
+    }
+
+    [Fact]
+    public void ShouldNavigateToDesignTarget_false_on_project_page_when_design_session_exists()
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Design project page");
         bundle.Metadata.LinkedProjectId = "g-p-design";
@@ -185,7 +212,7 @@ public sealed class AdventureNavigationServiceTests
         var source = ChatGptUrls.BuildProjectUrl("g-p-design");
         var target = AdventureNavigationService.ResolveDesignBrowseUrl(bundle)!;
 
-        Assert.True(AdventureNavigationService.ShouldNavigateToDesignTarget(source, bundle, target));
+        Assert.False(AdventureNavigationService.ShouldNavigateToDesignTarget(source, bundle, target));
     }
 
     [Fact]
@@ -210,17 +237,9 @@ public sealed class AdventureNavigationServiceTests
             GizmoId = "g-p-legacy",
             CanonicalUrl = ChatGptUrls.BuildProjectUrl("g-p-legacy"),
         };
-        bundle.Metadata.UtilitySessions = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase)
-        {
-            [GenerationJobId.DesignAdventure] = new GenerationUtilitySession
-            {
-                ConversationId = "design-legacy",
-                Sequence = 1,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastUsedAt = DateTimeOffset.UtcNow,
-            },
-        };
+        AdventureThreadRegistryService.BindActiveConversation(bundle, AdventureThreadKind.Design, "design-legacy");
 
+        AdventureNavigationService.SyncLinkedFields(bundle);
         var url = DesignTabPinService.GetDesignTargetUrl(bundle);
 
         Assert.Equal(
@@ -361,7 +380,7 @@ public sealed class AdventureNavigationServiceTests
     }
 
     [Fact]
-    public void IsOnValidAdventureWebTarget_false_on_project_page_when_play_thread_linked()
+    public void IsOnValidAdventureWebTarget_true_on_project_page_when_play_thread_linked()
     {
         var bundle = new AdventureBundle
         {
@@ -372,7 +391,7 @@ public sealed class AdventureNavigationServiceTests
             },
         };
 
-        Assert.False(
+        Assert.True(
             AdventureNavigationService.IsOnValidAdventureWebTarget(
                 ChatGptUrls.BuildProjectUrl("g-p-nav"),
                 bundle,
@@ -384,7 +403,7 @@ public sealed class AdventureNavigationServiceTests
     {
         var bundle = AdventureStore.CreateNew("Recovery play");
         bundle.Metadata.LinkedProjectId = "g-p-nav";
-        bundle.Metadata.LinkedConversationId = "conv-1";
+        PlayThreadBindingService.MarkVerified(bundle, "conv-1");
         var session = AdventureSessionService.EnsureSession(bundle);
         bundle.Log.Turns.Add(new TurnRecord
         {
@@ -426,9 +445,9 @@ public sealed class AdventureNavigationServiceTests
             Metadata = new AdventureMetadata
             {
                 LinkedProjectId = "g-p-nav",
-                LinkedConversationId = "bootstrap-conv",
             },
         };
+        PlayThreadBindingService.MarkPendingPin(bundle, "bootstrap-conv");
 
         Assert.True(AdventureProjectBindingService.ShouldDeferLinkedPlayContextAfterProjectLink(bundle));
         Assert.Equal(
@@ -444,10 +463,10 @@ public sealed class AdventureNavigationServiceTests
             Metadata = new AdventureMetadata
             {
                 LinkedProjectId = "g-p-nav",
-                LinkedConversationId = "conv-1",
                 PinnedPlayTabKey = "tab-1",
             },
         };
+        PlayThreadBindingService.MarkVerified(bundle, "conv-1");
 
         Assert.False(AdventureProjectBindingService.ShouldDeferLinkedPlayContextAfterProjectLink(bundle));
         Assert.Equal(
@@ -456,20 +475,73 @@ public sealed class AdventureNavigationServiceTests
     }
 
     [Fact]
+    public void ResolveRecoveryUrl_returns_play_thread_when_pinned_pending_pin_not_verified()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-nav",
+                PinnedPlayTabKey = "tab-1",
+            },
+        };
+        PlayThreadBindingService.MarkPendingPin(bundle, "conv-pending");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play).PinnedTabUrl =
+            ChatGptUrls.BuildProjectConversationUrl("conv-pending", "g-p-nav");
+
+        Assert.False(PlayThreadBindingService.IsVerified(bundle));
+        Assert.Equal(
+            ChatGptUrls.BuildProjectConversationUrl("conv-pending", "g-p-nav"),
+            AdventureNavigationService.ResolveRecoveryUrl(bundle, AdventureNavigationIntent.Play));
+    }
+
+    [Fact]
+    public void ResolvePlayBrowseUrl_returns_conversation_when_pinned_pending_pin()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-nav",
+                PinnedPlayTabKey = "tab-1",
+            },
+        };
+        PlayThreadBindingService.MarkPendingPin(bundle, "conv-pending");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play).PinnedTabUrl =
+            ChatGptUrls.BuildProjectConversationUrl("conv-pending", "g-p-nav");
+
+        Assert.Equal(
+            ChatGptUrls.BuildProjectConversationUrl("conv-pending", "g-p-nav"),
+            AdventureNavigationService.ResolvePlayBrowseUrl(bundle));
+    }
+
+    [Fact]
+    public void ShouldNavigateToPlayTarget_false_on_conversation_when_pinned_pending_pin()
+    {
+        var bundle = new AdventureBundle
+        {
+            Metadata = new AdventureMetadata
+            {
+                LinkedProjectId = "g-p-nav",
+                PinnedPlayTabKey = "tab-1",
+            },
+        };
+        PlayThreadBindingService.MarkPendingPin(bundle, "conv-pending");
+
+        var source = ChatGptUrls.BuildProjectConversationUrl("conv-pending", "g-p-nav");
+        var target = AdventureNavigationService.ResolvePlayBrowseUrl(bundle)!;
+
+        Assert.False(AdventureNavigationService.ShouldNavigateToPlayTarget(source, bundle, target));
+    }
+
+    [Fact]
     public void ResolveRecoveryUrl_returns_design_thread_when_design_session_exists()
     {
         var bundle = AdventureDesignService.CreateDesigningAdventure("Recovery design");
         bundle.Metadata.LinkedProjectId = "g-p-design";
-        bundle.Metadata.UtilitySessions = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase)
-        {
-            [GenerationJobId.DesignAdventure] = new GenerationUtilitySession
-            {
-                ConversationId = "design-conv",
-                Sequence = 1,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastUsedAt = DateTimeOffset.UtcNow,
-            },
-        };
+        AdventureThreadRegistryService.BindActiveConversation(bundle, AdventureThreadKind.Design, "design-conv");
 
         Assert.Equal(
             ChatGptUrls.BuildProjectConversationUrl("design-conv", "g-p-design"),

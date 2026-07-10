@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings.WinUiNarratorBehaviorPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="8">
+        <TextBlock Text="Scene profile" Style="{ThemeResource ShellSectionHintStyle}" />
+        <ComboBox x:Name="SceneProfileCombo" SelectionChanged="OnSettingsChanged" />
+        <TextBlock x:Name="OverrideChipsText" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+        <TextBlock Text="Apply changes to" Style="{ThemeResource ShellSectionHintStyle}" />
+        <StackPanel Orientation="Horizontal" Spacing="12">
+            <RadioButton x:Name="ScopeTurnRadio" Content="This send" GroupName="NarratorScopePlaySettings" Checked="OnSettingsChanged" />
+            <RadioButton x:Name="ScopeSessionRadio" Content="Session" GroupName="NarratorScopePlaySettings" Checked="OnSettingsChanged" />
+            <RadioButton x:Name="ScopeAdventureRadio" Content="Adventure default" GroupName="NarratorScopePlaySettings" Checked="OnSettingsChanged" />
+        </StackPanel>
+        <TextBlock Text="Narration (delivery)" FontWeight="SemiBold" />
+        <Grid ColumnSpacing="8" RowSpacing="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="88" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Length" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+            <ComboBox x:Name="ResponseLengthCombo" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSettingsChanged" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Detail" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+            <ComboBox x:Name="DetailLevelCombo" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSettingsChanged" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Tone" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+            <ComboBox x:Name="ToneCombo"
+                      Grid.Row="2"
+                      Grid.Column="1"
+                      IsEditable="True"
+                      HorizontalAlignment="Stretch"
+                      SelectionChanged="OnSettingsChanged"
+                      LostFocus="OnSettingsChanged" />
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Pacing" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+            <ComboBox x:Name="NarrativePacingCombo" Grid.Row="3" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSettingsChanged" />
+        </Grid>
+        <TextBlock Text="Combat &amp; stakes" FontWeight="SemiBold" />
+        <Grid ColumnSpacing="8" RowSpacing="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="88" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Combat diff." VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+            <ComboBox x:Name="DifficultyCombo"
+                      Grid.Row="0"
+                      Grid.Column="1"
+                      IsEditable="True"
+                      HorizontalAlignment="Stretch"
+                      SelectionChanged="OnSettingsChanged"
+                      LostFocus="OnSettingsChanged" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Violence" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+            <ComboBox x:Name="ViolenceCombo" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSettingsChanged" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Consequences" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+            <ComboBox x:Name="ConsequenceWeightCombo" Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSettingsChanged" />
+        </Grid>
+                <Button Content="Reset scope" Style="{ThemeResource ShellGhostButtonStyle}" Click="ResetScope_Click" HorizontalAlignment="Left" />
+        <Expander Header="Turn &amp; session directives" IsExpanded="False">
+            <StackPanel Spacing="8" Margin="0,8,0,0">
+                <TextBlock Text="Turn directive (next send only)" />
+                <TextBox x:Name="TurnDirectiveBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" LostFocus="OnSettingsChanged" />
+                <TextBlock Text="Session addendum (this session)" />
+                <TextBox x:Name="SessionAddendumBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" LostFocus="OnSettingsChanged" />
+                <CheckBox x:Name="EmphasizeBoundariesCheck" Content="Emphasize content boundaries" Checked="OnSettingsChanged" Unchecked="OnSettingsChanged" />
+                <CheckBox x:Name="EmphasizePortrayalRulesCheck" Content="Emphasize portrayal rules" Checked="OnSettingsChanged" Unchecked="OnSettingsChanged" />
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

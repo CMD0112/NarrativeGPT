@@ -20,6 +20,9 @@ public sealed class ChatAttachmentRef
 
     public long SizeBytes { get; init; }
 
+    /// <summary>From upload finalize; required on browser-shaped document attach metadata.</summary>
+    public int? FileTokenSize { get; init; }
+
     public int? Width { get; init; }
 
     public int? Height { get; init; }
@@ -50,7 +53,14 @@ public sealed class ConversationFileRef
 
     public string? AuthorRole { get; init; }
 
+    /// <summary>Code-interpreter sandbox path, e.g. /mnt/data/output.md.</summary>
+    public string? SandboxPath { get; init; }
+
     public string Source { get; init; } = "";
+
+    public bool IsSandboxFile =>
+        !string.IsNullOrWhiteSpace(SandboxPath)
+        || FileId.StartsWith("/mnt/data/", StringComparison.Ordinal);
 }
 
 public sealed class ComposerFileUiProbe

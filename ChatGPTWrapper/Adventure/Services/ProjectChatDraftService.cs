@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.PlaySend;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
 using Microsoft.Web.WebView2.Wpf;
@@ -40,7 +41,12 @@ internal sealed class ProjectChatDraftSnapshot
 
     public string? PriorPinnedDesignTabUrl { get; init; }
 
+    public Dictionary<string, Guid>? PriorActiveThreadIds { get; init; }
+
     public string? DraftTabKey { get; set; }
+
+    /// <summary>True when <see cref="TryAutoBeginOnProjectPage"/> entered draft without explicit user action.</summary>
+    public bool AutoEntered { get; init; }
 }
 
 /// <summary>
@@ -54,17 +60,69 @@ internal static class ProjectChatDraftService
 
     public static bool IsActive(Guid adventureId) => Active.ContainsKey(adventureId);
 
+    public static bool HasActivePlayDraft() =>
+        Active.Values.Any(s => s.Kind == ProjectChatDraftKind.Play);
+
     public static bool IsActive(AdventureBundle bundle) => IsActive(bundle.Metadata.Id);
 
     public static ProjectChatDraftKind? GetActiveKind(Guid adventureId) =>
         Active.TryGetValue(adventureId, out var snapshot) ? snapshot.Kind : null;
 
-    public static bool ShouldStayOnProjectPage(AdventureBundle bundle, string? source)
+    public static bool ShouldStayOnProjectPage(AdventureBundle bundle, string? source) =>
+        ShouldSuppressPinnedThreadReroute(bundle, source);
+
+    /// <summary>
+    /// When true, auto-navigation and recovery must not pull the WebView back to a pinned play/design thread.
+    /// Covers the linked Project page, explicit rotation drafts, and new project chats not yet pinned.
+    /// </summary>
+    public static bool ShouldSuppressPinnedThreadReroute(
+        AdventureBundle bundle,
+        string? source,
+        AdventureNavigationIntent? intent = null)
     {
         if (!IsActive(bundle.Metadata.Id))
             return false;
 
-        return AdventureNavigationService.IsOnLinkedProjectPage(source, bundle);
+        if (AdventureNavigationService.IsOnLinkedProjectPage(source, bundle))
+            return true;
+
+        if (!AdventureNavigationService.HasLinkedProject(bundle))
+            return false;
+
+        return IsDraftWorkspaceConversation(bundle, source);
+    }
+
+    /// <summary>
+    /// Conversation URL inside the linked Project while a draft is active (e.g. after New chat).
+    /// </summary>
+    public static bool IsDraftWorkspaceConversation(AdventureBundle bundle, string? source)
+    {
+        if (!IsActive(bundle.Metadata.Id))
+            return false;
+
+        return IsLinkedProjectConversationDuringDraft(bundle, source);
+    }
+
+    private static bool IsLinkedProjectConversationDuringDraft(AdventureBundle bundle, string? source)
+    {
+        var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
+        if (string.IsNullOrWhiteSpace(gizmoId))
+            return false;
+
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri)
+            || !ChatGptUrls.IsTrustedChatGptTopLevelUri(uri)
+            || !ChatGptUrls.TryParseConversationId(uri, out _))
+        {
+            return false;
+        }
+
+        if (ChatGptUrls.TryParseGizmoId(uri, out var parsedGizmo)
+            && ChatGptUrls.GizmoIdsEqual(parsedGizmo, gizmoId))
+        {
+            return true;
+        }
+
+        return AdventurePlayContextService.TryGetLinkedProjectConversationFromUrl(source, gizmoId, out _);
     }
 
     public static bool ShouldSuppressPlayTabSelection(AdventureBundle bundle) =>
@@ -82,7 +140,22 @@ internal static class ProjectChatDraftService
         snapshot.DraftTabKey = tabKey;
     }
 
-    public static bool IsDraftTab(AdventureBundle bundle, WebView2 webView, TabControl tabs)
+    public static void NoteDraftTabHost(AdventureBundle bundle, object tabHost, IPlayTabRegistry registry)
+    {
+        var tabKey = registry.GetTabKey(tabHost);
+        if (string.IsNullOrWhiteSpace(tabKey))
+            return;
+
+        if (!Active.TryGetValue(bundle.Metadata.Id, out var snapshot))
+            return;
+
+        snapshot.DraftTabKey = tabKey;
+    }
+
+    public static bool IsDraftTab(AdventureBundle bundle, WebView2 webView, TabControl tabs) =>
+        IsDraftTabHost(bundle, webView, new WpfPlayTabRegistry(tabs));
+
+    public static bool IsDraftTabHost(AdventureBundle bundle, object tabHost, IPlayTabRegistry registry)
     {
         if (!Active.TryGetValue(bundle.Metadata.Id, out var snapshot)
             || string.IsNullOrWhiteSpace(snapshot.DraftTabKey))
@@ -90,7 +163,7 @@ internal static class ProjectChatDraftService
             return false;
         }
 
-        var tabKey = PlayTabPinService.GetTabKey(webView, tabs);
+        var tabKey = registry.GetTabKey(tabHost);
         return tabKey is not null
                && string.Equals(tabKey, snapshot.DraftTabKey, StringComparison.OrdinalIgnoreCase);
     }
@@ -105,33 +178,11 @@ internal static class ProjectChatDraftService
         TabControl? tabs,
         string? source = null)
     {
-        if (bundle is null || !IsActive(bundle.Metadata.Id))
+        if (bundle is null)
             return false;
 
-        source ??= webView?.CoreWebView2?.Source;
-        var kind = GetActiveKind(bundle.Metadata.Id);
-
-        if (kind == ProjectChatDraftKind.Play)
-        {
-            if (webView is not null
-                && tabs is not null
-                && PlayTabPinService.IsSameTabAsPlayPin(bundle, webView, tabs))
-            {
-                return false;
-            }
-
-            return AdventureNavigationService.IsOnLinkedProjectPage(source, bundle);
-        }
-
-        if (kind is ProjectChatDraftKind.Utility or ProjectChatDraftKind.Design)
-        {
-            if (webView is not null && tabs is not null && IsDraftTab(bundle, webView, tabs))
-                return true;
-
-            return AdventureNavigationService.IsOnLinkedProjectPage(source, bundle);
-        }
-
-        return false;
+        var ctx = PlayTabCapabilityContext.From(bundle, webView, tabs, source);
+        return PlayTabCapabilityResolver.Resolve(ctx).LegacySuppressPlayAutomation;
     }
 
     public static bool IsValidDraftTarget(AdventureBundle bundle, string? source, AdventureNavigationIntent intent)
@@ -139,16 +190,7 @@ internal static class ProjectChatDraftService
         if (!IsActive(bundle.Metadata.Id))
             return false;
 
-        if (AdventureNavigationService.IsOnLinkedProjectPage(source, bundle))
-            return true;
-
-        if (intent == AdventureNavigationIntent.Design
-            && DesignTabPinService.IsOnDesignTarget(source, bundle))
-        {
-            return true;
-        }
-
-        return false;
+        return ShouldSuppressPinnedThreadReroute(bundle, source, intent);
     }
 
     public static string FormatStatusLine(AdventureBundle bundle)
@@ -164,22 +206,34 @@ internal static class ProjectChatDraftService
             _ => "project",
         };
 
-        return $"Drafting new {kind} chat on Project page — auto-redirect paused; play send disabled on this tab.";
+        return $"Drafting new {kind} chat on Project page — redirect paused. ChatGPT composer sends plain messages here; use the adventure panel composer on your play thread for injected packets.";
+    }
+
+    private static Dictionary<string, Guid>? CopyActiveThreadIds(AdventureMetadata metadata)
+    {
+        AdventureThreadRegistryService.EnsureMigrated(new AdventureBundle { Metadata = metadata });
+        return metadata.ActiveThreadIds?.Count > 0
+            ? new Dictionary<string, Guid>(metadata.ActiveThreadIds, StringComparer.OrdinalIgnoreCase)
+            : null;
     }
 
     public static void BeginPlayDraft(AdventureBundle bundle)
     {
         ArgumentNullException.ThrowIfNull(bundle);
         var metadata = bundle.Metadata;
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var playEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play);
         Active[bundle.Metadata.Id] = new ProjectChatDraftSnapshot
         {
             AdventureId = metadata.Id,
             Kind = ProjectChatDraftKind.Play,
-            PriorLinkedConversationId = metadata.LinkedConversationId,
-            PriorPinnedPlayTabKey = metadata.PinnedPlayTabKey,
-            PriorPinnedPlayTabTitle = metadata.PinnedPlayTabTitle,
-            PriorPinnedPlayTabUrl = metadata.PinnedPlayTabUrl,
+            PriorLinkedConversationId = PlayThreadBindingService.GetActiveConversationId(bundle)
+                                      ?? metadata.LinkedConversationId,
+            PriorPinnedPlayTabKey = playEntry?.PinnedTabKey ?? metadata.PinnedPlayTabKey,
+            PriorPinnedPlayTabTitle = playEntry?.PinnedTabTitle ?? metadata.PinnedPlayTabTitle,
+            PriorPinnedPlayTabUrl = playEntry?.PinnedTabUrl ?? metadata.PinnedPlayTabUrl,
             PriorProjectLinkPlayConversationId = metadata.ProjectLink?.PlayConversationId,
+            PriorActiveThreadIds = CopyActiveThreadIds(metadata),
         };
     }
 
@@ -195,6 +249,7 @@ internal static class ProjectChatDraftService
             PriorPinnedDesignTabKey = metadata.PinnedDesignTabKey,
             PriorPinnedDesignTabTitle = metadata.PinnedDesignTabTitle,
             PriorPinnedDesignTabUrl = metadata.PinnedDesignTabUrl,
+            PriorActiveThreadIds = CopyActiveThreadIds(metadata),
         };
     }
 
@@ -218,6 +273,7 @@ internal static class ProjectChatDraftService
             PriorPinnedDesignTabKey = metadata.PinnedDesignTabKey,
             PriorPinnedDesignTabTitle = metadata.PinnedDesignTabTitle,
             PriorPinnedDesignTabUrl = metadata.PinnedDesignTabUrl,
+            PriorActiveThreadIds = CopyActiveThreadIds(metadata),
         };
     }
 
@@ -228,13 +284,27 @@ internal static class ProjectChatDraftService
     /// When a stored play/design thread exists, landing on the Project page should pause
     /// auto-redirect so the author can New chat or compose without being pulled to the pin.
     /// </summary>
+    public static bool TryCancelAutoEnteredDraft(AdventureBundle bundle)
+    {
+        ArgumentNullException.ThrowIfNull(bundle);
+        if (!Active.TryGetValue(bundle.Metadata.Id, out var snapshot) || !snapshot.AutoEntered)
+            return false;
+
+        Cancel(bundle);
+        return true;
+    }
+
     public static bool TryAutoBeginOnProjectPage(
         AdventureBundle bundle,
         string? source,
         WebView2? webView = null,
-        TabControl? tabs = null)
+        TabControl? tabs = null,
+        bool playModeActive = false)
     {
         ArgumentNullException.ThrowIfNull(bundle);
+
+        if (playModeActive)
+            return false;
 
         if (IsActive(bundle.Metadata.Id))
             return false;
@@ -245,13 +315,29 @@ internal static class ProjectChatDraftService
         if (!AdventureNavigationService.IsOnLinkedProjectPage(source, bundle))
             return false;
 
-        var hasStoredPlay = !string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId);
+        var hasStoredPlay = !string.IsNullOrWhiteSpace(PlayThreadBindingService.GetActiveConversationId(bundle));
         var hasStoredDesign = !string.IsNullOrWhiteSpace(
             AdventureDesignContextService.GetDesignConversationId(bundle));
         if (!hasStoredPlay && !hasStoredDesign)
             return false;
 
-        BeginUtilityDraft(bundle);
+        var metadata = bundle.Metadata;
+        Active[bundle.Metadata.Id] = new ProjectChatDraftSnapshot
+        {
+            AdventureId = metadata.Id,
+            Kind = ProjectChatDraftKind.Utility,
+            AutoEntered = true,
+            PriorLinkedConversationId = metadata.LinkedConversationId,
+            PriorPinnedPlayTabKey = metadata.PinnedPlayTabKey,
+            PriorPinnedPlayTabTitle = metadata.PinnedPlayTabTitle,
+            PriorPinnedPlayTabUrl = metadata.PinnedPlayTabUrl,
+            PriorProjectLinkPlayConversationId = metadata.ProjectLink?.PlayConversationId,
+            PriorDesignConversationId = AdventureDesignContextService.GetDesignConversationId(bundle),
+            PriorPinnedDesignTabKey = metadata.PinnedDesignTabKey,
+            PriorPinnedDesignTabTitle = metadata.PinnedDesignTabTitle,
+            PriorPinnedDesignTabUrl = metadata.PinnedDesignTabUrl,
+            PriorActiveThreadIds = CopyActiveThreadIds(metadata),
+        };
 
         if (webView is not null && tabs is not null)
             NoteDraftTab(bundle, webView, tabs);
@@ -292,6 +378,15 @@ internal static class ProjectChatDraftService
                 metadata.PinnedPlayTabUrl = snapshot.PriorPinnedPlayTabUrl;
                 if (metadata.ProjectLink is not null)
                     metadata.ProjectLink.PlayConversationId = snapshot.PriorProjectLinkPlayConversationId;
+                if (!string.IsNullOrWhiteSpace(snapshot.PriorLinkedConversationId))
+                    PlayThreadBindingService.MarkVerified(bundle, snapshot.PriorLinkedConversationId);
+                else
+                    PlayThreadBindingService.MarkUnbound(bundle);
+
+                var playEntry = AdventureThreadRegistryService.GetOrCreateActiveEntry(bundle, AdventureThreadKind.Play);
+                playEntry.PinnedTabKey = snapshot.PriorPinnedPlayTabKey;
+                playEntry.PinnedTabTitle = snapshot.PriorPinnedPlayTabTitle;
+                playEntry.PinnedTabUrl = snapshot.PriorPinnedPlayTabUrl;
                 break;
 
             case ProjectChatDraftKind.Design:
@@ -317,6 +412,13 @@ internal static class ProjectChatDraftService
 
             case ProjectChatDraftKind.Utility:
                 break;
+        }
+
+        if (snapshot.PriorActiveThreadIds is { Count: > 0 })
+        {
+            metadata.ActiveThreadIds = new Dictionary<string, Guid>(
+                snapshot.PriorActiveThreadIds,
+                StringComparer.OrdinalIgnoreCase);
         }
     }
 }

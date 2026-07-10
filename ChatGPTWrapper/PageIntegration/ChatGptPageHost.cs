@@ -1,3 +1,4 @@
+using ChatGPTWrapper.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -45,6 +46,8 @@ public sealed class ChatGptPageHost
         core.Settings.IsWebMessageEnabled = true;
         core.WebMessageReceived += OnWebMessageReceived;
         core.NavigationCompleted += OnNavigationCompleted;
+        if (DiagnosticsOptions.Extended)
+            core.NavigationStarting += OnNavigationStartingDiagnostic;
         _wired = true;
         _ = ApplyAllAsync(core);
     }
@@ -56,7 +59,10 @@ public sealed class ChatGptPageHost
 
         var payload = WrapperAssetBundle.GetKernelPayload();
         if (!string.IsNullOrWhiteSpace(payload))
+        {
+            await core.ExecuteScriptAsync(DiagnosticsBootstrap.GetScript());
             await core.ExecuteScriptAsync(payload);
+        }
 
         _kernelInjected = true;
     }
@@ -71,7 +77,7 @@ public sealed class ChatGptPageHost
         try
         {
             await EnsureKernelAsync(core);
-            foreach (var feature in _features)
+            foreach (var feature in _features.ToArray())
                 await feature.ApplyAsync(core);
         }
         finally
@@ -104,7 +110,26 @@ public sealed class ChatGptPageHost
 
     private async void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
-        if (sender is not CoreWebView2 core || !e.IsSuccess)
+        if (sender is not CoreWebView2 core)
+            return;
+
+        if (DiagnosticsOptions.Extended)
+        {
+            DiagnosticsLog.Write(
+                DiagnosticsChannel.WebView,
+                DiagnosticsLevel.Debug,
+                "navigation_completed",
+                core.Source ?? "",
+                source: "page-host",
+                data: new
+                {
+                    success = e.IsSuccess,
+                    httpStatus = e.HttpStatusCode,
+                    navigationId = e.NavigationId,
+                });
+        }
+
+        if (!e.IsSuccess)
             return;
 
         if (!ChatGptPageGate.IsInjectable(core.Source))
@@ -112,6 +137,17 @@ public sealed class ChatGptPageHost
 
         _kernelInjected = false;
         await ApplyAllAsync(core);
+    }
+
+    private static void OnNavigationStartingDiagnostic(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        DiagnosticsLog.Write(
+            DiagnosticsChannel.WebView,
+            DiagnosticsLevel.Debug,
+            "navigation_start",
+            e.Uri,
+            source: "page-host",
+            data: new { navigationId = e.NavigationId });
     }
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)

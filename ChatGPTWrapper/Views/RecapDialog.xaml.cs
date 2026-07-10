@@ -1,8 +1,9 @@
 using System.Windows;
+using ChatGPTWrapper.Shell;
 
 namespace ChatGPTWrapper.Views;
 
-public partial class RecapDialog : Window
+public partial class RecapDialog : ShellDialogWindow
 {
     public RecapDialog(string recapText)
     {

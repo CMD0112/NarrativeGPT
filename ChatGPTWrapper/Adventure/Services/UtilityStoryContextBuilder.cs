@@ -15,6 +15,10 @@ public sealed class UtilityStoryContextBuildResult
 
     public string? CaptureError { get; init; }
 
+    public UtilityContextManifestRecord? Manifest { get; init; }
+
+    public string? JobCorePreview { get; init; }
+
     public bool HasTranscriptSection =>
         TurnPairCount > 0 && Text.Contains("=== STORY TRANSCRIPT ===", StringComparison.Ordinal);
 
@@ -33,7 +37,39 @@ public sealed class UtilityStoryContextBuildResult
         var hint = $"story context: {source} · {TurnPairCount} pair(s) · {charLabel}";
         if (!string.IsNullOrWhiteSpace(CaptureError))
             hint += $" ({CaptureError})";
+        if (Manifest is not null)
+            hint += $" · {Manifest.FormatSummary()}";
         return hint;
+    }
+
+    public string FormatPreviewBody()
+    {
+        var sb = new StringBuilder();
+        if (Manifest is not null)
+        {
+            sb.AppendLine("=== CONTEXT MANIFEST ===");
+            sb.AppendLine(Manifest.FormatSummary());
+            if (Manifest.SectionsIncluded.Count > 0)
+                sb.AppendLine($"  included: {string.Join(", ", Manifest.SectionsIncluded)}");
+            if (Manifest.SectionsOmitted.Count > 0)
+                sb.AppendLine($"  omitted: {string.Join(", ", Manifest.SectionsOmitted)}");
+            sb.AppendLine();
+        }
+
+        if (!string.IsNullOrWhiteSpace(Text))
+        {
+            sb.AppendLine("=== STORY BLOCK ===");
+            sb.AppendLine(Text.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(JobCorePreview))
+        {
+            sb.AppendLine();
+            sb.AppendLine("=== JOB CORE (deduped) ===");
+            sb.AppendLine(JobCorePreview.Trim());
+        }
+
+        return sb.ToString().TrimEnd();
     }
 }
 

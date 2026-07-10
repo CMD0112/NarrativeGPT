@@ -85,7 +85,9 @@ internal static partial class ConversationFileParser
         {
             if (part.ValueKind == JsonValueKind.String)
             {
-                ExtractFileCitesFromText(part.GetString(), messageId, role, results, seen);
+                var text = part.GetString();
+                ExtractFileCitesFromText(text, messageId, role, results, seen);
+                ExtractSandboxPathsFromText(text, messageId, role, results, seen);
             }
             else if (part.ValueKind == JsonValueKind.Object)
             {
@@ -193,19 +195,25 @@ internal static partial class ConversationFileParser
                    ?? JsonElementParsing.GetStringOrNull(node, "mimeType")
                    ?? JsonElementParsing.GetStringOrNull(node, "content_type");
         var location = JsonElementParsing.GetStringOrNull(node, "location");
+        var sandboxPath = JsonElementParsing.GetStringOrNull(node, "sandbox_path")
+                          ?? JsonElementParsing.GetStringOrNull(node, "sandboxPath");
 
         if (string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(assetPointer))
             name = ExtractNameFromAssetPointer(assetPointer);
 
+        if (string.IsNullOrWhiteSpace(sandboxPath) && fileId.StartsWith("/mnt/data/", StringComparison.Ordinal))
+            sandboxPath = fileId;
+
         results.Add(new ConversationFileRef
         {
             FileId = fileId,
-            Name = name,
+            Name = name ?? ExtractNameFromSandboxPath(sandboxPath),
             MimeType = mime,
             Location = location,
             AssetPointer = assetPointer,
             MessageId = messageId,
             AuthorRole = role,
+            SandboxPath = sandboxPath,
             Source = source,
         });
     }
@@ -257,6 +265,45 @@ internal static partial class ConversationFileParser
             : null;
     }
 
+    private static void ExtractSandboxPathsFromText(
+        string? text,
+        string messageId,
+        string? role,
+        List<ConversationFileRef> results,
+        HashSet<string> seen)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        foreach (Match match in SandboxPathRegex().Matches(text))
+        {
+            var sandboxPath = match.Groups["path"].Value;
+            if (!seen.Add($"sandbox:{sandboxPath}"))
+                continue;
+
+            results.Add(new ConversationFileRef
+            {
+                FileId = sandboxPath,
+                Name = ExtractNameFromSandboxPath(sandboxPath),
+                SandboxPath = sandboxPath,
+                MessageId = messageId,
+                AuthorRole = role,
+                Source = "content.parts.sandbox_path",
+            });
+        }
+    }
+
+    private static string? ExtractNameFromSandboxPath(string? sandboxPath)
+    {
+        if (string.IsNullOrWhiteSpace(sandboxPath))
+            return null;
+
+        var slash = sandboxPath.LastIndexOf('/');
+        return slash >= 0 && slash < sandboxPath.Length - 1
+            ? sandboxPath[(slash + 1)..]
+            : sandboxPath;
+    }
+
     private static void ExtractFileCitesFromText(
         string? text,
         string messageId,
@@ -289,4 +336,7 @@ internal static partial class ConversationFileParser
 
     [GeneratedRegex(@"filecite[\w-]*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex FileCiteTokenRegex();
+
+    [GeneratedRegex(@"(?<path>/mnt/data/[^\s""'<>]+)", RegexOptions.CultureInvariant)]
+    private static partial Regex SandboxPathRegex();
 }

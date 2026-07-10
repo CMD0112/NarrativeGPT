@@ -6,6 +6,9 @@ public sealed class AdventureMetadata
 {
     public int SchemaVersion { get; set; } = AdventureJson.SchemaVersion;
 
+    /// <summary>Canon schema registry version applied to this adventure (CMD-205).</summary>
+    public int CanonSchemaVersion { get; set; }
+
     public Guid Id { get; set; } = Guid.NewGuid();
 
     public string Title { get; set; } = "Untitled adventure";
@@ -60,6 +63,9 @@ public sealed class AdventureMetadata
 
     public List<GenerationUtilitySessionArchive> UtilitySessionArchive { get; set; } = [];
 
+    /// <summary>Prior play thread conversation ids archived after handoff to a new thread.</summary>
+    public List<PlayThreadArchiveEntry> PlayThreadArchive { get; set; } = [];
+
     /// <summary>Legacy — migrated to UtilitySessions on load.</summary>
     public EntityUtilitySession? EntityUtility { get; set; }
 
@@ -89,6 +95,25 @@ public sealed class AdventureMetadata
     public AdventureSettings Settings { get; set; } = new();
 
     public DateTimeOffset? SectionInjectionMigratedAt { get; set; }
+
+    /// <summary>Registered play/design/utility thread instances (CMD-221).</summary>
+    public List<AdventureThreadEntry> ThreadRegistry { get; set; } = [];
+
+    /// <summary>Active thread entry id per kind name (<see cref="AdventureThreadKind"/>).</summary>
+    public Dictionary<string, Guid> ActiveThreadIds { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>When set, legacy singleton pins were migrated into <see cref="ThreadRegistry"/>.</summary>
+    public DateTimeOffset? ThreadRegistryMigratedAt { get; set; }
+
+    /// <summary>Auto utility jobs waiting for the next play packet (CMD-328).</summary>
+    public List<PendingUtilityInjection> PlayUtilityInjectionQueue { get; set; } = [];
+
+    /// <summary>Utility jobs included in the last sent play packet (CMD-332 retrieval).</summary>
+    public List<PendingUtilityInjection> LastDispatchedUtilityJobs { get; set; } = [];
+
+    /// <summary>Utility worker lane capability probe results.</summary>
+    public UtilityWorkerCapabilities? UtilityWorkerCapabilities { get; set; }
 }
 
 public sealed class UtilityJobGuideOverride
@@ -96,6 +121,81 @@ public sealed class UtilityJobGuideOverride
     public string InstructionBody { get; set; } = "";
 
     public UtilityStoryContextSettings? Context { get; set; }
+}
+
+public sealed class PlayThreadArchiveEntry
+{
+    public string ConversationId { get; set; } = "";
+
+    public DateTimeOffset ArchivedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public int AcceptedTurnCountAtArchive { get; set; }
+}
+
+public sealed class PlayTurnOverrideSettings
+{
+    public string? ResponseLength { get; set; }
+
+    public string? DetailLevel { get; set; }
+
+    public string? Tone { get; set; }
+
+    public string? Difficulty { get; set; }
+
+    public string? ViolenceLevel { get; set; }
+
+    public string? NarrativePacing { get; set; }
+
+    public string? ConsequenceWeight { get; set; }
+
+    /// <summary>Freeform one-shot directive for the next play send only.</summary>
+    public string? TurnDirective { get; set; }
+
+    public bool EmphasizeBoundaries { get; set; }
+
+    public bool EmphasizePortrayalRules { get; set; }
+}
+
+/// <summary>Session-scoped narrator overrides for the active play session.</summary>
+public sealed class PlaySessionNarratorOverrides
+{
+    public string? ResponseLength { get; set; }
+
+    public string? DetailLevel { get; set; }
+
+    public string? Tone { get; set; }
+
+    public string? Difficulty { get; set; }
+
+    public string? ViolenceLevel { get; set; }
+
+    public string? NarrativePacing { get; set; }
+
+    public string? ConsequenceWeight { get; set; }
+
+    public string? TemporaryAddendum { get; set; }
+
+    public bool EmphasizeBoundaries { get; set; }
+
+    public bool EmphasizePortrayalRules { get; set; }
+}
+
+public enum NarratorOverrideScope
+{
+    Turn,
+    Session,
+    Adventure,
+}
+
+public enum NarratorParameter
+{
+    ResponseLength,
+    DetailLevel,
+    Tone,
+    Difficulty,
+    ViolenceLevel,
+    NarrativePacing,
+    ConsequenceWeight,
 }
 
 public sealed class UtilityJobOverrideSettings
@@ -130,6 +230,21 @@ public enum SourcePublishMode
     ApiSync,
 }
 
+/// <summary>DOM transport for publication lab project-knowledge uploads.</summary>
+[JsonConverter(typeof(ProjectSourceUploadMethodJsonConverter))]
+public enum ProjectSourceUploadMethod
+{
+    /// <summary>Legacy value — persisted settings migrate to <see cref="HeadlessBrowser"/>.</summary>
+    [Obsolete("Use HeadlessBrowser or PureApi.")]
+    WebView2Dom,
+
+    /// <summary>Headless Chrome via Playwright — DOM file chooser on Sources tab.</summary>
+    HeadlessBrowser,
+
+    /// <summary>ChatGPT backend-api upload (register → blob → process stream → project attach).</summary>
+    PureApi,
+}
+
 public sealed class AdventureSettings
 {
     public int MaxPacketChars { get; set; } = 28000;
@@ -138,14 +253,15 @@ public sealed class AdventureSettings
 
     public bool OfferStartOnPlay { get; set; } = true;
 
-    /// <summary>When false and project is linked + sources synced, use thin play packets.</summary>
-    public bool ForceFatPackets { get; set; }
+    /// <summary>When true, always inline full lore in play packets (debug escape hatch).</summary>
+    [JsonPropertyName("forceFatPackets")]
+    public bool ForceInlineLore { get; set; }
 
     /// <summary>Wrap packet sections in [[cgw:…]] tags for stripping/display.</summary>
     public bool UseContextTags { get; set; } = true;
 
     /// <summary>When true, play/utility sends use DOM composer submit instead of conversation API.</summary>
-    public bool PreferDomPlaySend { get; set; } = true;
+    public bool PreferDomPlaySend { get; set; }
 
     /// <summary>When true, replace ChatGPT's composer with the legacy in-page wrapper UI.</summary>
     public bool UseWrapperComposer { get; set; }
@@ -162,6 +278,13 @@ public sealed class AdventureSettings
 
     public string Difficulty { get; set; } = "balanced";
 
+    public string NarrativePacing { get; set; } = "balanced";
+
+    public string ConsequenceWeight { get; set; } = "balanced";
+
+    /// <summary>Last narrator override scope selected in play UI (Turn, Session, or Adventure).</summary>
+    public string? LastNarratorOverrideScope { get; set; }
+
     public List<string> ContentBoundaries { get; set; } = [];
 
     /// <summary>Per-subject portrayal rules (characters, factions, concepts) for the narrator contract.</summary>
@@ -175,8 +298,23 @@ public sealed class AdventureSettings
     /// <summary>When true, adventure play side panel is collapsed to maximize chat width.</summary>
     public bool PlaySidePanelCollapsed { get; set; }
 
+    /// <summary>Last selected companion tab (Reference, Warnings, State).</summary>
+    public string? PlayCompanionLastTab { get; set; }
+
+    /// <summary>Last selected cockpit section (Session, Narrator, Tools).</summary>
+    public string? PlayCompanionLastSection { get; set; }
+
+    /// <summary>Cockpit expander open state keyed by expander name.</summary>
+    public Dictionary<string, bool>? PlayCompanionExpanderState { get; set; }
+
+    /// <summary>Last narrator cockpit density (Minimal or Full) when global pref is RememberLast.</summary>
+    public string? PlayCompanionLastNarratorDensity { get; set; }
+
     /// <summary>Expanded play side panel width in device-independent pixels.</summary>
     public double PlaySidePanelWidth { get; set; } = 300;
+
+    /// <summary>Session cockpit height in the play side panel (0 = use default on first layout).</summary>
+    public double PlaySessionCockpitHeight { get; set; }
 
     /// <summary>When true, adventure play notes panel is collapsed to maximize chat width.</summary>
     public bool PlayNotesPanelCollapsed { get; set; }
@@ -195,14 +333,27 @@ public sealed class AdventureSettings
 
     public bool AutoContinuityCheck { get; set; }
 
+    /// <summary>Queue session state proposals after each accepted play turn (requires linked Project).</summary>
+    public bool AutoUpdateState { get; set; }
+
     public string AttachmentOnlyPlaceholder { get; set; } = "[Attached file]";
 
     public bool InjectAttachmentGuidance { get; set; } = true;
 
     public AttachmentContextMode AttachmentContextMode { get; set; } = AttachmentContextMode.Auto;
 
-    /// <summary>Per-tab placement: Reference, Warnings, State → Left, Right, Hidden.</summary>
+    /// <summary>Per-tab placement: Reference, Warnings, State, Notes → Left, Right, Hidden.</summary>
     public Dictionary<string, string> PlayTabPlacement { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Active layout preset id (writer, gm, minimal) or null for custom.</summary>
+    public string? PlayLayoutPresetId { get; set; }
+
+    /// <summary>One-shot overrides injected into the next play packet.</summary>
+    public PlayTurnOverrideSettings PlayTurnOverrides { get; set; } = new();
+
+    /// <summary>Session-scoped narrator overrides keyed by <see cref="PlaySession.Id"/>.</summary>
+    public Dictionary<string, PlaySessionNarratorOverrides> SessionNarratorOverrides { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Per-job utility overrides (response length, detail).</summary>
     public Dictionary<string, UtilityJobOverrideSettings> UtilityJobOverrides { get; set; } =
@@ -216,11 +367,14 @@ public sealed class AdventureSettings
     /// <summary>Manual = copy/drag publish; ApiSync = programmatic source sync.</summary>
     public SourcePublishMode SourcePublishMode { get; set; } = SourcePublishMode.Manual;
 
+    /// <summary>Publication lab upload transport (headless DOM or pure backend-api).</summary>
+    public ProjectSourceUploadMethod ProjectSourceUploadMethod { get; set; } = ProjectSourceUploadMethod.HeadlessBrowser;
+
     /// <summary>Default story-context feed for utility AI action job packets.</summary>
     public UtilityStoryContextSettings UtilityStoryContext { get; set; } = new();
 
     /// <summary>Where AI utility jobs run: separate utility thread or inline in the play thread.</summary>
-    public UtilityDeliveryMode UtilityDeliveryMode { get; set; } = UtilityDeliveryMode.SeparateThread;
+    public UtilityDeliveryMode UtilityDeliveryMode { get; set; } = UtilityDeliveryMode.InlinePlayThread;
 
     /// <summary>When inline delivery is used, hide utility traffic in the play reading UI.</summary>
     public bool HideInlineUtilityDuringPlay { get; set; } = true;
@@ -236,6 +390,58 @@ public sealed class AdventureSettings
 
     /// <summary>Export reviewed rolling summary to optional summary.md.</summary>
     public bool ExportSummarySource { get; set; }
+
+    /// <summary>When entering Design → Sources, generate missing reference files (canon-format, narrator-scales, entity-state-format).</summary>
+    public bool AutoGenerateReferenceSourcesOnDesignSourcesStep { get; set; } = true;
+
+    /// <summary>Queue entity state proposals after each accepted play turn (requires linked Project).</summary>
+    public bool AutoProposeEntityState { get; set; }
+
+    /// <summary>Queue canon evolution proposals after each accepted play turn (requires linked Project).</summary>
+    public bool AutoProposeCanonEvolution { get; set; }
+
+    /// <summary>Footer hint when log.json diverges from the play thread and sync was skipped.</summary>
+    public string? ThreadLogDriftHint { get; set; }
+
+    /// <summary>Drift fingerprint the author dismissed; suppresses repeat sync prompts until drift changes.</summary>
+    public string? ThreadLogDriftDismissedHash { get; set; }
+
+    /// <summary>Automatic explicit branch snapshot triggers (see thread-conversation-log.md).</summary>
+    public ThreadSnapshotSettings ThreadSnapshot { get; set; } = new();
+
+    /// <summary>Play packet section includes, transcript depth, and injection preset.</summary>
+    public PlayInjectionPolicy InjectionPolicy { get; set; } = new();
+
+    /// <summary>Injection-first utility transport (CMD-326). Default legacy inline send.</summary>
+    public PlayUtilityInjectionMode PlayUtilityInjectionMode { get; set; } = PlayUtilityInjectionMode.LegacyInlineSend;
+
+    /// <summary>Max embedded utility sections per play send when <see cref="PlayUtilityInjectionMode"/> is InjectionFirst.</summary>
+    public int MaxUtilitySectionsPerSend { get; set; } = 2;
+
+    /// <summary>Lane selection between play injection and utility worker.</summary>
+    public UtilityExecutionPolicy UtilityExecutionPolicy { get; set; } =
+        UtilityExecutionPolicy.PlayInjectionPreferred;
+
+    /// <summary>When true, auto jobs that exceed <see cref="MaxUtilitySectionsPerSend"/> spill to worker outbox.</summary>
+    public bool AutoSpillToWorker { get; set; } = true;
+
+    /// <summary>CMD-412: ephemeral project chat for worker setup + per-job sends (recommended). File revision jobs always use ephemeral via <see cref="UtilitySourceFileIoCatalog"/>.</summary>
+    public bool UseEphemeralUtilityWorkerChat { get; set; }
+
+    /// <summary>Max concurrent utility worker outbox jobs (ephemeral lane). 0 = unset (UI uses 3 when ephemeral on); 1 = serial; 2–4 = parallel slot pool.</summary>
+    public int MaxParallelUtilityWorkerJobs { get; set; }
+
+    /// <summary>CMD-424: when ephemeral is on, stage reference files via DOM composer for manual Run selected action… runs (not source-pointer file revision).</summary>
+    public bool ForceUtilityWorkerDomAttach { get; set; }
+
+    /// <summary>Developer-only: allow DomOnly utility sends when worker diagnostics enabled.</summary>
+    public bool AllowDomOnlyUtilityDiagnostics { get; set; }
+
+    /// <summary>CMD-392: lane-aware utility job context assembly (worker lane first).</summary>
+    public bool UseUtilityJobContextAssembler { get; set; } = true;
+
+    /// <summary>Route eligible utility jobs to local inference (Ollama) instead of ChatGPT utility lanes.</summary>
+    public LocalUtilityInferenceSettings LocalUtilityInference { get; set; } = new();
 }
 
 public sealed class CharacterPortrayalRule

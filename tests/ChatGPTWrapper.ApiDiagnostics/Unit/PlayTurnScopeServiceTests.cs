@@ -7,8 +7,8 @@ using ChatGPTWrapper.ChatGptApi;
 namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 
 [Trait("Category", "Unit")]
-[Collection(nameof(IsolatedAppRootCollection))]
-public sealed class PlayTurnScopeServiceTests : IDisposable
+[Collection(FileLockAwareCollectionNames.Name)]
+public sealed class PlayTurnScopeServiceTests : IClassFixture<FileLockAwareFixture>, IDisposable
 {
     private readonly string _tempRoot;
 
@@ -54,6 +54,9 @@ public sealed class PlayTurnScopeServiceTests : IDisposable
         AddAcceptedTurn(bundle, "look around", "A dark room.");
 
         PlayTurnScopeService.OnPlayThreadChanged(bundle, "thread-1", "thread-2");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var playEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Play)!;
+        playEntry.ConversationId = "thread-2";
         bundle.Metadata.LinkedConversationId = "thread-2";
 
         Assert.NotEqual(oldSessionId, bundle.CurrentSessionId);
@@ -215,7 +218,7 @@ public sealed class PlayTurnScopeServiceTests : IDisposable
 
         var reloaded = AdventureStore.Load(bundle.Metadata.Id)!;
 
-        Assert.Null(reloaded.Metadata.LinkedConversationId);
+        Assert.Null(PlayThreadBindingService.GetActiveConversationId(reloaded));
         Assert.Equal(1, PlayTurnScopeService.GetNextPacketTurnIndex(reloaded));
         Assert.Empty(PlayTurnScopeService.GetPacketContextTurns(reloaded));
         Assert.True(PlayTurnScopeService.IsFreshPlayThread(reloaded));
@@ -231,7 +234,7 @@ public sealed class PlayTurnScopeServiceTests : IDisposable
         var newUrl = ChatGptUrls.BuildProjectConversationUrl("thread-new", "g-p-test");
         Assert.True(PlayContextSessionCache.TrySyncPlayThreadFromSource(bundle, newUrl));
 
-        Assert.Equal("thread-new", bundle.Metadata.LinkedConversationId);
+        Assert.Equal("thread-new", PlayThreadBindingService.GetActiveConversationId(bundle));
         Assert.Equal(1, PlayTurnScopeService.GetNextPacketTurnIndex(bundle));
         Assert.Empty(PlayTurnScopeService.GetPacketContextTurns(bundle));
     }

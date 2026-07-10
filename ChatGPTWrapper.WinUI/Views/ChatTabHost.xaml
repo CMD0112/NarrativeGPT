@@ -1,0 +1,35 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.ChatTabHost"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+    HorizontalAlignment="Stretch"
+    VerticalAlignment="Stretch">
+
+    <Grid RowSpacing="0"
+          HorizontalAlignment="Stretch"
+          VerticalAlignment="Stretch">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <controls:TabView x:Name="TabStrip"
+                          Grid.Row="0"
+                          Margin="0"
+                          AddTabButtonClick="TabStrip_AddTabButtonClick"
+                          TabCloseRequested="TabStrip_TabCloseRequested"
+                          SelectionChanged="TabStrip_SelectionChanged"
+                          CanDragTabs="True"
+                          CanReorderTabs="True"
+                          IsAddTabButtonVisible="True"
+                          TabWidthMode="Equal"
+                          Background="{ThemeResource BgChromeBrush}" />
+
+        <Grid x:Name="WebViewHost"
+              Grid.Row="1"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Stretch"
+              Background="{ThemeResource BgBaseBrush}" />
+    </Grid>
+</UserControl>

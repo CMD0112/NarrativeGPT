@@ -1,0 +1,127 @@
+/* ChatGPT Wrapper — weave transcript overlay */
+
+html[data-cgw-transcript-mode="weave"] #cgw-continuous-view.cgw-weave-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cgw-weave-paragraph-gap, 0.75rem);
+  max-width: none;
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-body,
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed {
+  cursor: context-menu;
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-body {
+  max-width: var(--cgw-weave-content-max-width, var(--cgw-cv-content-max-width, 42rem));
+  margin-inline: auto;
+  width: 100%;
+  font-size: var(--cgw-weave-body-font-size, var(--cgw-cv-assistant-font-size, 1.0625rem));
+  line-height: var(--cgw-weave-body-line-height, var(--cgw-cv-assistant-line-height, 1.65));
+  letter-spacing: var(
+    --cgw-weave-body-letter-spacing,
+    var(--cgw-cv-assistant-letter-spacing, 0.01em)
+  );
+  font-weight: var(--cgw-weave-body-font-weight, var(--cgw-cv-assistant-font-weight, 400));
+  font-family: var(
+    --cgw-weave-body-font-family,
+    var(--cgw-cv-assistant-font-family, inherit)
+  );
+  color: var(--cgw-weave-body-text, var(--cgw-cv-assistant-text, inherit));
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-body .cgw-continuous-block,
+html[data-cgw-transcript-mode="weave"] .cgw-weave-body .cgw-continuous-prose {
+  margin-block: var(--cgw-cv-block-margin, 0.75rem);
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed {
+  max-width: var(--cgw-weave-content-max-width, var(--cgw-cv-content-max-width, 42rem));
+  width: 100%;
+  margin-inline: auto;
+  margin-block: var(--cgw-weave-embed-margin-block, 0.75rem);
+  box-sizing: border-box;
+  padding: 0.65rem 1rem;
+  border: none;
+  text-align: left;
+  font-size: var(--cgw-weave-embed-font-size, var(--cgw-cv-user-font-size, 0.98rem));
+  line-height: var(--cgw-weave-embed-line-height, var(--cgw-cv-user-line-height, 1.55));
+  letter-spacing: var(
+    --cgw-weave-embed-letter-spacing,
+    var(--cgw-cv-user-letter-spacing, 0.01em)
+  );
+  font-weight: var(--cgw-weave-embed-font-weight, var(--cgw-cv-user-font-weight, 400));
+  font-family: var(--cgw-weave-embed-font-family, var(--cgw-cv-user-font-family, inherit));
+  color: var(--cgw-weave-embed-text, var(--cgw-cv-user-text, inherit));
+  background: var(--cgw-weave-embed-bg, var(--cgw-cv-user-bg, transparent));
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed--blockquote {
+  border-left: var(--cgw-weave-embed-accent-width, 3px) solid
+    var(--cgw-weave-embed-accent, var(--cgw-cv-user-accent, #6b8afd));
+  padding-left: calc(1rem + var(--cgw-weave-embed-accent-center-adjust, 0px));
+  background: color-mix(
+    in srgb,
+    var(--cgw-weave-embed-bg, var(--cgw-cv-user-bg, transparent))
+      calc(max(var(--cgw-cv-user-bg-opacity, 0), 8) * 1%),
+    transparent
+  );
+  border-radius: 0 6px 6px 0;
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed--aside {
+  border-left: var(--cgw-weave-embed-accent-width, 3px) solid
+    var(--cgw-weave-embed-accent, var(--cgw-cv-user-accent, #6b8afd));
+  background: var(--cgw-weave-embed-aside-bg, var(--cgw-cv-user-bg, rgba(255, 255, 255, 0.04)));
+  font-style: italic;
+  padding: 0.75rem 1rem;
+  padding-left: calc(1rem + var(--cgw-weave-embed-accent-center-adjust, 0px));
+  border-radius: 6px;
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed--pull-quote {
+  text-align: center;
+  font-size: calc(var(--cgw-weave-embed-font-size, 0.98rem) * 1.08);
+  font-weight: 600;
+  border-top: 1px solid var(--cgw-weave-embed-accent, var(--cgw-cv-user-accent, #6b8afd));
+  border-bottom: 1px solid var(--cgw-weave-embed-accent, var(--cgw-cv-user-accent, #6b8afd));
+  padding: 1rem 1.25rem;
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed--run-in {
+  display: inline-block;
+  width: auto;
+  max-width: 85%;
+  margin-inline: auto;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: var(--cgw-weave-embed-aside-bg, var(--cgw-cv-user-bg, rgba(255, 255, 255, 0.06)));
+  border: 1px solid var(--cgw-weave-embed-accent, var(--cgw-cv-user-accent, #6b8afd));
+  text-align: center;
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed--has-hidden-packet .cgw-continuous-packet-context {
+  display: none !important;
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed .cgw-continuous-block,
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed .cgw-continuous-prose {
+  margin-block: 0;
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed .cgw-continuous-quote {
+  margin: 0;
+  padding: 0;
+  border-left: none;
+  color: inherit;
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-weave-body[data-cgw-streaming="1"],
+html[data-cgw-transcript-mode="weave"] .cgw-weave-embed[data-cgw-streaming="1"] {
+  opacity: 0.92;
+}
+
+html[data-cgw-transcript-mode="weave"] .cgw-phrase-highlight {
+  border-radius: 2px;
+  padding: 0 0.1em;
+}

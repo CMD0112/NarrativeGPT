@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.PlaySend;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
 using ChatGPTWrapper.PageIntegration;
@@ -12,6 +13,7 @@ public sealed class AdventureTurnService
     private readonly ChatGptAdventureBridgeInjection _bridge;
     private readonly SemaphoreSlim _bridgeGate = new(1, 1);
     private TaskCompletionSource<AdventureBridgeMessage>? _pendingTurn;
+    private string[]? _pendingTurnAcceptedTypes;
     private ChatGptConversationSendService? _conversationSend;
     private string? _lastApiUserMessageId;
 
@@ -40,17 +42,16 @@ public sealed class AdventureTurnService
         try
         {
             await _bridge.InjectAsync(core);
-            _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = BeginPendingTurn("pong", "probeResult");
 
             await using var reg = cancellationToken.Register(() =>
-                _pendingTurn?.TrySetCanceled(cancellationToken));
+                pending.TrySetCanceled(cancellationToken));
 
             _bridge.SendCommand(core, new { action = "ping" });
 
             try
             {
-                var msg = await _pendingTurn.Task.WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+                var msg = await pending.Task.WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
                 return new BridgeHealthStatus
                 {
                     BridgeReachable = msg.Type is "pong" or "probeResult",
@@ -69,7 +70,7 @@ public sealed class AdventureTurnService
             }
             finally
             {
-                _pendingTurn = null;
+                EndPendingTurn();
             }
         }
         finally
@@ -87,19 +88,25 @@ public sealed class AdventureTurnService
         await WaitForUtilityComposerSubmitReadyAsync(
             core,
             cancellationToken,
-            maxWaitSeconds,
-            conversationId,
-            gizmoId);
+            maxWaitSeconds: maxWaitSeconds,
+            conversationId: conversationId,
+            gizmoId: gizmoId);
 
-    public void RecordPrompt(AdventureBundle bundle, TurnRecord turn, string packetText, string hash)
+    internal void RecordPrompt(
+        AdventureBundle bundle,
+        TurnRecord turn,
+        PreparedSendArtifact artifact,
+        FlightDeliverySnapshot delivery,
+        Guid? playSendTraceRunId = null,
+        IReadOnlyList<PendingUtilityInjection>? utilityDispatches = null)
     {
-        bundle.PromptHistory.Entries.Add(new PromptHistoryEntry
-        {
-            TurnId = turn.Id,
-            PacketText = packetText,
-            PacketHash = hash,
-        });
-        turn.PromptPacketHash = hash;
+        FlightRecordCaptureService.CapturePlaySend(
+            bundle,
+            turn,
+            artifact,
+            delivery,
+            playSendTraceRunId,
+            utilityDispatches);
     }
 
     public async Task<ComposerFillResult> FillComposerAsync(
@@ -111,17 +118,16 @@ public sealed class AdventureTurnService
         try
         {
             await _bridge.InjectAsync(core);
-            _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = BeginPendingTurn("composerFilled");
 
             await using var reg = cancellationToken.Register(() =>
-                _pendingTurn?.TrySetCanceled(cancellationToken));
+                pending.TrySetCanceled(cancellationToken));
 
             _bridge.SendCommand(core, new { action = "fillComposer", text });
 
             try
             {
-                var msg = await _pendingTurn.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+                var msg = await pending.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
                 return new ComposerFillResult
                 {
                     Success = msg.Type == "composerFilled" && msg.Ok,
@@ -135,7 +141,7 @@ public sealed class AdventureTurnService
             }
             finally
             {
-                _pendingTurn = null;
+                EndPendingTurn();
             }
         }
         finally
@@ -236,17 +242,16 @@ public sealed class AdventureTurnService
         try
         {
             await _bridge.InjectAsync(core);
-            _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = BeginPendingTurn("transcriptResult");
 
             await using var reg = cancellationToken.Register(() =>
-                _pendingTurn?.TrySetCanceled(cancellationToken));
+                pending.TrySetCanceled(cancellationToken));
 
             _bridge.SendCommand(core, new { action = "captureThreadTranscript", maxPairs });
 
             try
             {
-                var msg = await _pendingTurn.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+                var msg = await pending.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
                 return ParseThreadTranscriptResult(msg);
             }
             catch (TimeoutException)
@@ -255,7 +260,7 @@ public sealed class AdventureTurnService
             }
             finally
             {
-                _pendingTurn = null;
+                EndPendingTurn();
             }
         }
         finally
@@ -335,17 +340,16 @@ public sealed class AdventureTurnService
         try
         {
             await _bridge.InjectAsync(core);
-            _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = BeginPendingTurn("captureResult");
 
             await using var reg = cancellationToken.Register(() =>
-                _pendingTurn?.TrySetCanceled(cancellationToken));
+                pending.TrySetCanceled(cancellationToken));
 
             _bridge.SendCommand(core, new { action = "captureLastAssistant" });
 
             try
             {
-                var msg = await _pendingTurn.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+                var msg = await pending.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
                 var text = msg.Text;
                 if (msg.Ok && !string.IsNullOrWhiteSpace(text))
                     text = ContextTagFormat.StripTaggedBlocks(text);
@@ -378,7 +382,7 @@ public sealed class AdventureTurnService
             }
             finally
             {
-                _pendingTurn = null;
+                EndPendingTurn();
             }
         }
         finally
@@ -404,6 +408,7 @@ public sealed class AdventureTurnService
         IReadOnlyList<ChatAttachmentRef>? attachments = null,
         IReadOnlyList<DomAttachmentPayload>? domAttachments = null,
         bool attachmentsPreStaged = false,
+        PlayDeliveryChannel deliveryChannel = PlayDeliveryChannel.None,
         CancellationToken cancellationToken = default)
     {
         var timeoutMs = attachments is { Count: > 0 }
@@ -428,71 +433,41 @@ public sealed class AdventureTurnService
                     attachmentsPreStaged,
                     cancellationToken);
 
+            if (attachments is { Count: > 0 })
+            {
+                return new AdventureTurnResult
+                {
+                    Success = false,
+                    Error = "play_attach_requires_dom_staging",
+                    RequiresManualFallback = true,
+                    PacketText = packetText,
+                };
+            }
+
             var conversationId = ResolveConversationIdForSend(bundle, core);
-            var useApiAttachments = PlaySendDeliveryPolicy.ShouldUseApiPlaySend(
-                bundle,
-                attachments,
-                domAttachments);
-            var useApiText = PlaySendDeliveryPolicy.ShouldUseApiTextPlaySend(bundle)
-                && attachments is not { Count: > 0 };
+            var useApiText = PlaySendDeliveryPolicy.ShouldUseApiTextPlaySend(bundle, deliveryChannel);
 
             if (_conversationSend is not null
                 && !string.IsNullOrWhiteSpace(conversationId)
-                && (useApiAttachments || useApiText))
+                && useApiText)
             {
-                ConversationSendResult apiResult;
-                if (useApiAttachments)
-                {
-                    apiResult = await _conversationSend.SendUserMessageWithAttachmentsAsync(
-                        core,
-                        conversationId,
-                        bundle.Metadata.LinkedProjectId,
-                        packetText,
-                        attachments!,
-                        cancellationToken);
+                var apiResult = await _conversationSend.SendUserMessageAsync(
+                    core,
+                    conversationId,
+                    bundle.Metadata.LinkedProjectId,
+                    packetText,
+                    cancellationToken);
 
-                    if (!apiResult.Success)
-                    {
-                        PlaySendTrace.Event(
-                            PlaySendTraceEvents.ApiSendFallbackDom,
-                            PlaySendCategory.Bridge,
-                            PlaySendLevel.Warn,
-                            $"Attachment API send failed ({apiResult.Error}); falling back to DOM submit",
-                            data: new { error = apiResult.Error, conversationId, attachmentCount = attachments!.Count });
-                    }
+                if (!apiResult.Success)
+                {
+                    PlaySendTrace.Event(
+                        PlaySendTraceEvents.ApiSendFallbackDom,
+                        PlaySendCategory.Bridge,
+                        PlaySendLevel.Warn,
+                        $"API send failed ({apiResult.Error}); falling back to DOM submit",
+                        data: new { error = apiResult.Error, conversationId });
                 }
                 else
-                {
-                    apiResult = await _conversationSend.SendUserMessageAsync(
-                        core,
-                        conversationId,
-                        bundle.Metadata.LinkedProjectId,
-                        packetText,
-                        cancellationToken);
-
-                    if (!apiResult.Success)
-                    {
-                        PlaySendTrace.Event(
-                            PlaySendTraceEvents.ApiSendFallbackDom,
-                            PlaySendCategory.Bridge,
-                            PlaySendLevel.Warn,
-                            $"API send failed ({apiResult.Error}); falling back to DOM submit",
-                            data: new { error = apiResult.Error, conversationId });
-                    }
-                    else
-                    {
-                        return await BuildApiSubmitSuccessResultAsync(
-                            core,
-                            bundle,
-                            packetText,
-                            displayPlayerLine,
-                            packetHash,
-                            conversationId,
-                            apiResult);
-                    }
-                }
-
-                if (apiResult.Success)
                 {
                     return await BuildApiSubmitSuccessResultAsync(
                         core,
@@ -503,8 +478,28 @@ public sealed class AdventureTurnService
                         conversationId,
                         apiResult);
                 }
+
+                if (deliveryChannel == PlayDeliveryChannel.Api
+                    && !ShouldDomFallbackAfterApiTextFailure(apiResult.Error))
+                {
+                    PlaySendTrace.Event(
+                        PlaySendTraceEvents.BridgeSubmitResult,
+                        PlaySendCategory.Bridge,
+                        PlaySendLevel.Error,
+                        $"API send failed ({apiResult.Error}); DOM fallback disabled for API channel",
+                        outcome: "api_send_failed",
+                        data: new { error = apiResult.Error, conversationId });
+
+                    return new AdventureTurnResult
+                    {
+                        Success = false,
+                        Error = apiResult.Error ?? "api_send_failed",
+                        RequiresManualFallback = true,
+                        PacketText = packetText,
+                    };
+                }
             }
-            else if (PlaySendDeliveryPolicy.PreferDom(bundle)
+            else if (!PlaySendDeliveryPolicy.ShouldUseApiTextPlaySend(bundle, deliveryChannel)
                      && !string.IsNullOrWhiteSpace(conversationId))
             {
                 PlaySendTrace.Event(
@@ -565,13 +560,13 @@ public sealed class AdventureTurnService
             var hostCdpStaged = attachmentsPreStaged;
             if (!attachmentsPreStaged)
             {
-                await _bridge.StageDomFallbackAttachmentsAsync(core, domAttachments);
-
-                var cdpStage = await NativeComposerFileStaging.StageAsync(
+                var stage = await NativeComposerDomStaging.StageAttachmentsAsync(
+                    _bridge,
                     core,
                     domAttachments,
+                    attachmentsPreStaged: false,
                     cancellationToken);
-                hostCdpStaged = cdpStage.Success;
+                hostCdpStaged = stage.HostCdpStaged;
 
                 if (!hostCdpStaged)
                 {
@@ -579,9 +574,9 @@ public sealed class AdventureTurnService
                         PlaySendTraceEvents.BridgeSubmitInvoke,
                         PlaySendCategory.Bridge,
                         PlaySendLevel.Warn,
-                        $"CDP attachment staging failed ({cdpStage.Error}); falling back to in-page staging",
+                        $"CDP attachment staging failed ({stage.CdpError}); falling back to in-page staging",
                         outcome: "cdp_stage_failed",
-                        data: new { error = cdpStage.Error });
+                        data: new { error = stage.CdpError });
                 }
             }
 
@@ -690,11 +685,13 @@ public sealed class AdventureTurnService
         string messageText,
         int? timeoutMs = null,
         string? jobId = null,
+        bool skipPageEnsure = false,
+        int? maxComposerWaitSeconds = null,
         CancellationToken cancellationToken = default)
     {
         var effectiveTimeout = timeoutMs ?? ComputeUtilityJobTimeoutMs(messageText.Length);
 
-        if (!string.IsNullOrWhiteSpace(gizmoId))
+        if (!skipPageEnsure && !string.IsNullOrWhiteSpace(gizmoId))
         {
             var page = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
                 core,
@@ -725,30 +722,14 @@ public sealed class AdventureTurnService
         await WaitForUtilityComposerSubmitReadyAsync(
             core,
             cancellationToken,
+            skipNavigation: skipPageEnsure,
+            maxWaitSeconds: maxComposerWaitSeconds ?? 45,
             conversationId: conversationId,
             gizmoId: gizmoId);
 
         await _bridgeGate.WaitAsync(cancellationToken);
         try
         {
-            if (!string.IsNullOrWhiteSpace(gizmoId))
-            {
-                var page = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
-                    core,
-                    conversationId,
-                    gizmoId,
-                    cancellationToken);
-                if (!page.Success)
-                {
-                    return new ConversationSendResult
-                    {
-                        Success = false,
-                        Error = page.Error ?? "utility_page_not_ready",
-                        ConversationId = conversationId,
-                    };
-                }
-            }
-
             await _bridge.InjectAsync(core);
             return await SubmitUtilityJobViaDomAsync(
                 core,
@@ -757,7 +738,8 @@ public sealed class AdventureTurnService
                 messageText,
                 effectiveTimeout,
                 jobId,
-                cancellationToken);
+                skipPageVerify: skipPageEnsure,
+                cancellationToken: cancellationToken);
         }
         finally
         {
@@ -776,10 +758,152 @@ public sealed class AdventureTurnService
         CancellationToken cancellationToken = default) =>
         SubmitUtilityJobAsync(core, conversationId, gizmoId, messageText, cancellationToken: cancellationToken);
 
+    /// <summary>
+    /// Utility/job packet with staged file attachments via DOM composer (worker lane).
+    /// </summary>
+    public async Task<ConversationSendResult> SubmitUtilityJobWithAttachmentsAsync(
+        CoreWebView2 core,
+        string conversationId,
+        string? gizmoId,
+        string messageText,
+        IReadOnlyList<DomAttachmentPayload> domAttachments,
+        string? jobId = null,
+        bool skipPageEnsure = false,
+        bool allowKeyboardSubmitOnProjectHome = false,
+        CancellationToken cancellationToken = default)
+    {
+        var effectiveTimeout = ComputeUtilityJobTimeoutMs(messageText.Length);
+
+        var pageEnsured = false;
+        if (!skipPageEnsure && !string.IsNullOrWhiteSpace(gizmoId))
+        {
+            var page = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
+                core,
+                conversationId,
+                gizmoId,
+                cancellationToken);
+            if (!page.Success)
+            {
+                return new ConversationSendResult
+                {
+                    Success = false,
+                    Error = page.Error ?? "utility_page_not_ready",
+                    ConversationId = conversationId,
+                };
+            }
+
+            pageEnsured = true;
+        }
+
+        if (!await _bridge.EnsureBridgeReadyAsync(core, cancellationToken))
+        {
+            return new ConversationSendResult
+            {
+                Success = false,
+                Error = "bridge_not_ready",
+                ConversationId = conversationId,
+            };
+        }
+
+        await WaitForUtilityComposerSubmitReadyAsync(
+            core,
+            cancellationToken,
+            skipNavigation: skipPageEnsure || pageEnsured,
+            conversationId: conversationId,
+            gizmoId: gizmoId);
+
+        var pageHref = await UtilityConversationPageService.GetPageHrefAsync(core);
+        var health = await GetAdventureComposerHealthAsync(core, cancellationToken);
+        PlaySendTrace.Event(
+            PlaySendTraceEvents.BridgeSubmitInvoke,
+            PlaySendCategory.Bridge,
+            PlaySendLevel.Info,
+            "Utility DOM attach composer ready",
+            outcome: "attach_probe",
+            data: new
+            {
+                pageHref,
+                composerFound = health.ComposerFound,
+                submitFound = health.SubmitFound,
+                conversationId = health.ConversationId ?? conversationId,
+                attachmentCount = domAttachments.Count,
+                skipPageEnsure,
+                pageEnsured,
+                allowKeyboardSubmitOnProjectHome,
+            });
+
+        await _bridgeGate.WaitAsync(cancellationToken);
+        try
+        {
+            await _bridge.InjectAsync(core);
+            await NativeComposerFileStaging.ExposeComposerForUploadAsync(core, cancellationToken);
+            var stage = await NativeComposerDomStaging.StageAttachmentsAsync(
+                _bridge,
+                core,
+                domAttachments,
+                attachmentsPreStaged: false,
+                cancellationToken);
+            var hostCdpStaged = stage.HostCdpStaged;
+            if (!hostCdpStaged)
+            {
+                PlaySendTrace.Event(
+                    PlaySendTraceEvents.BridgeSubmitInvoke,
+                    PlaySendCategory.Bridge,
+                    PlaySendLevel.Warn,
+                    $"Utility CDP attachment staging failed ({stage.CdpError})",
+                    outcome: "cdp_stage_failed",
+                    data: new { error = stage.CdpError, attachmentCount = domAttachments.Count });
+            }
+            else
+            {
+                await NativeComposerFileStaging.PrepareNativeComposerAsync(core, cancellationToken);
+                var totalBytes = domAttachments.Sum(a => a.Content.Length);
+                var uploadReady = await NativeComposerFileStaging.WaitForUploadReadyAsync(
+                    core,
+                    totalBytes,
+                    maxWait: TimeSpan.FromMinutes(2),
+                    cancellationToken);
+                if (!uploadReady.Success)
+                {
+                    return new ConversationSendResult
+                    {
+                        Success = false,
+                        Error = uploadReady.Error ?? "attachment_not_ready",
+                        ConversationId = conversationId,
+                    };
+                }
+            }
+
+            return await SubmitUtilityJobViaDomAsync(
+                core,
+                conversationId,
+                gizmoId,
+                messageText,
+                effectiveTimeout,
+                jobId,
+                skipPageVerify: true,
+                hostCdpStaged: hostCdpStaged,
+                useWrapperAttachmentStash: !hostCdpStaged,
+                allowKeyboardSubmitOnProjectHome: allowKeyboardSubmitOnProjectHome,
+                cancellationToken);
+        }
+        finally
+        {
+            await NativeComposerFileStaging.RestoreComposerExposeAsync(core);
+            NativeComposerFileStaging.CleanupStagedFiles();
+            _bridgeGate.Release();
+        }
+    }
+
     internal static int ComputeUtilityJobTimeoutMs(int messageLength) =>
         messageLength > 4000
             ? Math.Min(180_000, 90_000 + messageLength * 8)
             : 120_000;
+
+    internal static int ComputeComposerStableWaitMs(int messageLength) =>
+        messageLength <= 200
+            ? 1400
+            : Math.Min(15_000, Math.Max(3500, 600 + (int)(messageLength * 1.2)));
 
     internal static string MapUtilityBridgeError(string? error)
     {
@@ -814,17 +938,16 @@ public sealed class AdventureTurnService
         try
         {
             await _bridge.InjectAsync(core);
-            _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = BeginPendingTurn("assistantTurnCount");
 
             await using var reg = cancellationToken.Register(() =>
-                _pendingTurn?.TrySetCanceled(cancellationToken));
+                pending.TrySetCanceled(cancellationToken));
 
             _bridge.SendCommand(core, new { action = "getAssistantTurnCount" });
 
             try
             {
-                var msg = await _pendingTurn.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+                var msg = await pending.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
                 if (msg.Type == "assistantTurnCount" && msg.AssistantTurnCount is >= 0)
                     return msg.AssistantTurnCount.Value;
             }
@@ -834,7 +957,7 @@ public sealed class AdventureTurnService
             }
             finally
             {
-                _pendingTurn = null;
+                EndPendingTurn();
             }
         }
         finally
@@ -852,33 +975,42 @@ public sealed class AdventureTurnService
         await _bridgeGate.WaitAsync(cancellationToken);
         try
         {
-            await _bridge.InjectAsync(core);
-            _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-
-            await using var reg = cancellationToken.Register(() =>
-                _pendingTurn?.TrySetCanceled(cancellationToken));
-
-            _bridge.SendCommand(core, new { action = "getUserTurnCount" });
-
-            try
-            {
-                var msg = await _pendingTurn.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
-                if (msg.Type == "userTurnCount" && msg.AssistantTurnCount is >= 0)
-                    return msg.AssistantTurnCount.Value;
-            }
-            catch (TimeoutException)
-            {
-                /* fall through */
-            }
-            finally
-            {
-                _pendingTurn = null;
-            }
+            return await GetUserTurnCountCoreAsync(core, cancellationToken);
         }
         finally
         {
             _bridgeGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Caller must hold <see cref="_bridgeGate"/> when invoked from an already-gated send path.
+    /// </summary>
+    private async Task<int> GetUserTurnCountCoreAsync(
+        CoreWebView2 core,
+        CancellationToken cancellationToken = default)
+    {
+        await _bridge.InjectAsync(core);
+        var pending = BeginPendingTurn("userTurnCount");
+
+        await using var reg = cancellationToken.Register(() =>
+            pending.TrySetCanceled(cancellationToken));
+
+        _bridge.SendCommand(core, new { action = "getUserTurnCount" });
+
+        try
+        {
+            var msg = await pending.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+            if (msg.Type == "userTurnCount" && msg.AssistantTurnCount is >= 0)
+                return msg.AssistantTurnCount.Value;
+        }
+        catch (TimeoutException)
+        {
+            /* fall through */
+        }
+        finally
+        {
+            EndPendingTurn();
         }
 
         return 0;
@@ -916,11 +1048,10 @@ public sealed class AdventureTurnService
         try
         {
             await _bridge.InjectAsync(core);
-            _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = BeginPendingTurn("captureResult");
 
             await using var reg = cancellationToken.Register(() =>
-                _pendingTurn?.TrySetCanceled(cancellationToken));
+                pending.TrySetCanceled(cancellationToken));
 
             _bridge.SendCommand(core, new
             {
@@ -931,7 +1062,7 @@ public sealed class AdventureTurnService
 
             try
             {
-                var msg = await _pendingTurn.Task.WaitAsync(
+                var msg = await pending.Task.WaitAsync(
                     TimeSpan.FromMilliseconds(timeoutMs + 5000),
                     cancellationToken);
                 var text = msg.Text;
@@ -982,13 +1113,184 @@ public sealed class AdventureTurnService
             }
             finally
             {
-                _pendingTurn = null;
+                EndPendingTurn();
             }
         }
         finally
         {
             _bridgeGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Utility attachment send — mirrors play <c>submitPrompt</c> (not <c>sendPrompt</c>) so submit dispatches reliably.
+    /// Assistant capture is handled by the worker pull lane after push correlation.
+    /// </summary>
+    private async Task<ConversationSendResult> SubmitUtilityAttachmentViaDomAsync(
+        CoreWebView2 core,
+        string conversationId,
+        string messageText,
+        int timeoutMs,
+        string? jobId,
+        bool requireProjectContext,
+        bool hostCdpStaged,
+        bool useWrapperAttachmentStash,
+        string? pageHref,
+        UtilityPageVerifyResult? verify,
+        bool allowKeyboardSubmitOnProjectHome,
+        CancellationToken cancellationToken)
+    {
+        var priorUserCount = await GetUserTurnCountCoreAsync(core, cancellationToken);
+        var pending = BeginPendingTurn("turnComplete", "promptSubmitted");
+
+        await using var reg = cancellationToken.Register(() =>
+            pending.TrySetCanceled(cancellationToken));
+
+        // Host already CDP-staged and polled upload — tell bridge files are on the composer.
+        var attachmentsPreStaged = hostCdpStaged && !useWrapperAttachmentStash;
+        var invoked = await _bridge.InvokeSubmitPromptAsync(
+            core,
+            messageText,
+            requireProjectContext,
+            attachmentsPreStaged: attachmentsPreStaged,
+            hostCdpStaged: false,
+            useWrapperAttachmentStash: useWrapperAttachmentStash && !hostCdpStaged,
+            allowKeyboardSubmitOnProjectHome: allowKeyboardSubmitOnProjectHome);
+
+        if (!invoked)
+        {
+            _bridge.SendSubmitPromptCommand(
+                core,
+                messageText,
+                requireProjectContext,
+                displayPlayerLine: null,
+                packetHash: null,
+                useWrapperAttachmentStash: useWrapperAttachmentStash && !hostCdpStaged,
+                hostCdpStaged: false,
+                attachmentsPreStaged: attachmentsPreStaged,
+                allowKeyboardSubmitOnProjectHome: allowKeyboardSubmitOnProjectHome);
+        }
+
+        PlaySendTrace.Event(
+            PlaySendTraceEvents.BridgeSubmitInvoke,
+            PlaySendCategory.Bridge,
+            PlaySendLevel.Info,
+            attachmentsPreStaged
+                ? "Utility submitPrompt with pre-staged attachments"
+                : "Utility submitPrompt with attachments posted via PostWebMessage",
+            outcome: invoked ? "invoke_ok" : "post_message",
+            data: new
+            {
+                requireProjectContext,
+                packetLength = messageText.Length,
+                pageHref,
+                coreSource = verify?.CoreSource ?? core.Source,
+                hrefMatchesTarget = verify?.Matches ?? true,
+                channel = "utility",
+                timeoutMs,
+                attachmentsPreStaged,
+                useWrapperAttachmentStash,
+            });
+
+        // Bridge attachment path: up to ~90s submit-ready wait + verify retries (12s × 20).
+        var hasAttachmentDomPath = hostCdpStaged || useWrapperAttachmentStash;
+        var submitTimeoutCapMs = hasAttachmentDomPath ? 240_000 : 120_000;
+        var submitTimeoutMs = hasAttachmentDomPath
+            ? Math.Max(timeoutMs, submitTimeoutCapMs)
+            : Math.Min(timeoutMs, submitTimeoutCapMs);
+        AdventureBridgeMessage msg;
+        try
+        {
+            msg = await pending.Task.WaitAsync(
+                TimeSpan.FromMilliseconds(submitTimeoutMs),
+                cancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            var afterCount = await GetUserTurnCountCoreAsync(core, cancellationToken);
+            if (afterCount > priorUserCount)
+            {
+                return await BuildUtilityAttachmentPushSuccessAsync(
+                    core,
+                    conversationId,
+                    cancellationToken);
+            }
+
+            return new ConversationSendResult
+            {
+                Success = false,
+                Error = "submit_timeout",
+                ConversationId = conversationId,
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new ConversationSendResult
+            {
+                Success = false,
+                Error = ex.Message,
+                ConversationId = conversationId,
+            };
+        }
+        finally
+        {
+            EndPendingTurn();
+        }
+
+        if (msg.Type == "promptSubmitted" && msg.Ok)
+        {
+            return await BuildUtilityAttachmentPushSuccessAsync(
+                core,
+                string.IsNullOrWhiteSpace(msg.ConversationId) ? conversationId : msg.ConversationId!,
+                cancellationToken);
+        }
+
+        if (msg.Type == "turnComplete" && msg.Ok && !string.IsNullOrWhiteSpace(msg.Text))
+        {
+            var convId = string.IsNullOrWhiteSpace(msg.ConversationId) ? conversationId : msg.ConversationId;
+            var assistantText = NormalizeUtilityCapturedAssistantText(msg.Text!);
+            return new ConversationSendResult
+            {
+                Success = true,
+                ConversationId = convId,
+                ParentMessageId = await ResolveDomSubmitParentMessageIdAsync(core, convId!, cancellationToken),
+                AssistantText = assistantText,
+                StreamComplete = !IsUtilityCapturePremature(jobId, assistantText),
+            };
+        }
+
+        var recoveredCount = await GetUserTurnCountCoreAsync(core, cancellationToken);
+        if (recoveredCount > priorUserCount)
+        {
+            return await BuildUtilityAttachmentPushSuccessAsync(
+                core,
+                conversationId,
+                cancellationToken);
+        }
+
+        return new ConversationSendResult
+        {
+            Success = false,
+            Error = MapUtilityBridgeError(msg.Error) ?? "submit_not_verified",
+            ConversationId = conversationId,
+        };
+    }
+
+    private async Task<ConversationSendResult> BuildUtilityAttachmentPushSuccessAsync(
+        CoreWebView2 core,
+        string conversationId,
+        CancellationToken cancellationToken)
+    {
+        ConversationParentCache.Invalidate(conversationId);
+        ConversationConduitCache.Invalidate(conversationId);
+
+        return new ConversationSendResult
+        {
+            Success = true,
+            ConversationId = conversationId,
+            ParentMessageId = await ResolveDomSubmitParentMessageIdAsync(core, conversationId, cancellationToken),
+            StreamComplete = false,
+        };
     }
 
     private async Task<ConversationSendResult> SubmitUtilityJobViaDomAsync(
@@ -998,35 +1300,16 @@ public sealed class AdventureTurnService
         string messageText,
         int timeoutMs,
         string? jobId,
-        CancellationToken cancellationToken)
+        bool skipPageVerify = false,
+        bool hostCdpStaged = false,
+        bool useWrapperAttachmentStash = false,
+        bool allowKeyboardSubmitOnProjectHome = false,
+        CancellationToken cancellationToken = default)
     {
-        _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-
-        await using var reg = cancellationToken.Register(() =>
-            _pendingTurn?.TrySetCanceled(cancellationToken));
-
         var requireProjectContext = !string.IsNullOrWhiteSpace(gizmoId);
-        if (!string.IsNullOrWhiteSpace(gizmoId))
-        {
-            var page = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
-                core,
-                conversationId,
-                gizmoId,
-                cancellationToken);
-            if (!page.Success)
-            {
-                return new ConversationSendResult
-                {
-                    Success = false,
-                    Error = page.Error ?? "utility_page_not_ready",
-                    ConversationId = conversationId,
-                };
-            }
-        }
 
         UtilityPageVerifyResult? verify = null;
-        if (!string.IsNullOrWhiteSpace(gizmoId))
+        if (!skipPageVerify && !string.IsNullOrWhiteSpace(gizmoId))
         {
             verify = await UtilityConversationPageService.VerifyOnTargetPageAsync(
                 core,
@@ -1044,11 +1327,36 @@ public sealed class AdventureTurnService
         }
 
         var pageHref = verify?.PageHref ?? await UtilityConversationPageService.GetPageHrefAsync(core);
+        var composerStableWaitMs = ComputeComposerStableWaitMs(messageText.Length);
+        var hasAttachments = hostCdpStaged || useWrapperAttachmentStash;
+        if (hasAttachments)
+        {
+            return await SubmitUtilityAttachmentViaDomAsync(
+                core,
+                conversationId,
+                messageText,
+                timeoutMs,
+                jobId,
+                requireProjectContext,
+                hostCdpStaged,
+                useWrapperAttachmentStash,
+                pageHref,
+                verify,
+                allowKeyboardSubmitOnProjectHome,
+                cancellationToken);
+        }
+
+        var pending = BeginPendingTurn("turnComplete");
+
+        await using var reg = cancellationToken.Register(() =>
+            pending.TrySetCanceled(cancellationToken));
+
         var invoked = await _bridge.InvokeSendPromptAsync(
             core,
             messageText,
             timeoutMs,
-            requireProjectContext);
+            requireProjectContext,
+            composerStableWaitMs);
         if (!invoked)
         {
             _bridge.SendCommand(core, new
@@ -1057,6 +1365,7 @@ public sealed class AdventureTurnService
                 text = messageText,
                 timeoutMs,
                 requireProjectContext,
+                composerStableWaitMs,
             });
         }
 
@@ -1082,7 +1391,7 @@ public sealed class AdventureTurnService
         AdventureBridgeMessage msg;
         try
         {
-            msg = await _pendingTurn.Task.WaitAsync(
+            msg = await pending.Task.WaitAsync(
                 TimeSpan.FromMilliseconds(timeoutMs + 5000),
                 cancellationToken);
         }
@@ -1106,7 +1415,7 @@ public sealed class AdventureTurnService
         }
         finally
         {
-            _pendingTurn = null;
+            EndPendingTurn();
         }
 
         if (msg.Type == "turnComplete" && msg.Ok && !string.IsNullOrWhiteSpace(msg.Text))
@@ -1122,8 +1431,10 @@ public sealed class AdventureTurnService
             var isSettled = !IsUtilityCapturePremature(jobId, assistantText);
             var conversationDrifted = !string.IsNullOrWhiteSpace(msg.ConversationId)
                 && !string.Equals(msg.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase);
+            var provisionedConversation = string.IsNullOrWhiteSpace(conversationId)
+                && !string.IsNullOrWhiteSpace(msg.ConversationId);
 
-            if (conversationDrifted && !isSettled)
+            if (conversationDrifted && !isSettled && !provisionedConversation)
             {
                 PlaySendTrace.Event(
                     PlaySendTraceEvents.BridgeSubmitResult,
@@ -1175,6 +1486,7 @@ public sealed class AdventureTurnService
                     ConversationId = convId,
                     AssistantText = assistantText,
                     StreamComplete = true,
+                    ParentMessageId = await ResolveDomSubmitParentMessageIdAsync(core, convId, cancellationToken),
                 };
             }
 
@@ -1217,6 +1529,7 @@ public sealed class AdventureTurnService
     private async Task WaitForUtilityComposerSubmitReadyAsync(
         CoreWebView2 core,
         CancellationToken cancellationToken,
+        bool skipNavigation = false,
         int maxWaitSeconds = 45,
         string? conversationId = null,
         string? gizmoId = null)
@@ -1227,7 +1540,9 @@ public sealed class AdventureTurnService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!string.IsNullOrWhiteSpace(conversationId) && !string.IsNullOrWhiteSpace(gizmoId))
+            if (!skipNavigation
+                && !string.IsNullOrWhiteSpace(conversationId)
+                && !string.IsNullOrWhiteSpace(gizmoId))
             {
                 await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
                     core,
@@ -1288,7 +1603,7 @@ public sealed class AdventureTurnService
             else
             {
                 if (PlayConversationPageService.TryAdoptBrowserConversation(bundle, core.Source))
-                    conversationId = bundle.Metadata.LinkedConversationId ?? conversationId;
+                    conversationId = PlayThreadBindingService.GetActiveConversationId(bundle) ?? conversationId;
 
                 if (!AdventurePlayContextService.IsOnPlayConversationPage(core.Source, conversationId, gizmoId))
                 {
@@ -1335,11 +1650,11 @@ public sealed class AdventureTurnService
             }
         }
 
-        _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        var priorUserCount = await GetUserTurnCountCoreAsync(core, cancellationToken);
+        var pending = BeginPendingTurn("turnComplete", "promptSubmitted");
 
         await using var reg = cancellationToken.Register(() =>
-            _pendingTurn?.TrySetCanceled(cancellationToken));
+            pending.TrySetCanceled(cancellationToken));
 
         var requireProjectContext = !string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId);
         var hasDomAttachments = domAttachments is { Count: > 0 };
@@ -1380,6 +1695,8 @@ public sealed class AdventureTurnService
             {
                 requireProjectContext,
                 packetLength = packetText.Length,
+                packetHash,
+                displayPlayerLineLength = displayPlayerLine?.Length ?? 0,
                 attachmentCount = domAttachments?.Count ?? 0,
                 source = core.Source,
             });
@@ -1400,19 +1717,45 @@ public sealed class AdventureTurnService
         AdventureBridgeMessage msg;
         try
         {
-            msg = await _pendingTurn.Task.WaitAsync(
+            msg = await pending.Task.WaitAsync(
                 TimeSpan.FromMilliseconds(timeoutMs),
                 cancellationToken);
         }
         catch (TimeoutException)
         {
+            var afterCount = await GetUserTurnCountCoreAsync(core, cancellationToken);
+            if (afterCount > priorUserCount)
+            {
+                var recoveredConvId = ResolveConversationIdForSend(bundle, core);
+                PlaySendTrace.Event(
+                    PlaySendTraceEvents.BridgeSubmitResult,
+                    PlaySendCategory.Bridge,
+                    PlaySendLevel.Warn,
+                    "Bridge submit ack timed out but user turn count increased",
+                    outcome: "recovered",
+                    data: new
+                    {
+                        timeoutMs,
+                        priorUserCount,
+                        afterCount,
+                        conversationId = recoveredConvId,
+                    });
+
+                return new AdventureTurnResult
+                {
+                    Success = true,
+                    ConversationId = recoveredConvId,
+                    PacketText = packetText,
+                };
+            }
+
             PlaySendTrace.Event(
                 PlaySendTraceEvents.BridgeSubmitResult,
                 PlaySendCategory.Bridge,
                 PlaySendLevel.Error,
                 "Bridge submit timed out waiting for promptSubmitted",
                 outcome: "timeout",
-                data: new { timeoutMs });
+                data: new { timeoutMs, priorUserCount, afterCount });
             return new AdventureTurnResult
             {
                 Success = false,
@@ -1440,7 +1783,7 @@ public sealed class AdventureTurnService
         }
         finally
         {
-            _pendingTurn = null;
+            EndPendingTurn();
         }
 
         PlaySendTrace.Event(
@@ -1569,11 +1912,10 @@ public sealed class AdventureTurnService
         {
             await _bridge.InjectAsync(core);
 
-            _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = BeginPendingTurn("turnComplete", "promptSubmitted");
 
             await using var reg = cancellationToken.Register(() =>
-                _pendingTurn?.TrySetCanceled(cancellationToken));
+                pending.TrySetCanceled(cancellationToken));
 
             if (regenerate)
                 _bridge.SendCommand(core, new { action = "regenerateLast", timeoutMs });
@@ -1592,7 +1934,7 @@ public sealed class AdventureTurnService
             AdventureBridgeMessage msg;
             try
             {
-                msg = await _pendingTurn.Task.WaitAsync(
+                msg = await pending.Task.WaitAsync(
                     TimeSpan.FromMilliseconds(timeoutMs + 5000),
                     cancellationToken);
             }
@@ -1618,7 +1960,7 @@ public sealed class AdventureTurnService
             }
             finally
             {
-                _pendingTurn = null;
+                EndPendingTurn();
             }
 
             if (msg.Type == "turnComplete" && msg.Ok && !string.IsNullOrWhiteSpace(msg.Text))
@@ -1677,17 +2019,16 @@ public sealed class AdventureTurnService
         try
         {
             await _bridge.InjectAsync(core);
-            _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = BeginPendingTurn("projectChatReady");
 
             await using var reg = cancellationToken.Register(() =>
-                _pendingTurn?.TrySetCanceled(cancellationToken));
+                pending.TrySetCanceled(cancellationToken));
 
             _bridge.SendCommand(core, new { action = "startProjectChat" });
 
             try
             {
-                var msg = await _pendingTurn.Task.WaitAsync(TimeSpan.FromSeconds(25), cancellationToken);
+                var msg = await pending.Task.WaitAsync(TimeSpan.FromSeconds(25), cancellationToken);
                 return new ProjectChatStartResult
                 {
                     Success = msg.Ok || msg.ComposerFound,
@@ -1706,7 +2047,7 @@ public sealed class AdventureTurnService
             }
             finally
             {
-                _pendingTurn = null;
+                EndPendingTurn();
             }
         }
         finally
@@ -1729,14 +2070,13 @@ public sealed class AdventureTurnService
         try
         {
             await _bridge.InjectAsync(core);
-            _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = BeginPendingTurn("pong", "probeResult");
 
             _bridge.SendCommand(core, new { action = "ping" });
 
             try
             {
-                var msg = await _pendingTurn.Task.WaitAsync(TimeSpan.FromSeconds(3));
+                var msg = await pending.Task.WaitAsync(TimeSpan.FromSeconds(3));
                 return new BridgeHealthStatus
                 {
                     BridgeReachable = msg.Type is "pong" or "probeResult",
@@ -1755,7 +2095,7 @@ public sealed class AdventureTurnService
             }
             finally
             {
-                _pendingTurn = null;
+                EndPendingTurn();
             }
         }
         finally
@@ -1767,14 +2107,13 @@ public sealed class AdventureTurnService
     private async Task<string?> GetConversationIdCoreAsync(CoreWebView2 core)
     {
         await _bridge.InjectAsync(core);
-        _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = BeginPendingTurn("conversationId");
 
         _bridge.SendCommand(core, new { action = "getConversationId" });
 
         try
         {
-            var msg = await _pendingTurn.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var msg = await pending.Task.WaitAsync(TimeSpan.FromSeconds(10));
             return msg.ConversationId;
         }
         catch
@@ -1783,7 +2122,7 @@ public sealed class AdventureTurnService
         }
         finally
         {
-            _pendingTurn = null;
+            EndPendingTurn();
         }
     }
 
@@ -1806,13 +2145,47 @@ public sealed class AdventureTurnService
                     error = e.Error,
                     conversationId = e.ConversationId,
                 });
-        }
 
-        if (e.Type is "turnComplete" or "promptSubmitted" or "conversationId" or "pong" or "probeResult"
-            or "projectChatReady" or "composerFilled" or "captureResult" or "assistantTurnCount"
-            or "userTurnCount" or "transcriptResult" or "error")
-            _pendingTurn?.TrySetResult(e);
+            if (AcceptsPendingTurnMessage(e))
+                _pendingTurn.TrySetResult(e);
+        }
     }
+
+    private TaskCompletionSource<AdventureBridgeMessage> BeginPendingTurn(params string[] acceptedTypes)
+    {
+        _pendingTurnAcceptedTypes = acceptedTypes;
+        _pendingTurn = new TaskCompletionSource<AdventureBridgeMessage>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        return _pendingTurn;
+    }
+
+    private void EndPendingTurn()
+    {
+        _pendingTurn = null;
+        _pendingTurnAcceptedTypes = null;
+    }
+
+    private bool AcceptsPendingTurnMessage(AdventureBridgeMessage e)
+    {
+        if (_pendingTurnAcceptedTypes is not { Length: > 0 })
+            return true;
+
+        var type = e.Type ?? "";
+        if (string.Equals(type, "error", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return _pendingTurnAcceptedTypes.Contains(type, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// ADR tier-2 DOM fallback: linked play threads often return http_403 on API POST
+    /// even when prepare/parent resolution succeeds.
+    /// </summary>
+    private static bool ShouldDomFallbackAfterApiTextFailure(string? error) =>
+        !string.IsNullOrWhiteSpace(error)
+        && (UtilityConversationReadinessService.IsUnregisteredFetchError(error)
+            || UtilityConversationReadinessService.IsRateLimitFetchError(error)
+            || ChatGptConversationSendService.IsRetryableSendError(error));
 }
 
 public sealed class ComposerFillResult

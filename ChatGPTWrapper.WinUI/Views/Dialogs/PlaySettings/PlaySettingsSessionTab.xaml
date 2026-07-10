@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings.PlaySettingsSessionTab"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings"
+    SizeChanged="OnCardsGridSizeChanged">
+    <Grid x:Name="CardsGrid" ColumnSpacing="12" RowSpacing="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <local:PlaySettingsSectionCard x:Name="ThreadToolsCard"
+                                       Title="Thread tools"
+                                       Hint="Manage ChatGPT threads, handoffs, and play tab pinning."
+                                       ScopeLabel="Session">
+            <StackPanel Spacing="10">
+                <TextBlock x:Name="SessionHelpText" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+                <TextBlock Text="Session actions" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <StackPanel Spacing="6">
+                    <Button Content="Open Threads hub…" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="OpenThreadsHub_Click" />
+                    <Button Content="Start narrative from sources…" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="StartNarrative_Click" />
+                    <Button Content="Hand off to new chat…" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="Handoff_Click" />
+                    <Button Content="Draft new project chat…" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="DraftProjectChat_Click" />
+                    <Button x:Name="CancelDraftButton" Content="Cancel drafting" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="CancelDraft_Click" Visibility="Collapsed" />
+                </StackPanel>
+                <TextBlock Text="Play tab pin" Style="{ThemeResource ShellFormFieldLabelStyle}" Margin="0,8,0,0" />
+                <StackPanel Spacing="6">
+                    <Button Content="Link to active browser tab" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="PinPlayTab_Click" />
+                    <Button Content="Open pinned tab" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="OpenPinnedTab_Click" />
+                    <Button Content="Clear pin" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="ClearPin_Click" />
+                    <Button Content="List thread files…" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Stretch" Click="ListThreadFiles_Click" />
+                </StackPanel>
+                <TextBlock x:Name="ThreadStatusBlock" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+                <TextBlock x:Name="DraftStatusBlock" TextWrapping="Wrap" Foreground="#C9A227" Visibility="Collapsed" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard x:Name="ThreadSnapshotsCard"
+                                       Title="Thread snapshots"
+                                       Hint="When to capture conversation snapshots to disk."
+                                       ScopeLabel="Session">
+            <StackPanel Spacing="10">
+                <CheckBox x:Name="ThreadSnapshotOnSendCheck" Content="After verified play send" Checked="OnChanged" Unchecked="OnChanged" />
+                <CheckBox x:Name="ThreadSnapshotOnInvalidationCheck" Content="After turn invalidation" Checked="OnChanged" Unchecked="OnChanged" />
+                <CheckBox x:Name="ThreadSnapshotOnSessionLoadCheck" Content="On session load" Checked="OnChanged" Unchecked="OnChanged" />
+                <CheckBox x:Name="ThreadSnapshotOnWorkerSendCheck" Content="After utility worker send" Checked="OnChanged" Unchecked="OnChanged" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="SnapshotNowButton" Content="Save snapshot now" Style="{ThemeResource ShellGhostButtonStyle}" Click="SnapshotNow_Click" />
+                    <Button x:Name="SyncLogButton" Content="Sync log" Style="{ThemeResource ShellGhostButtonStyle}" Click="SyncLog_Click" />
+                    <Button x:Name="DumpLogButton" Content="Dump log" Style="{ThemeResource ShellGhostButtonStyle}" Click="DumpLog_Click" />
+                </StackPanel>
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard x:Name="AutomationCard"
+                                       Title="Automation"
+                                       Hint="Background jobs that propose changes for your review."
+                                       ScopeLabel="Adventure">
+            <StackPanel Spacing="10">
+                <CheckBox x:Name="AutomationCheck" Content="Enable adventure automation" Checked="OnChanged" Unchecked="OnChanged" />
+                <TextBlock x:Name="AutomationProjectHint" TextWrapping="Wrap" Style="{ThemeResource ShellSectionHintStyle}" />
+                <CheckBox x:Name="AutoExtractEntitiesCheck" Content="Auto extract entities" Checked="OnChanged" Unchecked="OnChanged" />
+                <CheckBox x:Name="AutoProposeMemoriesCheck" Content="Auto propose memories" Checked="OnChanged" Unchecked="OnChanged" />
+                <CheckBox x:Name="AutoUpdateSummaryCheck" Content="Auto update summary" Checked="OnChanged" Unchecked="OnChanged" />
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="64" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Summary interval (turns)" VerticalAlignment="Center" Style="{ThemeResource ShellSectionHintStyle}" />
+                    <TextBox x:Name="SummaryIntervalBox" Grid.Column="1" LostFocus="OnChanged" />
+                </Grid>
+                <CheckBox x:Name="AutoContinuityCheckCheck" Content="Auto continuity check" Checked="OnChanged" Unchecked="OnChanged" />
+                <CheckBox x:Name="AutoUpdateStateCheck" Content="Auto update state" Checked="OnChanged" Unchecked="OnChanged" />
+                <CheckBox x:Name="AutoProposeEntityStateCheck" Content="Auto propose entity state" Checked="OnChanged" Unchecked="OnChanged" />
+                <CheckBox x:Name="AutoProposeCanonEvolutionCheck" Content="Auto propose canon evolution" Checked="OnChanged" Unchecked="OnChanged" />
+                <CheckBox x:Name="AutoSyncInstructionsCheck" Content="Auto sync project instructions on save" Checked="OnChanged" Unchecked="OnChanged" />
+                <Button Content="Push instructions now" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Left" Click="PushInstructions_Click" />
+                <HyperlinkButton Content="Utility delivery &amp; job guides →" Click="GoToUtilityJobs_Click" Padding="0" FontSize="12" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard x:Name="DiagnosticsCard"
+                                       Title="Diagnostics"
+                                       Hint="Support tooling for utility parse traces."
+                                       ScopeLabel="Developer">
+            <Expander Header="Utility parse archive (debug)" IsExpanded="False">
+                <StackPanel Spacing="8" Margin="0,8,0,0">
+                    <TextBox x:Name="UtilityParseLogBox"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             Style="{ThemeResource PlaySettingsCodeBoxStyle}"
+                             MinHeight="120" />
+                    <Button Content="Refresh log" Style="{ThemeResource ShellGhostButtonStyle}" HorizontalAlignment="Left" Click="RefreshUtilityParseLog_Click" />
+                </StackPanel>
+            </Expander>
+        </local:PlaySettingsSectionCard>
+    </Grid>
+</UserControl>

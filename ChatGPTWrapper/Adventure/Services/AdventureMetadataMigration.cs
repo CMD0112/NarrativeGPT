@@ -43,6 +43,52 @@ internal static class AdventureMetadataMigration
     public static void EnsureSettingsDefaults(AdventureMetadata metadata)
     {
         UtilityStoryContextSettingsService.EnsureDefaults(metadata);
+        PlayInjectionPolicyService.EnsureDefaults(metadata);
+    }
+
+    /// <summary>CMD-263: legacy wrapper composer UI removed; force false on load.</summary>
+    public static bool MigrateDeprecatedPlaySettings(AdventureMetadata metadata)
+    {
+        var changed = false;
+        if (metadata.Settings.UseWrapperComposer)
+        {
+            metadata.Settings.UseWrapperComposer = false;
+            changed = true;
+        }
+
+        if (!metadata.Settings.UseSectionInjection)
+        {
+            metadata.Settings.UseSectionInjection = true;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    /// <summary>CMD-248: dedicated utility threads retired — migrate to play-inline delivery.</summary>
+    public static bool MigrateUtilityDeliveryMode(AdventureMetadata metadata)
+    {
+        const int utilityDeliveryPivotSchema = 5;
+
+        if (metadata.SchemaVersion >= utilityDeliveryPivotSchema)
+            return false;
+
+        if (metadata.Settings.UtilityDeliveryMode == UtilityDeliveryMode.SeparateThread)
+            metadata.Settings.UtilityDeliveryMode = UtilityDeliveryMode.InlinePlayThread;
+
+        metadata.PinnedUtilityTabKey = null;
+        metadata.PinnedUtilityTabTitle = null;
+
+        if (metadata.UtilitySessions is not null)
+        {
+            var designOnly = new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase);
+            if (metadata.UtilitySessions.TryGetValue(GenerationJobId.DesignAdventure, out var designSession))
+                designOnly[GenerationJobId.DesignAdventure] = designSession;
+            metadata.UtilitySessions = designOnly;
+        }
+
+        metadata.SchemaVersion = utilityDeliveryPivotSchema;
+        return true;
     }
 
     public static bool MigrateProjectLinkFields(AdventureMetadata metadata)
@@ -100,19 +146,105 @@ internal static class AdventureMetadataMigration
             metadata.SchemaVersion = manualOnlySchema;
         }
 
-        MigrateSectionInjection(metadata);
+        if (metadata.Settings.SourcePublishMode == SourcePublishMode.ApiSync)
+            metadata.Settings.SourcePublishMode = SourcePublishMode.Manual;
+
+        metadata.Settings.UseSectionInjection = true;
     }
 
-    private static void MigrateSectionInjection(AdventureMetadata metadata)
+    /// <summary>Migrate singleton pin fields into <see cref="AdventureMetadata.ThreadRegistry"/> (CMD-221).</summary>
+    public static bool MigrateThreadRegistry(AdventureMetadata metadata)
     {
-        const int sectionInjectionSchema = 4;
+        if (metadata.ThreadRegistryMigratedAt is not null)
+            return false;
 
-        if (metadata.SchemaVersion >= sectionInjectionSchema)
+        var bundle = new AdventureBundle { Metadata = metadata };
+        return AdventureThreadRegistryService.EnsureMigrated(bundle);
+    }
+
+    /// <summary>CMD-253: registry-only thread binding; strip legacy singleton fields on load.</summary>
+    public static bool MigrateThreadBindingRetirement(AdventureMetadata metadata)
+    {
+        const int threadBindingRetirementSchema = 6;
+
+        if (metadata.SchemaVersion >= threadBindingRetirementSchema)
+            return false;
+
+        var bundle = new AdventureBundle { Metadata = metadata };
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        PurgeRetiredUtilityEntries(metadata);
+        StripLegacyThreadBindingFields(metadata);
+        metadata.SchemaVersion = threadBindingRetirementSchema;
+        return true;
+    }
+
+    public static void StripLegacyThreadBindingFields(AdventureMetadata metadata)
+    {
+        metadata.LinkedConversationId = null;
+        metadata.PinnedPlayTabKey = null;
+        metadata.PinnedPlayTabTitle = null;
+        metadata.PinnedPlayTabUrl = null;
+        metadata.PinnedDesignTabKey = null;
+        metadata.PinnedDesignTabTitle = null;
+        metadata.PinnedDesignTabUrl = null;
+        metadata.PinnedUtilityTabKey = null;
+        metadata.PinnedUtilityTabTitle = null;
+        metadata.PlayThreadArchive = [];
+        metadata.UtilitySessions?.Clear();
+        metadata.ActiveThreadIds?.Remove(AdventureThreadRegistryService.KindKey(AdventureThreadKindLegacy.Utility));
+
+        if (metadata.ProjectLink is not null)
+            metadata.ProjectLink.PlayConversationId = null;
+    }
+
+    private static void PurgeRetiredUtilityEntries(AdventureMetadata metadata)
+    {
+        if (metadata.ThreadRegistry is null)
             return;
 
-        if (metadata.SectionInjectionMigratedAt is null && metadata.CreatedAt < DateTimeOffset.UtcNow.AddMinutes(-1))
-            metadata.Settings.UseSectionInjection = false;
+        metadata.ThreadRegistry.RemoveAll(e => e.Kind == AdventureThreadKindLegacy.Utility);
+    }
 
-        metadata.SchemaVersion = sectionInjectionSchema;
+    /// <summary>CMD-62: play thread binding trust — only verified threads drive auto-navigation.</summary>
+    public static bool MigratePlayThreadBindingTrust(AdventureBundle bundle)
+    {
+        const int bindingTrustSchema = 7;
+
+        if (bundle.Metadata.SchemaVersion >= bindingTrustSchema)
+            return false;
+
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var log = bundle.Log;
+
+        foreach (var entry in bundle.Metadata.ThreadRegistry ?? [])
+        {
+            if (entry.Kind != AdventureThreadKind.Play)
+                continue;
+
+            if (string.IsNullOrWhiteSpace(entry.ConversationId))
+            {
+                entry.BindingTrust = PlayThreadBindingTrust.Unbound;
+                continue;
+            }
+
+            var hasTurns = log.Turns.Any(t =>
+                string.Equals(t.ConversationId, entry.ConversationId, StringComparison.OrdinalIgnoreCase));
+            if (hasTurns)
+            {
+                entry.BindingTrust = PlayThreadBindingTrust.Verified;
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(entry.PinnedTabKey))
+            {
+                entry.BindingTrust = PlayThreadBindingTrust.Verified;
+                continue;
+            }
+
+            entry.BindingTrust = PlayThreadBindingTrust.PendingPin;
+        }
+
+        bundle.Metadata.SchemaVersion = bindingTrustSchema;
+        return true;
     }
 }

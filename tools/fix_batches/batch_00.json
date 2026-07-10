@@ -1,0 +1,122 @@
+[
+  {
+    "id": "CMD-100",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "Navigation",
+      "WPF",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-101",
+    "labels": [
+      "shell-ux-wave",
+      "Navigation",
+      "WPF",
+      "Browse",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-102",
+    "labels": [
+      "shell-ux-wave",
+      "WPF",
+      "Browse",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-103",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "Navigation",
+      "WPF",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-104",
+    "labels": [
+      "shell-ux-wave",
+      "WPF",
+      "Browse",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-105",
+    "labels": [
+      "shell-ux-wave",
+      "WPF",
+      "Browse",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-106",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "WPF",
+      "Architecture",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-107",
+    "labels": [
+      "shell-ux-wave",
+      "WPF",
+      "Browse",
+      "Optional",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-108",
+    "labels": [
+      "shell-ux-wave",
+      "WPF",
+      "Management",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-11",
+    "labels": [
+      "Feature",
+      "Design",
+      "Sources",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-126",
+    "labels": [
+      "Improvement",
+      "Docs",
+      "Play"
+    ]
+  },
+  {
+    "id": "CMD-128",
+    "labels": [
+      "Feature",
+      "Play",
+      "C#"
+    ]
+  }
+]

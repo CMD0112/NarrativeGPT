@@ -6,8 +6,8 @@ Desktop wrapper for [ChatGPT](https://chatgpt.com) using .NET 9 WPF and Microsof
 
 **Full documentation:** [docs/INDEX.md](docs/INDEX.md)
 
-- **Users:** [user guide](docs/user-guide.md) · [Adventures](docs/adventure-panel.md) · [Projects & sync](docs/user-projects-and-sync.md) · [Instruction contract guide](docs/instruction-contract-guide.md) · [troubleshooting](docs/troubleshooting.md)
-- **Developers:** [architecture](docs/architecture.md) · [utility jobs](docs/utility-job-orchestration.md) · [bridges](docs/webview-bridges.md) · [data models](docs/data-model-reference.md) · [services](docs/services-reference.md) · [testing](docs/testing.md) · [Linear integration](docs/linear-integration.md)
+- **Users:** [user guide](docs/user/user-guide.md) · [Adventures](docs/user/adventure-panel.md) · [Projects & sync](docs/user/user-projects-and-sync.md) · [Instruction contract guide](docs/user/instruction-contract-guide.md) · [troubleshooting](docs/user/troubleshooting.md)
+- **Developers:** [architecture](docs/developer/architecture.md) · [utility jobs](docs/developer/utility-job-orchestration.md) · [bridges](docs/developer/webview-bridges.md) · [data models](docs/reference/data-model-reference.md) · [services](docs/reference/services-reference.md) · [testing](docs/developer/testing.md) · [Linear integration](docs/linear/linear-integration.md) · [agents](AGENTS.md)
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ Desktop wrapper for [ChatGPT](https://chatgpt.com) using .NET 9 WPF and Microsof
 ## Build and run
 
 ```powershell
-cd E:\Documents\Code\chatgpt-wrapper
+# From your clone root:
 dotnet build ChatGPTWrapper\ChatGPTWrapper.csproj
 dotnet run --project ChatGPTWrapper\ChatGPTWrapper.csproj
 ```
@@ -38,9 +38,9 @@ Use **Adventures** in the toolbar for local-first interactive fiction with optio
 - Play automation via WebView2 (`adventure-bridge.js`)
 - Export, libraries, search, response review, branching, and generation jobs
 
-**Docs:** [Adventure Panel Reference](docs/adventure-panel.md) · [Projects & sync](docs/user-projects-and-sync.md) · [Phased roadmap](docs/AI-DUNGEON-PHASED-PLAN.md)
+**Docs:** [Adventure Panel Reference](docs/user/adventure-panel.md) · [Projects & sync](docs/user/user-projects-and-sync.md) · [Adventures roadmap](docs/INDEX.md#adventures-roadmap-phase-status)
 
-**Quick smoke tests:** Phase 1 (play loop) and Phase 2 (Projects API) checklists are in [docs/user-projects-and-sync.md](docs/user-projects-and-sync.md) and [docs/adventure-panel.md](docs/adventure-panel.md#manual-play-mode-smoke-checklist).
+**Quick smoke tests:** Play loop and Projects API checklists are in [docs/user/user-projects-and-sync.md](docs/user/user-projects-and-sync.md) and [docs/user/adventure-panel.md](docs/user/adventure-panel.md#manual-play-mode-smoke-checklist).
 
 ## Data location
 

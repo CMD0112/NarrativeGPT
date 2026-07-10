@@ -6,6 +6,7 @@
     <sys:Double x:Key="SpaceXs">4</sys:Double>
     <sys:Double x:Key="SpaceSm">8</sys:Double>
     <sys:Double x:Key="SpaceMd">12</sys:Double>
+    <Thickness x:Key="SpaceMdPadding">12</Thickness>
     <sys:Double x:Key="SpaceLg">16</sys:Double>
     <sys:Double x:Key="SpaceXl">24</sys:Double>
 
@@ -16,19 +17,30 @@
     <!-- Typography -->
     <FontFamily x:Key="WrapperFontFamily">Segoe UI Variable, Segoe UI</FontFamily>
     <sys:Double x:Key="FontSizeHint">11</sys:Double>
-    <sys:Double x:Key="FontSizeBody">13</sys:Double>
-    <sys:Double x:Key="FontSizeTitle">15</sys:Double>
+    <sys:Double x:Key="ControlMinHeight">36</sys:Double>
+    <sys:Double x:Key="CompanionDefaultWidth">320</sys:Double>
+    <sys:Double x:Key="FontSizeBody">14</sys:Double>
+    <sys:Double x:Key="FontSizeTitle">16</sys:Double>
+    <sys:Double x:Key="FontSizeShellTitle">15</sys:Double>
+    <sys:Double x:Key="FontSizeSection">12</sys:Double>
 
     <!-- Semantic palette -->
     <SolidColorBrush x:Key="BgBaseBrush" Color="#161618"/>
     <SolidColorBrush x:Key="BgSurfaceBrush" Color="#1E1E22"/>
     <SolidColorBrush x:Key="BgElevatedBrush" Color="#28282E"/>
+    <SolidColorBrush x:Key="BgChromeBrush" Color="#232328"/>
+    <SolidColorBrush x:Key="BgWorkspaceBrush" Color="#1E1E22"/>
+    <SolidColorBrush x:Key="BgInsetBrush" Color="#161618"/>
     <SolidColorBrush x:Key="BorderSubtleBrush" Color="#32323A"/>
     <SolidColorBrush x:Key="BorderStrongBrush" Color="#45454F"/>
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#EDEDF0"/>
     <SolidColorBrush x:Key="TextMutedBrush" Color="#9898A4"/>
     <SolidColorBrush x:Key="AccentPrimaryBrush" Color="#5B9FD4"/>
+    <SolidColorBrush x:Key="AccentPrimaryHoverBrush" Color="#6BADDE"/>
+    <SolidColorBrush x:Key="AccentPrimaryPressedBrush" Color="#4A8FC4"/>
     <SolidColorBrush x:Key="AccentSubtleBrush" Color="#335B9FD4"/>
+    <SolidColorBrush x:Key="AccentLinkBrush" Color="#5B9FD4"/>
+    <SolidColorBrush x:Key="TextOnAccentBrush" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="SuccessBrush" Color="#6BCB8E"/>
     <SolidColorBrush x:Key="SuccessSubtleBrush" Color="#336BCB8E"/>
     <SolidColorBrush x:Key="WarningBrush" Color="#E5B567"/>
@@ -44,23 +56,6 @@
     <SolidColorBrush x:Key="ButtonGhostHoverBrush" Color="#32323A"/>
     <SolidColorBrush x:Key="ButtonGhostPressedBrush" Color="#1E1E22"/>
 
-    <!-- Legacy keys (backward compatible) -->
-    <SolidColorBrush x:Key="DialogBgBrush" Color="#161618"/>
-    <SolidColorBrush x:Key="PanelBgBrush" Color="#1E1E22"/>
-    <SolidColorBrush x:Key="ToolbarBgBrush" Color="#28282E"/>
-    <SolidColorBrush x:Key="BorderBrushDark" Color="#45454F"/>
-    <SolidColorBrush x:Key="BorderBrushSubtle" Color="#32323A"/>
-    <SolidColorBrush x:Key="TextBrush" Color="#EDEDF0"/>
-    <SolidColorBrush x:Key="MutedTextBrush" Color="#9898A4"/>
-    <SolidColorBrush x:Key="AccentBrush" Color="#5B9FD4"/>
-    <SolidColorBrush x:Key="SelectionBrush" Color="#3A3A44"/>
-    <SolidColorBrush x:Key="ButtonBgBrush" Color="#28282E"/>
-    <SolidColorBrush x:Key="ButtonHoverBrush" Color="#32323A"/>
-    <SolidColorBrush x:Key="ButtonPressedBrush" Color="#1E1E22"/>
-    <SolidColorBrush x:Key="PopupBgBrush" Color="#1E1E22"/>
-    <SolidColorBrush x:Key="ListRowHoverBrush" Color="#32323A"/>
-    <SolidColorBrush x:Key="ListRowSelectedBrush" Color="#3A3A44"/>
-
     <!-- Win11 system color overrides (Color keys expect Color; Brush keys expect SolidColorBrush) -->
     <Color x:Key="{x:Static SystemColors.WindowColorKey}">#161618</Color>
     <Color x:Key="{x:Static SystemColors.WindowTextColorKey}">#EDEDF0</Color>
@@ -70,12 +65,25 @@
     <Color x:Key="{x:Static SystemColors.MenuTextColorKey}">#EDEDF0</Color>
     <Color x:Key="{x:Static SystemColors.HighlightColorKey}">#3A3A44</Color>
     <Color x:Key="{x:Static SystemColors.HighlightTextColorKey}">#EDEDF0</Color>
+    <Color x:Key="{x:Static SystemColors.ControlDarkColorKey}">#161618</Color>
+    <Color x:Key="{x:Static SystemColors.ControlLightColorKey}">#32323A</Color>
     <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#161618"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#1E1E22"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkBrushKey}" Color="#161618"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}" Color="#32323A"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#EDEDF0"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#1E1E22"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#3A3A44"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#EDEDF0"/>
     <SolidColorBrush x:Key="ContextMenuBackground" Color="#1E1E22"/>
     <SolidColorBrush x:Key="ContextMenuForeground" Color="#EDEDF0"/>
     <SolidColorBrush x:Key="MenuPopupBrush" Color="#1E1E22"/>
+    <Thickness x:Key="SegmentButtonPadding">14,6</Thickness>
+    <Thickness x:Key="CommandBarSecondaryPadding">12,6</Thickness>
+    <Thickness x:Key="StatusChipPadding">8,4</Thickness>
+    <Thickness x:Key="ActionListRowPadding">10,8</Thickness>
+    <Thickness x:Key="ActionListRowMargin">0,0,0,6</Thickness>
+    <Thickness x:Key="ShellIconLabelGap">0,0,6,0</Thickness>
+    <Visibility x:Key="ShellIconLabelVisibility" xmlns="clr-namespace:System.Windows;assembly=PresentationCore">Visible</Visibility>
 
 </ResourceDictionary>

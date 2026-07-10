@@ -37,6 +37,25 @@ public sealed class BridgeAssetTests
     }
 
     [Fact]
+    public void Bridge_asset_contains_sentinel_diagnostics()
+    {
+        var text = File.ReadAllText(BridgeAssetPath);
+        Assert.Contains("recordSentinelDiagnostic", text);
+        Assert.Contains("__CGW_LAST_SENTINEL_DIAGNOSTIC__", text);
+        Assert.Contains("resolvePageSentinelSdk", text);
+    }
+
+    [Fact]
+    public void Bridge_asset_contains_fresh_sentinel_flow()
+    {
+        var text = File.ReadAllText(BridgeAssetPath);
+        Assert.Contains("refreshConversationSentinelHeaders", text);
+        Assert.Contains("chat-requirements/finalize", text);
+        Assert.Contains("clearSentinelCapture", text);
+        Assert.Contains("tryAcquireFreshSentinelViaSdk", text);
+    }
+
+    [Fact]
     public void Bridge_kernel_asset_exists_in_main_app_output()
     {
         var path = Path.Combine(MainAppOutputDirectory, "wrapper-assets", "cgw-bridge-kernel.js");

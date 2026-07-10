@@ -9,7 +9,7 @@ public sealed class ContinuousViewDecorationBenchmarkTests(PlayComposeTestHost h
 {
     public Task InitializeAsync() => host.InitializeAsync();
 
-    public Task DisposeAsync() => host.DisposeAsync();
+    public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
     public async Task DecorateTurnBlocks_completes_under_200ms_for_50_turns()
@@ -29,5 +29,6 @@ public sealed class ContinuousViewDecorationBenchmarkTests(PlayComposeTestHost h
         Assert.Contains("interleaveGroupedTurnRoots", text);
         Assert.Contains("__cgwThreadOrdinalMap", text);
         Assert.Contains("scheduleContinuousViewDecorationOnly", text);
+        Assert.Contains("segmentsNeedPhraseHighlightRefresh", text);
     }
 }

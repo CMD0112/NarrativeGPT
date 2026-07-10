@@ -1,5 +1,6 @@
 using System.Text;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -135,9 +136,9 @@ internal static class SectionedImportService
         return result.ToResult();
     }
 
-    public static SectionedFileImportResult ImportWorld(AdventureBundle bundle, string markdown)
+    public static SectionedFileImportResult ImportWorld(AdventureBundle bundle, string markdown, bool queueMissingRemovals = true)
     {
-        var result = new ImportAccumulator();
+        var result = new ImportAccumulator { QueueMissingRemovals = queueMissingRemovals };
         var doc = SectionMarkdownParser.Parse(markdown);
         var manifest = GetManifestSections(bundle, SectionSchema.WorldFile);
 
@@ -174,9 +175,9 @@ internal static class SectionedImportService
         return result.ToResult();
     }
 
-    public static SectionedFileImportResult ImportPlot(AdventureBundle bundle, string markdown)
+    public static SectionedFileImportResult ImportPlot(AdventureBundle bundle, string markdown, bool queueMissingRemovals = true)
     {
-        var result = new ImportAccumulator();
+        var result = new ImportAccumulator { QueueMissingRemovals = queueMissingRemovals };
         var doc = SectionMarkdownParser.Parse(markdown);
         var manifest = GetManifestSections(bundle, SectionSchema.PlotFile);
 
@@ -213,9 +214,9 @@ internal static class SectionedImportService
         return result.ToResult();
     }
 
-    public static SectionedFileImportResult ImportCast(AdventureBundle bundle, string markdown)
+    public static SectionedFileImportResult ImportCast(AdventureBundle bundle, string markdown, bool queueMissingRemovals = true)
     {
-        var result = new ImportAccumulator();
+        var result = new ImportAccumulator { QueueMissingRemovals = queueMissingRemovals };
         var doc = SectionMarkdownParser.Parse(markdown);
         var manifest = GetManifestSections(bundle, SectionSchema.CastFile);
         var processedParty = false;
@@ -269,13 +270,7 @@ internal static class SectionedImportService
     {
         var body = section.FreeformBody;
         var p = bundle.Entities.Player;
-        p.Name = SectionMarkdownParser.ExtractField(body, "Name") ?? p.Name;
-        p.Background = SectionMarkdownParser.ExtractField(body, "Background") ?? p.Background;
-        p.Appearance = SectionMarkdownParser.ExtractField(body, "Appearance") ?? p.Appearance;
-        p.Personality = SectionMarkdownParser.ExtractField(body, "Personality") ?? p.Personality;
-        p.Abilities = SectionMarkdownParser.ExtractField(body, "Abilities") ?? p.Abilities;
-        p.Weaknesses = SectionMarkdownParser.ExtractField(body, "Weaknesses") ?? p.Weaknesses;
-        p.Goals = SectionMarkdownParser.ExtractField(body, "Goals") ?? p.Goals;
+        CanonFieldMapper.ApplyPlayerCastBody(p, body);
 
         result.EntitiesUpdated++;
         result.ManifestSections.Add(new SectionManifestEntry
@@ -379,9 +374,7 @@ internal static class SectionedImportService
 
             var isNew = location is null;
             location ??= new LocationEntry { Name = entry.Title };
-            location.Description = SectionMarkdownParser.StripStructuredLines(entry.Body);
-            if (entry.Aliases.Count > 0)
-                location.Aliases = entry.Aliases.Where(a => !string.Equals(a, entry.Title, StringComparison.OrdinalIgnoreCase)).ToList();
+            CanonFieldMapper.ApplyEntry(location, CanonSchemaRegistry.Location, entry);
             if (isNew)
                 bundle.Entities.Locations.Add(location);
 
@@ -415,7 +408,7 @@ internal static class SectionedImportService
 
             var isNew = faction is null;
             faction ??= new FactionEntry { Name = entry.Title };
-            faction.Goals = SectionMarkdownParser.StripStructuredLines(entry.Body);
+            CanonFieldMapper.ApplyEntry(faction, CanonSchemaRegistry.Faction, entry);
             if (isNew)
                 bundle.Entities.Factions.Add(faction);
 
@@ -530,11 +523,7 @@ internal static class SectionedImportService
 
             var isNew = quest is null;
             quest ??= new QuestEntry { Title = entry.Title };
-            quest.Description = SectionMarkdownParser.StripStructuredLines(entry.Body);
-            quest.Notes = SectionMarkdownParser.ExtractField(entry.Body, "Notes") ?? quest.Notes;
-            var statusText = ExtractStatusLine(entry.Body);
-            if (Enum.TryParse<QuestStatus>(statusText, ignoreCase: true, out var status))
-                quest.Status = status;
+            CanonFieldMapper.ApplyEntry(quest, CanonSchemaRegistry.Quest, entry);
             if (isNew)
                 bundle.Entities.Quests.Add(quest);
 
@@ -572,7 +561,7 @@ internal static class SectionedImportService
             var isNew = mystery is null;
             mystery ??= new MysteryEntry();
             mystery.Question = entry.Title;
-            mystery.Clues = SectionMarkdownParser.StripStructuredLines(entry.Body);
+            CanonFieldMapper.ApplyEntry(mystery, CanonSchemaRegistry.Mystery, entry);
             if (isNew)
                 bundle.Entities.Mysteries.Add(mystery);
 
@@ -606,8 +595,7 @@ internal static class SectionedImportService
 
             var isNew = conflict is null;
             conflict ??= new ConflictEntry { Title = entry.Title };
-            conflict.Description = SectionMarkdownParser.StripStructuredLines(entry.Body);
-            conflict.Status = ExtractStatusLine(entry.Body) is { Length: > 0 } status ? status : conflict.Status;
+            CanonFieldMapper.ApplyEntry(conflict, CanonSchemaRegistry.Conflict, entry);
             if (isNew)
                 bundle.Entities.Conflicts.Add(conflict);
 
@@ -645,7 +633,7 @@ internal static class SectionedImportService
             var isNew = consequence is null;
             consequence ??= new ConsequenceEntry();
             consequence.Trigger = entry.Title;
-            consequence.Effect = SectionMarkdownParser.StripStructuredLines(entry.Body);
+            CanonFieldMapper.ApplyEntry(consequence, CanonSchemaRegistry.Consequence, entry);
             if (isNew)
                 bundle.Entities.Consequences.Add(consequence);
 
@@ -662,33 +650,11 @@ internal static class SectionedImportService
             seen);
     }
 
-    private static void ApplyCharacterBody(CharacterEntry character, ParsedMarkdownEntry entry)
-    {
-        character.Name = entry.Title;
-        character.Description = SectionMarkdownParser.StripStructuredLines(entry.Body);
-        character.Role = SectionMarkdownParser.ExtractField(entry.Body, "Role") ?? character.Role;
-        character.RelationshipToPlayer = SectionMarkdownParser.ExtractField(entry.Body, "Relationship") ?? character.RelationshipToPlayer;
-        character.Motives = SectionMarkdownParser.ExtractField(entry.Body, "Motives") ?? character.Motives;
-        character.Status = SectionMarkdownParser.ExtractField(entry.Body, "Status") ?? character.Status;
-        character.Location = SectionMarkdownParser.ExtractField(entry.Body, "Location") ?? character.Location;
-        character.Flavor = SectionMarkdownParser.ExtractFlavor(entry.Body);
-        if (entry.Aliases.Count > 0)
-            character.Aliases = entry.Aliases.Where(a => !string.Equals(a, entry.Title, StringComparison.OrdinalIgnoreCase)).ToList();
-    }
+    private static void ApplyCharacterBody(CharacterEntry character, ParsedMarkdownEntry entry) =>
+        CanonFieldMapper.ApplyEntry(character, CanonSchemaRegistry.Npc, entry);
 
-    private static void ApplyPartyBody(CompanionEntry companion, ParsedMarkdownEntry entry)
-    {
-        companion.Name = entry.Title;
-        var lines = entry.Body.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (lines.Length > 0)
-            companion.Condition = lines[0];
-        if (lines.Length > 1)
-            companion.Relationship = lines[1];
-        if (lines.Length > 2)
-            companion.Attitude = lines[2];
-        if (lines.Length > 3)
-            companion.Goals = string.Join("\n", lines.Skip(3));
-    }
+    private static void ApplyPartyBody(CompanionEntry companion, ParsedMarkdownEntry entry) =>
+        CanonFieldMapper.ApplyEntry(companion, CanonSchemaRegistry.Party, entry);
 
     private static SectionManifestEntry BuildFreeformSection(
         ParsedMarkdownSection section,
@@ -777,6 +743,9 @@ internal static class SectionedImportService
         IEnumerable<(Guid Id, string Name, string SectionId)> existing,
         HashSet<Guid> seen)
     {
+        if (!result.QueueMissingRemovals)
+            return;
+
         foreach (var (id, name, sectionId) in existing)
         {
             if (seen.Contains(id))
@@ -836,6 +805,8 @@ internal static class SectionedImportService
 
     private sealed class ImportAccumulator
     {
+        public bool QueueMissingRemovals { get; init; } = true;
+
         public int EntitiesUpdated { get; set; }
 
         public int EntitiesAdded { get; set; }

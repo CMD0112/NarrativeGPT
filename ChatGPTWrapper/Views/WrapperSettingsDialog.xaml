@@ -1,11 +1,11 @@
-<Window x:Class="ChatGPTWrapper.Views.WrapperSettingsDialog"
+<shell:ShellDialogWindow xmlns:shell="clr-namespace:ChatGPTWrapper.Shell" x:Class="ChatGPTWrapper.Views.WrapperSettingsDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Wrapper settings"
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
-        Background="{StaticResource DialogBgBrush}">
+        Background="{StaticResource BgBaseBrush}">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -19,7 +19,7 @@
                    FontWeight="SemiBold" Margin="0,0,0,6"/>
         <TextBlock Grid.Row="1"
                    TextWrapping="Wrap"
-                   Foreground="{StaticResource MutedTextBrush}"
+                   Foreground="{StaticResource TextMutedBrush}"
                    FontSize="11"
                    Margin="0,0,0,8"
                    Text="Each adventure is stored as {folder}/{adventure-id}/. Config and browser data stay under %LocalAppData%\ChatGPTWrapper\."/>
@@ -39,7 +39,7 @@
 
         <TextBlock x:Name="DefaultPathLine" Grid.Row="3"
                    TextWrapping="Wrap"
-                   Foreground="{StaticResource MutedTextBrush}"
+                   Foreground="{StaticResource TextMutedBrush}"
                    FontSize="11"
                    Margin="0,0,0,12"/>
 
@@ -49,4 +49,4 @@
             <Button Content="Cancel" Padding="12,6" Click="Cancel_Click" IsCancel="True"/>
         </StackPanel>
     </Grid>
-</Window>
+</shell:ShellDialogWindow>

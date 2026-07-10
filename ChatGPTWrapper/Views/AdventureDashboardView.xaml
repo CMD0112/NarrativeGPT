@@ -1,72 +1,151 @@
 <UserControl x:Class="ChatGPTWrapper.Views.AdventureDashboardView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Background="{StaticResource DialogBgBrush}"
+             Background="{DynamicResource BgBaseBrush}"
              Focusable="True"
              PreviewKeyDown="AdventureDashboardView_PreviewKeyDown">
-    <Grid Margin="8">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Grid Grid.Row="0" Margin="0,0,0,8">
+
+        <!-- Command bar -->
+        <Grid Grid.Row="0" Margin="0,0,0,10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <StackPanel Orientation="Horizontal">
-                <Button x:Name="NewAdventureButton" Content="New" Padding="10,5" Margin="0,0,6,0" Click="NewAdventure_Click"/>
-                <Button x:Name="DesignWithAiButton" Content="Design with AI…" Padding="10,5" Margin="0,0,6,0" Click="DesignWithAi_Click"/>
-                <Button x:Name="PlayButton" Content="Play" Style="{StaticResource PrimaryButtonStyle}" Padding="10,5" Margin="0,0,6,0" Click="Play_Click"/>
-                <Button x:Name="LinkProjectButton" Content="Link Project…" Padding="10,5" Margin="0,0,6,0"
-                        Click="LinkProject_Click" IsEnabled="False"
-                        ToolTip="Connect this adventure to a ChatGPT Project for source files and AI jobs"/>
-                <Button x:Name="RenameButton" Content="Rename…" Padding="10,5" Margin="0,0,6,0"
-                        Click="Rename_Click" IsEnabled="False"
+            <StackPanel Style="{StaticResource ShellCommandBarStyle}" VerticalAlignment="Center">
+                <Menu Background="Transparent" VerticalAlignment="Center" Margin="0,0,8,0">
+                    <MenuItem Header="New" Padding="10,5">
+                        <MenuItem Header="New adventure" Click="NewAdventure_Click"/>
+                        <MenuItem Header="Design with AI…" Click="DesignWithAi_Click"/>
+                    </MenuItem>
+                </Menu>
+                <Button x:Name="PlayButton"
+                        Content="Play"
+                        Style="{StaticResource ShellCommandBarPrimarySlot}"
+                        Padding="10,5"
+                        Margin="0,0,8,0"
+                        Click="Play_Click"/>
+                <Button x:Name="RenameButton"
+                        Content="Rename…"
+                        Style="{StaticResource ShellCommandBarSecondarySlot}"
+                        Padding="10,5"
+                        Margin="0,0,8,0"
+                        Click="Rename_Click"
+                        IsEnabled="False"
                         ToolTip="Change adventure title (F2)"/>
-                <Button x:Name="DeleteButton" Content="Delete" Padding="10,5" Margin="0,0,6,0" Click="Delete_Click" IsEnabled="False"/>
-                <Button x:Name="ArchiveButton" Content="Archive" Padding="10,5" Margin="0,0,6,0" Click="Archive_Click" IsEnabled="False"/>
-                <Button x:Name="UnarchiveButton" Content="Unarchive" Padding="10,5" Margin="0,0,6,0" Click="Unarchive_Click" IsEnabled="False"/>
-                <Button x:Name="BackupSelectedButton" Content="Backup" Padding="10,5" Margin="0,0,6,0" Click="Backup_Click" IsEnabled="False"/>
-                <TextBox x:Name="SearchBox" Width="180" Margin="6,0,0,0" TextChanged="SearchBox_TextChanged"/>
+                <Button x:Name="DeleteButton"
+                        Content="Delete"
+                        Style="{StaticResource ShellCommandBarSecondarySlot}"
+                        Padding="10,5"
+                        Margin="0,0,8,0"
+                        Click="Delete_Click"
+                        IsEnabled="False"/>
             </StackPanel>
             <Menu Grid.Column="1" Background="Transparent" VerticalAlignment="Center">
                 <MenuItem Header="More…" Padding="10,5">
-                    <MenuItem x:Name="WrapperSettingsMenuItem" Header="Wrapper settings…" Click="WrapperSettings_Click"/>
+                    <MenuItem x:Name="LinkProjectMenuItem" Header="Link Project…" Click="LinkProject_Click"/>
+                    <MenuItem x:Name="DesignWithAiMenuItem" Header="Design with AI…" Click="DesignWithAi_Click"/>
                     <Separator/>
+                    <MenuItem x:Name="ArchiveMenuItem" Header="Archive selected" Click="Archive_Click" IsEnabled="False"/>
+                    <MenuItem x:Name="UnarchiveMenuItem" Header="Unarchive selected" Click="Unarchive_Click" IsEnabled="False"/>
+                    <MenuItem x:Name="BackupMenuItem" Header="Backup selected" Click="Backup_Click" IsEnabled="False"/>
+                    <Separator/>
+                    <MenuItem x:Name="WrapperSettingsMenuItem" Header="Wrapper settings…" Click="WrapperSettings_Click"/>
                     <MenuItem x:Name="ImportMenuItem" Header="Import backup…" Click="Import_Click"/>
                     <MenuItem x:Name="ImportFolderMenuItem" Header="Import folder…" Click="ImportFolder_Click"/>
                     <MenuItem x:Name="CreateFolderMenuItem" Header="Create folder on disk…" Click="CreateFolder_Click"/>
-                    <MenuItem x:Name="LinkProjectMenuItem" Header="Link Project…" Click="LinkProject_Click"/>
-                    <Separator/>
-                    <MenuItem x:Name="BackupMenuItem" Header="Backup selected" Click="Backup_Click"/>
                     <MenuItem Header="Libraries…" Click="Libraries_Click"/>
                     <MenuItem Header="Save scenario to library" Click="SaveScenarioLib_Click"/>
                     <Separator/>
-                    <MenuItem x:Name="DraftFrameworkMenuItem" Header="Draft adventure framework…" Click="DraftFramework_Click"/>
+                    <MenuItem x:Name="DraftFrameworkMenuItem"
+                              Header="Draft adventure framework…"
+                              ToolTip="Runs on the design thread; use Design → Sources to import the draft when complete."
+                              Click="DraftFramework_Click"/>
                 </MenuItem>
             </Menu>
+            <!-- Legacy names kept for code-behind enablement -->
+            <StackPanel Visibility="Collapsed">
+                <Button x:Name="NewAdventureButton" Click="NewAdventure_Click"/>
+                <Button x:Name="DesignWithAiButton" Click="DesignWithAi_Click"/>
+                <Button x:Name="LinkProjectButton" Click="LinkProject_Click"/>
+                <Button x:Name="ArchiveButton" Click="Archive_Click"/>
+                <Button x:Name="UnarchiveButton" Click="Unarchive_Click"/>
+                <Button x:Name="BackupSelectedButton" Click="Backup_Click"/>
+            </StackPanel>
         </Grid>
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6">
-            <Button x:Name="SelectAllButton" Content="Select all" Padding="8,4" Margin="0,0,6,0" Click="SelectAll_Click"/>
-            <Button x:Name="ClearSelectionButton" Content="Clear selection" Padding="8,4" Margin="0,0,6,0" Click="ClearSelection_Click" IsEnabled="False"/>
-            <TextBlock x:Name="SelectionStatusBlock" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" FontSize="11"/>
-        </StackPanel>
+
+        <!-- Filter & sort bar -->
+        <Grid Grid.Row="1" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="120"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="SearchBox"
+                     Grid.Column="0"
+                     MinWidth="160"
+                     Margin="0,0,8,0"
+                     ToolTip="Filter by title, genre, or tags"
+                     TextChanged="SearchBox_TextChanged"/>
+            <ComboBox x:Name="SortCombo"
+                      Grid.Column="1"
+                      Width="148"
+                      Margin="0,0,8,0"
+                      SelectionChanged="SortCombo_SelectionChanged"/>
+            <CheckBox x:Name="ShowArchivedCheck"
+                      Grid.Column="2"
+                      Content="Show archived"
+                      Margin="0,0,12,0"
+                      VerticalAlignment="Center"
+                      Checked="ShowArchived_Changed"
+                      Unchecked="ShowArchived_Changed"/>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock x:Name="SelectionStatusBlock"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           VerticalAlignment="Center"
+                           FontSize="{StaticResource FontSizeHint}"
+                           Margin="0,0,8,0"/>
+                <Button x:Name="SelectAllButton"
+                        Content="Select all"
+                        Style="{StaticResource ShellCommandBarSecondarySlot}"
+                        Padding="8,4"
+                        Margin="0,0,6,0"
+                        Click="SelectAll_Click"/>
+                <Button x:Name="ClearSelectionButton"
+                        Content="Clear"
+                        Style="{StaticResource ShellCommandBarSecondarySlot}"
+                        Padding="8,4"
+                        Click="ClearSelection_Click"
+                        IsEnabled="False"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Library list -->
         <Grid Grid.Row="2">
-            <DataGrid x:Name="AdventureGrid" AutoGenerateColumns="False" IsReadOnly="True"
-                      SelectionMode="Extended" CanUserAddRows="False" Background="{StaticResource PanelBgBrush}"
-                      Foreground="{StaticResource TextBrush}"
-                      BorderBrush="{StaticResource BorderBrushSubtle}"
-                      MouseDoubleClick="AdventureGrid_MouseDoubleClick"
-                      SelectionChanged="AdventureGrid_SelectionChanged">
-                <DataGrid.ContextMenu>
+            <ListBox x:Name="AdventureList"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     SelectionMode="Extended"
+                     VirtualizingPanel.IsVirtualizing="False"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ItemContainerStyle="{StaticResource ShellLibraryListItemStyle}"
+                     SelectionChanged="AdventureList_SelectionChanged"
+                     MouseDoubleClick="AdventureList_MouseDoubleClick"
+                     KeyDown="AdventureList_KeyDown">
+                <ListBox.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="Play" Click="Play_Click"/>
                         <MenuItem x:Name="LinkProjectContextMenuItem" Header="Link Project…" Click="LinkProject_Click"/>
                         <MenuItem x:Name="ContinueDesignMenuItem" Header="Continue design…" Click="ContinueDesign_Click"/>
                         <MenuItem x:Name="RenameContextMenuItem" Header="Rename…" Click="Rename_Click"/>
+                        <MenuItem x:Name="OpenAdventureFolderContextMenuItem" Header="Open adventure folder" Click="OpenAdventureFolder_Click"/>
                         <MenuItem x:Name="CreateFolderContextMenuItem" Header="Create folder on disk…" Click="CreateFolder_Click"/>
                         <MenuItem x:Name="ArchiveContextMenuItem" Header="Archive selected" Click="Archive_Click"/>
                         <MenuItem x:Name="UnarchiveContextMenuItem" Header="Unarchive selected" Click="Unarchive_Click"/>
@@ -74,28 +153,134 @@
                         <Separator/>
                         <MenuItem x:Name="DeleteContextMenuItem" Header="Delete selected" Click="Delete_Click"/>
                     </ContextMenu>
-                </DataGrid.ContextMenu>
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*"/>
-                    <DataGridTextColumn Header="Genre" Binding="{Binding Genre}" Width="90"/>
-                    <DataGridTextColumn Header="Project" Binding="{Binding ProjectLinked}" Width="64"/>
-                    <DataGridTextColumn Header="Design" Binding="{Binding DesignThread}" Width="56"/>
-                    <DataGridTextColumn Header="Turns" Binding="{Binding TurnCount}" Width="52"/>
-                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="72"/>
-                    <DataGridTextColumn Header="Last played" Binding="{Binding LastPlayedDisplay}" Width="120"/>
-                </DataGrid.Columns>
-            </DataGrid>
+                </ListBox.ContextMenu>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="12,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="0"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" MinWidth="0">
+                                <TextBlock Text="{Binding Title}"
+                                           FontSize="{StaticResource FontSizeTitle}"
+                                           FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                    <Border Style="{StaticResource ShellBadgeStyle}"
+                                            Visibility="{Binding GenreBadgeVisibility}">
+                                        <TextBlock Text="{Binding GenreLabel}"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                    </Border>
+                                    <Border Style="{StaticResource ShellBadgeStyle}"
+                                            Background="{Binding StatusBadgeBackground}"
+                                            BorderBrush="{Binding StatusBadgeBorder}"
+                                            Visibility="{Binding StatusBadgeVisibility}">
+                                        <TextBlock Text="{Binding StatusLabel}"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Foreground="{Binding StatusBadgeForeground}"/>
+                                    </Border>
+                                    <Border Style="{StaticResource ShellBadgeStyle}"
+                                            Background="{DynamicResource AccentSubtleBrush}"
+                                            BorderBrush="{DynamicResource AccentPrimaryBrush}"
+                                            Visibility="{Binding ProjectBadgeVisibility}">
+                                        <TextBlock Text="Project linked"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Foreground="{DynamicResource AccentLinkBrush}"/>
+                                    </Border>
+                                    <Border Style="{StaticResource ShellBadgeStyle}"
+                                            Background="{StaticResource WarningSubtleBrush}"
+                                            BorderBrush="{StaticResource WarningBrush}"
+                                            Visibility="{Binding DesignThreadBadgeVisibility}">
+                                        <TextBlock Text="Design thread"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Foreground="{StaticResource WarningBrush}"/>
+                                    </Border>
+                                    <Border Style="{StaticResource ShellBadgeStyle}">
+                                        <TextBlock Text="{Binding TurnCountLabel}"
+                                                   FontSize="{StaticResource FontSizeHint}"
+                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding LastPlayedLabel}"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       FontSize="{StaticResource FontSizeHint}"
+                                       VerticalAlignment="Center"
+                                       Margin="12,0,12,0"
+                                       TextAlignment="Right"/>
+                            <Button Grid.Column="2"
+                                    Content="Play"
+                                    Style="{StaticResource ShellCommandBarPrimarySlot}"
+                                    Padding="12,4"
+                                    VerticalAlignment="Center"
+                                    Tag="{Binding}"
+                                    Click="RowPlay_Click"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <Border x:Name="EmptyStatePanel"
+                    Style="{StaticResource ShellCardStyle}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MaxWidth="420"
+                    Visibility="Collapsed">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock x:Name="EmptyStateTitle"
+                               Text="No adventures yet"
+                               Style="{StaticResource ShellSectionHeaderStyle}"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,6"/>
+                    <TextBlock x:Name="EmptyStateHint"
+                               Text="Create a new adventure, import a backup, or start designing with AI."
+                               Style="{StaticResource ShellSectionHintStyle}"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Margin="0,0,0,14"/>
+                    <StackPanel x:Name="EmptyStateActions" Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="New adventure"
+                                Style="{StaticResource ShellCommandBarPrimarySlot}"
+                                Padding="12,6"
+                                Margin="0,0,8,0"
+                                Click="NewAdventure_Click"/>
+                        <Button Content="Import backup…"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="12,6"
+                                Margin="0,0,8,0"
+                                Click="Import_Click"/>
+                        <Button Content="Design with AI…"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Padding="12,6"
+                                Click="DesignWithAi_Click"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <Border x:Name="LoadingOverlay" Background="#CC1A1A1E" Visibility="Collapsed">
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                     <TextBlock x:Name="LoadingStatusBlock" Text="Loading adventures…"
-                               Foreground="{StaticResource TextBrush}" FontSize="14" HorizontalAlignment="Center"/>
+                               Foreground="{DynamicResource TextPrimaryBrush}" FontSize="14" HorizontalAlignment="Center"/>
                 </StackPanel>
             </Border>
         </Grid>
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
-            <TextBlock x:Name="LocalOnlyHint" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-            <CheckBox x:Name="ShowArchivedCheck" Content="Show archived" Margin="16,0,0,0" VerticalAlignment="Center"
-                      Checked="ShowArchived_Changed" Unchecked="ShowArchived_Changed"/>
+
+        <!-- Footer -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,0">
+            <TextBlock x:Name="LocalOnlyHint"
+                       Style="{StaticResource ShellSectionHintStyle}"
+                       VerticalAlignment="Center"
+                       ToolTipService.ShowDuration="60000"/>
+            <Button Content="Storage settings…"
+                    Style="{StaticResource ShellCommandBarSecondarySlot}"
+                    Padding="8,3"
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center"
+                    Click="WrapperSettings_Click"/>
         </StackPanel>
     </Grid>
 </UserControl>

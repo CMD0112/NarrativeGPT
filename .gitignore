@@ -3,12 +3,34 @@ bin/
 obj/
 artifacts/
 dist/
+publish/
+packages/
 
 # Local ad-hoc build / verify directories
 _build*/
 _test*/
 _native*/
 .build-*/
+.build-tmp/
+
+# Ad-hoc build log captures
+build*.txt
+.build-*.txt
+
+# Agent / recovery scratch (repo root)
+/_*.py
+/_*.txt
+/_recovered_xaml/
+/_entity_ref*.xaml
+/_theme_picker_recovered.xaml
+recover_all_log.txt
+
+# Local docs snapshots (not source of truth)
+docs-backup-*/
+
+# .NET / MSBuild temp projects
+*_wpftmp.csproj
+*_wpftmp.csproj.*
 
 # .NET artifacts
 *.user
@@ -30,6 +52,18 @@ TestResults/
 *.lcov
 .msCoverageSourceRootsMapping_*
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+.env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
 # IDE
 .vs/
 .vscode/
@@ -45,6 +79,18 @@ TestResults/
 Thumbs.db
 Desktop.ini
 
+# Secrets / local env
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+credentials.json
+secrets.json
+
 # Scratch / temp
 .tmp*
 *.log
+*.har
+*.tmp
+*~

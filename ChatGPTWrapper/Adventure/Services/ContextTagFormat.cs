@@ -33,16 +33,38 @@ internal static partial class ContextTagFormat
         return $"{TagPrefix}{tagName}{attrText}]]{NormalizeLineBreaks(content)}[[/cgw:{tagName}]]";
     }
 
-    public static string WrapMeta(PacketMode mode, int? turnIndex = null)
+    public static string WrapMeta(
+        PacketProfile profile,
+        int? turnIndex = null,
+        bool continuation = false,
+        int? adventureTurn = null)
     {
         var attrs = new Dictionary<string, string>
         {
-            ["mode"] = mode == PacketMode.Thin ? "thin" : "fat",
+            ["mode"] = PacketProfileResolver.ProfileMetaMode(profile),
             ["turn"] = turnIndex?.ToString() ?? "",
         };
+
+        if (continuation)
+            attrs["continuation"] = "true";
+
+        if (adventureTurn is > 0)
+            attrs["adventureTurn"] = adventureTurn.Value.ToString();
+
         var attrText = " " + string.Join(" ", attrs.Select(kv => $"{kv.Key}=\"{EscapeAttr(kv.Value)}\""));
         return $"{TagPrefix}meta{attrText}]] [[/cgw:meta]]";
     }
+
+    public static string WrapMeta(
+        PacketMode mode,
+        int? turnIndex = null,
+        bool continuation = false,
+        int? adventureTurn = null) =>
+        WrapMeta(
+            mode == PacketMode.Thin ? PacketProfile.SourceDelegated : PacketProfile.InlineFallback,
+            turnIndex,
+            continuation,
+            adventureTurn);
 
     public static string StripTaggedBlocks(string text, bool removeAll = true)
     {
@@ -87,15 +109,69 @@ internal static partial class ContextTagFormat
             return null;
 
         var remainder = BlockRegex.Replace(packetText, "").Trim();
+        remainder = PromptInjectionService.StripInvalidationMarkers(remainder).Trim();
+        remainder = StripTrailingInjectionBlocks(remainder);
         return string.IsNullOrWhiteSpace(remainder) ? null : remainder;
+    }
+
+    /// <summary>
+    /// Prose injection blocks appended after the player line (not wrapped in [[cgw:]] tags).
+    /// Kept in sync with <c>cgw-packet-display.js</c> <c>stripTrailingInjectionBlocks</c>.
+    /// </summary>
+    public static readonly string[] TrailingInjectionBlockMarkers =
+    [
+        "=== TURN OVERRIDES ===",
+        "=== TURN DIRECTIVE ===",
+        "=== CANON UPDATE (check sources) ===",
+    ];
+
+    public static string StripTrailingInjectionBlocks(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "";
+
+        var earliest = text.Length;
+        foreach (var marker in TrailingInjectionBlockMarkers)
+        {
+            var idx = text.IndexOf(marker, StringComparison.Ordinal);
+            if (idx >= 0 && idx < earliest)
+                earliest = idx;
+        }
+
+        return earliest < text.Length ? text[..earliest].TrimEnd() : text.Trim();
+    }
+
+    public static IReadOnlyDictionary<string, string> ExtractTagAttributes(string text, string tagName)
+    {
+        if (string.IsNullOrEmpty(text))
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match match in BlockRegex.Matches(text))
+        {
+            if (!string.Equals(match.Groups["name"].Value, tagName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            return ParseAttributes(match.Groups["attrs"].Value);
+        }
+
+        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static string FormatTagAttributePreview(string tagName, IReadOnlyDictionary<string, string> attrs)
+    {
+        if (attrs.Count == 0)
+            return "";
+
+        return string.Join(" ", attrs.Select(kv => $"{kv.Key}={kv.Value}"));
     }
 
     public static string FormatStructuredPreview(string packetText)
     {
         var blocks = ExtractAllBlocks(packetText);
         var suffix = ExtractUntaggedSuffix(packetText);
+        var metaAttrs = ExtractTagAttributes(packetText, "meta");
 
-        if (blocks.Count == 0 && string.IsNullOrWhiteSpace(suffix))
+        if (blocks.Count == 0 && metaAttrs.Count == 0 && string.IsNullOrWhiteSpace(suffix))
             return packetText;
 
         var sb = new StringBuilder();
@@ -108,13 +184,38 @@ internal static partial class ContextTagFormat
             })
             .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase);
 
+        var wroteMeta = false;
         foreach (var (name, body) in ordered)
         {
+            if (string.Equals(name, "meta", StringComparison.OrdinalIgnoreCase))
+            {
+                wroteMeta = true;
+                sb.Append("[meta]");
+                var attrPreview = FormatTagAttributePreview(name, metaAttrs);
+                if (!string.IsNullOrWhiteSpace(attrPreview))
+                    sb.Append(' ').Append(attrPreview);
+                sb.AppendLine();
+                if (!string.IsNullOrWhiteSpace(body))
+                {
+                    sb.AppendLine(NormalizeLineBreaks(body));
+                    sb.AppendLine();
+                }
+
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(body))
                 continue;
 
             sb.Append('[').Append(name).AppendLine("]");
             sb.AppendLine(NormalizeLineBreaks(body));
+            sb.AppendLine();
+        }
+
+        if (!wroteMeta && metaAttrs.Count > 0)
+        {
+            sb.Append("[meta] ");
+            sb.AppendLine(FormatTagAttributePreview("meta", metaAttrs));
             sb.AppendLine();
         }
 
@@ -133,6 +234,18 @@ internal static partial class ContextTagFormat
         return sb.ToString().TrimEnd();
     }
 
+    private static Dictionary<string, string> ParseAttributes(string attrsText)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(attrsText))
+            return map;
+
+        foreach (Match match in Regex.Matches(attrsText, @"\b([a-zA-Z_][\w-]*)=""([^""]*)""", RegexOptions.CultureInvariant))
+            map[match.Groups[1].Value] = match.Groups[2].Value;
+
+        return map;
+    }
+
     private static string EscapeAttr(string value) =>
         value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
@@ -149,11 +262,24 @@ internal static partial class ContextTagFormat
     public const string UtilityResponseTagName = "utility-response";
 
     public static string WrapUtilityJob(string jobId, string body) =>
-        WrapBlock(UtilityTagName, body, new Dictionary<string, string>
+        WrapUtilityJob(jobId, body, channel: null);
+
+    public static string WrapUtilityJob(string jobId, string body, string? channel) =>
+        WrapUtilityJob(jobId, body, channel, runId: null);
+
+    public static string WrapUtilityJob(string jobId, string body, string? channel, Guid? runId)
+    {
+        var attrs = new Dictionary<string, string>
         {
             ["job"] = jobId,
             ["v"] = UtilityTagSchemaVersion.ToString(),
-        });
+        };
+        if (!string.IsNullOrWhiteSpace(channel))
+            attrs["channel"] = channel;
+        if (runId is { } id && id != Guid.Empty)
+            attrs["run"] = id.ToString("D");
+        return WrapBlock(UtilityTagName, body, attrs);
+    }
 
     public static string WrapUtilityResponse(string jobId, string body) =>
         WrapBlock(UtilityResponseTagName, body, new Dictionary<string, string>
@@ -232,5 +358,40 @@ internal static partial class ContextTagFormat
         }
 
         return null;
+    }
+
+    public readonly record struct UtilityResponseBlock(string JobId, string Body);
+
+    public static IReadOnlyList<UtilityResponseBlock> ExtractUtilityResponseBlocks(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return [];
+
+        var blocks = new List<UtilityResponseBlock>();
+        foreach (Match match in BlockRegex.Matches(text))
+        {
+            if (!string.Equals(match.Groups["name"].Value, UtilityResponseTagName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var attrs = match.Groups["attrs"].Value;
+            var jobMatch = Regex.Match(attrs, @"\bjob=""([^""]*)""", RegexOptions.CultureInvariant);
+            var jobId = jobMatch.Success ? jobMatch.Groups[1].Value : "";
+            var body = NormalizeLineBreaks(match.Groups["body"].Value);
+            blocks.Add(new UtilityResponseBlock(jobId, body));
+        }
+
+        return blocks;
+    }
+
+    public static string StripUtilityResponseBlocks(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text ?? "";
+
+        return BlockRegex.Replace(
+            text,
+            match => string.Equals(match.Groups["name"].Value, UtilityResponseTagName, StringComparison.OrdinalIgnoreCase)
+                ? ""
+                : match.Value);
     }
 }

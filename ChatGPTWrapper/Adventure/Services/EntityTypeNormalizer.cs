@@ -10,6 +10,10 @@ internal static class EntityTypeNormalizer
         "faction" => "faction",
         "quest" => "quest",
         "concept" or "idea" => "concept",
+        "vehicle" or "vessel" or "mount" => "vehicle",
+        "mystery" => "mystery",
+        "conflict" => "conflict",
+        "consequence" => "consequence",
         _ => (entityType ?? "").Trim().ToLowerInvariant(),
     };
 
@@ -21,6 +25,10 @@ internal static class EntityTypeNormalizer
         "faction" => "Faction",
         "quest" => "Quest",
         "concept" => "Concept",
+        "vehicle" => "Vehicle",
+        "mystery" => "Mystery",
+        "conflict" => "Conflict",
+        "consequence" => "Consequence",
         _ => string.IsNullOrWhiteSpace(entityType) ? "Entity" : entityType,
     };
 }

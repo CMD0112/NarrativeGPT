@@ -1,0 +1,626 @@
+[
+  {
+    "id": "CMD-100",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "Navigation",
+      "WPF",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-101",
+    "labels": [
+      "shell-ux-wave",
+      "Navigation",
+      "WPF",
+      "Browse",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-102",
+    "labels": [
+      "shell-ux-wave",
+      "WPF",
+      "Browse",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-103",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "Navigation",
+      "WPF",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-104",
+    "labels": [
+      "shell-ux-wave",
+      "WPF",
+      "Browse",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-105",
+    "labels": [
+      "shell-ux-wave",
+      "WPF",
+      "Browse",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-106",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "WPF",
+      "Architecture",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-107",
+    "labels": [
+      "shell-ux-wave",
+      "WPF",
+      "Browse",
+      "Optional",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-108",
+    "labels": [
+      "shell-ux-wave",
+      "WPF",
+      "Management",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-11",
+    "labels": [
+      "Feature",
+      "Design",
+      "Sources",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-126",
+    "labels": [
+      "Improvement",
+      "Docs",
+      "Play"
+    ]
+  },
+  {
+    "id": "CMD-128",
+    "labels": [
+      "Feature",
+      "Play",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-129",
+    "labels": [
+      "Feature",
+      "Play",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-130",
+    "labels": [
+      "Feature",
+      "Play",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-131",
+    "labels": [
+      "Feature",
+      "Play",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-132",
+    "labels": [
+      "Improvement",
+      "Play",
+      "Docs"
+    ]
+  },
+  {
+    "id": "CMD-133",
+    "labels": [
+      "Feature",
+      "Play",
+      "C#",
+      "Architecture"
+    ]
+  },
+  {
+    "id": "CMD-135",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-136",
+    "labels": [
+      "Tech Debt",
+      "Play",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-137",
+    "labels": [
+      "Improvement",
+      "Play",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-138",
+    "labels": [
+      "Feature",
+      "Management",
+      "Metadata",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-141",
+    "labels": [
+      "Feature",
+      "Design",
+      "Sources",
+      "C#",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-142",
+    "labels": [
+      "Feature",
+      "Design",
+      "Sources",
+      "WPF",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-143",
+    "labels": [
+      "Play Packet",
+      "C#",
+      "Play",
+      "Feature",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-144",
+    "labels": [
+      "Sources",
+      "WPF",
+      "Play",
+      "Feature",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-145",
+    "labels": [
+      "Improvement",
+      "Play",
+      "Sources",
+      "C#",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-146",
+    "labels": [
+      "Feature",
+      "Browse",
+      "Continuous View",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-147",
+    "labels": [
+      "Feature",
+      "Browse",
+      "Continuous View",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-148",
+    "labels": [
+      "Feature",
+      "Browse",
+      "Continuous View",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-15",
+    "description": "## Context\nThere are padding and margin issues cutting off buttons in the adventure rename dialog.\n\n## Acceptance criteria\n- [ ] Deliverables in description below are complete and verified\n\nThere are padding and margin issues cutting off buttons in the adventure rename dialog.\n\n## Scope\n\n* `AdventureRenameDialog` or equivalent change-name UI\n* Button row clipped on smaller window sizes or high DPI\n\n## Status\n\nBacklog \u2014 cosmetic layout bug, low urgency."
+  },
+  {
+    "id": "CMD-18",
+    "labels": [
+      "Has Tests",
+      "Sources",
+      "C#",
+      "Design",
+      "Feature",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-19",
+    "labels": [
+      "Sources",
+      "Design",
+      "Optional",
+      "Feature",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-21",
+    "labels": [
+      "Spike",
+      "Management",
+      "WPF"
+    ],
+    "description": "## Context\nConsider combining the Play surface and Design surface for less friction in switching between the two. This might be done via toggle or more sophisticated tab handling.\n\n## Acceptance criteria\n- [ ] Deliverables in description below are complete and verified\n\nConsider combining the Play surface and Design surface for less friction in switching between the two. This might be done via toggle or more sophisticated tab handling.\n\n**Related:** <issue id=\"4b9b3b2e-ae15-430d-84c2-5d769e79aaa5\" href=\"https://linear.app/cmd0112/issue/CMD-26/play-open-re-prompts-to-link-project-despite-adventure-already-linked\">CMD-26</issue> (play open friction)"
+  },
+  {
+    "id": "CMD-22",
+    "description": "## Context\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n## Acceptance criteria\n- [ ] Deliverables in description below are complete and verified\n\nNeed to craft and canonize a robust and sophisticated instruction set for OOC functionality.\n\n**Parent:** <issue id=\"b6ef647e-59bc-4f8e-a8ec-537ac66dc5db\" href=\"https://linear.app/cmd0112/issue/CMD-13/adventure-design-instructions-customizability\">CMD-13</issue> (instruction contract model)\n\n**Docs:** `docs/user/instruction-contract-guide.md`"
+  },
+  {
+    "id": "CMD-29",
+    "labels": [
+      "Epic",
+      "Metadata",
+      "C#",
+      "Management"
+    ]
+  },
+  {
+    "id": "CMD-42",
+    "state": "Backlog",
+    "removeBlockedBy": [
+      "CMD-27"
+    ]
+  },
+  {
+    "id": "CMD-44",
+    "labels": [
+      "Feature",
+      "Play",
+      "Composer",
+      "WebView"
+    ]
+  },
+  {
+    "id": "CMD-45",
+    "labels": [
+      "Feature",
+      "Play",
+      "Metadata",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-55",
+    "labels": [
+      "Improvement",
+      "Design",
+      "Utility Jobs"
+    ]
+  },
+  {
+    "id": "CMD-62",
+    "labels": [
+      "ChatGPT Fragile",
+      "Navigation",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-64",
+    "labels": [
+      "Architecture",
+      "Play Packet",
+      "Docs",
+      "Play",
+      "Feature",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-65",
+    "labels": [
+      "Feature",
+      "Play",
+      "Navigation",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-66",
+    "labels": [
+      "Play Packet",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-69",
+    "labels": [
+      "Spike",
+      "Architecture",
+      "Docs"
+    ]
+  },
+  {
+    "id": "CMD-70",
+    "labels": [
+      "Continuous View",
+      "JavaScript",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-71",
+    "labels": [
+      "Play Packet",
+      "C#",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-72",
+    "labels": [
+      "Has Tests",
+      "Play Packet",
+      "C#",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-74",
+    "labels": [
+      "Navigation",
+      "WPF",
+      "Projects",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-75",
+    "labels": [
+      "Navigation",
+      "WPF",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-76",
+    "labels": [
+      "Navigation",
+      "WPF",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-77",
+    "labels": [
+      "Navigation",
+      "C#",
+      "Projects",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-78",
+    "labels": [
+      "Bug",
+      "Navigation",
+      "Docs",
+      "Has Tests",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-80",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "Continuous View",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-81",
+    "labels": [
+      "Continuous View",
+      "JavaScript",
+      "Play",
+      "Improvement",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-82",
+    "labels": [
+      "Continuous View",
+      "JavaScript",
+      "Play",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-84",
+    "labels": [
+      "Sources",
+      "WPF",
+      "Design",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-85",
+    "labels": [
+      "ChatGPT Fragile",
+      "Navigation",
+      "WPF",
+      "Design",
+      "Bug",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-86",
+    "labels": [
+      "Improvement",
+      "Architecture",
+      "C#",
+      "Management"
+    ]
+  },
+  {
+    "id": "CMD-87",
+    "labels": [
+      "Bug",
+      "Design",
+      "Sources",
+      "WPF",
+      "Has Tests"
+    ]
+  },
+  {
+    "id": "CMD-89",
+    "labels": [
+      "Spike",
+      "Sources",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-90",
+    "labels": [
+      "Feature",
+      "Projects",
+      "Navigation",
+      "WPF"
+    ]
+  },
+  {
+    "id": "CMD-91",
+    "labels": [
+      "Epic",
+      "Design",
+      "WPF",
+      "Improvement"
+    ]
+  },
+  {
+    "id": "CMD-94",
+    "labels": [
+      "Improvement",
+      "Instructions",
+      "C#"
+    ]
+  },
+  {
+    "id": "CMD-96",
+    "labels": [
+      "Improvement",
+      "Tech Debt",
+      "WPF",
+      "Browse",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-97",
+    "labels": [
+      "Improvement",
+      "WPF",
+      "Architecture",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-98",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "WPF",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  },
+  {
+    "id": "CMD-99",
+    "labels": [
+      "Improvement",
+      "Browse",
+      "Navigation",
+      "WPF",
+      "shell-ux-wave",
+      "Verified"
+    ]
+  }
+]

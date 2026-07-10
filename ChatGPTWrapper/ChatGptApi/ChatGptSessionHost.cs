@@ -46,6 +46,9 @@ public sealed class ChatGptSessionHost : IChatGptSessionHost
             turnService.SetConversationSendService(conversationSend);
     }
 
+    public AdventureTurnService GetTurnService(object webViewHost) =>
+        webViewHost is WebView2 wv ? GetTurnService(wv) : throw new ArgumentException("Expected WPF WebView2.", nameof(webViewHost));
+
     public AdventureTurnService GetTurnService(WebView2 webView)
     {
         if (!_turnServices.TryGetValue(webView, out var service))

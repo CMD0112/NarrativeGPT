@@ -81,6 +81,27 @@ internal static partial class ChatGptUrls
         IsTrustedChatGptTopLevelUri(uri)
         && LooksLikeProjectWorkspace(uri.AbsolutePath, uri.Query, uri.Fragment);
 
+    /// <summary>
+    /// Canonical project home for DOM file uploads (<c>/g/g-p-…/project</c>), not a conversation thread.
+    /// </summary>
+    public static bool IsCanonicalProjectHome(Uri? uri, string? gizmoId = null)
+    {
+        if (uri is null || !IsTrustedChatGptTopLevelUri(uri))
+            return false;
+
+        if (IsConversationThread(uri))
+            return false;
+
+        if (!TryParseGizmoId(uri, out var parsed))
+            return false;
+
+        if (gizmoId is not null && !GizmoIdsEqual(parsed, gizmoId))
+            return false;
+
+        var path = uri.AbsolutePath.Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
+        return path.EndsWith("/project", StringComparison.Ordinal);
+    }
+
     public static bool TryParseGizmoIdFromUserInput(string? input, out string gizmoId)
     {
         gizmoId = "";
@@ -155,17 +176,48 @@ internal static partial class ChatGptUrls
     {
         var id = NormalizeGizmoId(gizmoId);
         var conv = Uri.EscapeDataString(conversationId.Trim());
+        var segment = id;
+        foreach (var hint in urlHints)
+        {
+            if (string.IsNullOrWhiteSpace(hint) || !Uri.TryCreate(hint, UriKind.Absolute, out var uri))
+                continue;
+
+            if (!TryParseGizmoId(uri, out var fromPath) || !GizmoIdsMatch(fromPath, id))
+                continue;
+
+            segment = fromPath;
+            break;
+        }
+
         var preferPath = urlHints.Any(UsesPathStyleProjectConversationUrl)
                          || id.StartsWith("g-", StringComparison.Ordinal);
 
         if (preferPath)
-            return $"https://chatgpt.com/g/{id}/c/{conv}";
+            return $"https://chatgpt.com/g/{segment}/c/{conv}";
 
         return $"https://chatgpt.com/c/{conv}?project={Uri.EscapeDataString(id)}";
     }
 
     public static string BuildProjectConversationUrl(string conversationId, string gizmoId) =>
         ResolveProjectConversationUrl(conversationId, gizmoId);
+
+    public static bool IsOnProjectConversationPage(string? source, string conversationId, string gizmoId)
+    {
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri))
+            return false;
+
+        if (!IsTrustedChatGptTopLevelUri(uri))
+            return false;
+
+        if (!TryParseConversationId(uri, out var parsedConv)
+            || !string.Equals(parsedConv, conversationId.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return TryParseGizmoId(uri, out var parsedGizmo)
+               && GizmoIdsMatch(parsedGizmo, gizmoId);
+    }
 
     public static bool TryParseConversationId(Uri uri, out string conversationId)
     {
@@ -241,6 +293,24 @@ internal static partial class ChatGptUrls
         return !string.IsNullOrEmpty(a)
                && !string.IsNullOrEmpty(b)
                && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// True when ids match exactly or when one is a titled slug extension of the other
+    /// (e.g. <c>g-p-abc-the-king-in-red-black</c> matches <c>g-p-abc</c>).
+    /// </summary>
+    public static bool GizmoIdsMatch(string? left, string? right)
+    {
+        if (GizmoIdsEqual(left, right))
+            return true;
+
+        var a = NormalizeGizmoId(left);
+        var b = NormalizeGizmoId(right);
+        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+            return false;
+
+        return a.StartsWith(b + "-", StringComparison.OrdinalIgnoreCase)
+               || b.StartsWith(a + "-", StringComparison.OrdinalIgnoreCase);
     }
 
     public static string NormalizeGizmoId(string? id)

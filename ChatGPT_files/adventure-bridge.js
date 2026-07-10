@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var BRIDGE_VERSION = 20;
+  var BRIDGE_VERSION = 21;
   var DOM_FALLBACK_STASH_KEY = "__cgwDomFallbackAttachmentStash";
   var kernel = globalThis.__cgwPageKernel;
   var composerDom = globalThis.__cgwComposerDom;
@@ -268,18 +268,48 @@
     return false;
   }
 
-  function nativeComposerAttachmentReady() {
+  function nativeComposerAttachmentReady(options) {
+    var requireUploadComplete = !!(options && options.requireUploadComplete);
+    if (nativeComposerUploadPending()) {
+      return { ready: false, pending: true };
+    }
     if (nativeComposerShowsAttachments()) {
       return { ready: true, via: "preview" };
     }
     var input = findNativeComposerFileInput();
     if (input && input.files && input.files.length > 0) {
+      if (requireUploadComplete) {
+        return { ready: false, via: "file_input_awaiting_upload", count: input.files.length };
+      }
       return { ready: true, via: "file_input", count: input.files.length };
     }
     return { ready: false };
   }
 
+  function nativeComposerUploadPending() {
+    var scopes = collectUploadFailureScopes();
+    var composer = getNativeComposerRoot();
+    if (composer && !isInsideWrapperComposer(composer)) scopes.push(composer);
+    var bucket = getOffscreenComposerBucket();
+    if (bucket) scopes.push(bucket);
+    var s;
+    for (s = 0; s < scopes.length; s++) {
+      var text = (scopes[s].textContent || "").toLowerCase();
+      if (
+        text.indexOf("upload pending") >= 0 ||
+        text.indexOf("file upload pending") >= 0 ||
+        text.indexOf("uploading file") >= 0 ||
+        text.indexOf("uploading…") >= 0 ||
+        text.indexOf("uploading...") >= 0
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function nativeComposerUploadInProgress() {
+    if (nativeComposerUploadPending()) return true;
     var scopes = collectUploadFailureScopes();
     var bucket = getOffscreenComposerBucket();
     if (bucket) scopes.push(bucket);
@@ -386,7 +416,9 @@
   ) {
     dismissComposerUploadToasts();
     dismissComposerBlockingModals();
-    var readyNow = nativeComposerAttachmentReady();
+    var requireUploadComplete = !!(requireReady && hostCdpStaged);
+    var readyOpts = { requireUploadComplete: requireUploadComplete };
+    var readyNow = nativeComposerAttachmentReady(readyOpts);
     if (readyNow.ready) {
       onDone({ ok: true, via: readyNow.via });
       return;
@@ -405,7 +437,7 @@
           return;
         }
       }
-      readyNow = nativeComposerAttachmentReady();
+      readyNow = nativeComposerAttachmentReady(readyOpts);
       if (readyNow.ready) {
         onDone({ ok: true, via: readyNow.via });
         return;
@@ -414,7 +446,8 @@
         hostCdpStaged &&
         requireReady &&
         Date.now() - startedAt >= uploadSettledMinMs &&
-        !nativeComposerUploadInProgress()
+        !nativeComposerUploadInProgress() &&
+        nativeComposerShowsAttachments()
       ) {
         onDone({ ok: true, via: "upload_settled" });
         return;
@@ -431,17 +464,68 @@
     poll();
   }
 
+  function isProjectHomePage() {
+    try {
+      var path = new URL(location.href).pathname.replace(/\\/g, "/");
+      if (/\/c\//i.test(path)) return false;
+      return /\/project\/?$/i.test(path) || /\/g\/[^/]+\/project\/?$/i.test(path);
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function isInAppSidebar(el) {
+    if (!el || !el.closest) return false;
+    return !!(
+      el.closest("nav") ||
+      el.closest('[data-testid="sidebar"]') ||
+      el.closest("aside") ||
+      el.closest('[class*="sidebar"]')
+    );
+  }
+
   function tryStartProjectChat(onDone) {
+    var onProject = isProjectHomePage();
+    var i;
+
+    if (onProject) {
+      var existing = probeComposer();
+      if (existing.composerFound) {
+        onDone({
+          ok: true,
+          probe: existing,
+          conversationId: existing.conversationId || null,
+        });
+        return true;
+      }
+    }
+
+    if (onProject) {
+      var projectLinks = document.querySelectorAll("a, button");
+      for (i = 0; i < projectLinks.length; i++) {
+        if (isInAppSidebar(projectLinks[i])) continue;
+        var projectText = (projectLinks[i].textContent || "").trim();
+        var projectLower = projectText.toLowerCase();
+        if (
+          projectLower.indexOf("new chat in") >= 0 ||
+          projectLower.indexOf("+ new chat") === 0
+        ) {
+          projectLinks[i].click();
+          waitForProjectChatReady(onDone);
+          return true;
+        }
+      }
+    }
+
     var selectors = [
       'button[data-testid="create-new-chat-button"]',
       'a[data-testid="create-new-chat-button"]',
       'button[data-testid*="new-chat"]',
       'a[data-testid*="new-chat"]',
     ];
-    var i;
     for (i = 0; i < selectors.length; i++) {
       var el = document.querySelector(selectors[i]);
-      if (el) {
+      if (el && !(onProject && isInAppSidebar(el))) {
         el.click();
         waitForProjectChatReady(onDone);
         return true;
@@ -449,12 +533,14 @@
     }
     var links = document.querySelectorAll("a, button");
     for (i = 0; i < links.length; i++) {
+      if (onProject && isInAppSidebar(links[i])) continue;
       var t = (links[i].textContent || "").trim();
       var lower = t.toLowerCase();
+      if (onProject && lower === "new chat") continue;
       if (
         lower.indexOf("new chat in") >= 0 ||
         lower.indexOf("+ new chat") === 0 ||
-        lower === "new chat"
+        (!onProject && lower === "new chat")
       ) {
         links[i].click();
         waitForProjectChatReady(onDone);
@@ -468,8 +554,12 @@
   function waitForProjectChatReady(onDone, attempts) {
     attempts = attempts || 0;
     var probe = probeComposer();
-    if (probe.composerFound) {
+    if (probe.composerFound && probe.conversationId) {
       onDone({ ok: true, probe: probe, conversationId: probe.conversationId });
+      return;
+    }
+    if (probe.composerFound && isProjectHomePage()) {
+      onDone({ ok: true, probe: probe, conversationId: probe.conversationId || null });
       return;
     }
     if (attempts >= 80) {
@@ -534,6 +624,31 @@
       new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" })
     );
     return true;
+  }
+
+  function clearStaleInjectionComposer(onDone) {
+    onDone = onDone || function () {};
+    waitForComposer(
+      5000,
+      function (probe) {
+        if (!probe.composerFound) {
+          onDone({ ok: false, error: "composer_not_found" });
+          return;
+        }
+        var text = readComposerText();
+        if (!isInjectedContextUserMessage(text)) {
+          onDone({ ok: true, cleared: false, skipped: true });
+          return;
+        }
+        clearComposer();
+        if (typeof globalThis.__cgwPlayComposeApplyState === "function") {
+          globalThis.__cgwPlayComposeApplyState({ clear: true });
+        }
+        post({ type: "cgwComposeInput", text: "" });
+        onDone({ ok: true, cleared: true, textLength: text.length });
+      },
+      { requireSubmit: false }
+    );
   }
 
   function setBridgeAutomation(active) {
@@ -629,6 +744,21 @@
     return document.querySelectorAll('[data-message-author-role="user"]').length;
   }
 
+  /** Play turns only — excludes utility jobs and context-only injection packets. */
+  function countPlayUserTurns() {
+    var nodes = document.querySelectorAll('[data-message-author-role="user"]');
+    var count = 0;
+    for (var i = 0; i < nodes.length; i++) {
+      var text = extractTurnText(nodes[i]);
+      if (!text) continue;
+      if (isUtilityUserMessage(text)) continue;
+      var playerText = extractTranscriptPlayerText(text);
+      if (!playerText && isInjectedContextUserMessage(text)) continue;
+      count++;
+    }
+    return count;
+  }
+
   function readComposerText() {
     var el = findComposerElement();
     if (!el) return "";
@@ -636,9 +766,188 @@
     return (el.innerText || el.textContent || "").trim();
   }
 
+  function shortTextHash(text) {
+    var s = text || "";
+    var h = 0;
+    for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(16).slice(0, 8);
+  }
+
+  function fillReadbackRatio(expectedLen, actualLen) {
+    if (expectedLen <= 0) return 1;
+    return actualLen / expectedLen;
+  }
+
+  function minFillReadbackRatio(expectedLen) {
+    return expectedLen > 200 ? 0.9 : 0.5;
+  }
+
+  function computeComposerStableWaitMs(expectedLen) {
+    if (expectedLen <= 200) return STABLE_TEXT_MS + 800;
+    return Math.min(15000, Math.max(3500, STABLE_TEXT_MS + Math.floor(expectedLen * 1.2)));
+  }
+
+  function waitForStableComposerText(expectedText, timeoutMs, onDone) {
+    var expectedLen = (expectedText || "").trim().length;
+    var deadline = Date.now() + (timeoutMs || STABLE_TEXT_MS + 400);
+    var stableSince = 0;
+    var lastLen = -1;
+    function poll() {
+      var current = readComposerText();
+      var len = current.length;
+      if (len === lastLen && len > 0) {
+        if (!stableSince) stableSince = Date.now();
+        if (Date.now() - stableSince >= STABLE_TEXT_MS) {
+          onDone({ ok: true, readback: current, length: len });
+          return;
+        }
+      } else {
+        stableSince = 0;
+        lastLen = len;
+      }
+      if (Date.now() >= deadline) {
+        onDone({
+          ok: false,
+          readback: current,
+          length: len,
+          error: "composer_text_unstable",
+        });
+        return;
+      }
+      setTimeout(poll, 60);
+    }
+    poll();
+  }
+
+  function auditLastUserMessageDelivery(sentText, packetHash, onDone) {
+    var nodes = document.querySelectorAll('[data-message-author-role="user"]');
+    if (!nodes.length) {
+      onDone({ ok: false, error: "no_user_message" });
+      return;
+    }
+    var domText = extractTurnText(nodes[nodes.length - 1]);
+    var sentLen = (sentText || "").trim().length;
+    var domLen = domText.length;
+    var ratio = fillReadbackRatio(sentLen, domLen);
+    var mismatch = sentLen > 200 && ratio < minFillReadbackRatio(sentLen);
+    sendLog(
+      mismatch ? "warn" : "info",
+      "bridge_delivery_audit",
+      mismatch ? "DOM user message shorter than sent packet" : "DOM user message matches sent packet",
+      {
+        sentLen: sentLen,
+        domLen: domLen,
+        ratio: ratio,
+        sentHash: shortTextHash(sentText),
+        domHash: shortTextHash(domText),
+        packetHash: packetHash || null,
+      }
+    );
+    onDone({
+      ok: !mismatch,
+      sentLen: sentLen,
+      domLen: domLen,
+      ratio: ratio,
+      error: mismatch ? "injection_delivery_mismatch" : null,
+    });
+  }
+
+  function deferPostSubmitPromptCleanup(options, text, packetHash) {
+    setTimeout(function () {
+      try {
+        if (
+          options &&
+          options.displayUserLine &&
+          typeof globalThis.__cgwStampUserTurnDisplay === "function"
+        ) {
+          globalThis.__cgwStampUserTurnDisplay(
+            options.displayUserLine,
+            options.packetHash || ""
+          );
+        }
+      } catch (_stamp) {
+        /* ignore */
+      }
+      try {
+        if (globalThis.__cgwWrapperComposer) {
+          if (typeof globalThis.__cgwPlayComposeApplyState === "function") {
+            globalThis.__cgwPlayComposeApplyState({ clear: true, focus: true });
+          }
+        } else {
+          clearComposer();
+        }
+      } catch (_clear) {
+        /* ignore */
+      }
+      var auditText =
+        options && options.displayUserLine && options.displayUserLine.trim()
+          ? options.displayUserLine
+          : text;
+      auditLastUserMessageDelivery(auditText, packetHash || "", function (audit) {
+        if (!audit.ok) {
+          sendLog(
+            "warn",
+            "bridge_delivery_audit_post_ack",
+            "Post-ack DOM audit mismatch (send already accepted)",
+            audit
+          );
+        }
+      });
+    }, 0);
+  }
+
+  function waitForSubmitButtonEnabled(deadlineMs, onDone, options) {
+    options = options || {};
+    var allowKeyboard = !!options.allowKeyboardOnProjectHome;
+    var onProjectHome = isProjectHomePage();
+    var noSubmitButton = !findComposerSubmitButton(true);
+    if (onProjectHome && noSubmitButton && !allowKeyboard) {
+      deadlineMs = Math.min(deadlineMs || 60000, 5000);
+    }
+    var deadline = Date.now() + (deadlineMs || 60000);
+    function poll() {
+      dismissComposerBlockingModals();
+      if (nativeComposerUploadPending() || nativeComposerUploadInProgress()) {
+        if (Date.now() >= deadline) {
+          onDone({ ok: false, error: "upload_still_pending" });
+          return;
+        }
+        setTimeout(poll, 200);
+        return;
+      }
+      var btn = findComposerSubmitButton(true);
+      if (btn && !btn.disabled) {
+        onDone({ ok: true, via: "submit_button" });
+        return;
+      }
+      if (Date.now() >= deadline) {
+        if (allowKeyboard && onProjectHome && noSubmitButton) {
+          sendLog(
+            "info",
+            "bridge_submit_keyboard_fallback",
+            "Project home attach using keyboard submit fallback",
+            probeComposer()
+          );
+          onDone({ ok: true, via: "keyboard_fallback", probe: probeComposer() });
+          return;
+        }
+        onDone({
+          ok: false,
+          error: "submit_disabled",
+          probe: probeComposer(),
+          disabled: !!(btn && btn.disabled),
+        });
+        return;
+      }
+      setTimeout(poll, 200);
+    }
+    poll();
+  }
+
   function waitForSubmitVerification(baselineUserCount, filledText, timeoutMs, onDone) {
     var deadline = Date.now() + (timeoutMs || 8000);
     var filledLen = (filledText || "").trim().length;
+    var minRatio = minFillReadbackRatio(filledLen);
     function poll() {
       var userCount = countUserTurns();
       var composerText = readComposerText();
@@ -650,8 +959,22 @@
         onDone({ ok: true, verifiedBy: "composer_empty" });
         return;
       }
-      if (filledLen > 12 && composerText.length < Math.max(8, filledLen * 0.2)) {
-        onDone({ ok: true, verifiedBy: "composer_shortened" });
+      if (
+        filledLen > 200 &&
+        fillReadbackRatio(filledLen, composerText.length) < minRatio
+      ) {
+        if (Date.now() >= deadline) {
+          onDone({
+            ok: false,
+            error: "fill_incomplete",
+            probe: probeComposer(),
+            userCount: userCount,
+            composerLength: composerText.length,
+            filledLen: filledLen,
+          });
+          return;
+        }
+        setTimeout(poll, 120);
         return;
       }
       if (Date.now() >= deadline) {
@@ -733,7 +1056,8 @@
       text.indexOf("=== STORY SO FAR") >= 0 ||
       text.indexOf("=== ROLLING SUMMARY ===") >= 0 ||
       text.indexOf("=== STATE ===") >= 0 ||
-      text.indexOf("=== CURRENT STATE ===") >= 0
+      text.indexOf("=== CURRENT STATE ===") >= 0 ||
+      text.indexOf("=== CANON UPDATE") >= 0
     );
   }
 
@@ -749,17 +1073,39 @@
     return String(text).indexOf("[[cgw:utility") >= 0;
   }
 
+  function stripTrailingInjectionBlocks(text) {
+    if (typeof globalThis.__cgwStripTrailingInjectionBlocks === "function") {
+      return globalThis.__cgwStripTrailingInjectionBlocks(text);
+    }
+    if (!text) return "";
+    var markers = [
+      "=== TURN OVERRIDES ===",
+      "=== TURN DIRECTIVE ===",
+      "=== CANON UPDATE (check sources) ===",
+    ];
+    var earliest = text.length;
+    for (var i = 0; i < markers.length; i++) {
+      var idx = text.indexOf(markers[i]);
+      if (idx >= 0 && idx < earliest) earliest = idx;
+    }
+    return earliest < text.length ? text.slice(0, earliest).trim() : text.trim();
+  }
+
   function extractTranscriptPlayerText(text) {
     if (!text) return "";
     if (isUtilityUserMessage(text)) return "";
-    if (!isInjectedContextUserMessage(text)) return sanitizeTranscriptText(text);
     var marker = "=== PLAYER TURN ===";
     var markerIdx = text.indexOf(marker);
     if (markerIdx >= 0) {
       var afterMarker = text.slice(markerIdx + marker.length).replace(/^[\r\n]+/, "");
-      return sanitizeTranscriptText(afterMarker);
+      return sanitizeTranscriptText(stripTrailingInjectionBlocks(afterMarker));
     }
-    return sanitizeTranscriptText(stripContextTags(text));
+    if (!isInjectedContextUserMessage(text) && text.indexOf("[[cgw:") < 0) {
+      return sanitizeTranscriptText(text);
+    }
+    return sanitizeTranscriptText(
+      stripTrailingInjectionBlocks(stripContextTags(text))
+    );
   }
 
   function getLastAssistantNode() {
@@ -930,19 +1276,112 @@
       var baseline = countAssistantTurns();
 
       function continueFillAndSubmit() {
-        var filled = fillComposer(text);
-        if (!filled) {
-          filled = fillComposer(text);
-        }
-        if (!filled) {
-          sendLog("error", "bridge_fill_failed", "fillComposer returned false", {
-            probe: probeComposer(),
+        var expectedLen = (text || "").trim().length;
+
+        function proceedToSubmit() {
+          var stableWaitMs =
+            options && typeof options.composerStableWaitMs === "number"
+              ? options.composerStableWaitMs
+              : computeComposerStableWaitMs(expectedLen);
+          waitForStableComposerText(text, stableWaitMs, function (stable) {
+            if (!stable.ok && expectedLen > 200) {
+              sendLog("error", "bridge_fill_unstable", "Composer text did not stabilize before submit", {
+                expectedLen: expectedLen,
+                readbackLen: stable.length,
+                error: stable.error,
+              });
+              finish({ ok: false, error: stable.error || "composer_text_unstable" });
+              return;
+            }
+            var hasAttachments = !!(
+              options &&
+              (options.attachmentsPreStaged ||
+                options.hostCdpStaged ||
+                options.useWrapperAttachmentStash ||
+                resolveDomAttachments(options).length)
+            );
+            if (hasAttachments) {
+              var submitOpts = {
+                allowKeyboardOnProjectHome: !!(
+                  (options && options.allowKeyboardSubmitOnProjectHome) ||
+                  (globalThis.__cgwSubmitPromptOptions &&
+                    globalThis.__cgwSubmitPromptOptions.allowKeyboardSubmitOnProjectHome)
+                ),
+              };
+              waitForSubmitButtonEnabled(
+                (options && options.attachmentWaitMs) || 90000,
+                function (submitReady) {
+                if (!submitReady.ok) {
+                  sendLog(
+                    "error",
+                    "bridge_submit_not_ready",
+                    "Submit button not enabled before attachment send",
+                    submitReady
+                  );
+                  finish({ ok: false, error: submitReady.error || "submit_not_ready" });
+                  return;
+                }
+                scheduleSubmitAttempts();
+              },
+                submitOpts
+              );
+              return;
+            }
+            scheduleSubmitAttempts();
           });
-          finish({ ok: false, error: "composer_not_found" });
-          return;
         }
-        sendLog("debug", "bridge_fill_ok", "Composer filled", { probe: probeComposer() });
-        scheduleSubmitAttempts();
+
+        function afterFill(attempt) {
+          var filled = fillComposer(text);
+          if (!filled && attempt < 2) {
+            filled = fillComposer(text);
+          }
+          if (!filled) {
+            sendLog("error", "bridge_fill_failed", "fillComposer returned false", {
+              probe: probeComposer(),
+              attempt: attempt,
+            });
+            finish({ ok: false, error: "composer_not_found" });
+            return;
+          }
+
+          var readback = readComposerText();
+          var readbackLen = readback.length;
+          var ratio = fillReadbackRatio(expectedLen, readbackLen);
+          sendLog("info", "bridge_fill_readback", "Composer fill readback", {
+            expectedLen: expectedLen,
+            readbackLen: readbackLen,
+            ratio: ratio,
+            hashPrefix: shortTextHash(readback),
+            attempt: attempt,
+          });
+
+          if (expectedLen > 200 && ratio < minFillReadbackRatio(expectedLen)) {
+            if (attempt < 2) {
+              setTimeout(function () {
+                afterFill(attempt + 1);
+              }, 100);
+              return;
+            }
+            sendLog("error", "bridge_fill_incomplete", "Composer readback too short after fill", {
+              expectedLen: expectedLen,
+              readbackLen: readbackLen,
+              ratio: ratio,
+            });
+            finish({ ok: false, error: "fill_incomplete" });
+            return;
+          }
+
+          sendLog("debug", "bridge_fill_ok", "Composer filled", {
+            probe: probeComposer(),
+            expectedLen: expectedLen,
+            readbackLen: readbackLen,
+            ratio: ratio,
+          });
+          proceedToSubmit();
+        }
+
+        afterFill(1);
       }
 
       function prepareNativeComposer(onReady) {
@@ -1054,7 +1493,7 @@
               onReady();
             },
             true,
-            4000,
+            12000,
             true
           );
           return;
@@ -1086,6 +1525,14 @@
       }
 
       function scheduleSubmitAttempts() {
+      var hasAttachments = !!(
+        options &&
+        (options.attachmentsPreStaged ||
+          options.hostCdpStaged ||
+          options.useWrapperAttachmentStash ||
+          resolveDomAttachments(options).length)
+      );
+      var verifyMs = hasAttachments ? 12000 : 4000;
       var submitDelay = wrapperActive ? 180 : 30;
       setTimeout(function () {
         var attempts = 0;
@@ -1102,10 +1549,15 @@
               attempt: attempts,
               probe: probeComposer(),
             });
-            waitForSubmitVerification(baselineUser, filledText, 4000, function (verify) {
+            waitForSubmitVerification(baselineUser, filledText, verifyMs, function (verify) {
               if (verify.ok) {
                 submitHandled = true;
                 sendLog("info", "bridge_submit_verified", "Submit verified in ChatGPT UI", verify);
+                if (messageType === "promptSubmitted") {
+                  finish({ ok: true });
+                  deferPostSubmitPromptCleanup(options, text, options && options.packetHash);
+                  return;
+                }
                 if (
                   options &&
                   options.displayUserLine &&
@@ -1180,7 +1632,9 @@
     setTimeout(startSend, unhideDelayMs);
   }
 
-  function sendPrompt(text, timeoutMs, requireProjectContext) {
+  function sendPrompt(text, timeoutMs, requireProjectContext, composerStableWaitMs, attachmentOptions) {
+    var opts = attachmentOptions || {};
+    var expectedLen = (text || "").trim().length;
     runComposerPrompt(
       text,
       requireProjectContext,
@@ -1188,6 +1642,15 @@
         composerWaitMs: 5000,
         unhideDelayMs: 250,
         composerWaitOptions: { requireSubmit: false },
+        composerStableWaitMs:
+          typeof composerStableWaitMs === "number"
+            ? composerStableWaitMs
+            : computeComposerStableWaitMs(expectedLen),
+        attachments: opts.attachments || [],
+        useWrapperAttachmentStash: !!opts.useWrapperAttachmentStash,
+        hostCdpStaged: !!opts.hostCdpStaged,
+        attachmentsPreStaged: !!opts.attachmentsPreStaged,
+        attachmentWaitMs: 120000,
         onSubmitted: function (baseline, finish) {
           waitForStableAssistantText(baseline, timeoutMs || 120000, finish, {
             minStableMs: 1500,
@@ -1206,7 +1669,8 @@
     attachments,
     useWrapperAttachmentStash,
     hostCdpStaged,
-    attachmentsPreStaged
+    attachmentsPreStaged,
+    allowKeyboardSubmitOnProjectHome
   ) {
     runComposerPrompt(
       text,
@@ -1223,14 +1687,7 @@
         hostCdpStaged: !!hostCdpStaged,
         attachmentsPreStaged: !!attachmentsPreStaged,
         attachmentWaitMs: 120000,
-        onSubmitted: function (_baseline, finish) {
-          try {
-            if (globalThis.__cgwWrapperComposer) clearComposer();
-          } catch (_clear) {
-            /* ignore */
-          }
-          finish({ ok: true });
-        },
+        allowKeyboardSubmitOnProjectHome: !!allowKeyboardSubmitOnProjectHome,
       },
       "promptSubmitted"
     );
@@ -1285,7 +1742,18 @@
     });
     switch (cmd.action) {
       case "sendPrompt":
-        sendPrompt(cmd.text || "", cmd.timeoutMs, !!cmd.requireProjectContext);
+        sendPrompt(
+          cmd.text || "",
+          cmd.timeoutMs,
+          !!cmd.requireProjectContext,
+          cmd.composerStableWaitMs,
+          {
+            attachments: cmd.attachments || [],
+            useWrapperAttachmentStash: !!cmd.useWrapperAttachmentStash,
+            hostCdpStaged: !!cmd.hostCdpStaged,
+            attachmentsPreStaged: !!cmd.attachmentsPreStaged,
+          }
+        );
         break;
       case "submitPrompt":
         submitPrompt(
@@ -1296,7 +1764,8 @@
           cmd.attachments || [],
           !!cmd.useWrapperAttachmentStash,
           !!cmd.hostCdpStaged,
-          !!cmd.attachmentsPreStaged
+          !!cmd.attachmentsPreStaged,
+          !!cmd.allowKeyboardSubmitOnProjectHome
         );
         break;
       case "fillComposer": {
@@ -1323,6 +1792,23 @@
         }, wrapperActive ? 0 : 250);
         break;
       }
+      case "clearComposer":
+        setTimeout(function () {
+          clearComposer();
+          if (typeof globalThis.__cgwPlayComposeApplyState === "function") {
+            globalThis.__cgwPlayComposeApplyState({ clear: true });
+          }
+          post({ type: "cgwComposeInput", text: "" });
+          post({ type: "composerCleared", ok: true, cleared: true });
+        }, 250);
+        break;
+      case "clearComposerIfInjection":
+        setTimeout(function () {
+          clearStaleInjectionComposer(function (result) {
+            post({ type: "composerCleared", ok: !!result.ok, cleared: !!result.cleared, skipped: !!result.skipped, error: result.error || null });
+          });
+        }, 250);
+        break;
       case "captureLastAssistant": {
         var captured = getLastAssistantText();
         post({
@@ -1360,7 +1846,7 @@
         post({
           type: "userTurnCount",
           ok: true,
-          count: countUserTurns(),
+          count: countPlayUserTurns(),
           conversationId: getConversationKey(),
         });
         break;
@@ -1462,8 +1948,15 @@
 
   globalThis.__cgwAdventureBridgeVersion = BRIDGE_VERSION;
   globalThis.__cgwAdventureHandleCommand = handleCommand;
-  globalThis.__cgwAdventureSendPrompt = function (text, timeoutMs, requireProjectContext) {
-    sendPrompt(text, timeoutMs, !!requireProjectContext);
+  globalThis.__cgwAdventureClearStaleInjectionComposer = clearStaleInjectionComposer;
+  globalThis.__cgwAdventureSendPrompt = function (
+    text,
+    timeoutMs,
+    requireProjectContext,
+    composerStableWaitMs,
+    attachmentOptions
+  ) {
+    sendPrompt(text, timeoutMs, !!requireProjectContext, composerStableWaitMs, attachmentOptions);
   };
   globalThis.__cgwAdventureSubmitPrompt = function (
     text,
@@ -1475,6 +1968,7 @@
     hostCdpStaged,
     attachmentsPreStaged
   ) {
+    var opts = globalThis.__cgwSubmitPromptOptions || {};
     submitPrompt(
       text || "",
       !!requireProjectContext,
@@ -1483,7 +1977,8 @@
       attachments || [],
       !!useWrapperAttachmentStash,
       !!hostCdpStaged,
-      !!attachmentsPreStaged
+      !!attachmentsPreStaged,
+      !!opts.allowKeyboardSubmitOnProjectHome
     );
   };
   globalThis.__cgwNativeComposerHasAttachments = function () {
@@ -1506,14 +2001,29 @@
   globalThis.__cgwAdventurePollUploadFailure = function () {
     return nativeComposerShowsUploadFailure();
   };
-  globalThis.__cgwAdventurePollAttachmentReady = function (startedAtMs) {
-    var ready = nativeComposerAttachmentReady();
+  globalThis.__cgwAdventurePollUploadPending = function () {
+    return nativeComposerUploadPending() || nativeComposerUploadInProgress();
+  };
+  globalThis.__cgwAdventurePollAttachmentReady = function (opts) {
+    var startedAt =
+      typeof opts === "number"
+        ? opts
+        : opts && typeof opts.startedAtMs === "number"
+          ? opts.startedAtMs
+          : 0;
+    var hostCdpStaged = !!(opts && opts.hostCdpStaged);
+    var requireUploadComplete = hostCdpStaged;
+    var ready = nativeComposerAttachmentReady({ requireUploadComplete: requireUploadComplete });
     if (ready.ready) return ready;
-    var startedAt = Number(startedAtMs) || 0;
-    if (startedAt > 0 && Date.now() - startedAt >= 9000) {
-      if (!nativeComposerShowsUploadFailure() && !nativeComposerUploadInProgress()) {
-        return { ready: true, via: "upload_settled" };
-      }
+    var startedAtMs = Number(startedAt) || 0;
+    if (
+      startedAtMs > 0 &&
+      Date.now() - startedAtMs >= 9000 &&
+      nativeComposerShowsAttachments() &&
+      !nativeComposerShowsUploadFailure() &&
+      !nativeComposerUploadInProgress()
+    ) {
+      return { ready: true, via: "upload_settled" };
     }
     return { ready: false };
   };

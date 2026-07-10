@@ -1,0 +1,70 @@
+<UserControl x:Class="ChatGPTWrapper.Controls.ActionListRow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root"
+             Focusable="False">
+    <Border Style="{StaticResource ActionListRowBorderStyle}">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <StackPanel Grid.Column="0" Grid.Row="0" Margin="0,0,8,0">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding LeadingIcon, ElementName=Root}"
+                               Style="{StaticResource ShellIconGlyphStyle}"
+                               Margin="0,0,6,0"
+                               VerticalAlignment="Top"/>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Title, ElementName=Root}"
+                                   FontWeight="SemiBold"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding Hint, ElementName=Root}"
+                                   Style="{StaticResource ShellSectionHintStyle}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,2,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Grid.Row="0"
+                    Grid.RowSpan="2"
+                    Content="Run"
+                    Style="{StaticResource ShellCommandBarSecondarySlot}"
+                    MinWidth="56"
+                    VerticalAlignment="Center"
+                    Command="{Binding RunCommand, ElementName=Root}"
+                    IsEnabled="{Binding RowEnabled, ElementName=Root}"/>
+            <TextBlock Grid.Column="0"
+                       Grid.Row="1"
+                       Grid.ColumnSpan="2"
+                       Text="{Binding DisabledReason, ElementName=Root}"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       FontSize="{DynamicResource FontSizeHint}"
+                       TextWrapping="Wrap"
+                       Margin="0,4,0,0"
+                       Visibility="Collapsed">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding RowEnabled, ElementName=Root}" Value="False"/>
+                                    <Condition Binding="{Binding DisabledReason, ElementName=Root}" Value="{x:Null}"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </MultiDataTrigger>
+                            <DataTrigger Binding="{Binding RowEnabled, ElementName=Root}" Value="False">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Grid>
+    </Border>
+</UserControl>

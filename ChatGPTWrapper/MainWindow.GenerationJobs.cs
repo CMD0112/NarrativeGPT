@@ -1,8 +1,10 @@
 using System.Windows;
 using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Services;
+using ChatGPTWrapper.Adventure.Services.UtilityWorker;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
+using ChatGPTWrapper.Diagnostics;
 using ChatGPTWrapper.Views;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -19,7 +21,7 @@ public partial class MainWindow
         if (_generationJobService is not null)
             return _generationJobService;
 
-        var wv = wireFrom ?? FindUtilityApiWebView() ?? GetPlayWebView();
+        var wv = wireFrom ?? GetPlayWebView();
         if (wv is not null)
             WireProjectServices(wv);
 
@@ -35,7 +37,7 @@ public partial class MainWindow
         CoreWebView2 core,
         CancellationToken cancellationToken)
     {
-        var wv = FindUtilityApiWebView();
+        var wv = GetPlayWebView();
         if (wv is null)
             return null;
 
@@ -64,7 +66,7 @@ public partial class MainWindow
         {
             var targetUrl = ChatGptUrls.ResolveProjectConversationUrl(conversationId, gizmoId, core.Source);
             core.Navigate(targetUrl);
-            await WaitForChatGptNavigationAsync(core);
+            await WaitForChatGptNavigationAsync(core, expectedDestination: targetUrl);
         }
 
         if (!IsAcceptableUtilityUiConversation(bundle, core.Source, conversationId))
@@ -106,7 +108,9 @@ public partial class MainWindow
         bool forceRotate)
     {
         var needsScope = jobId is GenerationJobId.ExtractEntities
+            or GenerationJobId.ProposeEntitiesFile
             or GenerationJobId.ProposeMemories
+            or GenerationJobId.UpdateState
             or GenerationJobId.ProcessTurn;
 
         if (!needsScope)
@@ -163,12 +167,15 @@ public partial class MainWindow
             or GenerationJobId.DesignExtractStep
             or GenerationJobId.DraftFramework
             or GenerationJobId.ProposeJsonImport
-            or GenerationJobId.ProposeSourceEdits;
+            or GenerationJobId.ProposeSourceEdits
+            or GenerationJobId.AuditCanon;
 
     private async Task<GenerationJobResult?> RunGenerationJobForActiveAdventureAsync(
         string jobId,
         GenerationJobContext? context = null,
-        bool forceRotate = false)
+        bool forceRotate = false,
+        IReadOnlyList<DomAttachmentPayload>? domAttachments = null,
+        string? attachmentReferenceNote = null)
     {
         if (_activeAdventureId is not { } adventureId)
         {
@@ -184,6 +191,38 @@ public partial class MainWindow
         }
 
         context ??= new GenerationJobContext();
+        if (!string.IsNullOrWhiteSpace(attachmentReferenceNote))
+        {
+            context = new GenerationJobContext
+            {
+                Turn = context.Turn,
+                Scope = context.Scope,
+                CardId = context.CardId,
+                EntityId = context.EntityId,
+                EntityKind = context.EntityKind,
+                ForceRotate = context.ForceRotate,
+                UserPrompt = context.UserPrompt,
+                ProcessTurnIncludeMemories = context.ProcessTurnIncludeMemories,
+                ProcessTurnIncludeEntities = context.ProcessTurnIncludeEntities,
+                ProcessTurnIncludeSummary = context.ProcessTurnIncludeSummary,
+                StoryContextBlock = context.StoryContextBlock,
+                StoryContextHasTranscript = context.StoryContextHasTranscript,
+                OmitRedundantJobTurnSlices = context.OmitRedundantJobTurnSlices,
+                StoryContextIncludesSummary = context.StoryContextIncludesSummary,
+                StoryContextIncludesState = context.StoryContextIncludesState,
+                SuppressInlineGuide = context.SuppressInlineGuide,
+                UtilityContextAssembled = context.UtilityContextAssembled,
+                UtilityContextManifest = context.UtilityContextManifest,
+                DesignStep = context.DesignStep,
+                InferenceSource = context.InferenceSource,
+                UtilityRunId = context.UtilityRunId,
+                DualRunGroupId = context.DualRunGroupId,
+                AllowCrossSourceDuplicates = context.AllowCrossSourceDuplicates,
+                ForLocalInference = context.ForLocalInference,
+                JobAttachments = context.JobAttachments,
+                AttachmentReferenceNote = attachmentReferenceNote,
+            };
+        }
         context = EnrichJobContextWithScope(bundle, jobId, context, forceRotate);
         if (context is null)
         {
@@ -195,10 +234,37 @@ public partial class MainWindow
         var isDesignJob = IsDesignGenerationJob(jobId);
         var isDesignSourceJob = jobId is GenerationJobId.ProposeJsonImport or GenerationJobId.ProposeSourceEdits;
 
-        var usesInline = !isDesignJob && UtilityDeliveryModeService.UsesInlineDelivery(bundle);
+        if (!isDesignJob)
+        {
+            var route = UtilityJobRouter.Resolve(
+                bundle,
+                jobId,
+                UtilityJobTrigger.ManualCompanion);
+            if (route.Lane == UtilityRouteLane.Blocked)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                    SetPlayComposeStatus(FormatUtilityRouteBlocked(jobId, route.Reason)));
+                return new GenerationJobResult
+                {
+                    Success = false,
+                    Error = route.Reason ?? "utility_route_blocked",
+                };
+            }
+
+            if (route.Lane == UtilityRouteLane.WorkerOutbox)
+            {
+                return await EnqueueWorkerUtilityJobAsync(
+                    adventureId,
+                    bundle,
+                    jobId,
+                    context,
+                    domAttachments);
+            }
+        }
+
         WebView2 wv;
         CoreWebView2 core;
-        if (isDesignJob || _appMode == AppMode.Design)
+        if (isDesignJob)
         {
             try
             {
@@ -235,7 +301,7 @@ public partial class MainWindow
 
             core = designCore;
         }
-        else if (usesInline)
+        else
         {
             var playTab = GetPlayWebView();
             if (playTab is null)
@@ -246,37 +312,14 @@ public partial class MainWindow
             }
 
             wv = playTab;
-            if (wv.CoreWebView2 is not { } playCore)
+            if (wv.CoreWebView2 is not { } playCoreResolved)
             {
                 await Dispatcher.InvokeAsync(() =>
                     SetPlayComposeStatus($"{jobId}: play tab not ready — pin a play tab first."));
                 return null;
             }
 
-            core = playCore;
-        }
-        else
-        {
-            try
-            {
-                wv = await EnsureUtilityWebViewAsync()
-                     ?? throw new InvalidOperationException("Utility WebView unavailable.");
-            }
-            catch (Exception ex)
-            {
-                await Dispatcher.InvokeAsync(() =>
-                    SetPlayComposeStatus($"{jobId}: utility WebView not ready — {ex.Message}"));
-                return null;
-            }
-
-            if (wv.CoreWebView2 is not { } utilityCore)
-            {
-                await Dispatcher.InvokeAsync(() =>
-                    SetPlayComposeStatus($"{jobId}: utility WebView still initializing — try again shortly."));
-                return null;
-            }
-
-            core = utilityCore;
+            core = playCoreResolved;
         }
 
         if (!await _generationJobGate.WaitAsync(0))
@@ -285,6 +328,7 @@ public partial class MainWindow
             return null;
         }
 
+        await Dispatcher.InvokeAsync(() => SetShellJobActive(true));
         GenerationJobResult? jobResult = null;
         try
         {
@@ -300,6 +344,21 @@ public partial class MainWindow
                 if (playWv is not null)
                     GetOrRegisterAdventureBridge(playWv);
                 var service = GetOrCreateGenerationJobService(wv);
+                CoreWebView2? workerCore = null;
+                AdventureTurnService? workerTurnService = null;
+                if (LocalUtilityInferencePolicy.IsDualRun(bundle)
+                    && LocalUtilityInferencePolicy.SupportsJob(jobId))
+                {
+                    var workerWv = await ResolveUtilityWorkerWebViewAsync(bundle);
+                    if (workerWv is not null)
+                    {
+                        GetOrRegisterAdventureBridge(workerWv);
+                        WireProjectServices(workerWv);
+                        workerCore = workerWv.CoreWebView2;
+                        workerTurnService = GetOrCreateTurnService(workerWv);
+                    }
+                }
+
                 var runContext = new GenerationJobContext
                 {
                     Turn = context.Turn,
@@ -316,7 +375,8 @@ public partial class MainWindow
                     SuppressInlineGuide = context.SuppressInlineGuide,
                 };
                 jobResult = await service.RunJobAsync(
-                    core, bundle, jobId, runContext, turnService, playCore, playTurnService);
+                    core, bundle, jobId, runContext, turnService, playCore, playTurnService,
+                    workerCore, workerTurnService, this);
                 var result = jobResult;
 
                 bundle.Metadata.UtilityJobLastErrors ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -365,6 +425,11 @@ public partial class MainWindow
         finally
         {
             _generationJobGate.Release();
+            await Dispatcher.InvokeAsync(() =>
+            {
+                SetShellJobActive(false);
+                UpdateShellStatusBar();
+            });
             await Dispatcher.InvokeAsync(async () =>
             {
                 await RestorePlayComposerAsync(GetActivePlayComposeInjection());
@@ -401,11 +466,8 @@ public partial class MainWindow
         if (result.Success && result.ProposalCount > 0)
         {
             status = jobId == GenerationJobId.ProposeJsonImport
-                ? $"Queued {result.ProposalCount} JSON import proposal(s)."
-                : $"Extracted {result.ProposalCount} proposal(s).";
-
-            if (jobId == GenerationJobId.ProposeJsonImport)
-                _designView.TryOpenJsonImportReviewDialog();
+                ? $"Queued {result.ProposalCount} JSON import proposal(s) — use Review all… when ready."
+                : $"Extracted {result.ProposalCount} proposal(s) — use Review all… when ready.";
         }
         else if (!result.Success && result.SkippedReason is null)
             status = FormatDesignJobStatusError(jobId, result.Error);
@@ -431,6 +493,14 @@ public partial class MainWindow
         return $"{jobId} failed: {error ?? "unknown"}";
     }
 
+    private static string FormatUtilityRouteBlocked(string jobId, string? reason) =>
+        reason switch
+        {
+            "utility_worker_not_ready" =>
+                $"{jobId} blocked: utility worker not ready — open Threads hub → Utility worker and verify capabilities (lane policy is worker-only).",
+            _ => $"{jobId} blocked: {reason ?? "utility route unavailable"}.",
+        };
+
     private void HandleGenerationJobUiResult(string jobId, GenerationJobResult result)
     {
         if (_appMode != AppMode.Play)
@@ -441,9 +511,20 @@ public partial class MainWindow
             status = PendingReviewService.FormatReviewHint(jobId, result.ProposalCount);
         else if (!result.Success && result.SkippedReason is null)
         {
-            status = string.Equals(result.Error, "rate_limited", StringComparison.OrdinalIgnoreCase)
-                ? $"{jobId} failed: rate limited — wait ~30s and retry."
-                : $"{jobId} failed: {result.Error ?? "unknown"}";
+            status = result.Error switch
+            {
+                "play_thread_unlinked" =>
+                    $"{jobId} failed: play thread not linked — pin the active browser tab (Session tab or Threads hub).",
+                "utility_worker_not_ready" =>
+                    $"{jobId} blocked: utility worker not ready — open Threads hub → Utility worker and verify capabilities (lane policy is worker-only).",
+                "rate_limited" =>
+                    $"{jobId} failed: rate limited — wait ~30s and retry.",
+                "no_proposals_parsed" =>
+                    $"{jobId}: no proposals parsed — check utility worker chat or retry the job.",
+                "file_input_not_found" or "file_input_node_not_found" or "attach_stage_failed" or "cdp_stage_failed" =>
+                    $"{jobId} failed: could not stage attachment on utility worker — open Threads → Utility worker and retry.",
+                _ => $"{jobId} failed: {result.Error ?? "unknown"}",
+            };
         }
         else if (result.Success && result.ProposalCount == 0 && result.Error is not null)
             status = $"{jobId}: no proposals ({result.Error}).";
@@ -451,10 +532,27 @@ public partial class MainWindow
             status = $"Draft framework saved to sources/{draftPath}";
         else if (jobId == GenerationJobId.SynthesizeSource && !string.IsNullOrWhiteSpace(result.DisplayText))
             status = $"{jobId}: synthesis ready — review in Source Manager.";
+        else if (result.Success
+                 && jobId == GenerationJobId.ProposeEntitiesFile
+                 && _activeAdventureId is { } entitiesFileAdventureId)
+        {
+            var entitiesBundle = AdventureStore.Load(entitiesFileAdventureId);
+            if (entitiesBundle is not null
+                && EntitiesFileRevisionService.HasProposedSnapshot(entitiesBundle.Entities))
+            {
+                status = $"{jobId}: revised entities.json captured — use Preview/Download in Reference review.";
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(status))
         {
-            if (_activeAdventureId is { } adventureId)
+            if (result.RanOnUtilityWorker)
+                status += " · utility worker";
+            else if (result.RanDualInference)
+                status += " · dual run (local + utility)";
+            else if (result.RanOnLocalInference)
+                status += " · local LLM";
+            else if (_activeAdventureId is { } adventureId)
             {
                 var bundle = AdventureStore.Load(adventureId);
                 if (bundle is not null && UtilityDeliveryModeService.UsesInlineDelivery(bundle))
@@ -477,7 +575,7 @@ public partial class MainWindow
         if (bundle is null)
             return new UtilityStoryContextBuildResult { CaptureError = "adventure_not_found" };
 
-        var wv = FindUtilityApiWebView();
+        var wv = GetPlayWebView();
         if (wv is not null)
             WireProjectServices(wv);
 
@@ -489,15 +587,62 @@ public partial class MainWindow
 
         var sendService = _conversationSendService
                           ?? throw new InvalidOperationException("Conversation send service not ready.");
-        var transcriptService = new PlayThreadTranscriptService(sendService, playTurnService);
-        var builder = new UtilityStoryContextBuilder(transcriptService);
         var domOnlyCapture = UtilityDeliveryModeService.UsesInlineDelivery(bundle);
-        return await builder.BuildAsync(bundle, jobId, playCore, domOnlyCapture: domOnlyCapture);
+        return await UtilityJobContextPreviewService.BuildLiveAsync(
+            bundle,
+            jobId,
+            playCore,
+            playTurnService,
+            sendService,
+            domOnlyCapture);
     }
 
     private async Task RunScheduledJobsAfterTurnAsync(AdventureBundle bundle, TurnRecord turn)
     {
         var jobs = GenerationJobScheduler.GetJobsAfterTurn(bundle, turn);
+        if (jobs.Count == 0)
+            return;
+
+        if (PlayUtilityInjectionService.UsesInjectionFirst(bundle))
+        {
+            PlayUtilityInjectionService.EnqueueAfterTurn(bundle, turn, jobs);
+            AdventureStore.Save(bundle);
+            var pendingWorker = UtilityOutboxService.PendingCount(bundle.Metadata.Id);
+            await Dispatcher.InvokeAsync(() =>
+                SetPlayComposeStatus(
+                    pendingWorker > 0
+                        ? $"Queued {jobs.Count} utility job(s); {pendingWorker} on worker outbox."
+                        : $"Queued {jobs.Count} utility job(s) for next send."));
+            if (pendingWorker > 0 && _activeAdventureId is { } advId)
+                _ = ProcessWorkerOutboxAsync(advId);
+            return;
+        }
+
+        _ = RunLegacyScheduledJobsAfterTurnAsync(bundle, turn);
+    }
+
+    private async Task WaitForPlaySendGateReleaseAsync()
+    {
+        for (var attempt = 0; attempt < 120; attempt++)
+        {
+            if (await _playSendGate.WaitAsync(0))
+            {
+                _playSendGate.Release();
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+    }
+
+    private async Task RunLegacyScheduledJobsAfterTurnAsync(AdventureBundle bundle, TurnRecord turn)
+    {
+        await WaitForPlaySendGateReleaseAsync();
+
+        var jobs = GenerationJobScheduler.GetJobsAfterTurn(bundle, turn);
+        if (jobs.Count == 0)
+            return;
+
         foreach (var jobId in jobs)
             await RunGenerationJobForActiveAdventureAsync(jobId, new GenerationJobContext { Turn = turn });
     }
@@ -508,8 +653,50 @@ public partial class MainWindow
             turn is null ? null : new GenerationJobContext { Turn = turn },
             forceRotate);
 
+    private Task RunProposeEntitiesFileForActiveAdventureAsync() =>
+        RunGenerationJobForActiveAdventureAsync(GenerationJobId.ProposeEntitiesFile);
+
+    private Task RunEntityExtractionWithAttachmentsAsync() =>
+        RunUtilityJobWithAttachmentsPromptAsync(GenerationJobId.ExtractEntities);
+
+    private async Task<GenerationJobResult?> RunUtilityJobWithAttachmentsPromptAsync(
+        string jobId,
+        GenerationJobContext? context = null,
+        bool forceRotate = false)
+    {
+        if (_activeAdventureId is not { } adventureId)
+            return null;
+
+        var bundle = AdventureStore.Load(adventureId);
+        if (bundle is null)
+            return null;
+
+        var label = GenerationJobGuideService.GetDisplayLabel(jobId);
+        if (!UtilityJobAttachmentLaunchDialog.TryShow(
+                this,
+                label,
+                UtilityJobAttachmentLaunchService.GetDefaultReferenceNote(jobId),
+                UtilityJobAttachmentLaunchService.GetSuggestedPaths(bundle, jobId),
+                out var launch)
+            || launch is null)
+        {
+            return null;
+        }
+
+        var merged = UtilityJobAttachmentLaunchService.ApplyLaunch(context, launch);
+        return await RunGenerationJobForActiveAdventureAsync(
+            jobId,
+            merged,
+            forceRotate,
+            launch.Attachments,
+            launch.ReferenceNote);
+    }
+
     private Task RunProposeMemoriesAsync() =>
         RunGenerationJobForActiveAdventureAsync(GenerationJobId.ProposeMemories);
+
+    private Task RunUpdateStateAsync() =>
+        RunGenerationJobForActiveAdventureAsync(GenerationJobId.UpdateState);
 
     private Task RunProcessLastExchangeAsync(bool includeSummary = false) =>
         RunGenerationJobForActiveAdventureAsync(
@@ -526,6 +713,26 @@ public partial class MainWindow
         RunGenerationJobForActiveAdventureAsync(
             GenerationJobId.ExpandEntity,
             new GenerationJobContext { EntityKind = entityKind, EntityId = entityId, SuppressInlineGuide = true });
+
+    private Task RunProposeEntityStateAsync(IReadOnlyList<EntityReferenceRow> rows, string categoryFilter) =>
+        RunGenerationJobForActiveAdventureAsync(
+            GenerationJobId.ProposeEntityState,
+            new GenerationJobContext
+            {
+                EntityStateTargets = rows,
+                EntityCategoryFilter = categoryFilter,
+                SuppressInlineGuide = true,
+            });
+
+    private Task RunProposeCanonEvolutionAsync(IReadOnlyList<EntityReferenceRow> rows, string categoryFilter) =>
+        RunGenerationJobForActiveAdventureAsync(
+            GenerationJobId.ProposeCanonEvolution,
+            new GenerationJobContext
+            {
+                EntityStateTargets = rows,
+                EntityCategoryFilter = categoryFilter,
+                SuppressInlineGuide = true,
+            });
 
     private Task RunUpdateSummaryAsync() =>
         RunGenerationJobForActiveAdventureAsync(GenerationJobId.UpdateSummary);
@@ -549,10 +756,102 @@ public partial class MainWindow
     private Task RunContinuityCheckAsync() =>
         RunGenerationJobForActiveAdventureAsync(GenerationJobId.ContinuityCheck);
 
-    private Task RunSourceEditJobAsync(string userPrompt) =>
+    private Task RunResolveContinuityWarningAsync(ContinuityWarningEntry warning) =>
+        RunGenerationJobForActiveAdventureAsync(
+            GenerationJobId.ResolveContinuityWarning,
+            new GenerationJobContext
+            {
+                UserPrompt = BuildResolveContinuityWarningPrompt(warning),
+                SuppressInlineGuide = true,
+            });
+
+    private static string BuildResolveContinuityWarningPrompt(ContinuityWarningEntry warning)
+    {
+        var refs = warning.Refs.Count == 0 ? "(none)" : string.Join(", ", warning.Refs);
+        return $"""
+            Resolve this continuity warning with minimal fixes.
+            Category: {warning.Category}
+            Severity: {warning.Severity}
+            Message: {warning.Message}
+            Refs: {refs}
+            Prefer entity updates for entity-state issues and state deltas for state/location issues.
+            """;
+    }
+
+    internal async Task RunSelectedAiToolJobsAsync(IReadOnlyList<string> actionKeys)
+    {
+        if (_activeAdventureId is not { } adventureId)
+            return;
+
+        var bundle = AdventureStore.Load(adventureId);
+        if (bundle is null || actionKeys.Count == 0)
+            return;
+
+        var jobs = new List<(string JobId, GenerationJobContext Context)>();
+        foreach (var actionKey in AiToolActionRowBuilder.SortPlayActionKeys(actionKeys))
+        {
+            if (!AiToolActionJobCatalog.TryResolve(bundle, actionKey, out var jobId, out var baseContext))
+                continue;
+
+            var context = EnrichJobContextWithScope(bundle, jobId, baseContext, forceRotate: false);
+            if (context is null)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                    SetPlayComposeStatus($"{jobId}: no play exchange available — send a turn first."));
+                return;
+            }
+
+            var route = UtilityJobRouter.Resolve(bundle, jobId, UtilityJobTrigger.ManualCompanion);
+            if (route.Lane == UtilityRouteLane.Blocked)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                    SetPlayComposeStatus(FormatUtilityRouteBlocked(jobId, route.Reason)));
+                return;
+            }
+
+            if (route.Lane != UtilityRouteLane.WorkerOutbox)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                    SetPlayComposeStatus($"{jobId}: not available on utility worker lane."));
+                return;
+            }
+
+            jobs.Add((jobId, context));
+        }
+
+        if (jobs.Count == 0)
+            return;
+
+        DiagnosticsLog.Write(
+            DiagnosticsChannel.Program,
+            DiagnosticsLevel.Info,
+            "utility_worker.batch_enqueue",
+            $"utility_worker.batch_enqueue count={jobs.Count} pendingBefore={UtilityOutboxService.PendingCount(adventureId)}",
+            adventureId: adventureId,
+            category: "utility_worker",
+            source: nameof(MainWindow),
+            data: new
+            {
+                count = jobs.Count,
+                jobIds = jobs.Select(j => j.JobId).ToArray(),
+                pendingBefore = UtilityOutboxService.PendingCount(adventureId),
+            });
+
+        await EnqueueWorkerUtilityJobsBatchAsync(adventureId, bundle, jobs);
+    }
+
+    private Task RunSourceEditJobAsync(
+        string userPrompt,
+        IReadOnlyList<DomAttachmentPayload>? domAttachments = null,
+        string? attachmentReferenceNote = null) =>
         RunGenerationJobForActiveAdventureAsync(
             GenerationJobId.ProposeSourceEdits,
-            new GenerationJobContext { UserPrompt = userPrompt });
+            new GenerationJobContext
+            {
+                UserPrompt = userPrompt,
+                AttachmentReferenceNote = attachmentReferenceNote,
+            },
+            domAttachments: domAttachments);
 
     private async Task<DesignExtractResult?> RunProposeJsonImportAsync(Guid adventureId)
     {
@@ -592,95 +891,6 @@ public partial class MainWindow
             new GenerationJobContext { UserPrompt = prompt });
 
         return result?.DisplayText;
-    }
-
-    private async Task OpenUtilityThreadAsync(string jobId) =>
-        await OpenUtilityThreadCoreAsync(jobId);
-
-    private async Task OpenUtilityThreadCoreAsync(string jobId)
-    {
-        if (_activeAdventureId is not { } adventureId)
-            return;
-
-        var bundle = AdventureStore.Load(adventureId);
-        if (bundle is null)
-            return;
-
-        if (IsDesignGenerationJob(jobId) || _appMode == AppMode.Design)
-        {
-            await PrepareDesignBrowserAsync(adventureId);
-            if (_designWebView is not null)
-                SelectTabForWebView(_designWebView);
-            return;
-        }
-
-        var utilityJobId = GenerationJobHandlers.GetUtilityJobId(jobId);
-        string? conversationId = null;
-        if (PlayTabPinService.HasUtilityPin(bundle))
-        {
-            var wv = FindUtilityApiWebView();
-            if (wv?.CoreWebView2 is { } core
-                && PlayTabPinService.TryResolveUtilityConversationId(bundle, core, out var pinnedId, out _))
-                conversationId = pinnedId;
-        }
-
-        conversationId ??= GenerationUtilitySessionService.GetSession(bundle.Metadata, utilityJobId)?.ConversationId;
-        if (string.IsNullOrWhiteSpace(conversationId))
-        {
-            MessageBox.Show(this, $"No utility thread for {jobId} yet. Run the job first.", "Utility thread",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        await AddChatTabAsync(jobId, new Uri(ChatGptUrls.BuildConversationUrl(conversationId)));
-    }
-
-    private async Task RotateUtilityThreadAsync(string jobId)
-    {
-        if (_activeAdventureId is not { } adventureId)
-            return;
-
-        var bundle = AdventureStore.Load(adventureId);
-        if (bundle is null || string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
-            return;
-
-        if (MessageBox.Show(this,
-                $"Start a new utility thread for {jobId}? The current thread will be archived.",
-                "Rotate utility thread", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-            return;
-
-        WebView2 wv;
-        try
-        {
-            wv = await EnsureUtilityWebViewAsync()
-                 ?? throw new InvalidOperationException("Utility WebView unavailable.");
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this,
-                $"Utility WebView not ready: {ex.Message}",
-                "Rotate utility thread",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        if (wv.CoreWebView2 is not { } core)
-        {
-            MessageBox.Show(this,
-                "Utility WebView is still initializing — try again shortly.",
-                "Rotate utility thread",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        GetOrRegisterAdventureBridge(wv);
-        WireProjectServices(wv);
-        var turnService = GetOrCreateTurnService(wv);
-        var utilityJobId = GenerationJobHandlers.GetUtilityJobId(jobId);
-        await GetOrCreateGenerationJobService().ForceRotateAsync(core, bundle, utilityJobId, turnService);
-        UpdatePlayLinkStatus();
     }
 
     private async Task OpenProjectSettingsAsync()

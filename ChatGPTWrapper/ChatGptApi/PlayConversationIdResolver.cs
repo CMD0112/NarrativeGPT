@@ -24,9 +24,6 @@ internal static class PlayConversationIdResolver
             return parsed;
         }
 
-        if (!string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
-            return bundle.Metadata.LinkedConversationId;
-
-        return null;
+        return PlayThreadBindingService.GetActiveConversationId(bundle);
     }
 }

@@ -38,13 +38,18 @@ internal static class TextDiffService
         sb.AppendLine($"+++ {rightLabel}");
         foreach (var line in lines)
         {
-            var prefix = line.Kind switch
+            var (prefix, leftCol, rightCol) = line.Kind switch
             {
-                DiffLineKind.Added => "+",
-                DiffLineKind.Removed => "-",
-                _ => " ",
+                DiffLineKind.Added => ("+", "    ", line.RightLineNumber?.ToString() ?? ""),
+                DiffLineKind.Removed => ("-", line.LeftLineNumber?.ToString() ?? "", "    "),
+                _ => (" ", line.LeftLineNumber?.ToString() ?? "", line.RightLineNumber?.ToString() ?? ""),
             };
             sb.Append(prefix);
+            sb.Append(' ');
+            sb.Append(leftCol.PadLeft(4));
+            sb.Append(' ');
+            sb.Append(rightCol.PadLeft(4));
+            sb.Append("  ");
             sb.AppendLine(line.Text);
         }
 

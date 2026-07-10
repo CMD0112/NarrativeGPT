@@ -3,7 +3,7 @@ using System.IO.Compression;
 
 namespace ChatGPTWrapper.Adventure.Stores;
 
-internal static class BackupService
+public static class BackupService
 {
     public static string CreateBackup(Guid adventureId)
     {

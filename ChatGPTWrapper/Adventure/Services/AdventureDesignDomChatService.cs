@@ -51,6 +51,11 @@ internal static class AdventureDesignDomChatService
 
     public static void PersistDesignSession(AdventureBundle bundle, string conversationId)
     {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var designEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)
+                            ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
+        AdventureThreadRegistryService.UpdateConversationId(bundle, designEntry.Id, conversationId);
+
         var jobId = GenerationJobId.DesignAdventure;
         bundle.Metadata.UtilitySessions ??= new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase);
         if (bundle.Metadata.UtilitySessions.TryGetValue(jobId, out var existing))

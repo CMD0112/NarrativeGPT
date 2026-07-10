@@ -1,0 +1,46 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.ScenarioCreationPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer MaxHeight="480" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="8" MinWidth="480">
+            <TextBlock Text="Title" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+            <TextBox x:Name="TitleBox" />
+
+            <TextBlock Text="Genre" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+            <TextBox x:Name="GenreBox" />
+
+            <TextBlock Text="Setting" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+            <TextBox x:Name="SettingBox"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     Height="60" />
+
+            <TextBlock Text="Player role" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+            <TextBox x:Name="PlayerRoleBox" />
+
+            <TextBlock Text="Opening situation" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+            <TextBox x:Name="OpeningBox"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     Height="80" />
+
+            <TextBlock Text="Plot essentials" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+            <TextBox x:Name="PlotBox"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     Height="60" />
+
+            <TextBlock Text="Author's note (style)" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+            <TextBox x:Name="AuthorsNoteBox"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     Height="50" />
+
+            <CheckBox x:Name="StartWithOpeningCheck"
+                      Content="Offer Start adventure on first play (opening narration)"
+                      IsChecked="True" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

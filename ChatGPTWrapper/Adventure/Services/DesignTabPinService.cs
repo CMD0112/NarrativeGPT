@@ -11,8 +11,21 @@ internal static class DesignTabPinService
     public const string DesignPinRequiredError =
         "design_pin_required: Open your linked Project, create a New chat, then Pin design tab";
 
-    public static bool PreferPinnedDesignWebView(AdventureBundle? bundle) =>
-        !string.IsNullOrWhiteSpace(bundle?.Metadata.PinnedDesignTabKey);
+    public static bool PreferPinnedDesignWebView(AdventureBundle? bundle)
+    {
+        if (bundle is null)
+            return false;
+
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design);
+        return !string.IsNullOrWhiteSpace(entry?.PinnedTabKey)
+               || !string.IsNullOrWhiteSpace(bundle.Metadata.PinnedDesignTabKey);
+    }
+
+    public static bool HasDesignPin(AdventureBundle? bundle) =>
+        bundle is not null
+        && PreferPinnedDesignWebView(bundle)
+        && !string.IsNullOrWhiteSpace(GetDesignConversationId(bundle));
 
     public static bool HasPersistedDesignSession(AdventureBundle? bundle) =>
         bundle is not null
@@ -33,10 +46,10 @@ internal static class DesignTabPinService
             return true;
         }
 
-        return !string.IsNullOrWhiteSpace(metadata.PinnedDesignTabKey)
-               && metadata.UtilitySessions is not null
-               && metadata.UtilitySessions.TryGetValue(GenerationJobId.DesignAdventure, out var session)
-               && string.Equals(session.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase);
+        var bundle = new AdventureBundle { Metadata = metadata };
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var registryId = AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Design);
+        return string.Equals(registryId, conversationId, StringComparison.OrdinalIgnoreCase);
     }
 
     public static string? GetDesignConversationId(AdventureBundle bundle) =>
@@ -44,6 +57,11 @@ internal static class DesignTabPinService
 
     public static string? GetDesignTargetUrl(AdventureBundle bundle)
     {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var fromRegistry = AdventureThreadRegistryService.GetTargetUrl(bundle, AdventureThreadKind.Design);
+        if (!string.IsNullOrWhiteSpace(fromRegistry))
+            return fromRegistry;
+
         AdventureProjectBindingService.SyncLinkedProjectFields(bundle.Metadata);
         var gizmoId = AdventureProjectBindingService.GetLinkedProjectId(bundle.Metadata);
         var conversationId = GetDesignConversationId(bundle);
@@ -77,9 +95,11 @@ internal static class DesignTabPinService
     public static GenerationUtilitySession? TryResolveDesignSessionFromPin(AdventureBundle bundle)
     {
         var conversationId = GetDesignConversationId(bundle);
+        var pinnedUrl = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)?.PinnedTabUrl
+                        ?? bundle.Metadata.PinnedDesignTabUrl;
         if (string.IsNullOrWhiteSpace(conversationId)
-            && !string.IsNullOrWhiteSpace(bundle.Metadata.PinnedDesignTabUrl)
-            && Uri.TryCreate(bundle.Metadata.PinnedDesignTabUrl, UriKind.Absolute, out var uri)
+            && !string.IsNullOrWhiteSpace(pinnedUrl)
+            && Uri.TryCreate(pinnedUrl, UriKind.Absolute, out var uri)
             && ChatGptUrls.TryParseConversationId(uri, out var fromUrl))
         {
             conversationId = fromUrl;
@@ -136,7 +156,11 @@ internal static class DesignTabPinService
 
     public static WebView2? TryFindWebViewForDesignSession(TabControl tabs, AdventureBundle bundle)
     {
-        if (PlayTabPinService.FindWebViewByPinKey(tabs, bundle.Metadata.PinnedDesignTabKey) is { } pinned)
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var pinKey = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)?.PinnedTabKey
+                       ?? bundle.Metadata.PinnedDesignTabKey;
+
+        if (PlayTabPinService.FindWebViewByPinKey(tabs, pinKey) is { } pinned)
             return pinned;
 
         return TryFindWebViewOnDesignTarget(tabs, bundle);
@@ -221,8 +245,28 @@ internal static class DesignTabPinService
 
     public static void PinDesignTab(AdventureBundle bundle, WebView2 webView, TabControl tabs)
     {
-        var key = PlayTabPinService.GetTabKey(webView, tabs)
-                  ?? throw new InvalidOperationException("Could not resolve tab key for WebView.");
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)
+                      ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
+        PinDesignTabToEntry(bundle, entry.Id, webView, tabs, setActive: true);
+    }
+
+    public static void PinDesignTabToEntry(
+        AdventureBundle bundle,
+        Guid entryId,
+        WebView2 webView,
+        TabControl tabs,
+        bool setActive = true)
+    {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetEntry(bundle, entryId)
+                    ?? throw new InvalidOperationException("Thread entry not found.");
+
+        if (entry.Kind != AdventureThreadKind.Design)
+            throw new InvalidOperationException("Entry is not a design thread.");
+
+        if (entry.Status == AdventureThreadStatus.Archived)
+            throw new InvalidOperationException("Cannot pin an archived thread.");
 
         var source = webView.CoreWebView2?.Source;
         if (!TryResolveDesignConversationFromSource(bundle, source, out var conversationId, out var error))
@@ -238,31 +282,16 @@ internal static class DesignTabPinService
         }
 
         if (!string.IsNullOrWhiteSpace(conversationId))
-        {
-            var utilityJobId = GenerationJobId.DesignAdventure;
-            bundle.Metadata.UtilitySessions ??= new Dictionary<string, GenerationUtilitySession>(StringComparer.OrdinalIgnoreCase);
-            if (bundle.Metadata.UtilitySessions.TryGetValue(utilityJobId, out var existing))
-            {
-                existing.ConversationId = conversationId;
-                existing.LastUsedAt = DateTimeOffset.UtcNow;
-            }
-            else
-            {
-                bundle.Metadata.UtilitySessions[utilityJobId] = new GenerationUtilitySession
-                {
-                    ConversationId = conversationId,
-                    Sequence = GenerationUtilitySessionService.GetNextSequence(bundle.Metadata, utilityJobId),
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    LastUsedAt = DateTimeOffset.UtcNow,
-                };
-            }
-        }
+            entry.ConversationId = conversationId;
 
-        bundle.Metadata.PinnedDesignTabKey = key;
-        bundle.Metadata.PinnedDesignTabTitle = PlayTabPinService.GetTabTitle(webView, tabs);
-        bundle.Metadata.PinnedDesignTabUrl = source;
+        AdventureThreadRegistryService.UpdatePinFromWebView(bundle, entry.Id, webView, tabs, source);
+        if (setActive)
+            AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
+
         if (ProjectChatDraftService.GetActiveKind(bundle.Metadata.Id) == ProjectChatDraftKind.Design)
             ProjectChatDraftService.Complete(bundle);
+
+        AdventureThreadRegistryService.SyncActiveDesignUtilitySession(bundle);
         AdventureStore.Save(bundle);
     }
 
@@ -315,43 +344,68 @@ internal static class DesignTabPinService
             return false;
         }
 
+        var playConversation = AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Play);
+        if (!string.IsNullOrWhiteSpace(playConversation)
+            && string.Equals(resolved, playConversation, StringComparison.OrdinalIgnoreCase))
+        {
+            error = "design_same_as_play_thread";
+            return false;
+        }
+
         conversationId = resolved;
         return true;
     }
 
     public static void ClearDesignPin(AdventureBundle bundle)
     {
-        bundle.Metadata.PinnedDesignTabKey = null;
-        bundle.Metadata.PinnedDesignTabTitle = null;
-        bundle.Metadata.PinnedDesignTabUrl = null;
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        if (AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design) is { } entry)
+            AdventureThreadRegistryService.ClearEntryPin(bundle, entry.Id);
+
+        AdventureThreadRegistryService.ClearLegacyDesignBindingFields(bundle.Metadata);
         AdventureStore.Save(bundle);
     }
 
     public static bool IsSameTabAsDesignPin(AdventureBundle bundle, WebView2 webView, TabControl tabs)
     {
-        if (string.IsNullOrWhiteSpace(bundle.Metadata.PinnedDesignTabKey))
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var pinKey = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)?.PinnedTabKey
+                       ?? bundle.Metadata.PinnedDesignTabKey;
+        if (string.IsNullOrWhiteSpace(pinKey))
             return false;
 
         var key = PlayTabPinService.GetTabKey(webView, tabs);
         return key is not null
-               && string.Equals(key, bundle.Metadata.PinnedDesignTabKey, StringComparison.OrdinalIgnoreCase);
+               && string.Equals(key, pinKey, StringComparison.OrdinalIgnoreCase);
     }
 
-    public static string FormatDesignThreadStatus(AdventureBundle bundle)
+    public static string FormatDesignThreadStatus(AdventureBundle bundle) =>
+        AdventureThreadRegistryService.FormatThreadStatus(bundle, AdventureThreadKind.Design);
+
+    public static string? FormatDesignDraftBanner(AdventureBundle bundle) =>
+        string.IsNullOrWhiteSpace(ProjectChatDraftService.FormatStatusLine(bundle))
+            ? null
+            : ProjectChatDraftService.FormatStatusLine(bundle);
+
+    /// <summary>
+    /// Re-binds the design thread pin after navigation (e.g. app restart) without surfacing errors.
+    /// </summary>
+    public static bool TryRestorePinFromWebView(AdventureBundle bundle, WebView2 webView, TabControl tabs)
     {
-        if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId)
-            && !AdventureProjectBindingService.HasLinkedProject(bundle))
-            return "No Project linked — link a Project to use the design thread.";
+        var source = webView.CoreWebView2?.Source;
+        if (!TryResolveDesignConversationFromSource(bundle, source, out var conversationId, out _))
+            return false;
 
-        AdventureProjectBindingService.SyncLinkedProjectFields(bundle.Metadata);
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var entry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)
+                      ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
 
-        var conv = GetDesignConversationId(bundle);
-        if (!string.IsNullOrWhiteSpace(conv))
-            return $"Project linked · Design thread: c/{conv}";
+        if (!string.IsNullOrWhiteSpace(conversationId))
+            entry.ConversationId = conversationId;
 
-        if (!string.IsNullOrWhiteSpace(bundle.Metadata.PinnedDesignTabKey))
-            return "Project linked · Design tab pinned — open the tab and confirm it is on a Project chat.";
-
-        return "Project linked · Open Project → New chat → Pin design tab";
+        AdventureThreadRegistryService.UpdatePinFromWebView(bundle, entry.Id, webView, tabs, source);
+        AdventureThreadRegistryService.SetActivePin(bundle, entry.Id, notifyPlayThreadChanged: false);
+        AdventureStore.Save(bundle);
+        return true;
     }
 }

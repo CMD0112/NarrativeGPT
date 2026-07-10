@@ -1,0 +1,35 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.AdventurePlayPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views">
+
+    <Grid x:Name="RootGrid"
+          HorizontalAlignment="Stretch"
+          VerticalAlignment="Stretch"
+          Padding="{ThemeResource SpaceMdPadding}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <local:PlaySessionCockpit x:Name="Cockpit"
+                                  Grid.Row="0"
+                                  HorizontalAlignment="Stretch"
+                                  Margin="0,0,0,8" />
+
+        <Border Grid.Row="1"
+                Style="{ThemeResource ShellCardStyle}"
+                Padding="0"
+                MinHeight="120">
+            <local:PlayCompanionHost x:Name="Companion"
+                                     HorizontalAlignment="Stretch"
+                                     VerticalAlignment="Stretch" />
+        </Border>
+
+        <local:PlayFooterBar x:Name="Footer"
+                             Grid.Row="2"
+                             Margin="0,8,0,0" />
+    </Grid>
+</UserControl>

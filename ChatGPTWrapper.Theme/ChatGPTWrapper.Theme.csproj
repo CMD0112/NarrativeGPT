@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>ChatGPTWrapper.Theme</RootNamespace>
+    <AssemblyName>ChatGPTWrapper.Theme</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ChatGPTWrapper.Core\ChatGPTWrapper.Core.csproj" />
+  </ItemGroup>
+
+</Project>

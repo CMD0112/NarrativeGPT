@@ -1,11 +1,12 @@
 using System.IO;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
 internal static class SourceEditService
 {
-    public static string BuildSourceEditPrompt(AdventureBundle bundle, string userPrompt)
+    public static string BuildSourceEditPrompt(AdventureBundle bundle, string userPrompt, bool forLocalInference = false)
     {
         var sourcesDir = ProjectSourceExportService.SourcesDirectory(bundle);
         var excerpts = new List<string>();
@@ -29,12 +30,15 @@ internal static class SourceEditService
         }
 
         var instructions = InstructionSourcesPolicy.BuildStaticInstructionsBody(bundle);
+        var formatReference = forLocalInference
+            ? ""
+            : CanonFormatReferenceService.BuildPromptBlock(bundle);
         var formatHints = ProjectSourceFileTemplates.BuildInlineFormatsSection(excerptPaths);
         var formatsBlock = string.IsNullOrWhiteSpace(formatHints)
             ? ""
             : $"""
 
-            === SOURCE FILE FORMATS ===
+            === SOURCE FILE FORMATS (summary) ===
             {formatHints}
             """;
 
@@ -44,6 +48,7 @@ internal static class SourceEditService
 
             === CURRENT INSTRUCTIONS (instruction-domain) ===
             {instructions}
+            {formatReference}
             {formatsBlock}
 
             === CURRENT SOURCE EXCERPTS ===
@@ -124,7 +129,7 @@ internal static class SourceEditService
         bundle.Scenario.SourceEditReviewQueue.RemoveAll(q => MatchesDuplicateProposal(item, q));
     }
 
-    private static bool EntityExistsInAnyCollection(EntitiesDocument entities, Guid entityId) =>
+    internal static bool EntityExistsInAnyCollection(EntitiesDocument entities, Guid entityId) =>
         entities.Characters.Any(c => c.Id == entityId)
         || entities.Party.Any(c => c.Id == entityId)
         || entities.Locations.Any(l => l.Id == entityId)

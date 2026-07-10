@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Threading;
 using ChatGPTWrapper;
+using ChatGPTWrapper.ApiDiagnostics.Unit;
 using ChatGPTWrapper.PageIntegration;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -56,34 +57,8 @@ public sealed class SourceSyncMockBridgeHost : IAsyncLifetime
             if (_initialized)
                 return;
 
-            var uiReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var uiThread = new Thread(() =>
-            {
-                var app = new System.Windows.Application();
-                _sharedDispatcher = app.Dispatcher;
-                var window = new Window
-                {
-                    Title = "Source Sync Mock Bridge",
-                    Width = 800,
-                    Height = 600,
-                    ShowInTaskbar = false,
-                    WindowState = WindowState.Minimized,
-                };
-                _sharedWebView = new WebView2();
-                window.Content = _sharedWebView;
-                window.Show();
-                uiReady.TrySetResult();
-                app.Run();
-            })
-            {
-                IsBackground = true,
-                Name = "SourceSyncMockBridgeUi",
-            };
-            uiThread.SetApartmentState(ApartmentState.STA);
-            uiThread.Start();
-
-            await uiReady.Task;
-            await UiDispatcher.InvokeAsync(InitializeOnUiAsync).Task.Unwrap();
+            _sharedDispatcher = WpfStaTestHost.Dispatcher;
+            await RunOnUiAsync(InitializeOnUiAsync);
             _initialized = true;
         }
         finally
@@ -92,8 +67,26 @@ public sealed class SourceSyncMockBridgeHost : IAsyncLifetime
         }
     }
 
+    private static Task RunOnUiAsync(Func<Task> work) =>
+        UiDispatcher.InvokeAsync(work, DispatcherPriority.Normal).Task.Unwrap();
+
     private static async Task InitializeOnUiAsync()
     {
+        if (_sharedWebView is null)
+        {
+            var window = new Window
+            {
+                Title = "Source Sync Mock Bridge",
+                Width = 800,
+                Height = 600,
+                ShowInTaskbar = false,
+                WindowState = WindowState.Minimized,
+            };
+            _sharedWebView = new WebView2();
+            window.Content = _sharedWebView;
+            window.Show();
+        }
+
         var userDataFolder = Path.Combine(
             Path.GetTempPath(),
             "cgw-source-sync-mock",

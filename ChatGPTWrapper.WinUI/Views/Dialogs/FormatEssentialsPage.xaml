@@ -1,0 +1,49 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.FormatEssentialsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" MinWidth="520" MaxHeight="640">
+        <StackPanel Spacing="16" Padding="4,0,4,8">
+            <TextBlock Style="{ThemeResource ShellSectionHintStyle}"
+                       TextWrapping="Wrap"
+                       Text="Format profiles and thread display options for the active transcript mode (Native, Continuous, or Weave). Changes preview live on chat tabs; Save writes to ui-chrome.json." />
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Format profile"
+                           Style="{ThemeResource ShellSectionHeaderStyle}" />
+                <ComboBox x:Name="ProfileCombo"
+                          HorizontalAlignment="Stretch"
+                          SelectionChanged="ProfileCombo_SelectionChanged" />
+                <TextBlock x:Name="ProfileHint"
+                           Style="{ThemeResource ShellSectionHintStyle}"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Thread display"
+                           Style="{ThemeResource ShellSectionHeaderStyle}" />
+                <CheckBox x:Name="HideEditPromptsCheck"
+                          Content="Hide assistant edit prompts in thread"
+                          Checked="Setting_Changed"
+                          Unchecked="Setting_Changed" />
+                <CheckBox x:Name="HideContextTagsCheck"
+                          Content="Hide context tags in thread"
+                          Checked="Setting_Changed"
+                          Unchecked="Setting_Changed" />
+                <CheckBox x:Name="ExpandHiddenContextCheck"
+                          Content="Expand hidden context blocks"
+                          Checked="Setting_Changed"
+                          Unchecked="Setting_Changed" />
+                <CheckBox x:Name="PhraseHighlightsCheck"
+                          Content="Enable phrase highlights"
+                          Checked="Setting_Changed"
+                          Unchecked="Setting_Changed" />
+            </StackPanel>
+
+            <TextBlock x:Name="ModeLine"
+                       Style="{ThemeResource ShellSectionHintStyle}"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

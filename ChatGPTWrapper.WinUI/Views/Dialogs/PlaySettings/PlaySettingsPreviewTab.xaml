@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings.PlaySettingsPreviewTab"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings"
+    MinHeight="480"
+    HorizontalAlignment="Stretch"
+    VerticalAlignment="Stretch">
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="320" />
+        </Grid.RowDefinitions>
+
+        <local:PlaySettingsSectionCard Grid.Row="0"
+                                       Title="Sample input"
+                                       Hint="Live merge for the next Send. Cockpit overrides may still apply at send time."
+                                       ScopeLabel="Preview">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Sample player line"
+                           Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <TextBox x:Name="SamplePlayerLineBox"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         MinHeight="44"
+                         PlaceholderText="Type a sample line to preview injection…"
+                         TextChanged="SamplePlayerLineBox_TextChanged"
+                         LostFocus="SamplePlayerLineBox_LostFocus" />
+                <TextBlock x:Name="PreviewSourceLine"
+                           Style="{ThemeResource ShellSectionHintStyle}" />
+                <Border x:Name="PreviewStagingBanner"
+                        Padding="8,6"
+                        CornerRadius="{ThemeResource RadiusControl}"
+                        Background="{ThemeResource WarningSubtleBrush}"
+                        Visibility="Collapsed">
+                    <TextBlock x:Name="PreviewStagingHint"
+                               TextWrapping="Wrap"
+                               FontSize="11" />
+                </Border>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Refresh"
+                            Style="{ThemeResource ShellGhostButtonStyle}"
+                            Click="Refresh_Click" />
+                    <Button Content="Copy packet"
+                            Style="{ThemeResource ShellPrimaryButtonStyle}"
+                            Click="Copy_Click" />
+                    <HyperlinkButton Content="Send timeline →"
+                                     Click="GoToHistory_Click"
+                                     Padding="0"
+                                     VerticalAlignment="Center"
+                                     FontSize="12" />
+                </StackPanel>
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <Border Grid.Row="1"
+                Style="{ThemeResource ShellCardStyle}"
+                Padding="12">
+            <local:InjectionPacketPreviewPanel x:Name="InjectionPreviewPanel" />
+        </Border>
+    </Grid>
+</UserControl>

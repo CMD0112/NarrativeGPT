@@ -9,6 +9,23 @@ internal static class SectionSchema
 
     public const string LexiconFile = "lexicon.md";
 
+    public const string CanonFormatFile = "canon-format.md";
+
+    public const string NarratorScalesFile = "narrator-scales.md";
+
+    public const string EntityStateFormatFile = "entity-state-format.md";
+
+    /// <summary>Auto-generated meta files recommended for Project upload alongside lore.</summary>
+    public static readonly string[] ReferenceSourceFiles =
+    [
+        CanonFormatFile,
+        NarratorScalesFile,
+        EntityStateFormatFile,
+    ];
+
+    public static bool IsReferenceSourceFile(string relativePath) =>
+        ReferenceSourceFiles.Contains(relativePath, StringComparer.OrdinalIgnoreCase);
+
     public static readonly string[] CoreLoreFiles =
     [
         ScenarioFile,

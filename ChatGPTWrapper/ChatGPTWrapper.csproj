@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Library</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -15,17 +15,36 @@
     <Version>1.0.0</Version>
 
     <PublishDir>$(MSBuildProjectDirectory)\dist\ChatGPT-Wrapper\</PublishDir>
+    <!-- Skip .playwright copy (index.HASH.css breaks WinUI PRI249). Override: -p:PlaywrightPlatform=win-x64 -->
+    <PlaywrightPlatform Condition="'$(PlaywrightPlatform)' == ''">none</PlaywrightPlatform>
   </PropertyGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="ChatGPTWrapper.ApiDiagnostics" />
+    <InternalsVisibleTo Include="ChatGPT Wrapper WinUI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Adventure\Schema\canon-schema.json" />
+    <EmbeddedResource Include="Adventure\Schema\narrator-scales.json" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ChatGPTWrapper.Core\ChatGPTWrapper.Core.csproj" />
+    <ProjectReference Include="..\ChatGPTWrapper.Diagnostics\ChatGPTWrapper.Diagnostics.csproj" />
+    <ProjectReference Include="..\ChatGPTWrapper.Shell\ChatGPTWrapper.Shell.csproj" />
+    <ProjectReference Include="..\ChatGPTWrapper.Theme\ChatGPTWrapper.Theme.csproj" />
+    <ProjectReference Include="..\ChatGPTWrapper.Adventure\ChatGPTWrapper.Adventure.csproj" />
+    <ProjectReference Include="..\ChatGPTWrapper.WebView\ChatGPTWrapper.WebView.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" Version="1.50.0" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3912.50" />
   </ItemGroup>
 
@@ -34,6 +53,16 @@
              Link="wrapper-assets\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- Playwright: set PlaywrightPlatform=win-x64 (or win) to copy .playwright for headless source sync. -->
+  <Target Name="StripPlaywrightContentItems"
+          AfterTargets="CopyPlaywrightFilesToOutput"
+          Condition="'$(PlaywrightPlatform)' == 'none'">
+    <ItemGroup>
+      <Content Remove="@(Content)"
+               Condition="$([System.String]::Copy('%(Content.Link)').StartsWith('.playwright')) OR '%(Content.Link)' == 'playwright.ps1'" />
+    </ItemGroup>
+  </Target>
 
   <Target Name="PrepareShareablePublish" AfterTargets="Publish">
     <ItemGroup>

@@ -111,7 +111,7 @@ public sealed class PlayComposeAssetTests
         Assert.Contains("attachmentsPreStaged", text);
         Assert.Contains("allAttachmentsReady", text);
         Assert.Contains("cgw-compose-upload-spinner", text);
-        Assert.Contains("COMPOSE_VERSION = 24", text);
+        Assert.Contains("COMPOSE_VERSION = 29", text);
     }
 
     [Fact]
@@ -133,6 +133,44 @@ public sealed class PlayComposeAssetTests
         var text = File.ReadAllText(turnServicePath);
         Assert.Contains("if (attachmentsPreStaged || domAttachments is { Count: > 0 })", text);
         Assert.Contains("attachmentsPreStaged: attachmentsPreStaged", text);
+    }
+
+    [Fact]
+    public void Bridge_cdp_staged_attachments_wait_for_upload_not_file_input_only()
+    {
+        var bridge = File.ReadAllText(BridgeJsPath);
+        Assert.Contains("nativeComposerUploadPending", bridge);
+        Assert.Contains("file_input_awaiting_upload", bridge);
+        Assert.Contains("requireUploadComplete", bridge);
+    }
+
+    [Fact]
+    public void Native_composer_staging_polls_upload_ready_after_cdp()
+    {
+        var path = FindRepoFile("ChatGPTWrapper", "ChatGptApi", "NativeComposerFileStaging.cs");
+        var text = File.ReadAllText(path);
+        Assert.Contains("WaitForUploadReadyAsync", text);
+        Assert.Contains("hostCdpStaged: true", text);
+        Assert.Contains("consecutiveReady", text);
+    }
+
+    [Fact]
+    public void Utility_worker_uses_dual_lane_attachment_delivery()
+    {
+        var pushPath = FindRepoFile("ChatGPTWrapper", "Adventure", "Services", "UtilityMessagePushService.cs");
+        var pushText = File.ReadAllText(pushPath);
+        Assert.Contains("UtilityReferenceAttachmentPolicy", pushText);
+        Assert.Contains("UtilityAttachmentDeliveryClassifier", pushText);
+        Assert.Contains("SendProductionPacketWithAttachmentsAsync", pushText);
+        Assert.Contains("UtilityAttachWorkerService", pushText);
+
+        var hostingPath = FindRepoFile("ChatGPTWrapper", "MainWindow.UtilityWorkerHosting.cs");
+        var hostingText = File.ReadAllText(hostingPath);
+        Assert.Contains("utility_worker_shadow_compositor_active", hostingText);
+
+        var attachPath = FindRepoFile("ChatGPTWrapper", "Adventure", "Services", "UtilityAttachWorkerService.cs");
+        var attachText = File.ReadAllText(attachPath);
+        Assert.Contains("WebView2AttachWorkerUserDataDirectory", attachText);
     }
 
     private static string FindRepoFile(params string[] relativeParts)
@@ -182,6 +220,7 @@ public sealed class PlayComposeAssetTests
         Assert.Contains("bridge_restore_anchor", bridge);
         Assert.Contains("temporarilyRestoreNativeToAnchor", composerDom);
         Assert.Contains("collectSubmitSearchRoots", composerDom);
+        Assert.Contains("syncComposeThemeFromNative", composerDom);
     }
 
     [Fact]
@@ -200,6 +239,15 @@ public sealed class PlayComposeAssetTests
         Assert.Contains("waitForStableAssistantText", bridge);
         Assert.Contains("case \"getAssistantTurnCount\":", bridge);
         Assert.Contains("assistantTurnCount", bridge);
+    }
+
+    [Fact]
+    public void Bridge_getUserTurnCount_counts_play_turns_not_injection_packets()
+    {
+        var bridge = File.ReadAllText(BridgeJsPath);
+        Assert.Contains("function countPlayUserTurns", bridge);
+        Assert.Contains("count: countPlayUserTurns()", bridge);
+        Assert.Contains("if (!playerText && isInjectedContextUserMessage(text)) continue;", bridge);
     }
 
     [Fact]

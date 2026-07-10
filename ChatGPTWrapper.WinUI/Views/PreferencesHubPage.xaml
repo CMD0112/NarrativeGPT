@@ -1,0 +1,235 @@
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.PreferencesHubPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:ChatGPTWrapper.WinUI.Controls"
+    MinWidth="448">
+
+    <Grid Padding="16">
+        <Border Style="{ThemeResource ShellCardStyle}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="0,0,4,8">
+                <StackPanel Spacing="0">
+                    <TextBlock Text="Preferences"
+                               Style="{ThemeResource ShellSectionHeaderStyle}"
+                               Margin="0,0,0,4" />
+                    <TextBlock Style="{ThemeResource ShellSectionHintStyle}"
+                               Text="Settings grouped by scope. Use in-context controls in Play or Design when you are already in a session."
+                               Margin="0,0,0,12" />
+
+                    <Border Style="{ThemeResource ShellCardStyle}"
+                            Background="{ThemeResource BgElevatedBrush}"
+                            Margin="0,0,0,12">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Reading mode" FontWeight="SemiBold" />
+                            <TextBlock x:Name="TranscriptModeLine" TextWrapping="Wrap" />
+                            <TextBlock Style="{ThemeResource ShellSectionHintStyle}"
+                                       Text="Switch Native, Continuous, or Weave from the View menu. Typography for Continuous and Weave is under Reading &amp; format below." />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="Global"
+                               Style="{ThemeResource ShellSectionHeaderStyle}"
+                               Margin="0,0,0,8" />
+
+                    <Border Style="{ThemeResource ShellCardStyle}" Margin="0,0,0,8">
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0"
+                                        Grid.Column="0"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        Margin="0,0,0,4">
+                                <TextBlock Text="Appearance &amp; theme"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                                <Border Style="{ThemeResource ShellBadgeStyle}" Margin="0">
+                                    <TextBlock Text="Global"
+                                               FontSize="10" />
+                                </Border>
+                            </StackPanel>
+                            <Button x:Name="AppearanceButton"
+                                    Grid.Row="0"
+                                    Grid.Column="1"
+                                    Grid.RowSpan="2"
+                                    Content="Open…"
+                                    Style="{ThemeResource ShellGhostButtonStyle}"
+                                    VerticalAlignment="Center"
+                                    MinWidth="72" />
+                            <TextBlock Grid.Row="1"
+                                       Grid.Column="0"
+                                       Style="{ThemeResource ShellSectionHintStyle}"
+                                       Text="Shell chrome, dialogs, and WebView theme tokens."
+                                       Margin="0,0,8,0" />
+                        </Grid>
+                    </Border>
+
+                    <Border Style="{ThemeResource ShellCardStyle}" Margin="0,0,0,8">
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0"
+                                        Grid.Column="0"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        Margin="0,0,0,4">
+                                <TextBlock Text="Reading &amp; format"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                                <Border Style="{ThemeResource ShellBadgeStyle}" Margin="0">
+                                    <TextBlock Text="Per mode"
+                                               FontSize="10" />
+                                </Border>
+                            </StackPanel>
+                            <Button x:Name="FormatButton"
+                                    Grid.Row="0"
+                                    Grid.Column="1"
+                                    Grid.RowSpan="2"
+                                    Content="Open…"
+                                    Style="{ThemeResource ShellGhostButtonStyle}"
+                                    VerticalAlignment="Center"
+                                    MinWidth="72" />
+                            <TextBlock Grid.Row="1"
+                                       Grid.Column="0"
+                                       Style="{ThemeResource ShellSectionHintStyle}"
+                                       Text="Transcript typography, colors, highlights, and thread display. Primary entry: View → Format…"
+                                       Margin="0,0,8,0" />
+                        </Grid>
+                    </Border>
+
+                    <Border Style="{ThemeResource ShellCardStyle}" Margin="0,0,0,8">
+                        <controls:ActionListRow x:Name="StorageRow"
+                                                Chromeless="True"
+                                                Title="Storage &amp; paths"
+                                                Hint="Adventures folder location and local storage paths." />
+                    </Border>
+
+                    <Border Style="{ThemeResource ShellCardStyle}" Margin="0,0,0,16">
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0"
+                                        Grid.Column="0"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        Margin="0,0,0,4">
+                                <TextBlock Text="Local inference lab"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                                <Border Style="{ThemeResource ShellBadgeStyle}" Margin="0">
+                                    <TextBlock Text="Ollama"
+                                               FontSize="10" />
+                                </Border>
+                            </StackPanel>
+                            <Button x:Name="LocalInferenceButton"
+                                    Grid.Row="0"
+                                    Grid.Column="1"
+                                    Grid.RowSpan="2"
+                                    Content="Open…"
+                                    Style="{ThemeResource ShellGhostButtonStyle}"
+                                    VerticalAlignment="Center"
+                                    MinWidth="72" />
+                            <TextBlock Grid.Row="1"
+                                       Grid.Column="0"
+                                       Style="{ThemeResource ShellSectionHintStyle}"
+                                       Text="Test Ollama or other OpenAI-compatible local servers. Not connected to play or utility jobs."
+                                       Margin="0,0,8,0" />
+                        </Grid>
+                    </Border>
+
+                    <StackPanel x:Name="AdventureSection"
+                                Spacing="0"
+                                Visibility="Collapsed">
+                        <TextBlock Text="Active adventure"
+                                   Style="{ThemeResource ShellSectionHeaderStyle}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock x:Name="AdventureTitleLine"
+                                   Style="{ThemeResource ShellSectionHintStyle}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,8" />
+
+                        <Border Style="{ThemeResource ShellCardStyle}">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock x:Name="AdventureSettingsTitle"
+                                               Text="Play settings"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center" />
+                                    <Border Style="{ThemeResource ShellBadgeStyle}" Margin="0">
+                                        <TextBlock Text="Adventure"
+                                                   FontSize="10" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock x:Name="AdventureSettingsHint"
+                                           Style="{ThemeResource ShellSectionHintStyle}"
+                                           Text="Shortcut to the full play settings dialog. Prefer Play header ⚙ when you are in a session." />
+                                <Button x:Name="PlaySettingsButton"
+                                        Content="Open play settings…"
+                                        Style="{ThemeResource ShellGhostButtonStyle}"
+                                        HorizontalAlignment="Stretch" />
+                                <Button x:Name="ThreadsHubButton"
+                                        Content="Open Threads hub…"
+                                        Style="{ThemeResource ShellGhostButtonStyle}"
+                                        HorizontalAlignment="Stretch" />
+                                <TextBlock x:Name="PlayJumpSectionLabel"
+                                           Text="Jump to section"
+                                           Style="{ThemeResource ShellSectionHintStyle}"
+                                           Margin="0,4,0,0" />
+                                <StackPanel x:Name="PlayJumpSection"
+                                            Orientation="Horizontal"
+                                            Spacing="6">
+                                    <Button x:Name="PlayBehaviorButton"
+                                            Content="Behavior"
+                                            Style="{ThemeResource ShellGhostButtonStyle}"
+                                            Padding="10,5" />
+                                    <Button x:Name="PlayLayoutButton"
+                                            Content="Layout"
+                                            Style="{ThemeResource ShellGhostButtonStyle}"
+                                            Padding="10,5" />
+                                    <Button x:Name="PlaySourcesButton"
+                                            Content="Sources"
+                                            Style="{ThemeResource ShellGhostButtonStyle}"
+                                            Padding="10,5" />
+                                    <Button x:Name="PlaySessionButton"
+                                            Content="Session"
+                                            Style="{ThemeResource ShellGhostButtonStyle}"
+                                            Padding="10,5" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="NoAdventureSection"
+                                Spacing="4"
+                                Visibility="Visible">
+                        <TextBlock Text="Adventure settings"
+                                   Style="{ThemeResource ShellSectionHeaderStyle}" />
+                        <TextBlock Style="{ThemeResource ShellSectionHintStyle}"
+                                   Text="Start or select an adventure in Play or Design to open session and thread settings from here."
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>

@@ -2,86 +2,190 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:ChatGPTWrapper.Views"
+        xmlns:controls="clr-namespace:ChatGPTWrapper.Controls"
         xmlns:wv="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="ChatGPT Wrapper"
         Height="900"
         Width="1400"
         MinWidth="560"
         MinHeight="480"
-        Background="{StaticResource DialogBgBrush}"
-        Foreground="{StaticResource TextBrush}">
-    <Grid Background="{StaticResource DialogBgBrush}">
+        Background="{DynamicResource BgBaseBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}">
+    <Grid Background="{DynamicResource BgBaseBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <Border x:Name="ChatChromePanel" Grid.Row="0"
-                Background="{StaticResource ToolbarBgBrush}"
-                BorderBrush="{StaticResource BorderBrushSubtle}"
+                Background="{DynamicResource BgChromeBrush}"
+                BorderBrush="{DynamicResource BorderStrongBrush}"
                 BorderThickness="0,0,0,1"
                 Padding="12,10">
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                    <Border Background="{StaticResource PanelBgBrush}"
-                            BorderBrush="{StaticResource BorderBrushSubtle}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource RadiusControl}"
-                            Padding="2"
-                            Margin="0,0,16,0">
-                        <StackPanel Orientation="Horizontal">
-                            <Button x:Name="BrowseModeButton"
-                                    Content="Browse"
-                                    Style="{StaticResource ModeButtonStyle}"
-                                    Click="BrowseModeButton_Click"/>
-                            <Button x:Name="AdventuresModeButton"
-                                    Content="Adventures"
-                                    Style="{StaticResource ModeButtonStyle}"
-                                    Click="AdventuresModeButton_Click"/>
-                        </StackPanel>
-                    </Border>
-                    <Border Width="1"
-                            Margin="0,4,16,4"
-                            Background="{StaticResource BorderBrushSubtle}"/>
-                    <Button x:Name="NewTabButton"
-                            Content="New tab"
-                            Margin="0,0,8,0"
-                            Click="NewTabButton_Click"/>
-                    <Button x:Name="CloseTabButton"
-                            Content="Close tab"
-                            Margin="0,0,8,0"
-                            Click="CloseTabButton_Click"/>
-                    <Button x:Name="ReloadButton"
-                            Content="Reload"
-                            Margin="0,0,16,0"
-                            Click="ReloadButton_Click"/>
-                    <Button x:Name="FormatButton"
-                            Content="Format…"
-                            Style="{StaticResource PrimaryButtonStyle}"
-                            Click="FormatButton_Click">
-                        <Button.ToolTip>
-                            <ToolTip>
-                                Spacing, typography, phrase highlights, and continuous view behavior.
-                            </ToolTip>
-                        </Button.ToolTip>
-                    </Button>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0"
+                            Style="{StaticResource ShellCommandBarStyle}"
+                            VerticalAlignment="Center"
+                            Margin="0,0,12,0">
+                    <controls:SegmentedControl x:Name="AppModeSegment"
+                                                Margin="0,0,8,0"
+                                                SelectionChanged="AppModeSegment_SelectionChanged"/>
+                    <StackPanel x:Name="ShellContextPanel"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Visibility="Collapsed">
+                        <Button x:Name="ShellBackButton"
+                                Content="← Library"
+                                Style="{StaticResource ShellCommandBarSecondarySlot}"
+                                Margin="0,0,8,0"
+                                Click="ShellBackButton_Click">
+                            <Button.ToolTip>
+                                <ToolTip>Back to adventure library</ToolTip>
+                            </Button.ToolTip>
+                        </Button>
+                        <TextBlock x:Name="ShellContextTitle"
+                                   VerticalAlignment="Center"
+                                   Style="{StaticResource ShellAppTitleStyle}"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="280"
+                                   Margin="0,0,8,0"/>
+                        <controls:SegmentedControl x:Name="ShellSessionModeSegment"
+                                                    Margin="0,0,8,0"
+                                                    SelectionChanged="ShellSessionModeSegment_SelectionChanged"/>
+                    </StackPanel>
                 </StackPanel>
-                <WrapPanel x:Name="TranscriptSettingsPanel" Margin="0,0,0,0">
-                    <TextBlock Text="View"
-                               VerticalAlignment="Center"
-                               Foreground="{StaticResource MutedTextBrush}"
-                               FontSize="{StaticResource FontSizeHint}"
-                               Margin="0,0,12,4"/>
-                    <CheckBox x:Name="ContinuousViewCheckBox"
-                              Content="Continuous view"
-                              Margin="0,0,0,4"
-                              Checked="ContinuousViewCheckBox_Changed"
-                              Unchecked="ContinuousViewCheckBox_Changed"/>
-                </WrapPanel>
-            </StackPanel>
+
+                <StackPanel Grid.Column="1"
+                            Style="{StaticResource ShellCommandBarStyle}"
+                            VerticalAlignment="Center">
+                    <controls:StatusChip x:Name="ShellReviewChip"
+                                         Label="Review"
+                                         Kind="Attention"
+                                         Margin="0,0,6,0"
+                                         Visibility="Collapsed"
+                                         Click="ShellReviewChip_Click"/>
+                    <controls:StatusChip x:Name="ShellLinkChip"
+                                         Label="Link"
+                                         Kind="Attention"
+                                         Margin="0,0,6,0"
+                                         Visibility="Collapsed"
+                                         Click="ShellLinkChip_Click"/>
+                    <controls:StatusChip x:Name="ShellJobChip"
+                                         Label="Working"
+                                         Kind="Running"
+                                         Margin="0,0,12,0"
+                                         Visibility="Collapsed"/>
+                    <Button x:Name="ShellPlayFocusButton"
+                            Style="{StaticResource ShellIconButtonStyle}"
+                            Tag="{StaticResource ShellIconFocus}"
+                            Visibility="Collapsed"
+                            Margin="0,0,8,0"
+                            Click="ShellPlayFocusButton_Click">
+                        <Button.ToolTip>
+                            <ToolTip>Hide both companion columns for maximum chat width. Restore prior layout when toggled off.</ToolTip>
+                        </Button.ToolTip>
+                        <TextBlock Style="{StaticResource ShellIconGlyphStyle}"
+                                   Text="{StaticResource ShellIconFocus}"/>
+                    </Button>
+                    <Menu x:Name="ShellViewMenu"
+                          VerticalAlignment="Center"
+                          Margin="0,0,8,0"
+                          Background="Transparent">
+                    <MenuItem ToolTip="View">
+                        <MenuItem.Header>
+                            <TextBlock Style="{StaticResource ShellIconGlyphStyle}"
+                                       Text="{StaticResource ShellIconView}"/>
+                        </MenuItem.Header>
+                        <MenuItem Header="Transcript mode"
+                                  IsEnabled="False"
+                                  FontWeight="SemiBold"/>
+                        <MenuItem StaysOpenOnClick="True">
+                            <MenuItem.Header>
+                                <controls:SegmentedControl x:Name="TranscriptModeSegment"
+                                                            Margin="0,2,0,4"
+                                                            SelectionChanged="TranscriptModeSegment_SelectionChanged"/>
+                            </MenuItem.Header>
+                        </MenuItem>
+                        <Separator/>
+                        <MenuItem x:Name="FormatMenuItem"
+                                  Header="Format…"
+                                  Click="FormatButton_Click"/>
+                        <MenuItem x:Name="PlaySettingsMenuItem"
+                                  Header="Play settings…"
+                                  Visibility="Collapsed"
+                                  Click="PlaySettingsMenuItem_Click"/>
+                        <MenuItem x:Name="FocusChatMenuItem"
+                                  Header="Focus chat"
+                                  Visibility="Collapsed"
+                                  Click="FocusChatMenuItem_Click"/>
+                        <Separator/>
+                        <MenuItem x:Name="KeyboardShortcutsMenuItem"
+                                  Header="Keyboard shortcuts…"
+                                  Click="KeyboardShortcutsMenuItem_Click"/>
+                    </MenuItem>
+                </Menu>
+
+                    <Menu x:Name="ShellOverflowMenu"
+                          VerticalAlignment="Center"
+                          Background="Transparent">
+                        <MenuItem ToolTip="More actions">
+                            <MenuItem.Header>
+                                <TextBlock Style="{StaticResource ShellIconGlyphStyle}"
+                                           Text="{StaticResource ShellIconMore}"/>
+                            </MenuItem.Header>
+                            <MenuItem x:Name="ShellSessionSectionHeader"
+                                      Header="Session"
+                                      IsEnabled="False"
+                                      FontWeight="SemiBold"
+                                      Visibility="Collapsed"/>
+                            <MenuItem x:Name="ShellSessionThreadsMenuItem"
+                                      Header="Threads"
+                                      Visibility="Collapsed"
+                                      Click="ShellSessionThreads_Click"/>
+                            <MenuItem x:Name="ShellSessionSourcesMenuItem"
+                                      Header="Sources"
+                                      Visibility="Collapsed"
+                                      Click="ShellSessionSources_Click"/>
+                            <MenuItem x:Name="ShellSessionRenameMenuItem"
+                                      Header="Rename adventure"
+                                      Visibility="Collapsed"
+                                      Click="ShellSessionRename_Click"/>
+                            <MenuItem x:Name="ShellSessionDesignMenuItem"
+                                      Header="Switch to Design"
+                                      Visibility="Collapsed"
+                                      Click="ShellDesignModeButton_Click"/>
+                            <Separator x:Name="ShellSessionSeparator" Visibility="Collapsed"/>
+                            <MenuItem Header="New tab" Click="NewTabButton_Click"/>
+                            <MenuItem Header="Reload" Click="ReloadButton_Click"/>
+                            <Separator/>
+                            <MenuItem x:Name="LocalInferenceLabMenuItem"
+                                      Header="Local inference lab"
+                                      Click="LocalInferenceLabMenuItem_Click"/>
+                            <MenuItem x:Name="PreferencesMenuItem"
+                                      Header="Preferences"
+                                      Click="PreferencesMenuItem_Click"/>
+                        </MenuItem>
+                    </Menu>
+                </StackPanel>
+            </Grid>
         </Border>
 
-        <Grid x:Name="BodyGrid" Grid.Row="1" Margin="12,4,12,12" ClipToBounds="True">
+        <!-- Legacy hidden holder (superseded by transcript mode buttons) -->
+        <CheckBox x:Name="ContinuousViewCheckBox"
+                  Grid.Row="1"
+                  Visibility="Collapsed"
+                  Checked="ContinuousViewCheckBox_Changed"
+                  Unchecked="ContinuousViewCheckBox_Changed"/>
+
+        <Grid x:Name="BodyGrid" Grid.Row="1" Margin="12,4,12,12"
+              ClipToBounds="True"
+              Background="{DynamicResource BgWorkspaceBrush}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="AdventureColumn" Width="0" MinWidth="0"/>
                 <ColumnDefinition x:Name="PlaySidePanelSplitterColumn" Width="0" MinWidth="0"/>
@@ -99,60 +203,72 @@
                           ResizeBehavior="PreviousAndNext"
                           ResizeDirection="Columns"
                           ShowsPreview="False"
+                          ToolTip="Drag to resize. Double-click for recommended width."
                           Visibility="Collapsed"
                           DragDelta="PlaySidePanelSplitter_DragDelta"
-                          DragCompleted="PlaySidePanelSplitter_DragCompleted"/>
+                          DragCompleted="PlaySidePanelSplitter_DragCompleted"
+                          MouseDoubleClick="PlaySidePanelSplitter_MouseDoubleClick"/>
             <Button x:Name="CollapsePlaySidePanelButton"
                     Grid.Column="1"
-                    Style="{StaticResource SidePanelRailButtonStyle}"
-                    VerticalAlignment="Center"
+                    Style="{StaticResource SidePanelCollapseRailButtonStyle}"
                     HorizontalAlignment="Center"
                     Panel.ZIndex="1"
                     Visibility="Collapsed"
-                    ToolTip="Hide adventure panel"
+                    ToolTip="Hide left companion panel (Ctrl+Alt+L)"
                     Click="CollapsePlaySidePanelButton_Click">
-                <Path Data="M8 5 L3 12 L8 19"
-                      Stroke="{StaticResource MutedTextBrush}"
-                      StrokeThickness="1.6"
+                <Path Data="M7 4 L3 10 L7 16"
+                      Stroke="{DynamicResource TextMutedBrush}"
+                      StrokeThickness="1.5"
                       StrokeStartLineCap="Round"
                       StrokeEndLineCap="Round"
                       Stretch="Uniform"
-                      Width="7"
-                      Height="12"/>
+                      Width="5"
+                      Height="9"/>
             </Button>
             <Button x:Name="ExpandPlaySidePanelButton"
                     Grid.Column="1"
-                    Style="{StaticResource SidePanelRailButtonStyle}"
-                    VerticalAlignment="Center"
+                    Style="{StaticResource SidePanelExpandRailButtonStyle}"
                     HorizontalAlignment="Center"
                     Visibility="Collapsed"
-                    ToolTip="Show adventure panel"
-                    Click="ExpandPlaySidePanelButton_Click">
-                <Path Data="M3 5 L8 12 L3 19"
-                      Stroke="{StaticResource MutedTextBrush}"
-                      StrokeThickness="1.6"
-                      StrokeStartLineCap="Round"
-                      StrokeEndLineCap="Round"
-                      Stretch="Uniform"
-                      Width="7"
-                      Height="12"/>
+                    ToolTip="Show adventure panel. Double-click for recommended width."
+                    Click="ExpandPlaySidePanelButton_Click"
+                    MouseDoubleClick="ExpandPlaySidePanelButton_MouseDoubleClick">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <Ellipse Style="{StaticResource SidePanelGripDotStyle}"/>
+                    <Path Data="M3 5 L7 10 L3 15"
+                          Stroke="{DynamicResource TextMutedBrush}"
+                          StrokeThickness="1.5"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Stretch="Uniform"
+                          Width="5"
+                          Height="9"
+                          Margin="0,2"/>
+                    <Ellipse Style="{StaticResource SidePanelGripDotStyle}"/>
+                </StackPanel>
             </Button>
             <Grid Grid.Column="2">
+                <Grid x:Name="UtilityWorkerBackgroundHost"
+                      Width="960"
+                      Height="720"
+                      HorizontalAlignment="Left"
+                      VerticalAlignment="Top"
+                      Margin="-20000,-20000,0,0"
+                      Panel.ZIndex="0"
+                      Visibility="Collapsed"
+                      IsHitTestVisible="False"
+                      ClipToBounds="False"/>
                 <TabControl x:Name="ChatTabs"
+                            Panel.ZIndex="1"
+                            Style="{StaticResource ShellChatTabControlStyle}"
                             VerticalAlignment="Stretch"
-                            VerticalContentAlignment="Top"
-                            Background="{StaticResource DialogBgBrush}"
-                            Foreground="{StaticResource TextBrush}"/>
+                            Background="{DynamicResource BgBaseBrush}"
+                            Foreground="{DynamicResource TextPrimaryBrush}"/>
                 <views:PlayPromptComposer x:Name="PlayPromptComposer"
                                           Visibility="Collapsed"
                                           Width="0"
                                           Height="0"
                                           IsHitTestVisible="False"/>
-                <wv:WebView2 x:Name="HiddenUtilityWebView"
-                             Visibility="Collapsed"
-                             Width="0"
-                             Height="0"
-                             IsHitTestVisible="False"/>
             </Grid>
             <GridSplitter x:Name="PlayNotesPanelSplitter"
                           Grid.Column="3"
@@ -160,48 +276,80 @@
                           ResizeBehavior="PreviousAndNext"
                           ResizeDirection="Columns"
                           ShowsPreview="False"
+                          ToolTip="Drag to resize. Double-click for recommended width."
                           Visibility="Collapsed"
                           DragDelta="PlayNotesPanelSplitter_DragDelta"
-                          DragCompleted="PlayNotesPanelSplitter_DragCompleted"/>
+                          DragCompleted="PlayNotesPanelSplitter_DragCompleted"
+                          MouseDoubleClick="PlayNotesPanelSplitter_MouseDoubleClick"/>
             <Button x:Name="CollapsePlayNotesPanelButton"
                     Grid.Column="3"
-                    Style="{StaticResource SidePanelRailButtonStyle}"
-                    VerticalAlignment="Center"
+                    Style="{StaticResource SidePanelCollapseRailButtonStyle}"
                     HorizontalAlignment="Center"
                     Panel.ZIndex="1"
                     Visibility="Collapsed"
-                    ToolTip="Hide notes panel"
+                    ToolTip="Hide notes / right panel (Ctrl+Alt+N)"
                     Click="CollapsePlayNotesPanelButton_Click">
-                <Path Data="M3 5 L8 12 L3 19"
-                      Stroke="{StaticResource MutedTextBrush}"
-                      StrokeThickness="1.6"
+                <Path Data="M3 4 L7 10 L3 16"
+                      Stroke="{DynamicResource TextMutedBrush}"
+                      StrokeThickness="1.5"
                       StrokeStartLineCap="Round"
                       StrokeEndLineCap="Round"
                       Stretch="Uniform"
-                      Width="7"
-                      Height="12"/>
+                      Width="5"
+                      Height="9"/>
             </Button>
             <Button x:Name="ExpandPlayNotesPanelButton"
                     Grid.Column="3"
-                    Style="{StaticResource SidePanelRailButtonStyle}"
-                    VerticalAlignment="Center"
+                    Style="{StaticResource SidePanelExpandRailButtonStyle}"
                     HorizontalAlignment="Center"
                     Visibility="Collapsed"
-                    ToolTip="Show notes panel"
-                    Click="ExpandPlayNotesPanelButton_Click">
-                <Path Data="M8 5 L3 12 L8 19"
-                      Stroke="{StaticResource MutedTextBrush}"
-                      StrokeThickness="1.6"
-                      StrokeStartLineCap="Round"
-                      StrokeEndLineCap="Round"
-                      Stretch="Uniform"
-                      Width="7"
-                      Height="12"/>
+                    ToolTip="Show notes panel. Double-click for recommended width."
+                    Click="ExpandPlayNotesPanelButton_Click"
+                    MouseDoubleClick="ExpandPlayNotesPanelButton_MouseDoubleClick">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <Ellipse Style="{StaticResource SidePanelGripDotStyle}"/>
+                    <Path Data="M7 5 L3 10 L7 15"
+                          Stroke="{DynamicResource TextMutedBrush}"
+                          StrokeThickness="1.5"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Stretch="Uniform"
+                          Width="5"
+                          Height="9"
+                          Margin="0,2"/>
+                    <Ellipse Style="{StaticResource SidePanelGripDotStyle}"/>
+                </StackPanel>
             </Button>
             <ContentControl x:Name="NotesHost"
                             Grid.Column="4"
                             Visibility="Collapsed"
                             ClipToBounds="True"/>
         </Grid>
+
+        <Border x:Name="ShellStatusBar"
+                Grid.Row="2"
+                MaxHeight="28"
+                Background="{DynamicResource BgChromeBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12,4">
+            <StackPanel Orientation="Horizontal">
+                <Ellipse x:Name="ShellBridgeDot"
+                         Width="8"
+                         Height="8"
+                         Margin="0,0,8,0"
+                         VerticalAlignment="Center"
+                         Fill="{DynamicResource TextMutedBrush}"
+                         Cursor="Hand"
+                         ToolTip="Bridge health — click for play settings"/>
+                <TextBlock x:Name="ShellLinkStateText"
+                           VerticalAlignment="Center"
+                           Style="{StaticResource ShellSectionHintStyle}"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="480"
+                           Cursor="Hand"
+                           ToolTip="Session link — click for source manager"/>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

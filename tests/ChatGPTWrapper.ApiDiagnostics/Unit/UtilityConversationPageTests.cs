@@ -8,6 +8,28 @@ namespace ChatGPTWrapper.ApiDiagnostics.Unit;
 public sealed class UtilityConversationPageTests
 {
     [Fact]
+    public void IsProjectHomePage_detects_project_landing_without_conversation()
+    {
+        const string gizmoId = "g-p-6a220fab2eb48191a75b9d88d85a3d91";
+        const string convId = "805de2b3-59cd-4934-b455-9a3dbd981865";
+
+        Assert.True(UtilityConversationPageService.IsProjectHomePage(
+            $"https://chatgpt.com/g/{gizmoId}/project"));
+        Assert.False(UtilityConversationPageService.IsProjectHomePage(
+            ChatGptUrls.BuildProjectConversationUrl(convId, gizmoId)));
+        Assert.False(UtilityConversationPageService.IsProjectHomePage(
+            $"https://chatgpt.com/c/{convId}"));
+    }
+
+    [Theory]
+    [InlineData(100, 1400)]
+    [InlineData(7409, 9490)]
+    public void ComputeComposerStableWaitMs_scales_with_packet_size(int length, int expectedMs)
+    {
+        Assert.Equal(expectedMs, AdventureTurnService.ComputeComposerStableWaitMs(length));
+    }
+
+    [Fact]
     public void MatchesTargetConversation_accepts_project_query_and_canonical_paths()
     {
         const string convId = "805de2b3-59cd-4934-b455-9a3dbd981865";

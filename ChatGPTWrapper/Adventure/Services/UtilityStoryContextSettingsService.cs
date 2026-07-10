@@ -32,6 +32,11 @@ internal static class UtilityStoryContextSettingsService
     {
         metadata.Settings ??= new AdventureSettings();
         metadata.Settings.UtilityStoryContext ??= new UtilityStoryContextSettings();
+        metadata.Settings.ContentBoundaries ??= [];
+        metadata.Settings.CharacterPortrayalRules ??= [];
+        metadata.Settings.SessionNarratorOverrides ??=
+            new Dictionary<string, PlaySessionNarratorOverrides>(StringComparer.OrdinalIgnoreCase);
+        metadata.Settings.PlayTurnOverrides ??= new PlayTurnOverrideSettings();
     }
 
     public static void SetJobOverride(AdventureBundle bundle, string jobId, UtilityStoryContextSettings? settings)
@@ -61,5 +66,17 @@ internal static class UtilityStoryContextSettingsService
         var key = GenerationJobHandlers.GetUtilityJobId(jobId);
         return bundle.Metadata.UtilityJobGuideOverrides?.TryGetValue(key, out var over) == true
                && over.Context is not null;
+    }
+
+    public static UtilityStoryContextSettings? TryGetJobOverride(AdventureBundle bundle, string jobId)
+    {
+        var key = GenerationJobHandlers.GetUtilityJobId(jobId);
+        if (bundle.Metadata.UtilityJobGuideOverrides?.TryGetValue(key, out var over) == true
+            && over.Context is not null)
+        {
+            return over.Context.Clone();
+        }
+
+        return null;
     }
 }

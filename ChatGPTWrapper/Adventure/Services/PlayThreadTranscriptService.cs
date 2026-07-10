@@ -107,7 +107,7 @@ internal sealed class PlayThreadTranscriptService(
         CoreWebView2? playCore,
         CancellationToken cancellationToken)
     {
-        var conversationId = bundle.Metadata.LinkedConversationId;
+        var conversationId = ResolveActivePlayConversationId(bundle);
         if (string.IsNullOrWhiteSpace(conversationId) || playCore is null)
             return new StoryContextCaptureResult { Error = "play_thread_unavailable" };
 
@@ -136,7 +136,7 @@ internal sealed class PlayThreadTranscriptService(
         CoreWebView2? playCore,
         CancellationToken cancellationToken)
     {
-        var conversationId = bundle.Metadata.LinkedConversationId;
+        var conversationId = ResolveActivePlayConversationId(bundle);
         if (string.IsNullOrWhiteSpace(conversationId) || playCore is null)
             return new StoryContextCaptureResult { Error = "play_thread_unavailable" };
 
@@ -196,20 +196,28 @@ internal sealed class PlayThreadTranscriptService(
     {
         var normalized = UtilityStoryContextSettingsNormalizer.Normalize(settings);
 
-        var metadataPairs = ThreadMetadataService.ToTranscriptPairs(bundle);
-        if (metadataPairs.Count > 0)
+        if (ThreadConversationLogReader.HasActivePlayLog(bundle))
         {
-            var filteredMeta = TranscriptFilterService.ApplyLookbackAndFilter(
-                metadataPairs,
-                normalized,
-                bundle,
-                isLiveSource: false);
+            var projectionCapture = ThreadTranscriptResolver.ResolvePlayThreadTranscript(bundle, normalized);
+            if (projectionCapture.TurnPairs.Count > 0)
+                return projectionCapture;
 
-            return new StoryContextCaptureResult
+            var entry = ThreadConversationLogReader.GetActiveEntry(bundle, AdventureThreadKind.Play)!;
+            var threadPairs = ThreadConversationLogReader.GetTranscriptPairs(bundle, entry);
+            if (threadPairs.Count > 0)
             {
-                SourceUsed = StoryContextSourceUsed.LocalLog,
-                TurnPairs = filteredMeta,
-            };
+                var filteredThread = TranscriptFilterService.ApplyLookbackAndFilter(
+                    threadPairs,
+                    normalized,
+                    bundle,
+                    isLiveSource: false);
+
+                return new StoryContextCaptureResult
+                {
+                    SourceUsed = StoryContextSourceUsed.LocalLog,
+                    TurnPairs = filteredThread,
+                };
+            }
         }
 
         var turns = bundle.Log.Turns
@@ -251,5 +259,20 @@ internal sealed class PlayThreadTranscriptService(
 
         return ChatGptUrls.TryParseConversationId(uri, out var parsed)
                && string.Equals(parsed, conversationId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ResolveActivePlayConversationId(AdventureBundle bundle)
+    {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var legacy = bundle.Metadata.LinkedConversationId;
+        var fromRegistry = AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Play);
+
+        if (!string.IsNullOrWhiteSpace(legacy)
+            && !string.Equals(legacy, fromRegistry, StringComparison.OrdinalIgnoreCase))
+        {
+            return legacy;
+        }
+
+        return fromRegistry ?? legacy;
     }
 }

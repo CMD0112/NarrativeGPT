@@ -13,6 +13,7 @@ internal static class GenerationUtilitySessionService
     {
         GenerationJobId.ProcessTurn => "[CGW:process]",
         GenerationJobId.ExtractEntities or GenerationJobId.ExpandEntity => "[CGW:entity]",
+        GenerationJobId.ProposeEntitiesFile => EntitiesFileRevisionService.UtilityTitlePrefix,
         GenerationJobId.ProposeMemories => "[CGW:memory]",
         GenerationJobId.UpdateSummary => "[CGW:summary]",
         GenerationJobId.BootstrapLore or GenerationJobId.ExpandStoryCard
@@ -118,16 +119,6 @@ internal static class GenerationUtilitySessionService
         bundle.Metadata.UtilityJobLastErrors.TryGetValue(utilityJobId, out var lastError);
 
         var session = GetSession(bundle.Metadata, utilityJobId);
-        if (PlayTabPinService.HasUtilityPin(bundle))
-        {
-            var convShort = session?.ConversationId is { Length: >= 8 } id
-                ? id[..8]
-                : "—";
-            var jobCount = session?.JobCount ?? 0;
-            var errorSuffix = string.IsNullOrWhiteSpace(lastError) ? "" : $" · last error: {lastError}";
-            return $"{label} · utility tab pinned · conv={convShort}… · {jobCount} job(s){errorSuffix}";
-        }
-
         if (session is null || string.IsNullOrWhiteSpace(session.ConversationId))
         {
             return string.IsNullOrWhiteSpace(lastError)

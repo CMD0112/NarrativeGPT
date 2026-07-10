@@ -66,9 +66,9 @@ public sealed class EntityExtractionServiceTests
     [Fact]
     public void HasActionableJobProposals_detects_memory_text()
     {
-        const string json = """[{"text":"A room","tags":[],"pinned":false}]""";
-        Assert.True(GenerationJobHandlers.HasActionableJobProposals(GenerationJobId.ProposeMemories, json));
-        Assert.False(GenerationJobHandlers.HasActionableJobProposals(GenerationJobId.ProposeMemories, "[]"));
+        const string json = """{"events":[{"text":"A room","tags":[],"pinned":false}],"links":[]}""";
+        Assert.True(GenerationJobHandlers.IsParseableJobResponse(GenerationJobId.ProposeMemories, json));
+        Assert.True(GenerationJobHandlers.IsSettledJobResponse(GenerationJobId.ProposeMemories, json, streamComplete: false));
     }
 
     [Fact]

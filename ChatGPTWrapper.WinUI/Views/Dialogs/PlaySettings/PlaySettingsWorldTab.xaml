@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings.PlaySettingsWorldTab"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:ChatGPTWrapper.WinUI.Views.Dialogs.PlaySettings"
+    SizeChanged="OnCardsGridSizeChanged">
+    <Grid x:Name="CardsGrid" ColumnSpacing="12" RowSpacing="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border x:Name="IntroCard"
+                Style="{ThemeResource ShellCardStyle}"
+                Background="{ThemeResource BgElevatedBrush}"
+                Padding="12,10">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{ThemeResource AccentPrimaryBrush}" />
+                <TextBlock Text="Fields merged into prompt packets on Send."
+                           Style="{ThemeResource ShellSectionHintStyle}" />
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="SummaryReviewPanel" Style="{ThemeResource ShellCardStyle}" Visibility="Collapsed">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Proposed rolling summary" FontWeight="SemiBold" />
+                <TextBox x:Name="ProposedSummaryBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Accept" Style="{ThemeResource ShellPrimaryButtonStyle}" Click="AcceptSummary_Click" />
+                    <Button Content="Dismiss" Style="{ThemeResource ShellGhostButtonStyle}" Click="DismissSummary_Click" />
+                    <Button Content="Review all…" Style="{ThemeResource ShellGhostButtonStyle}" Tag="Summary" Click="ReviewAll_Click" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <local:PlaySettingsSectionCard x:Name="SummaryCard"
+                                       Title="Rolling summary"
+                                       Hint="Compressed story context included in injection packets."
+                                       ScopeLabel="Persistent">
+            <StackPanel Spacing="10">
+                <Button Content="Refresh (AI)"
+                        Style="{ThemeResource ShellGhostButtonStyle}"
+                        HorizontalAlignment="Left"
+                        Click="RefreshSummary_Click" />
+                <TextBox x:Name="SummaryBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="120" TextChanged="OnChanged" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard x:Name="SceneCard"
+                                       Title="Scene &amp; objectives"
+                                       Hint="Current location and active goals for the narrator."
+                                       ScopeLabel="Persistent">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Location" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <TextBox x:Name="LocationBox" PlaceholderText="Where the scene takes place" TextChanged="OnChanged" />
+                <TextBlock Text="Objectives" Style="{ThemeResource ShellFormFieldLabelStyle}" />
+                <TextBox x:Name="ObjectivesBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" TextChanged="OnChanged" />
+            </StackPanel>
+        </local:PlaySettingsSectionCard>
+
+        <local:PlaySettingsSectionCard x:Name="AuthorsNoteCard"
+                                       Title="Author's note"
+                                       Hint="Style-only guidance — not in-world facts."
+                                       ScopeLabel="Persistent">
+            <TextBox x:Name="AuthorsNoteBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" TextChanged="OnChanged" />
+        </local:PlaySettingsSectionCard>
+    </Grid>
+</UserControl>

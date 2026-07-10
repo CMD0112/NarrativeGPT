@@ -38,8 +38,11 @@ internal static class AdventureDesignContextService
     public static bool CanOpenLocalSourcesEdit(AdventureBundle bundle) =>
         AdventureSourceFileService.HasLocalLoreSourceFiles(bundle);
 
-    public static string? GetDesignConversationId(AdventureBundle bundle) =>
-        GenerationUtilitySessionService.GetSession(bundle.Metadata, GenerationJobId.DesignAdventure)?.ConversationId;
+    public static string? GetDesignConversationId(AdventureBundle bundle)
+    {
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        return AdventureThreadRegistryService.GetActiveConversationId(bundle, AdventureThreadKind.Design);
+    }
 
     public static string FormatDesignModeOpenStatus(AdventureBundle bundle)
     {
@@ -115,38 +118,33 @@ internal static class AdventureDesignContextService
             };
         }
 
-        var session = await jobService.EnsureUtilityConversationAsync(
-            core,
-            bundle,
-            GenerationJobId.DesignAdventure,
-            turnService: turnService,
-            seedIfNeeded: false,
-            cancellationToken: cancellationToken);
-
-        if (session is null || string.IsNullOrWhiteSpace(session.ConversationId))
+        var conversationId = GetDesignConversationId(bundle);
+        if (string.IsNullOrWhiteSpace(conversationId))
         {
             return new DesignContextResult
             {
                 Status = DesignContextStatus.NoConversation,
-                Error = bundle.Metadata.UtilityConversationLastError
-                         ?? DesignTabPinService.DesignPinRequiredError,
+                Error = DesignTabPinService.DesignPinRequiredError,
             };
         }
 
         var gizmoId = ChatGptUrls.NormalizeGizmoId(bundle.Metadata.LinkedProjectId);
-        var targetUrl = ChatGptUrls.BuildProjectConversationUrl(session.ConversationId, gizmoId);
-        bundle.Metadata.PinnedDesignTabUrl = targetUrl;
-        AdventureStore.Save(bundle);
+        var targetUrl = ChatGptUrls.BuildProjectConversationUrl(conversationId, gizmoId);
+        AdventureThreadRegistryService.EnsureMigrated(bundle);
+        var designEntry = AdventureThreadRegistryService.GetActiveEntry(bundle, AdventureThreadKind.Design)
+                            ?? AdventureThreadRegistryService.RegisterEntry(bundle, AdventureThreadKind.Design);
+        designEntry.PinnedTabUrl = targetUrl;
+        AdventureStore.Save(bundle, AdventureSaveScope.Metadata);
 
-        if (!AdventurePlayContextService.IsOnProjectConversationPage(core.Source, session.ConversationId, gizmoId))
+        if (!AdventurePlayContextService.IsOnProjectConversationPage(core.Source, conversationId, gizmoId))
         {
             core.Navigate(targetUrl);
-            if (!await WaitForDesignNavigationAsync(core, session.ConversationId, gizmoId, cancellationToken))
+            if (!await WaitForDesignNavigationAsync(core, conversationId, gizmoId, cancellationToken))
             {
                 return new DesignContextResult
                 {
                     Status = DesignContextStatus.NavigationFailed,
-                    ConversationId = session.ConversationId,
+                    ConversationId = conversationId,
                     Error = "Timed out waiting for the design thread to load.",
                 };
             }
@@ -155,7 +153,7 @@ internal static class AdventureDesignContextService
         return new DesignContextResult
         {
             Status = DesignContextStatus.Ready,
-            ConversationId = session.ConversationId,
+            ConversationId = conversationId,
         };
     }
 
@@ -190,7 +188,7 @@ internal static class AdventureDesignContextService
             && AdventureNavigationService.ShouldNavigateToDesignTarget(core.Source, bundle, targetUrl))
         {
             core.Navigate(targetUrl);
-            await WaitForChatGptNavigationAsync(core, cancellationToken);
+            await WaitForChatGptNavigationAsync(core, cancellationToken, targetUrl);
         }
 
         return new DesignContextResult
@@ -202,15 +200,16 @@ internal static class AdventureDesignContextService
 
     private static async Task WaitForChatGptNavigationAsync(
         CoreWebView2 core,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? expectedDestination = null)
     {
-        if (!string.IsNullOrWhiteSpace(core.Source))
+        if (IsAtNavigationDestination(core, expectedDestination))
             return;
 
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         void Handler(object? sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            if (e.IsSuccess && !string.IsNullOrWhiteSpace(core.Source))
+            if (e.IsSuccess && IsAtNavigationDestination(core, expectedDestination))
                 tcs.TrySetResult(true);
         }
 
@@ -227,6 +226,35 @@ internal static class AdventureDesignContextService
         {
             core.NavigationCompleted -= Handler;
         }
+    }
+
+    private static bool IsAtNavigationDestination(CoreWebView2 core, string? expectedDestination)
+    {
+        if (string.IsNullOrWhiteSpace(expectedDestination))
+            return !string.IsNullOrWhiteSpace(core.Source);
+
+        if (!Uri.TryCreate(core.Source, UriKind.Absolute, out var current)
+            || !Uri.TryCreate(expectedDestination, UriKind.Absolute, out var expected))
+        {
+            return string.Equals(core.Source, expectedDestination, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (!ChatGptUrls.IsTrustedChatGptTopLevelUri(current))
+            return false;
+
+        var currentPath = current.AbsolutePath.TrimEnd('/');
+        var expectedPath = expected.AbsolutePath.TrimEnd('/');
+        if (string.Equals(currentPath, expectedPath, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (ChatGptUrls.TryParseConversationId(expected, out var expectedConversationId)
+            && ChatGptUrls.TryParseConversationId(current, out var currentConversationId)
+            && string.Equals(expectedConversationId, currentConversationId, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static async Task<bool> WaitForDesignNavigationAsync(

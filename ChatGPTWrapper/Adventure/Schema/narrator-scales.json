@@ -1,0 +1,613 @@
+{
+  "version": 3,
+  "dimensions": [
+    {
+      "id": "response-length",
+      "category": "narration",
+      "packetLabel": "Response length",
+      "narratorParameter": "ResponseLength",
+      "presets": [
+        {
+          "id": "brief",
+          "displayName": "Brief",
+          "packetValue": "brief",
+          "summary": "Minimal prose; one beat per idea.",
+          "behavior": [
+            "Keep replies to 1-3 short paragraphs or equivalent.",
+            "Favor clipped sentences and fast scene transitions.",
+            "End when the immediate beat resolves."
+          ],
+          "avoid": [
+            "Long atmospheric digressions.",
+            "Multi-paragraph internal monologue unless prompted."
+          ],
+          "pairsWellWith": ["detail-level: low", "tone: tense"]
+        },
+        {
+          "id": "short",
+          "displayName": "Short",
+          "packetValue": "short",
+          "summary": "Compact narration with room for one vivid detail.",
+          "behavior": [
+            "Target 2-4 short paragraphs.",
+            "Include one sensory anchor per beat.",
+            "Prioritize clarity over flourish."
+          ],
+          "avoid": [
+            "Expansive lore dumps.",
+            "Repeating setting facts already established."
+          ],
+          "pairsWellWith": ["detail-level: low", "tone: neutral"]
+        },
+        {
+          "id": "normal",
+          "displayName": "Normal",
+          "packetValue": "normal",
+          "summary": "Balanced scene length for standard play pacing.",
+          "behavior": [
+            "Typical scene beat: 3-6 paragraphs.",
+            "Mix action, dialogue, and brief description.",
+            "Match energy to player input without rushing conclusions."
+          ],
+          "avoid": [
+            "Padding with unrelated world history.",
+            "Over-explaining obvious player choices."
+          ],
+          "pairsWellWith": ["detail-level: medium", "tone: neutral"]
+        },
+        {
+          "id": "long",
+          "displayName": "Long",
+          "packetValue": "long",
+          "summary": "Room for atmosphere, reaction, and secondary detail.",
+          "behavior": [
+            "Allow 5-8 paragraphs when the scene warrants it.",
+            "Layer environment, emotion, and consequence.",
+            "Slow down for discovery or social beats."
+          ],
+          "avoid": [
+            "Dragging combat or urgent chases.",
+            "Redundant recap of prior turns."
+          ],
+          "pairsWellWith": ["detail-level: high", "tone: lyrical"]
+        },
+        {
+          "id": "expansive",
+          "displayName": "Expansive",
+          "packetValue": "expansive",
+          "summary": "Extended narration for major reveals or set pieces.",
+          "behavior": [
+            "May use 8+ paragraphs for pivotal scenes.",
+            "Build mood with sustained imagery and rhythm.",
+            "Treat the reply as a set-piece when appropriate."
+          ],
+          "avoid": [
+            "Expansive replies for trivial actions.",
+            "Losing player agency under narration weight."
+          ],
+          "pairsWellWith": ["detail-level: cinematic", "tone: lyrical"]
+        }
+      ]
+    },
+    {
+      "id": "detail-level",
+      "category": "narration",
+      "packetLabel": "Detail level",
+      "narratorParameter": "DetailLevel",
+      "presets": [
+        {
+          "id": "low",
+          "displayName": "Low",
+          "packetValue": "low",
+          "summary": "Essentials only; skip fine-grained sensory cataloging.",
+          "behavior": [
+            "Name only what matters to the beat.",
+            "Skip clothing, weather, and background unless tactically relevant.",
+            "Keep NPC descriptions to role-revealing traits."
+          ],
+          "avoid": [
+            "Exhaustive room inventories.",
+            "Cataloging every sense channel every turn."
+          ],
+          "pairsWellWith": ["response-length: brief", "tone: tense"]
+        },
+        {
+          "id": "medium",
+          "displayName": "Medium",
+          "packetValue": "medium",
+          "summary": "Moderate sensory and situational detail.",
+          "behavior": [
+            "Include 1-2 concrete details per paragraph.",
+            "Ground dialogue with posture, tone, or environment cues.",
+            "Reveal character through selective specifics."
+          ],
+          "avoid": [
+            "Cinematic micro-detail on every object.",
+            "Technical minutiae unrelated to stakes."
+          ],
+          "pairsWellWith": ["response-length: normal", "tone: dramatic"]
+        },
+        {
+          "id": "high",
+          "displayName": "High",
+          "packetValue": "high",
+          "summary": "Rich description without losing momentum.",
+          "behavior": [
+            "Layer sight, sound, texture, and mood.",
+            "Show emotional subtext through physical tells.",
+            "Make locations feel inhabited and specific."
+          ],
+          "avoid": [
+            "Purple prose that obscures action.",
+            "Blocking player intent with description."
+          ],
+          "pairsWellWith": ["response-length: long", "tone: lyrical"]
+        },
+        {
+          "id": "cinematic",
+          "displayName": "Cinematic",
+          "packetValue": "cinematic",
+          "summary": "Maximum sensory immersion and visual framing.",
+          "behavior": [
+            "Compose scenes like camera beats: wide, medium, close.",
+            "Use strong verbs and precise nouns.",
+            "Let silence, light, and space carry meaning."
+          ],
+          "avoid": [
+            "Melodrama that undercuts agency.",
+            "Detail that contradicts established canon."
+          ],
+          "pairsWellWith": ["response-length: expansive", "tone: dramatic"]
+        }
+      ]
+    },
+    {
+      "id": "tone",
+      "category": "narration",
+      "packetLabel": "Tone",
+      "narratorParameter": "Tone",
+      "presets": [
+        {
+          "id": "neutral",
+          "displayName": "Neutral",
+          "packetValue": "neutral",
+          "summary": "Even-handed narration without strong genre coloring.",
+          "behavior": [
+            "Clear, direct prose.",
+            "Let events speak; avoid heavy stylistic filters.",
+            "Maintain consistent voice across scenes."
+          ],
+          "avoid": [
+            "Whiplash shifts into comedy or horror unprompted.",
+            "Authorial commentary breaking immersion."
+          ],
+          "pairsWellWith": ["detail-level: medium", "combat-difficulty: balanced"]
+        },
+        {
+          "id": "dramatic",
+          "displayName": "Dramatic",
+          "packetValue": "dramatic",
+          "summary": "Heightened stakes and emotional weight.",
+          "behavior": [
+            "Emphasize consequences and turning points.",
+            "Use rhythm and contrast for tension releases.",
+            "Dialogue carries subtext and pressure."
+          ],
+          "avoid": [
+            "Camp or parody unless the scene calls for it.",
+            "Underplaying genuine peril."
+          ],
+          "pairsWellWith": ["detail-level: medium", "response-length: normal"]
+        },
+        {
+          "id": "whimsical",
+          "displayName": "Whimsical",
+          "packetValue": "whimsical",
+          "summary": "Playful, curious, lightly fanciful atmosphere.",
+          "behavior": [
+            "Gentle humor and wonder where fitting.",
+            "Odd details that delight without derailing stakes.",
+            "Warmth toward characters and world."
+          ],
+          "avoid": [
+            "Mocking player choices.",
+            "Whimsy during genuine tragedy without setup."
+          ],
+          "pairsWellWith": ["combat-difficulty: easy", "detail-level: medium"]
+        },
+        {
+          "id": "grim",
+          "displayName": "Grim",
+          "packetValue": "grim",
+          "summary": "Harsh, unsparing, morally gray atmosphere.",
+          "behavior": [
+            "Costs feel real; victories are costly.",
+            "Weather, decay, and exhaustion tint scenes.",
+            "Hope is scarce and earned."
+          ],
+          "avoid": [
+            "Gratuitous misery without purpose.",
+            "Nihilism that removes player motivation."
+          ],
+          "pairsWellWith": ["combat-difficulty: hard", "violence-level: moderate"]
+        },
+        {
+          "id": "hopeful",
+          "displayName": "Hopeful",
+          "packetValue": "hopeful",
+          "summary": "Resilience, possibility, and forward momentum.",
+          "behavior": [
+            "Highlight small wins and human connection.",
+            "Dark beats serve contrast, not despair.",
+            "Offer plausible paths through problems."
+          ],
+          "avoid": [
+            "Toxic positivity ignoring real danger.",
+            "Deus ex machina rescues."
+          ],
+          "pairsWellWith": ["combat-difficulty: balanced", "detail-level: medium"]
+        },
+        {
+          "id": "tense",
+          "displayName": "Tense",
+          "packetValue": "tense",
+          "summary": "Tight suspense; danger feels immediate.",
+          "behavior": [
+            "Short clauses, sharp transitions.",
+            "Emphasize deadlines, exposure, and unknowns.",
+            "Cut to the moment of decision."
+          ],
+          "avoid": [
+            "Long pastoral digressions mid-crisis.",
+            "Deflating tension with premature relief."
+          ],
+          "pairsWellWith": ["response-length: brief", "detail-level: low"]
+        },
+        {
+          "id": "lyrical",
+          "displayName": "Lyrical",
+          "packetValue": "lyrical",
+          "summary": "Elevated, rhythmic prose with literary color.",
+          "behavior": [
+            "Metaphor and motif used sparingly but memorably.",
+            "Sensory language with musical cadence.",
+            "Suited to myth, travel, and reflection."
+          ],
+          "avoid": [
+            "Incomprehensible ornamentation.",
+            "Lyrical density during frantic action."
+          ],
+          "pairsWellWith": ["response-length: long", "detail-level: high"]
+        }
+      ]
+    },
+    {
+      "id": "combat-difficulty",
+      "category": "combat",
+      "packetLabel": "Combat difficulty",
+      "narratorParameter": "Difficulty",
+      "presets": [
+        {
+          "id": "easy",
+          "displayName": "Easy",
+          "packetValue": "easy",
+          "summary": "Low friction; complications bend toward success.",
+          "behavior": [
+            "Obstacles rarely hard-stop progress.",
+            "NPCs cooperative when reasonable.",
+            "Failures offer quick recovery paths."
+          ],
+          "avoid": [
+            "Removing all risk or tension.",
+            "Ignoring clearly foolish player plans without consequence."
+          ],
+          "pairsWellWith": ["tone: hopeful", "violence-level: mild"]
+        },
+        {
+          "id": "balanced",
+          "displayName": "Balanced",
+          "packetValue": "balanced",
+          "summary": "Fair challenges; failures teach without punishing.",
+          "behavior": [
+            "Success requires plausible plans and resources.",
+            "Setbacks create new choices, not dead ends.",
+            "Opponents act competently but not omnisciently."
+          ],
+          "avoid": [
+            "Arbitrary punishment.",
+            "Guaranteed success on reckless actions."
+          ],
+          "pairsWellWith": ["tone: neutral", "detail-level: medium"]
+        },
+        {
+          "id": "moderate",
+          "displayName": "Moderate",
+          "packetValue": "moderate",
+          "summary": "Noticeable resistance; preparation matters.",
+          "behavior": [
+            "Mixed outcomes on risky gambits.",
+            "Resources and alliances deplete under pressure.",
+            "Enemies adapt to repeated tactics."
+          ],
+          "avoid": [
+            "Hopeless unwinnable scenarios.",
+            "Trivializing established threats."
+          ],
+          "pairsWellWith": ["tone: dramatic", "response-length: normal"]
+        },
+        {
+          "id": "hard",
+          "displayName": "Hard",
+          "packetValue": "hard",
+          "summary": "Meaningful failure states and scarce advantages.",
+          "behavior": [
+            "Costly mistakes leave lasting marks.",
+            "Opponents exploit weaknesses.",
+            "Victory demands tradeoffs and timing."
+          ],
+          "avoid": [
+            "Cheap deaths without warning.",
+            "Impossible locks without clues."
+          ],
+          "pairsWellWith": ["tone: grim", "detail-level: high"]
+        },
+        {
+          "id": "brutal",
+          "displayName": "Brutal",
+          "packetValue": "brutal",
+          "summary": "High lethality and unforgiving consequences.",
+          "behavior": [
+            "Recklessness often ends badly.",
+            "Recovery is slow and expensive.",
+            "The world does not wait for the player."
+          ],
+          "avoid": [
+            "Killing agency with instant TPKs.",
+            "Gratuitous cruelty without narrative purpose."
+          ],
+          "pairsWellWith": ["tone: grim", "violence-level: intense"]
+        }
+      ]
+    },
+    {
+      "id": "violence-level",
+      "category": "combat",
+      "packetLabel": "Violence level",
+      "narratorParameter": "ViolenceLevel",
+      "presets": [
+        {
+          "id": "none",
+          "displayName": "None",
+          "packetValue": "none",
+          "summary": "No graphic violence; conflict resolves off-screen or abstractly.",
+          "behavior": [
+            "Fade before graphic harm.",
+            "Use implication, sound, and aftermath instead of gore.",
+            "Keep combat stylized or non-lethal when possible."
+          ],
+          "avoid": [
+            "Sudden graphic injury descriptions.",
+            "Torture or cruelty played for detail."
+          ],
+          "pairsWellWith": ["tone: whimsical", "combat-difficulty: easy"]
+        },
+        {
+          "id": "mild",
+          "displayName": "Mild",
+          "packetValue": "mild",
+          "summary": "Violence acknowledged but not lingered on.",
+          "behavior": [
+            "Brief, non-graphic descriptions of harm.",
+            "Focus on emotional impact over bodily detail.",
+            "Avoid lingering on wounds or suffering."
+          ],
+          "avoid": [
+            "Visceral gore.",
+            "Sensationalized brutality."
+          ],
+          "pairsWellWith": ["tone: neutral", "combat-difficulty: balanced"]
+        },
+        {
+          "id": "moderate",
+          "displayName": "Moderate",
+          "packetValue": "moderate",
+          "summary": "Clear violence with restrained graphic detail.",
+          "behavior": [
+            "Consequences of harm are visible and real.",
+            "Do not euphemize serious injury when stakes require it.",
+            "Balance intensity with readability."
+          ],
+          "avoid": [
+            "Gratuitous gore or torture porn.",
+            "Cartoon violence undermining established stakes."
+          ],
+          "pairsWellWith": ["tone: dramatic", "combat-difficulty: moderate"]
+        },
+        {
+          "id": "intense",
+          "displayName": "Intense",
+          "packetValue": "intense",
+          "summary": "Frank depiction of violence when the scene demands it.",
+          "behavior": [
+            "Graphic detail only when narratively earned.",
+            "Emphasize cost, trauma, and aftermath.",
+            "Never glorify cruelty."
+          ],
+          "avoid": [
+            "Gratuitous shock without story purpose.",
+            "Fetishized harm."
+          ],
+          "pairsWellWith": ["tone: grim", "combat-difficulty: brutal"]
+        }
+      ]
+    },
+    {
+      "id": "narrative-pacing",
+      "category": "narration",
+      "packetLabel": "Narrative pacing",
+      "narratorParameter": "NarrativePacing",
+      "presets": [
+        {
+          "id": "deliberate",
+          "displayName": "Deliberate",
+          "packetValue": "deliberate",
+          "summary": "Slow scene tempo; linger on beats and transitions.",
+          "behavior": [
+            "Pause for reaction, reflection, and environmental texture.",
+            "Let conversations breathe before advancing plot.",
+            "Use scene breaks sparingly; stay in the moment."
+          ],
+          "avoid": [
+            "Rushing to the next plot beat.",
+            "Skipping emotional processing after major events."
+          ],
+          "pairsWellWith": ["response-length: long", "tone: lyrical"]
+        },
+        {
+          "id": "balanced",
+          "displayName": "Balanced",
+          "packetValue": "balanced",
+          "summary": "Standard beat progression; neither rushed nor languid.",
+          "behavior": [
+            "Match tempo to stakes — urgent when needed, calm when safe.",
+            "Advance one clear story beat per reply.",
+            "Transition cleanly between action and dialogue."
+          ],
+          "avoid": [
+            "Dragging low-stakes scenes.",
+            "Whiplash scene cuts without connective tissue."
+          ],
+          "pairsWellWith": ["response-length: normal", "detail-level: medium"]
+        },
+        {
+          "id": "brisk",
+          "displayName": "Brisk",
+          "packetValue": "brisk",
+          "summary": "Fast cuts and forward momentum; minimal dwell time.",
+          "behavior": [
+            "Favor sharp transitions and decisive outcomes.",
+            "Compress travel, setup, and recap.",
+            "Keep dialogue punchy; cut to the action."
+          ],
+          "avoid": [
+            "Omitting necessary context for speed.",
+            "Undercutting emotional peaks with haste."
+          ],
+          "pairsWellWith": ["response-length: brief", "tone: tense"]
+        }
+      ]
+    },
+    {
+      "id": "consequence-weight",
+      "category": "combat",
+      "packetLabel": "Consequence weight",
+      "narratorParameter": "ConsequenceWeight",
+      "presets": [
+        {
+          "id": "forgiving",
+          "displayName": "Forgiving",
+          "packetValue": "forgiving",
+          "summary": "Setbacks rarely permanent; recovery paths stay open.",
+          "behavior": [
+            "Injuries heal; losses can be reclaimed with effort.",
+            "Failure teaches without closing routes forward.",
+            "NPC allies offer second chances when plausible."
+          ],
+          "avoid": [
+            "Nullifying all risk or tension.",
+            "Ignoring repeated reckless behavior."
+          ],
+          "pairsWellWith": ["combat-difficulty: easy", "violence-level: mild"]
+        },
+        {
+          "id": "balanced",
+          "displayName": "Balanced",
+          "packetValue": "balanced",
+          "summary": "Meaningful consequences that can be addressed over time.",
+          "behavior": [
+            "Significant failures leave scars but not dead ends.",
+            "Resources spent stay spent unless earned back.",
+            "Death and loss possible but telegraphed."
+          ],
+          "avoid": [
+            "Arbitrary punishment without narrative purpose.",
+            "Resetting stakes every scene."
+          ],
+          "pairsWellWith": ["combat-difficulty: balanced", "violence-level: moderate"]
+        },
+        {
+          "id": "lasting",
+          "displayName": "Lasting",
+          "packetValue": "lasting",
+          "summary": "Harm, loss, and failure stick; the world remembers.",
+          "behavior": [
+            "Injuries and losses persist until addressed in fiction.",
+            "Alliances broken are hard to rebuild.",
+            "Major mistakes reshape available options."
+          ],
+          "avoid": [
+            "Hopeless unwinnable spirals without player agency.",
+            "Gratuitous permanent harm without warning."
+          ],
+          "pairsWellWith": ["combat-difficulty: hard", "violence-level: intense"]
+        }
+      ]
+    }
+  ],
+  "sceneProfiles": [
+    {
+      "id": "action",
+      "displayName": "Action",
+      "description": "Short, punchy narration for combat and chase scenes.",
+      "values": {
+        "response-length": "brief",
+        "detail-level": "low",
+        "tone": "tense",
+        "narrative-pacing": "brisk"
+      }
+    },
+    {
+      "id": "exploration",
+      "displayName": "Exploration",
+      "description": "Rich sensory description for discovery and travel.",
+      "values": {
+        "response-length": "long",
+        "detail-level": "high",
+        "tone": "lyrical",
+        "narrative-pacing": "deliberate"
+      }
+    },
+    {
+      "id": "introspection",
+      "displayName": "Introspection",
+      "description": "Slower, reflective narration for inner monologue beats.",
+      "values": {
+        "response-length": "normal",
+        "detail-level": "medium",
+        "tone": "hopeful",
+        "narrative-pacing": "deliberate"
+      }
+    },
+    {
+      "id": "social",
+      "displayName": "Social",
+      "description": "Dialogue-forward scenes with moderate pacing.",
+      "values": {
+        "response-length": "normal",
+        "detail-level": "medium",
+        "tone": "dramatic"
+      }
+    },
+    {
+      "id": "lore",
+      "displayName": "Lore",
+      "description": "Expansive exposition for history, myth, and world detail.",
+      "values": {
+        "response-length": "expansive",
+        "detail-level": "cinematic",
+        "tone": "lyrical",
+        "narrative-pacing": "deliberate"
+      }
+    }
+  ]
+}

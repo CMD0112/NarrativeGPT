@@ -718,11 +718,20 @@
 
       var summary = document.createElement("summary");
       summary.className = "cgw-continuous-packet-context__header";
-      summary.textContent =
-        "Adventure context · " +
-        sectionCount +
-        " section" +
-        (sectionCount === 1 ? "" : "s");
+      var summaryLabel =
+        "Adventure context" +
+        (sectionCount
+          ? " · " +
+            sectionCount +
+            " section" +
+            (sectionCount === 1 ? "" : "s")
+          : "");
+      summary.setAttribute("aria-label", summaryLabel);
+      summary.setAttribute("title", summaryLabel);
+      var summarySr = document.createElement("span");
+      summarySr.className = "cgw-continuous-packet-context__sr-only";
+      summarySr.textContent = summaryLabel;
+      summary.appendChild(summarySr);
       details.appendChild(summary);
 
       var sectionsWrap = document.createElement("div");

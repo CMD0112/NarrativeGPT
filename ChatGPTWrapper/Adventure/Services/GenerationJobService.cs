@@ -5,6 +5,7 @@ using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.Adventure.Stores;
 using ChatGPTWrapper.ChatGptApi;
 using ChatGPTWrapper.PageIntegration;
+using ChatGPTWrapper.Adventure.Services.UtilityWorker;
 using Microsoft.Web.WebView2.Core;
 
 namespace ChatGPTWrapper.Adventure.Services;
@@ -33,6 +34,9 @@ internal sealed class GenerationJobService
         AdventureTurnService? turnService = null,
         CoreWebView2? playCore = null,
         AdventureTurnService? playTurnService = null,
+        CoreWebView2? workerCore = null,
+        AdventureTurnService? workerTurnService = null,
+        IUtilityWorkerHost? workerHost = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId))
@@ -44,7 +48,7 @@ internal sealed class GenerationJobService
             };
         }
 
-        if (!IsDesignSourceJob(jobId) && UtilityDeliveryModeService.UsesInlineDelivery(bundle))
+        if (!IsDesignUtilityJob(jobId))
         {
             if (playCore is null || playTurnService is null)
             {
@@ -55,13 +59,38 @@ internal sealed class GenerationJobService
                 };
             }
 
-            if (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId))
+            if (string.IsNullOrWhiteSpace(ResolvePlayConversationId(bundle, playCore)))
             {
                 return new GenerationJobResult
                 {
                     Success = false,
                     Error = "play_thread_unlinked",
                 };
+            }
+
+            if (LocalUtilityInferencePolicy.IsDualRun(bundle) && LocalUtilityInferencePolicy.SupportsJob(jobId))
+            {
+                return await RunDualRunJobAsync(
+                    playCore,
+                    bundle,
+                    jobId,
+                    context,
+                    playTurnService,
+                    workerCore,
+                    workerTurnService,
+                    workerHost,
+                    cancellationToken);
+            }
+
+            if (PlayUtilityInjectionService.UsesInjectionFirst(bundle))
+            {
+                return await RunInjectionFirstJobAsync(
+                    playCore,
+                    bundle,
+                    jobId,
+                    context,
+                    playTurnService,
+                    cancellationToken);
             }
 
             return await RunInlineJobAsync(
@@ -73,8 +102,38 @@ internal sealed class GenerationJobService
                 cancellationToken);
         }
 
+        return await RunDesignJobAsync(
+            core,
+            bundle,
+            jobId,
+            context,
+            turnService,
+            playCore,
+            playTurnService,
+            cancellationToken);
+    }
+
+    private async Task<GenerationJobResult> RunDesignJobAsync(
+        CoreWebView2 core,
+        AdventureBundle bundle,
+        string jobId,
+        GenerationJobContext context,
+        AdventureTurnService? turnService,
+        CoreWebView2? playCore,
+        AdventureTurnService? playTurnService,
+        CancellationToken cancellationToken)
+    {
+        if (!DesignTabPinService.PreferPinnedDesignWebView(bundle))
+        {
+            return new GenerationJobResult
+            {
+                Success = false,
+                Error = DesignTabPinService.DesignPinRequiredError,
+            };
+        }
+
         var utilityJobId = GenerationJobHandlers.GetUtilityJobId(jobId);
-        var session = await EnsureUtilityConversationAsync(
+        var session = await EnsureDesignConversationAsync(
             core,
             bundle,
             utilityJobId,
@@ -90,24 +149,46 @@ internal sealed class GenerationJobService
             };
         }
 
+        return await ExecuteUtilityThreadJobAsync(
+            core,
+            bundle,
+            jobId,
+            utilityJobId,
+            session,
+            context,
+            turnService,
+            playCore,
+            playTurnService,
+            skipStoryContext: IsDesignSourceJob(jobId),
+            cancellationToken);
+    }
+
+    private async Task<GenerationJobResult> ExecuteUtilityThreadJobAsync(
+        CoreWebView2 core,
+        AdventureBundle bundle,
+        string jobId,
+        string utilityJobId,
+        GenerationUtilitySession session,
+        GenerationJobContext context,
+        AdventureTurnService? turnService,
+        CoreWebView2? playCore,
+        AdventureTurnService? playTurnService,
+        bool skipStoryContext,
+        CancellationToken cancellationToken)
+    {
         var gizmoId = bundle.Metadata.LinkedProjectId;
 
         UtilityStoryContextBuildResult storyContext = new();
-        if (!IsDesignSourceJob(jobId))
+        if (!skipStoryContext)
         {
-            var transcriptService = new PlayThreadTranscriptService(_conversationSend, playTurnService);
-            var storyBuilder = new UtilityStoryContextBuilder(transcriptService);
-            storyContext = await storyBuilder.BuildAsync(bundle, jobId, playCore, cancellationToken);
-            context.StoryContextBlock = storyContext.Text;
-            context.StoryContextHasTranscript = storyContext.HasTranscriptSection;
-            var storySettings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
-            context.OmitRedundantJobTurnSlices =
-                storySettings.OmitRedundantJobTurnSlices && storyContext.HasTranscriptSection;
-            context.StoryContextIncludesSummary =
-                storySettings.IncludeRollingSummary && !string.IsNullOrWhiteSpace(bundle.Summary.RollingSummary);
-            context.StoryContextIncludesState =
-                storySettings.IncludeState
-                && EntityExtractionService.BuildWorldSnapshot(bundle, includeSummary: false) != "(none)";
+            storyContext = await BuildUtilityJobStoryContextAsync(
+                bundle,
+                jobId,
+                UtilityExecutionChannel.ManualBackground,
+                context,
+                playCore,
+                playTurnService,
+                cancellationToken);
         }
 
         var prompt = GenerationJobHandlers.BuildJobPrompt(bundle, jobId, context);
@@ -297,7 +378,7 @@ internal sealed class GenerationJobService
         string jobId,
         AdventureTurnService? turnService = null,
         CancellationToken cancellationToken = default) =>
-        EnsureUtilityConversationAsync(
+        EnsureDesignConversationAsync(
             core,
             bundle,
             jobId,
@@ -305,7 +386,7 @@ internal sealed class GenerationJobService
             turnService,
             cancellationToken: cancellationToken);
 
-    public async Task<GenerationUtilitySession?> EnsureUtilityConversationAsync(
+    public async Task<GenerationUtilitySession?> EnsureDesignConversationAsync(
         CoreWebView2 core,
         AdventureBundle bundle,
         string jobId,
@@ -333,25 +414,6 @@ internal sealed class GenerationJobService
             metadata.UtilityConversationLastError = $"utility_prepare_failed: {ex.Message}";
             return null;
         }
-        if (PlayTabPinService.HasUtilityPin(bundle)
-            && !IsDesignUtilityJob(jobId))
-        {
-            var pinned = await EnsurePinnedUtilityConversationAsync(
-                core,
-                bundle,
-                jobId,
-                gizmoId,
-                forceRotate,
-                turnService,
-                cancellationToken);
-            if (pinned is not null)
-                return pinned;
-
-            ProjectLinkDiagnostics.Log(
-                "Utility pin invalid or stale; falling back to auto-managed utility WebView");
-            metadata.UtilityConversationLastError = null;
-        }
-
         var session = GenerationUtilitySessionService.GetSession(metadata, jobId);
 
         if (forceRotate && session is not null)
@@ -425,57 +487,13 @@ internal sealed class GenerationJobService
         var createdNew = false;
         if (session is null)
         {
-            var nextSequence = GenerationUtilitySessionService.GetNextSequence(metadata, jobId);
-            var createOptions = BuildCreateOptions();
-            var created = await _projectApi.CreateProjectConversationDetailedAsync(
-                core,
-                gizmoId,
-                createOptions,
-                cancellationToken);
-            var conversationId = created.ConversationId;
-            if (string.IsNullOrWhiteSpace(conversationId) && conversations.Count > 0)
-            {
-                var reconciled = GenerationUtilitySessionService.TryReconcileSession(bundle, jobId, conversations);
-                if (reconciled is not null)
-                {
-                    session = reconciled;
-                    metadata.UtilitySessions[jobId] = reconciled;
-                    AdventureStore.Save(bundle);
-                }
-            }
+            metadata.UtilityConversationLastError = DesignTabPinService.DesignPinRequiredError;
+            AdventureStore.Save(bundle);
+            return null;
+        }
 
-            if (string.IsNullOrWhiteSpace(conversationId))
-            {
-                metadata.UtilityConversationLastError = created.Error ?? "utility_create_failed";
-                return null;
-            }
-
-            if (created.ClientBootstrapped)
-            {
-                ProjectChatDraftService.BeginUtilityDraft(bundle);
-                var page = await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
-                    core,
-                    conversationId,
-                    gizmoId,
-                    cancellationToken);
-                if (!page.Success)
-                {
-                    metadata.UtilityConversationLastError =
-                        page.Error ?? "utility_client_bootstrap_nav_failed";
-                    return null;
-                }
-
-                ProjectLinkDiagnostics.Log(
-                    $"Client-bootstrapped utility conversation {conversationId} navigated for {jobId}");
-            }
-
-            session = new GenerationUtilitySession
-            {
-                ConversationId = conversationId,
-                Sequence = nextSequence,
-                SeedVersion = GenerationUtilitySessionService.GetSeedVersion(bundle, jobId),
-                CreatedAt = DateTimeOffset.UtcNow,
-            };
+        if (!metadata.UtilitySessions.ContainsKey(jobId))
+        {
             metadata.UtilitySessions[jobId] = session;
             createdNew = true;
             AdventureStore.Save(bundle);
@@ -564,96 +582,6 @@ internal sealed class GenerationJobService
         return session;
     }
 
-    private async Task<GenerationUtilitySession?> EnsurePinnedUtilityConversationAsync(
-        CoreWebView2 core,
-        AdventureBundle bundle,
-        string jobId,
-        string gizmoId,
-        bool forceRotate,
-        AdventureTurnService? turnService,
-        CancellationToken cancellationToken)
-    {
-        var metadata = bundle.Metadata;
-        if (!PlayTabPinService.TryResolveUtilityConversationId(bundle, core, out var pinnedId, out var pinError))
-        {
-            metadata.UtilityConversationLastError = pinError switch
-            {
-                "utility_tab_not_on_conversation" =>
-                    "utility_pin_invalid: Pin utility tab on a Project /c/ conversation page",
-                "utility_same_as_play_thread" =>
-                    "utility_pin_invalid: Utility tab cannot be the play thread — create a new Project chat",
-                _ => $"utility_pin_invalid: {pinError ?? "unknown"}",
-            };
-            AdventureStore.Save(bundle);
-            return null;
-        }
-
-        await EnsureUtilityConversationPageAsync(core, pinnedId!, gizmoId, cancellationToken);
-
-        var session = GenerationUtilitySessionService.GetSession(metadata, jobId);
-        if (forceRotate && session is not null)
-        {
-            session.JobCount = 0;
-            session.ConsecutiveParseFailures = 0;
-            session.LastUsedAt = null;
-        }
-        else if (session is not null && GenerationUtilitySessionService.ShouldRotateSession(bundle, session, jobId))
-        {
-            session.JobCount = 0;
-            session.ConsecutiveParseFailures = 0;
-            session.SeedVersion = GenerationUtilitySessionService.GetSeedVersion(bundle, jobId);
-        }
-
-        var createdNew = session is null
-                         || !string.Equals(session.ConversationId, pinnedId, StringComparison.OrdinalIgnoreCase);
-        if (createdNew)
-        {
-            session = new GenerationUtilitySession
-            {
-                ConversationId = pinnedId!,
-                Sequence = GenerationUtilitySessionService.GetNextSequence(metadata, jobId),
-                SeedVersion = GenerationUtilitySessionService.GetSeedVersion(bundle, jobId),
-                CreatedAt = DateTimeOffset.UtcNow,
-            };
-            metadata.UtilitySessions[jobId] = session;
-            AdventureStore.Save(bundle);
-        }
-
-        var activeSession = session!;
-        if (createdNew || activeSession.JobCount == 0)
-        {
-            await EnsureUtilityParentReadyAsync(
-                core,
-                activeSession.ConversationId,
-                gizmoId,
-                invalidateCached: true,
-                cancellationToken);
-
-            var seed = GenerationJobHandlers.BuildSeedPrompt(bundle, jobId, activeSession.Sequence);
-            var seedResult = await SendUtilitySeedAsync(
-                core,
-                bundle,
-                activeSession.ConversationId,
-                gizmoId,
-                seed,
-                jobId,
-                turnService,
-                cancellationToken);
-
-            if (!seedResult.Success)
-            {
-                metadata.UtilityConversationLastError = FormatSeedFailure(seedResult.Error);
-                AdventureStore.Save(bundle);
-                return null;
-            }
-        }
-
-        metadata.UtilitySessions[jobId] = activeSession;
-        metadata.UtilityConversationLastError = null;
-        AdventureStore.Save(bundle);
-        return activeSession;
-    }
-
     private sealed class UtilityCaptureResult
     {
         public string? Text { get; init; }
@@ -702,7 +630,8 @@ internal sealed class GenerationJobService
             if (!string.IsNullOrWhiteSpace(responseText))
             {
                 if (GenerationJobHandlers.ExpectsPlainTextResponse(jobId)
-                    || string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
+                    || string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal)
+                    || string.Equals(jobId, GenerationJobId.ProposeEntitiesFile, StringComparison.Ordinal))
                 {
                     if (GenerationJobHandlers.IsSettledJobResponse(jobId, responseText, streamComplete: attempt >= 1))
                         return new UtilityCaptureResult { Text = responseText };
@@ -857,7 +786,7 @@ internal sealed class GenerationJobService
             messageText,
             timeoutMs,
             jobId,
-            cancellationToken);
+            cancellationToken: cancellationToken);
     }
 
     private async Task<ConversationSendResult> SendUtilityPacketAsync(
@@ -869,103 +798,18 @@ internal sealed class GenerationJobService
         string jobId,
         AdventureTurnService? turnService,
         CancellationToken cancellationToken,
-        bool seedOnly = false)
-    {
-        var readiness = await UtilityConversationReadinessService.ProbeAsync(
+        bool seedOnly = false) =>
+        await UtilityWorkerTransportService.SendPacketAsync(
             core,
-            conversationId,
-            gizmoId,
-            _conversationSend,
-            turnService,
             bundle,
-            cancellationToken);
-
-        TraceUtilityJobPhase(
-            "readiness",
-            jobId,
-            conversationId,
-            new
-            {
-                level = readiness.Level.ToString(),
-                readiness.Error,
-                readiness.ApiVisible,
-                pageHref = readiness.PageHref,
-                readiness.DomOnlyReason,
-                readiness.Hint,
-                readiness.ComposerFound,
-                readiness.SubmitFound,
-            });
-
-        if (readiness.Level == UtilityConversationReadinessLevel.Unready)
-        {
-            return new ConversationSendResult
-            {
-                Success = false,
-                Error = readiness.Error ?? "utility_page_not_ready",
-                ConversationId = conversationId,
-            };
-        }
-
-        if (PlaySendDeliveryPolicy.ShouldUseApiUtilitySend(bundle, readiness.Level))
-        {
-            TraceUtilityJobPhase("send_api", jobId, conversationId, new { packetLength = messageText.Length });
-            await EnsureUtilityParentReadyAsync(
-                core,
-                conversationId,
-                gizmoId,
-                invalidateCached: false,
-                cancellationToken);
-
-            return await _conversationSend.SendUserMessageAsync(
-                core,
-                conversationId,
-                gizmoId,
-                messageText,
-                cancellationToken);
-        }
-
-        TraceUtilityJobPhase("send_dom", jobId, conversationId, new
-        {
-            packetLength = messageText.Length,
-            domOnlyReason = readiness.DomOnlyReason,
-            hint = readiness.Hint,
-        });
-
-        if (turnService is null)
-        {
-            return new ConversationSendResult
-            {
-                Success = false,
-                Error = "utility_turn_service_required",
-                ConversationId = conversationId,
-            };
-        }
-
-        var timeoutMs = AdventureTurnService.ComputeUtilityJobTimeoutMs(messageText.Length);
-        var captureJobId = seedOnly ? null : jobId;
-        var result = await turnService.SubmitUtilityJobAsync(
-            core,
             conversationId,
             gizmoId,
             messageText,
-            timeoutMs,
-            captureJobId,
-            cancellationToken);
-
-        if (!result.Success
-            && !string.IsNullOrWhiteSpace(readiness.Hint)
-            && GenerationJobHandlers.IsCaptureFailureError(result.Error))
-        {
-            return new ConversationSendResult
-            {
-                Success = false,
-                Error = $"{result.Error} ({readiness.Hint})",
-                ConversationId = conversationId,
-            };
-        }
-
-        return result;
-    }
+            jobId,
+            _conversationSend,
+            turnService,
+            cancellationToken,
+            seedOnly);
 
     private async Task<ConversationSendResult> SendUtilitySeedAsync(
         CoreWebView2 core,
@@ -975,60 +819,202 @@ internal sealed class GenerationJobService
         string seed,
         string jobId,
         AdventureTurnService? turnService,
-        CancellationToken cancellationToken)
-    {
-        await EnsureUtilityParentReadyAsync(
-            core,
-            conversationId,
-            gizmoId,
-            invalidateCached: false,
-            cancellationToken);
-
-        var seedResult = await SendUtilityPacketAsync(
+        CancellationToken cancellationToken) =>
+        await UtilityWorkerTransportService.SendSeedAsync(
             core,
             bundle,
             conversationId,
             gizmoId,
             seed,
             jobId,
+            _conversationSend,
             turnService,
-            cancellationToken,
-            seedOnly: true);
+            cancellationToken);
 
-        if (seedResult.Success)
-            return seedResult;
+    private async Task<GenerationJobResult> RunInjectionFirstJobAsync(
+        CoreWebView2 playCore,
+        AdventureBundle bundle,
+        string jobId,
+        GenerationJobContext context,
+        AdventureTurnService playTurnService,
+        CancellationToken cancellationToken)
+    {
+        var gizmoId = bundle.Metadata.LinkedProjectId!;
+        var conversationId = ResolvePlayConversationId(bundle, playCore)
+                             ?? throw new InvalidOperationException("play_thread_unlinked");
 
-        if (IsUtilitySendError(seedResult.Error, "capture_premature")
-            && !string.IsNullOrWhiteSpace(seedResult.AssistantText)
-            && seedResult.AssistantText.Length >= AdventureTurnService.UtilityMinCapturedTextLength)
+        var pending = PlayUtilityInjectionService.CreateManualPending(jobId, context);
+        bundle.Metadata.LastDispatchedUtilityJobs = [pending];
+        var prompt = PlayUtilityInjectionService.BuildUtilityOnlyPacket(bundle, pending);
+        var promptHash = ComputePromptHash(prompt);
+
+        await UtilityConversationPageService.EnsureOnProjectConversationStrictAsync(
+            playCore,
+            conversationId,
+            gizmoId,
+            cancellationToken);
+        var baselineCount = await playTurnService.GetAssistantTurnCountAsync(playCore, cancellationToken);
+
+        await ChatGptAdventureBridgeInjection.ApplyInlineUtilityPreferencesAsync(
+            playCore,
+            UtilityDeliveryModeService.ShouldHideInlineUtility(bundle),
+            UtilityDeliveryModeService.ShouldShowInlineUtilityTraffic(bundle));
+        await ChatGptAdventureBridgeInjection.RegisterUtilityHideAsync(playCore, jobId);
+
+        var sendResult = await SendInlineUtilityPacketDomAsync(
+            playCore,
+            conversationId,
+            gizmoId,
+            prompt,
+            jobId,
+            playTurnService,
+            cancellationToken);
+
+        if (!sendResult.Success && !IsUtilitySendError(sendResult.Error, "capture_premature"))
         {
-            return new ConversationSendResult
+            bundle.Metadata.LastDispatchedUtilityJobs = [];
+            return new GenerationJobResult
             {
-                Success = true,
-                ConversationId = seedResult.ConversationId ?? conversationId,
-                AssistantText = seedResult.AssistantText,
-                StreamComplete = true,
+                Success = false,
+                Error = sendResult.Error ?? "send_failed",
             };
         }
 
-        await Task.Delay(400, cancellationToken);
-        await EnsureUtilityParentReadyAsync(
-            core,
-            conversationId,
-            gizmoId,
-            invalidateCached: true,
+        var effectiveConversationId = sendResult.ConversationId ?? conversationId;
+        if (sendResult.Success
+            && !string.IsNullOrWhiteSpace(sendResult.ConversationId)
+            && !string.Equals(sendResult.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase)
+            && AdventurePlayContextService.ShouldAcceptLinkedConversationId(bundle, sendResult.ConversationId))
+        {
+            AdventureThreadRegistryService.BindActiveConversation(
+                bundle,
+                AdventureThreadKind.Play,
+                sendResult.ConversationId,
+                notifyPlayThreadChanged: false);
+            effectiveConversationId = sendResult.ConversationId;
+        }
+
+        var responseText = sendResult.AssistantText;
+        if (!GenerationJobHandlers.IsSettledJobResponse(jobId, responseText, sendResult.StreamComplete)
+            && string.IsNullOrWhiteSpace(responseText)
+            && baselineCount >= 0
+            && ShouldRetryDomCapture(jobId, responseText, sendResult))
+        {
+            var recapture = await playTurnService.CaptureStableAssistantAsync(
+                playCore,
+                baselineCount,
+                GetDomRecaptureTimeoutMs(jobId),
+                effectiveConversationId,
+                gizmoId,
+                cancellationToken);
+            if (recapture.Success && !string.IsNullOrWhiteSpace(recapture.Text))
+                responseText = recapture.Text;
+        }
+
+        var retrieval = PlayUtilityRetrievalService.ProcessAssistantResponse(
+            bundle,
+            responseText,
+            effectiveConversationId);
+
+        AdventureStore.Save(bundle);
+
+        return retrieval.PrimaryResult ?? new GenerationJobResult
+        {
+            Success = false,
+            Error = "no_utility_response",
+        };
+    }
+
+    private async Task<GenerationJobResult> RunDualRunJobAsync(
+        CoreWebView2 playCore,
+        AdventureBundle bundle,
+        string jobId,
+        GenerationJobContext context,
+        AdventureTurnService playTurnService,
+        CoreWebView2? workerCore,
+        AdventureTurnService? workerTurnService,
+        IUtilityWorkerHost? workerHost,
+        CancellationToken cancellationToken)
+    {
+        var conversationId = ResolvePlayConversationId(bundle, playCore)
+                             ?? throw new InvalidOperationException("play_thread_unlinked");
+
+        var storyContext = await BuildUtilityJobStoryContextAsync(
+            bundle,
+            jobId,
+            UtilityExecutionChannel.ManualBackground,
+            context,
+            playCore,
+            playTurnService,
+            cancellationToken,
+            domOnlyCapture: true);
+
+        context.DualRunGroupId = Guid.NewGuid();
+        context.AllowCrossSourceDuplicates = true;
+        context.SuppressInlineGuide = true;
+
+        var workerConversationId = UtilityWorkerSessionService.GetWorkerConversationId(bundle);
+        var localLeg = await LocalUtilityInferenceLegRunner.TryRunAsync(
+            bundle,
+            jobId,
+            context,
+            UtilityExecutionChannel.ManualBackground,
+            workerConversationId ?? conversationId,
             cancellationToken);
 
-        return await SendUtilityPacketAsync(
-            core,
+        if (workerCore is null || !UtilityEphemeralWorkerPolicy.IsWorkerLaneAvailable(bundle))
+        {
+            var workerNotReady = new GenerationJobResult
+            {
+                Success = false,
+                SkippedReason = "worker_not_ready",
+                Error = bundle.Metadata.UtilityWorkerCapabilities?.LastProbeError ?? "dual_run_requires_utility_worker",
+                RanOnUtilityWorker = true,
+                StoryContextSource = storyContext.TranscriptSource,
+                StoryContextTurnPairs = storyContext.TurnPairCount,
+                StoryContextCharCount = storyContext.Text.Length,
+                StoryContextStatusHint = storyContext.Text.Length > 0 ? storyContext.FormatStatusHint() : null,
+            };
+
+            return localLeg.Attempted
+                ? LocalUtilityInferenceLegRunner.MergeDualRunResults(localLeg.ApplyResult, workerNotReady)
+                : workerNotReady;
+        }
+
+        var remoteResult = await UtilityWorkerOrchestrator.RunDirectJobAsync(
             bundle,
-            conversationId,
-            gizmoId,
-            seed,
             jobId,
-            turnService,
-            cancellationToken,
-            seedOnly: true);
+            context,
+            UtilityExecutionChannel.ManualBackground,
+            workerCore,
+            playCore,
+            _conversationSend,
+            playTurnService,
+            workerTurnService,
+            workerHost,
+            skipLocalLeg: true,
+            cancellationToken);
+
+        remoteResult = new GenerationJobResult
+        {
+            Success = remoteResult.Success,
+            ProposalCount = remoteResult.ProposalCount,
+            Error = remoteResult.Error,
+            SkippedReason = remoteResult.SkippedReason,
+            DisplayText = remoteResult.DisplayText,
+            ProposalIds = remoteResult.ProposalIds,
+            StoryContextSource = storyContext.TranscriptSource,
+            StoryContextTurnPairs = storyContext.TurnPairCount,
+            StoryContextCharCount = storyContext.Text.Length,
+            StoryContextStatusHint = storyContext.Text.Length > 0 ? storyContext.FormatStatusHint() : null,
+            RanOnUtilityWorker = remoteResult.RanOnUtilityWorker,
+            RanOnLocalInference = remoteResult.RanOnLocalInference,
+            RanDualInference = remoteResult.RanDualInference,
+        };
+
+        return localLeg.Attempted
+            ? LocalUtilityInferenceLegRunner.MergeDualRunResults(localLeg.ApplyResult, remoteResult)
+            : remoteResult;
     }
 
     private async Task<GenerationJobResult> RunInlineJobAsync(
@@ -1040,26 +1026,34 @@ internal sealed class GenerationJobService
         CancellationToken cancellationToken)
     {
         var gizmoId = bundle.Metadata.LinkedProjectId!;
-        var conversationId = bundle.Metadata.LinkedConversationId!;
+        var conversationId = ResolvePlayConversationId(bundle, playCore)
+                             ?? throw new InvalidOperationException("play_thread_unlinked");
 
-        var transcriptService = new PlayThreadTranscriptService(_conversationSend, playTurnService);
-        var storyBuilder = new UtilityStoryContextBuilder(transcriptService);
-        var storyContext = await storyBuilder.BuildAsync(
+        var storyContext = await BuildUtilityJobStoryContextAsync(
             bundle,
             jobId,
+            UtilityExecutionChannel.ManualBackground,
+            context,
             playCore,
+            playTurnService,
             cancellationToken,
             domOnlyCapture: true);
-        context.StoryContextBlock = storyContext.Text;
-        context.StoryContextHasTranscript = storyContext.HasTranscriptSection;
-        var storySettings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
-        context.OmitRedundantJobTurnSlices =
-            storySettings.OmitRedundantJobTurnSlices && storyContext.HasTranscriptSection;
-        context.StoryContextIncludesSummary =
-            storySettings.IncludeRollingSummary && !string.IsNullOrWhiteSpace(bundle.Summary.RollingSummary);
-        context.StoryContextIncludesState =
-            storySettings.IncludeState
-            && EntityExtractionService.BuildWorldSnapshot(bundle, includeSummary: false) != "(none)";
+
+        var localLeg = await LocalUtilityInferenceLegRunner.TryRunAsync(
+            bundle,
+            jobId,
+            context,
+            UtilityExecutionChannel.ManualBackground,
+            conversationId,
+            cancellationToken);
+
+        if (localLeg.Attempted
+            && LocalUtilityInferencePolicy.ShouldUseLocalExclusive(bundle, jobId, context)
+            && localLeg.Success
+            && localLeg.ApplyResult is { } exclusiveLocal)
+        {
+            return UtilityJobLocalInferenceApplicator.AttachStoryContext(exclusiveLocal, storyContext);
+        }
 
         var jobBody = GenerationJobHandlers.BuildJobPrompt(bundle, jobId, context);
         jobBody = ContextTagFormat.AppendInlineUtilityResponseContract(
@@ -1112,7 +1106,11 @@ internal sealed class GenerationJobService
             && !string.Equals(sendResult.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase)
             && AdventurePlayContextService.ShouldAcceptLinkedConversationId(bundle, sendResult.ConversationId))
         {
-            bundle.Metadata.LinkedConversationId = sendResult.ConversationId;
+            AdventureThreadRegistryService.BindActiveConversation(
+                bundle,
+                AdventureThreadKind.Play,
+                sendResult.ConversationId,
+                notifyPlayThreadChanged: false);
             effectiveConversationId = sendResult.ConversationId;
         }
 
@@ -1140,7 +1138,7 @@ internal sealed class GenerationJobService
             }
         }
 
-        var applyResult = GenerationJobHandlers.ApplyResponse(bundle, jobId, responseText, captureError);
+        var applyResult = GenerationJobHandlers.ApplyResponse(bundle, jobId, responseText, captureError, context);
 
         UtilityParseLogService.Append(
             bundle,
@@ -1158,13 +1156,6 @@ internal sealed class GenerationJobService
             ConversationId = effectiveConversationId,
         });
 
-        ThreadMetadataService.RecordUtilityExchange(
-            bundle,
-            jobId,
-            prompt,
-            responseText,
-            effectiveConversationId);
-
         bundle.Metadata.UtilityJobLastErrors ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var utilityJobId = GenerationJobHandlers.GetUtilityJobId(jobId);
         if (!applyResult.Success || (applyResult.ProposalCount == 0 && applyResult.Error is not null))
@@ -1174,18 +1165,93 @@ internal sealed class GenerationJobService
 
         AdventureStore.Save(bundle);
 
-        return new GenerationJobResult
+        var remoteResult = new GenerationJobResult
         {
             Success = applyResult.Success,
             ProposalCount = applyResult.ProposalCount,
             Error = applyResult.Error,
             SkippedReason = applyResult.SkippedReason,
             DisplayText = applyResult.DisplayText,
+            ProposalIds = applyResult.ProposalIds,
             StoryContextSource = storyContext.TranscriptSource,
             StoryContextTurnPairs = storyContext.TurnPairCount,
             StoryContextCharCount = storyContext.Text.Length,
             StoryContextStatusHint = storyContext.Text.Length > 0 ? storyContext.FormatStatusHint() : null,
         };
+
+        return remoteResult;
+    }
+
+    private async Task<UtilityStoryContextBuildResult> BuildUtilityJobStoryContextAsync(
+        AdventureBundle bundle,
+        string jobId,
+        UtilityExecutionChannel channel,
+        GenerationJobContext context,
+        CoreWebView2? playCore,
+        AdventureTurnService? playTurnService,
+        CancellationToken cancellationToken,
+        bool domOnlyCapture = false)
+    {
+        if (UtilityJobContextAssembler.IsEnabled(bundle, channel))
+        {
+            UtilityStoryContextBuilder? storyBuilder = null;
+            if (playCore is not null && playTurnService is not null)
+            {
+                var transcriptService = new PlayThreadTranscriptService(_conversationSend, playTurnService);
+                storyBuilder = new UtilityStoryContextBuilder(transcriptService);
+            }
+
+            var assembler = new UtilityJobContextAssembler(storyBuilder);
+            var assembly = await assembler.AssembleAsync(
+                bundle,
+                jobId,
+                new UtilityContextAssemblyRequest
+                {
+                    Channel = channel,
+                    PlayCore = playCore,
+                },
+                cancellationToken);
+            assembly.ApplyTo(context);
+            return assembly.ToStoryBuildResult();
+        }
+
+        if (playCore is null || playTurnService is null)
+        {
+            var local = UtilityStoryContextBuilder.BuildPreviewFromLocal(bundle, jobId);
+            context.StoryContextBlock = local.Text;
+            context.StoryContextHasTranscript = local.HasTranscriptSection;
+            ApplyLegacyStoryFlags(bundle, jobId, context, local);
+            return local;
+        }
+
+        var legacyTranscript = new PlayThreadTranscriptService(_conversationSend, playTurnService);
+        var legacyBuilder = new UtilityStoryContextBuilder(legacyTranscript);
+        var storyContext = await legacyBuilder.BuildAsync(
+            bundle,
+            jobId,
+            playCore,
+            cancellationToken,
+            domOnlyCapture: domOnlyCapture);
+        context.StoryContextBlock = storyContext.Text;
+        context.StoryContextHasTranscript = storyContext.HasTranscriptSection;
+        ApplyLegacyStoryFlags(bundle, jobId, context, storyContext);
+        return storyContext;
+    }
+
+    private static void ApplyLegacyStoryFlags(
+        AdventureBundle bundle,
+        string jobId,
+        GenerationJobContext context,
+        UtilityStoryContextBuildResult storyContext)
+    {
+        var storySettings = UtilityStoryContextSettingsService.Resolve(bundle, jobId);
+        context.OmitRedundantJobTurnSlices =
+            storySettings.OmitRedundantJobTurnSlices && storyContext.HasTranscriptSection;
+        context.StoryContextIncludesSummary =
+            storySettings.IncludeRollingSummary && !string.IsNullOrWhiteSpace(bundle.Summary.RollingSummary);
+        context.StoryContextIncludesState =
+            storySettings.IncludeState
+            && EntityExtractionService.BuildWorldSnapshot(bundle, includeSummary: false) != "(none)";
     }
 
     private static string ComputePromptHash(string text)
@@ -1255,18 +1321,34 @@ internal sealed class GenerationJobService
         sendResult.StreamComplete
         && (IsUtilitySendError(sendResult.Error, "capture_premature")
             || AdventureTurnService.IsUtilityCapturePremature(jobId, responseText ?? "")
-            || ShouldRetryJsonImportCapture(jobId, responseText, sendResult));
+            || ShouldRetryFileDeliveryCapture(jobId, responseText, sendResult));
+
+    private static bool ShouldRetryFileDeliveryCapture(
+        string jobId,
+        string? responseText,
+        ConversationSendResult sendResult)
+    {
+        if (string.IsNullOrWhiteSpace(responseText))
+            return false;
+
+        if (string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal))
+            return !SourceJsonImportService.HasCompleteJsonImportDelivery(responseText);
+
+        if (string.Equals(jobId, GenerationJobId.ProposeEntitiesFile, StringComparison.Ordinal))
+            return !EntitiesFileRevisionService.HasCompleteEntitiesFileDelivery(responseText);
+
+        return false;
+    }
 
     private static bool ShouldRetryJsonImportCapture(
         string jobId,
         string? responseText,
         ConversationSendResult sendResult) =>
-        string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal)
-        && !string.IsNullOrWhiteSpace(responseText)
-        && !SourceJsonImportService.HasCompleteJsonImportDelivery(responseText);
+        ShouldRetryFileDeliveryCapture(jobId, responseText, sendResult);
 
     private static int GetDomRecaptureTimeoutMs(string jobId) =>
         string.Equals(jobId, GenerationJobId.ProposeJsonImport, StringComparison.Ordinal)
+            || string.Equals(jobId, GenerationJobId.ProposeEntitiesFile, StringComparison.Ordinal)
             ? 120_000
             : 30_000;
 
@@ -1304,6 +1386,25 @@ internal sealed class GenerationJobService
 
             await Task.Delay(750, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Resolves the active play conversation from the pinned thread registry, URL, or legacy field.
+    /// Schema 6+ stores play binding in <see cref="AdventureMetadata.ThreadRegistry"/> only.
+    /// </summary>
+    internal static string? ResolvePlayConversationId(AdventureBundle bundle, CoreWebView2? playCore)
+    {
+        if (playCore is not null)
+        {
+            var fromPage = PlayConversationIdResolver.Resolve(bundle, playCore);
+            if (!string.IsNullOrWhiteSpace(fromPage))
+                return fromPage;
+        }
+
+        return PlayThreadBindingService.GetActiveConversationId(bundle)
+               ?? (string.IsNullOrWhiteSpace(bundle.Metadata.LinkedConversationId)
+                   ? null
+                   : bundle.Metadata.LinkedConversationId);
     }
 
 }

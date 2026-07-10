@@ -1,15 +1,32 @@
+using ChatGPTWrapper.ApiDiagnostics.Infrastructure;
+
 namespace ChatGPTWrapper.ApiDiagnostics.Live;
 
-[CollectionDefinition("LiveWebView")]
-public sealed class LiveWebViewCollection : ICollectionFixture<LiveWebViewFixture>
-{
-}
+[CollectionDefinition("LiveWebView", DisableParallelization = true)]
+public sealed class LiveWebViewCollection : ICollectionFixture<LiveWebViewFixture>;
 
 public sealed class LiveWebViewFixture : IAsyncLifetime
 {
+    private IDisposable? _webViewProfileLock;
+
     public WebView2DiagnosticHost Host { get; } = new();
 
-    public Task InitializeAsync() => Host.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        _webViewProfileLock = FileLockGate.AcquireWebViewProfile(nameof(LiveWebViewFixture));
+        await Host.InitializeAsync();
+    }
 
-    public async Task DisposeAsync() => await Host.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        try
+        {
+            await Host.DisposeAsync();
+        }
+        finally
+        {
+            _webViewProfileLock?.Dispose();
+            _webViewProfileLock = null;
+        }
+    }
 }

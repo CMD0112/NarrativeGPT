@@ -2,7 +2,7 @@
 
 Isolated test project for diagnosing why the ChatGPT **web** API bridge fails. Safe to delete entirely when no longer needed.
 
-**Full testing guide:** [docs/testing.md](../../docs/testing.md)
+**Full testing guide:** [docs/developer/testing.md](../../docs/developer/testing.md) — **agents:** also read [AGENTS.md](../../AGENTS.md#testing-apidiagnostics) and [.cursor/rules/api-diagnostics-tests.mdc](../../.cursor/rules/api-diagnostics-tests.mdc).
 
 ## Tiers
 
@@ -16,8 +16,58 @@ Isolated test project for diagnosing why the ChatGPT **web** API bridge fails. S
 ## Run unit tests
 
 ```powershell
+.\tests\ChatGPTWrapper.ApiDiagnostics\scripts\run-tests.ps1
+# or
 dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "Category=Unit"
 ```
+
+The `run-tests.ps1` script stops stale `testhost` / app processes before building so PDB/DLL file locks do not fail the run.
+
+### Logged test paradigm (extended diagnostics)
+
+Production logging is the primary observability surface for CGW. Tests mirror that:
+
+| Piece | Purpose |
+|-------|---------|
+| **`DiagnosticTestSession`** | File-lock isolated root + `--extended-diagnostics` + trace readers |
+| **`LoggedTestBase`** | Inherit for full session lifecycle (`Session`, `Traces`) |
+| **`FileLockAwareFixture`** | `IClassFixture<>` variant — also boots extended diagnostics |
+| **`DiagnosticTraceReader`** | Query JSONL (`wrapper-diagnostics.jsonl`, `play-send-trace.jsonl`, `sync-trace.jsonl`) |
+| **`DiagnosticTraceAssert`** | `ContainsEvent`, `Sequence`, `NoErrors` with log excerpts on failure |
+| **`DiagnosticTraceBundle.FormatFailureDigest()`** | Pasteable triage block for assert messages |
+
+```csharp
+public sealed class MyFlowTests : LoggedTestBase
+{
+    [Fact]
+    public void Send_emits_expected_trace()
+    {
+        // ... exercise code ...
+        Session.ReloadTraces();
+        Traces.PlaySend.Sequence("send_run_start", "packet_prepared", "send_run_end");
+        Traces.Unified.NoErrors();
+    }
+}
+```
+
+Env vars:
+
+- `CGW_TEST_EXTENDED_DIAGNOSTICS=1` (default **on** in test sessions)
+- `CGW_TEST_PRESERVE_LOGS=1` — copy JSONL artifacts to `%TEMP%\cgw-test-artifacts\{class}\` on dispose
+
+Filter logged tests: `--filter "Diagnostics=Logged"`.
+
+### File-lock aware test paradigm
+
+All tests in this project share:
+
+- **`xunit.runner.json`** — `parallelizeAssembly` and `parallelizeTestCollections` are **false** so file-backed tests never run concurrently.
+- **`AssemblyTestEnvironment`** — helpers for per-class isolated roots under `%TEMP%`.
+- **`FileLockGate`** — in-process semaphore for appdata mutations; named mutex for the shared WebView2 profile (`Global\ChatGPTWrapper.WebView2Profile`).
+- **`FileLockAwareCollection`** + **`IClassFixture<FileLockAwareFixture>`** — xUnit collection for disk-backed tests; each class gets its own isolated appdata tree.
+- **`FileLockAwareTestScope`** / **`FileLockAwareTestBootstrap`** — explicit enter/exit for diagnostics/trace tests.
+
+Live WebView tests acquire the WebView profile lock in `LiveWebViewFixture` so they do not race the main app or another diagnostic window.
 
 ### Play composer suite
 
@@ -79,6 +129,28 @@ The text report highlights the **first failing step** and suggested next actions
 4. Optionally delete `%LocalAppData%\ChatGPTWrapper\api-diagnostic-report.*`
 
 The optional `BridgeScriptJson.cs` extraction in the main app can stay; it is independent of this project.
+
+## Project source download (live)
+
+Tests **project-scoped** source downloads (`/backend-api/files/download/…?gizmo_id=…`) — the same path publication verify uses. Compares against the general `DownloadFileAsync` ladder per file.
+
+```powershell
+# Sign in via main app first (shared WebView profile)
+$env:CGW_DOWNLOAD_GIZMO_ID = "g-p-your-project-id"   # optional
+$env:CGW_DOWNLOAD_FILE_ID = "file_00000000…"         # optional single file
+$env:CGW_DOWNLOAD_MAX = "3"                          # default 3
+$env:CGW_DOWNLOAD_STUB_WAIT_SECONDS = "45"           # retry while blob is stub JSON
+
+.\tests\ChatGPTWrapper.ApiDiagnostics\scripts\run-source-download-diagnostics.ps1
+.\tests\ChatGPTWrapper.ApiDiagnostics\scripts\run-source-download-diagnostics.ps1 -Open
+```
+
+Reports:
+
+- `%LocalAppData%\ChatGPTWrapper\project-source-download-report.txt`
+- `%LocalAppData%\ChatGPTWrapper\project-source-download-report.json`
+
+Each listed file runs two steps: `download_project_scoped_*` (with stub retry) and `download_general_*`.
 
 ## Source sync performance
 
@@ -147,7 +219,13 @@ $env:CGW_PERF_SKIP_ATTACH_SIDEBAR = "1"
 
 Live perf tests stay on `chatgpt.com` and use bridge APIs with `ensureProjectPage: false` so they do not wait on SPA project-page navigation unless you set `CGW_PERF_ENSURE_PROJECT_PAGE=1`.
 
-Exclude performance tests from default CI:
+GitHub Actions CI (see `docs/developer/testing.md`) runs unit tests only:
+
+```powershell
+dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "Category=Unit"
+```
+
+For a broader local run excluding performance:
 
 ```powershell
 dotnet test tests\ChatGPTWrapper.ApiDiagnostics --filter "Category!=Performance"

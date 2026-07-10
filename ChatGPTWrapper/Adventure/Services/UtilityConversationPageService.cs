@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ChatGPTWrapper.Adventure.Models;
 using ChatGPTWrapper.ChatGptApi;
 using Microsoft.Web.WebView2.Core;
 
@@ -28,6 +29,25 @@ internal static class UtilityConversationPageService
 
     public static bool MatchesTargetConversation(string? source, string conversationId, string gizmoId) =>
         AdventurePlayContextService.IsOnPlayConversationPage(source, conversationId, gizmoId);
+
+    /// <summary>Project home (/project) without a conversation segment — not valid for utility sends.</summary>
+    public static bool IsProjectHomePage(string? href)
+    {
+        if (string.IsNullOrWhiteSpace(href))
+            return false;
+
+        if (!Uri.TryCreate(href, UriKind.Absolute, out var uri))
+            return false;
+
+        if (!ChatGptUrls.IsTrustedChatGptTopLevelUri(uri))
+            return false;
+
+        if (ChatGptUrls.TryParseConversationId(uri, out _))
+            return false;
+
+        var path = uri.AbsolutePath.TrimEnd('/');
+        return path.EndsWith("/project", StringComparison.OrdinalIgnoreCase);
+    }
 
     public static async Task<UtilityPageVerifyResult> VerifyOnTargetPageAsync(
         CoreWebView2 core,
@@ -115,6 +135,14 @@ internal static class UtilityConversationPageService
 
             if (await IsOnTargetConversationPageAsync(core, conversationId, gizmoId))
             {
+                var stable = await WaitForStableOnConversationPageAsync(
+                    core,
+                    conversationId,
+                    gizmoId,
+                    cancellationToken);
+                if (!stable.Success)
+                    return stable;
+
                 var href = await GetPageHrefAsync(core);
                 _lastUtilityConversationUrl = href ?? core.Source;
                 return new UtilityConversationPageResult { Success = true };
@@ -122,6 +150,51 @@ internal static class UtilityConversationPageService
 
             await Task.Delay(400, cancellationToken);
         }
+
+        return new UtilityConversationPageResult
+        {
+            Success = false,
+            Error = "utility_page_not_ready",
+        };
+    }
+
+    public static async Task<UtilityConversationPageResult> WaitForStableOnConversationPageAsync(
+        CoreWebView2 core,
+        string conversationId,
+        string gizmoId,
+        CancellationToken cancellationToken = default,
+        int settleMs = 800,
+        int maxWaitSeconds = 6)
+    {
+        gizmoId = ChatGptUrls.NormalizeGizmoId(gizmoId);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(maxWaitSeconds);
+        DateTimeOffset? stableSince = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var href = await GetPageHrefAsync(core);
+
+            if (IsProjectHomePage(href))
+            {
+                stableSince = null;
+            }
+            else if (MatchesTargetConversation(href, conversationId, gizmoId))
+            {
+                stableSince ??= DateTimeOffset.UtcNow;
+                if ((DateTimeOffset.UtcNow - stableSince.Value).TotalMilliseconds >= settleMs)
+                    return new UtilityConversationPageResult { Success = true };
+            }
+            else
+            {
+                stableSince = null;
+            }
+
+            await Task.Delay(150, cancellationToken);
+        }
+
+        if (await IsOnTargetConversationPageAsync(core, conversationId, gizmoId))
+            return new UtilityConversationPageResult { Success = true };
 
         return new UtilityConversationPageResult
         {
@@ -145,7 +218,7 @@ internal static class UtilityConversationPageService
         string gizmoId,
         CancellationToken cancellationToken)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(3);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(6);
         while (DateTimeOffset.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();

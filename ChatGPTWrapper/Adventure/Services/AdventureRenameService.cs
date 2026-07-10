@@ -16,14 +16,17 @@ internal static class AdventureRenameService
 
         bundle.Metadata.Title = trimmed;
 
-        if (bundle.DesignWorkspace is not null
-            || bundle.Metadata.Status == AdventureStatus.Designing)
+        if (bundle.Metadata.Status == AdventureStatus.Designing)
         {
             AdventureDesignService.EnsureWorkspace(bundle);
             AdventureDesignService.SyncSetupFromMetadata(bundle);
         }
 
         AdventureStore.Save(bundle);
+
+        if (AdventureSourceFileService.HasLocalLoreSourceFiles(bundle))
+            ProjectSourceExportService.ExportForce(bundle);
+
         return true;
     }
 }

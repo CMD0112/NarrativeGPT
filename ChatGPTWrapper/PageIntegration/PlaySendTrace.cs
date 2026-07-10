@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ChatGPTWrapper.Diagnostics;
 
 namespace ChatGPTWrapper.PageIntegration;
 
@@ -38,6 +39,8 @@ internal static class PlaySendTraceEvents
     public const string BridgeCommand = "bridge_command";
     public const string BridgeMessage = "bridge_message";
     public const string BridgeSubmitResult = "bridge_submit_result";
+    public const string BridgeFillReadback = "bridge_fill_readback";
+    public const string InjectionDeliveryMismatch = "injection_delivery_mismatch";
     public const string ContextRetry = "context_retry";
     public const string ContextMismatch = "context_mismatch";
     public const string ApiSendStart = "api_send_start";
@@ -56,6 +59,15 @@ internal static class PlaySendTraceEvents
     public const string ApiRegenerateUsed = "api_regenerate_used";
     public const string DomRegenerateFallback = "dom_regenerate_fallback";
     public const string PageLog = "page_log";
+    public const string CapabilitiesResolved = "capabilities_resolved";
+    public const string ArtifactLoaded = "artifact_loaded";
+    public const string DeliveryApi = "delivery_api";
+    public const string DeliveryDom = "delivery_dom";
+    public const string VerifyStart = "verify_start";
+    public const string VerifyOk = "verify_ok";
+    public const string VerifyFailed = "verify_failed";
+    public const string InjectionArmState = "injection_arm_state";
+    public const string SourceReadiness = "source_readiness";
 }
 
 internal sealed class PlaySendRun
@@ -151,15 +163,6 @@ internal static class PlaySendTrace
 {
     private static readonly AsyncLocal<PlaySendRun?> CurrentRun = new();
 
-    private static readonly object Gate = new();
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        WriteIndented = false,
-    };
-
     private static readonly JsonSerializerOptions SummaryJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -167,7 +170,7 @@ internal static class PlaySendTrace
         WriteIndented = true,
     };
 
-    public static string TracePath => Path.Combine(AppDirectories.Root, "play-send-trace.jsonl");
+    public static string TracePath => DiagnosticsLog.PlaySendLegacyPath;
 
     public static string RunsDirectory => Path.Combine(AppDirectories.Root, "play-send-runs");
 
@@ -234,41 +237,10 @@ internal static class PlaySendTrace
 
         run?.Timeline.Add(entry);
         WriteLine(run, entry);
-        MirrorToDebug(run, entry);
     }
 
-    public static void LogFromPage(JsonElement root)
-    {
-        var level = ParseLevel(root);
-        var eventName = root.TryGetProperty("event", out var eventEl) && eventEl.ValueKind == JsonValueKind.String
-            ? eventEl.GetString() ?? PlaySendTraceEvents.PageLog
-            : PlaySendTraceEvents.PageLog;
-        var message = root.TryGetProperty("message", out var msgEl) && msgEl.ValueKind == JsonValueKind.String
-            ? msgEl.GetString() ?? ""
-            : "";
-        var url = root.TryGetProperty("url", out var urlEl) && urlEl.ValueKind == JsonValueKind.String
-            ? urlEl.GetString()
-            : null;
-        var source = root.TryGetProperty("source", out var srcEl) && srcEl.ValueKind == JsonValueKind.String
-            ? srcEl.GetString()
-            : null;
-
-        object? data = null;
-        if (root.TryGetProperty("data", out var dataEl) && dataEl.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
-            data = JsonSerializer.Deserialize<object>(dataEl.GetRawText());
-
-        Event(
-            eventName,
-            PlaySendCategory.Page,
-            level,
-            string.IsNullOrWhiteSpace(message) ? eventName : message,
-            data: new
-            {
-                url,
-                source,
-                detail = data,
-            });
-    }
+    public static void LogFromPage(JsonElement root) =>
+        DiagnosticsLog.LogFromPage(root, mirrorPlaySendLegacy: true);
 
     internal static void CompleteRun(
         PlaySendRun run,
@@ -331,23 +303,13 @@ internal static class PlaySendTrace
             $"{Environment.NewLine}{Environment.NewLine}Send run ID: {runIdShort}"
             + $"{Environment.NewLine}Send run summary: {summaryPath}"
             + $"{Environment.NewLine}Send trace: {TracePath}"
+            + (DiagnosticsOptions.Extended
+                ? $"{Environment.NewLine}Unified diagnostics: {DiagnosticsLog.UnifiedTracePath}"
+                : "")
+            + $"{Environment.NewLine}Session: {DiagnosticsLog.SessionId}"
             + $"{Environment.NewLine}Logs folder: {AppDirectories.Root}";
 
         return string.IsNullOrWhiteSpace(baseMessage) ? suffix.Trim() : baseMessage + suffix;
-    }
-
-    private static PlaySendLevel ParseLevel(JsonElement root)
-    {
-        if (!root.TryGetProperty("level", out var levelEl) || levelEl.ValueKind != JsonValueKind.String)
-            return PlaySendLevel.Info;
-
-        return levelEl.GetString()?.ToLowerInvariant() switch
-        {
-            "debug" => PlaySendLevel.Debug,
-            "warn" or "warning" => PlaySendLevel.Warn,
-            "error" => PlaySendLevel.Error,
-            _ => PlaySendLevel.Info,
-        };
     }
 
     private static object? MergeData(object? primary, object? extra)
@@ -370,36 +332,27 @@ internal static class PlaySendTrace
 
     private static void WriteLine(PlaySendRun? run, PlaySendTimelineEntry entry)
     {
-        try
-        {
-            AppDirectories.EnsureCreated();
-            var line = JsonSerializer.Serialize(new PlaySendJsonLine
-            {
-                At = entry.At,
-                RunId = run?.RunId,
-                RunIdShort = run?.RunIdShort,
-                AdventureId = run?.AdventureId,
-                Category = entry.Category,
-                Level = entry.Level,
-                Event = entry.Event,
-                Message = entry.Message ?? "",
-                DurationMs = entry.DurationMs,
-                Outcome = entry.Outcome,
-                Data = entry.Data,
-            }, JsonOptions);
-
-            lock (Gate)
-                File.AppendAllText(TracePath, line + Environment.NewLine);
-        }
-        catch
-        {
-            /* ignore */
-        }
+        var level = ParseDiagnosticsLevel(entry.Level);
+        DiagnosticsLog.Write(
+            DiagnosticsChannel.PlaySend,
+            level,
+            entry.Event,
+            entry.Message ?? "",
+            runId: run?.RunId,
+            runIdShort: run?.RunIdShort,
+            adventureId: run?.AdventureId,
+            category: entry.Category,
+            durationMs: entry.DurationMs,
+            outcome: entry.Outcome,
+            data: entry.Data);
     }
 
-    private static void MirrorToDebug(PlaySendRun? run, PlaySendTimelineEntry entry)
-    {
-        var prefix = run is null ? "[play-send]" : $"[play-send run={run.RunIdShort}]";
-        Debug.WriteLine($"{prefix} [{entry.Category}/{entry.Level}] {entry.Event}: {entry.Message}");
-    }
+    private static DiagnosticsLevel ParseDiagnosticsLevel(string? level) =>
+        level?.ToLowerInvariant() switch
+        {
+            "debug" => DiagnosticsLevel.Debug,
+            "warn" => DiagnosticsLevel.Warn,
+            "error" => DiagnosticsLevel.Error,
+            _ => DiagnosticsLevel.Info,
+        };
 }

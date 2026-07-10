@@ -1,4 +1,6 @@
+using System.IO;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Stores;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -35,14 +37,16 @@ internal sealed class ProjectSourceReadiness
 
     public int ProbeDifferCount { get; init; }
 
+    public int LoreEntryCount { get; init; }
+
     public string? ProbeWarning { get; init; }
 
     public string ModeLabel =>
         CanDelegateStaticContent
-            ? PublishMode == SourcePublishMode.Manual
-                ? "manual publish | source-delegated"
-                : "source-delegated"
-            : "fat fallback";
+            ? "manual publish | source-delegated"
+            : HasLinkedProject
+                ? "inline fallback"
+                : "minimal local";
 }
 
 internal static class ProjectSourceInjectionService
@@ -58,15 +62,87 @@ internal static class ProjectSourceInjectionService
 
     public static ProjectSourceReadiness Evaluate(AdventureBundle bundle)
     {
-        var publishMode = bundle.Metadata.Settings.SourcePublishMode;
-        var hasLinked = !string.IsNullOrWhiteSpace(bundle.Metadata.LinkedProjectId);
+        AdventureProjectBindingService.PrepareBundleForProjectLink(bundle);
+        var publishMode = SourcePublishMode.Manual;
+        var hasLinked = AdventureProjectBindingService.HasLinkedProject(bundle);
         var loreEntries = GetLoreEntries(bundle);
-        var hasEntries = loreEntries.Count > 0;
+        RefreshLoreHashesFromDisk(bundle, loreEntries);
+        return EvaluateManual(bundle, publishMode, hasLinked, loreEntries);
+    }
 
-        if (publishMode == SourcePublishMode.Manual)
-            return EvaluateManual(bundle, publishMode, hasLinked, loreEntries);
+    /// <summary>
+    /// Materializes core lore <c>sources/*.md</c> and manifest rows when a linked adventure has none yet.
+    /// Persists <c>source-manifest.json</c> when rows are created or reconciled from disk.
+    /// </summary>
+    public static bool EnsureLoreSourcesMaterialized(AdventureBundle bundle)
+    {
+        if (!AdventureProjectBindingService.HasLinkedProject(bundle))
+            return false;
 
-        return EvaluateApiSync(bundle, publishMode, hasLinked, hasEntries);
+        var diskEntryCount = AdventureStore.LoadSourceManifest(bundle.Metadata.Id).Entries.Count;
+        var diskManifestEmpty = diskEntryCount == 0;
+
+        AdventureSourceFileService.EnsureLayout(bundle);
+        var reconciled = AdventureSourceFileService.ReconcileManifest(bundle);
+
+        if (GetLoreEntries(bundle).Count > 0 && !AdventureSourceFileService.HasLocalLoreSourceFiles(bundle))
+        {
+            bundle.SourceManifest.Entries.RemoveAll(e => SourceManifestHelper.IsCoreLoreFile(e.RelativePath));
+            reconciled = true;
+        }
+
+        var bootstrapChanged = false;
+        if (GetLoreEntries(bundle).Count == 0)
+        {
+            bootstrapChanged = AdventureSourceFileService.TryBootstrapLocalSourcesFromDesignWorkspace(bundle) > 0;
+            reconciled |= AdventureSourceFileService.ReconcileManifest(bundle);
+        }
+
+        var exportChanged = false;
+        if (GetLoreEntries(bundle).Count == 0)
+            exportChanged = ProjectSourceExportService.ExportForce(bundle);
+
+        if (GetLoreEntries(bundle).Count == 0)
+            return bootstrapChanged || exportChanged || reconciled;
+
+        if (!AdventureSourceFileService.HasLocalLoreSourceFiles(bundle))
+        {
+            exportChanged |= ProjectSourceExportService.ExportForce(bundle);
+            reconciled |= AdventureSourceFileService.ReconcileManifest(bundle);
+        }
+
+        var shouldPersist = diskManifestEmpty || reconciled || bootstrapChanged || exportChanged;
+        if (shouldPersist)
+            AdventureStore.SaveSourceManifestOnly(bundle);
+
+        return shouldPersist;
+    }
+
+    /// <summary>
+    /// Refreshes a manifest row hash from on-disk <c>sources/</c> or from the export pipeline when the file is missing.
+    /// </summary>
+    public static bool TryRefreshEntryHash(AdventureBundle bundle, SourceManifestEntry entry)
+    {
+        var sourcesDir = ProjectSourceExportService.SourcesDirectory(bundle);
+        var absolutePath = Path.Combine(sourcesDir, entry.RelativePath);
+        if (File.Exists(absolutePath))
+        {
+            var hash = ProjectSourceExportService.ComputeManifestLocalSha256(entry.RelativePath, absolutePath);
+            entry.LocalSha256 = hash;
+            entry.Sha256 = hash;
+            return !string.IsNullOrEmpty(hash);
+        }
+
+        if (!ProjectSourceExportService.TryGetExportContent(entry.RelativePath, bundle, out var content, out var sections))
+            return false;
+
+        var normalized = content.Trim() + Environment.NewLine;
+        var contentHash = ProjectSourceExportService.ComputeSha256Bytes(
+            System.Text.Encoding.UTF8.GetBytes(normalized));
+        entry.LocalSha256 = contentHash;
+        entry.Sha256 = contentHash;
+        entry.Sections = sections;
+        return true;
     }
 
     private static ProjectSourceReadiness EvaluateManual(
@@ -78,6 +154,8 @@ internal static class ProjectSourceInjectionService
         var needsRepublish = loreEntries.Count(e => e.NeedsManualRepublish);
         var publishedFiles = loreEntries
             .Where(e => e.IsManuallyCurrent())
+            .Concat(GetPublishedReferenceEntries(bundle))
+            .DistinctBy(e => e.RelativePath, StringComparer.OrdinalIgnoreCase)
             .OrderBy(e => e.RelativePath, StringComparer.OrdinalIgnoreCase)
             .Select(ToFileInfo)
             .ToList();
@@ -85,10 +163,10 @@ internal static class ProjectSourceInjectionService
         string? blockingReason = null;
         string? suggestedAction = null;
 
-        if (bundle.Metadata.Settings.ForceFatPackets)
+        if (bundle.Metadata.Settings.ForceInlineLore)
         {
-            blockingReason = "Force fat packets is enabled in adventure settings";
-            suggestedAction = "Disable force fat packets in Settings to use project sources";
+            blockingReason = "Force inline lore is enabled in adventure settings";
+            suggestedAction = "Disable force inline lore in Play settings → Behavior → Advanced automation";
         }
         else if (!hasLinked)
         {
@@ -127,81 +205,46 @@ internal static class ProjectSourceInjectionService
             SuggestedAction = suggestedAction,
             OutOfSyncCount = needsRepublish,
             NeedsRepublishCount = needsRepublish,
+            LoreEntryCount = loreEntries.Count,
             ProbeDifferCount = probeDiffer,
             ProbeWarning = probeWarning,
         };
     }
 
-    private static ProjectSourceReadiness EvaluateApiSync(
-        AdventureBundle bundle,
-        SourcePublishMode publishMode,
-        bool hasLinked,
-        bool hasEntries)
+    private static void RefreshLoreHashesFromDisk(AdventureBundle bundle, IEnumerable<SourceManifestEntry> loreEntries)
     {
-        var outOfSync = bundle.SourceManifest.Entries.Count(e => e.SyncState != SourceSyncState.InSync);
-        var allInSync = hasEntries && outOfSync == 0;
+        var dir = ProjectSourceExportService.SourcesDirectory(bundle);
+        foreach (var entry in loreEntries)
+        {
+            var path = Path.Combine(dir, entry.RelativePath);
+            if (!File.Exists(path))
+                continue;
 
-        var syncedFiles = bundle.SourceManifest.Entries
-            .Where(e => e.SyncState == SourceSyncState.InSync)
-            .OrderBy(e => e.RelativePath, StringComparer.OrdinalIgnoreCase)
-            .Select(ToFileInfo)
-            .ToList();
-
-        string? blockingReason = null;
-        string? suggestedAction = null;
-
-        if (bundle.Metadata.Settings.ForceFatPackets)
-        {
-            blockingReason = "Force fat packets is enabled in adventure settings";
-            suggestedAction = "Disable force fat packets in Settings to use project sources";
+            var hash = ProjectSourceExportService.ComputeManifestLocalSha256(entry.RelativePath, path);
+            entry.LocalSha256 = hash;
+            entry.Sha256 = hash;
         }
-        else if (!hasLinked)
-        {
-            blockingReason = "No ChatGPT Project linked";
-            suggestedAction = "Link a Project from the dashboard";
-        }
-        else if (!hasEntries)
-        {
-            blockingReason = "Sources never exported for this adventure";
-            suggestedAction = "Export and sync sources to the linked Project";
-        }
-        else if (!allInSync)
-        {
-            blockingReason = outOfSync == 1
-                ? "1 source file out of sync"
-                : $"{outOfSync} source files out of sync";
-            suggestedAction = "Open source sync and apply pending changes";
-        }
-
-        return new ProjectSourceReadiness
-        {
-            CanDelegateStaticContent = blockingReason is null,
-            HasLinkedProject = hasLinked,
-            HasManifestEntries = hasEntries,
-            AllSourcesInSync = allInSync,
-            PublishMode = publishMode,
-            SyncedFiles = syncedFiles,
-            BlockingReason = blockingReason,
-            SuggestedAction = suggestedAction,
-            OutOfSyncCount = outOfSync,
-            NeedsRepublishCount = 0,
-        };
     }
 
     private static List<SourceManifestEntry> GetLoreEntries(AdventureBundle bundle)
     {
+        var entries = bundle.SourceManifest.Entries ?? [];
         var core = SectionSchema.CoreLoreFiles;
-        var entries = bundle.SourceManifest.Entries
+        var lore = entries
             .Where(e => SourceManifestHelper.IsCoreLoreFile(e.RelativePath))
             .ToList();
 
-        if (entries.Count >= core.Length)
-            return entries;
+        if (lore.Count >= core.Length)
+            return lore;
 
-        return bundle.SourceManifest.Entries
+        return entries
             .Where(e => SourceManifestHelper.IsLoreSourceFile(e.RelativePath))
             .ToList();
     }
+
+    private static IEnumerable<SourceManifestEntry> GetPublishedReferenceEntries(AdventureBundle bundle) =>
+        bundle.SourceManifest.Entries
+            .Where(e => SectionSchema.IsReferenceSourceFile(e.RelativePath) && e.IsManuallyCurrent());
 
     public static string BuildProjectSourcesSection(AdventureBundle bundle, ProjectSourceReadiness readiness)
     {
@@ -245,38 +288,27 @@ internal static class ProjectSourceInjectionService
         if (readiness.CanDelegateStaticContent)
         {
             var count = readiness.SyncedFiles.Count;
-            var prefix = readiness.PublishMode == SourcePublishMode.Manual
-                ? "published"
-                : "synced";
             return count == 1
-                ? $"{prefix} (1 file) | source-delegated packets"
-                : $"{prefix} ({count} files) | source-delegated packets";
+                ? $"published (1 file) | source-delegated packets"
+                : $"published ({count} files) | source-delegated packets";
         }
 
-        if (readiness.PublishMode == SourcePublishMode.Manual && readiness.NeedsRepublishCount > 0)
+        if (readiness.NeedsRepublishCount > 0)
         {
             return readiness.NeedsRepublishCount == 1
-                ? "1 needs publish | fat fallback"
-                : $"{readiness.NeedsRepublishCount} need publish | fat fallback";
-        }
-
-        if (readiness.OutOfSyncCount > 0)
-        {
-            var baseLine = readiness.OutOfSyncCount == 1
-                ? "1 out of sync | fat fallback"
-                : $"{readiness.OutOfSyncCount} out of sync | fat fallback";
-            if (readiness.PublishMode == SourcePublishMode.ApiSync)
-                return baseLine + " — switch to Manual publish (Sources tab) and use Source Manager";
-            return baseLine;
+                ? "1 needs publish | inline fallback"
+                : $"{readiness.NeedsRepublishCount} need publish | inline fallback";
         }
 
         return readiness.BlockingReason switch
         {
             var r when r?.Contains("never exported", StringComparison.OrdinalIgnoreCase) == true
-                => "not exported | fat fallback",
-            var r when r?.Contains("Force fat", StringComparison.OrdinalIgnoreCase) == true
-                => "forced fat packets",
-            _ => "not ready | fat fallback",
+                => "not exported | inline fallback",
+            var r when r?.Contains("Force inline", StringComparison.OrdinalIgnoreCase) == true
+                => "forced inline lore",
+            var r when r?.Contains("No ChatGPT Project", StringComparison.OrdinalIgnoreCase) == true
+                => "no project | minimal local",
+            _ => "not ready | inline fallback",
         };
     }
 

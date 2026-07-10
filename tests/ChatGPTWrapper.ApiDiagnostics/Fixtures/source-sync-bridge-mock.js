@@ -14,6 +14,7 @@
   ];
 
   var filesById = {};
+  var orphanLibraryUploads = {};
   var nextUploadId = 1000;
 
   function initFiles() {
@@ -125,7 +126,10 @@
         var bf = bodyFiles[i];
         var fid = bf.file_id || bf.fileId;
         if (!fid) continue;
-        if (!filesById[fid]) {
+        if (orphanLibraryUploads[fid]) {
+          filesById[fid] = orphanLibraryUploads[fid];
+          delete orphanLibraryUploads[fid];
+        } else if (!filesById[fid]) {
           filesById[fid] = {
             file_id: fid,
             name: bf.name || fid,
@@ -206,18 +210,32 @@
 
   function handleUpload(cmd) {
     var id = 'mock-upload-' + (nextUploadId++);
-    filesById[id] = {
+    var text = cmd.base64 ? decodeURIComponent(escape(atob(cmd.base64))) : '# upload';
+    var entry = {
       file_id: id,
       name: cmd.fileName || 'upload.md',
       location: 'sediment',
-      text: cmd.base64 ? decodeURIComponent(escape(atob(cmd.base64))) : '# upload'
+      text: text
     };
+
+    if (cmd.useProjectLibrary === true && cmd.gizmoId) {
+      orphanLibraryUploads[id] = entry;
+      return okResult({
+        fileId: id,
+        libraryUpload: true,
+        location: 'sediment',
+        json: { file_id: id, name: cmd.fileName || 'upload.md' }
+      });
+    }
+
+    filesById[id] = entry;
     return okResult({ fileId: id, json: { file_id: id, name: cmd.fileName || 'upload.md' } });
   }
 
   function handleDeleteProjectFile(cmd) {
     var fileId = cmd.fileId || cmd.file_id;
     if (fileId && filesById[fileId]) delete filesById[fileId];
+    if (fileId && orphanLibraryUploads[fileId]) delete orphanLibraryUploads[fileId];
     return okResult({ json: {} });
   }
 

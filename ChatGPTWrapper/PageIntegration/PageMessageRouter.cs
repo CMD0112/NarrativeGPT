@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ChatGPTWrapper.Bridges;
+using ChatGPTWrapper.Diagnostics;
 
 namespace ChatGPTWrapper.PageIntegration;
 
@@ -48,14 +49,16 @@ public sealed class PageMessageRouter
             if (string.IsNullOrEmpty(feature))
                 feature = InferFeature(type);
 
+            PageDiagnostics.LogInbound(type, feature, json);
+
             if (!string.IsNullOrEmpty(feature)
                 && _byFeature.TryGetValue(feature, out var handlers))
             {
-                foreach (var handler in handlers)
+                foreach (var handler in handlers.ToArray())
                     handler(type, root);
             }
 
-            foreach (var legacy in _legacyHandlers)
+            foreach (var legacy in _legacyHandlers.ToArray())
                 legacy(type, root);
         }
         catch
@@ -71,6 +74,8 @@ public sealed class PageMessageRouter
         if (type.StartsWith("cgwCompose", StringComparison.Ordinal))
             return PageFeatureIds.PlayCompose;
         if (string.Equals(type, "cgwPlaySendLog", StringComparison.Ordinal))
+            return PageFeatureIds.PlayCompose;
+        if (string.Equals(type, "cgwDiagnosticsLog", StringComparison.Ordinal))
             return PageFeatureIds.PlayCompose;
         return type switch
         {

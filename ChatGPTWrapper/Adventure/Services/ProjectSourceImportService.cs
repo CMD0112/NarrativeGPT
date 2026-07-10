@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using ChatGPTWrapper.Adventure.Models;
+using ChatGPTWrapper.Adventure.Services.Canon;
 
 namespace ChatGPTWrapper.Adventure.Services;
 
@@ -25,16 +26,32 @@ internal static class ProjectSourceImportService
     /// Parses sectioned lore markdown into manifest sections (and syncs local entities from file).
     /// Used after design writes so play pointer resolution can build baseline ALWAYS RETRIEVE hints.
     /// </summary>
+    /// <param name="importStructuredCanon">
+    /// When false, only manifest <see cref="SectionManifestEntry"/> rows are updated from markdown;
+    /// <c>entities.json</c> / <c>scenario.json</c> are left unchanged (load-time reconcile, packet prep).
+    /// </param>
     public static void RefreshManifestSectionsFromMarkdown(
         AdventureBundle bundle,
         string fileName,
-        string markdown)
+        string markdown,
+        bool importStructuredCanon = true)
     {
         if (string.IsNullOrWhiteSpace(markdown) || !IsSectionedLoreFile(fileName))
             return;
 
-        var fileResult = ImportFile(bundle, fileName, markdown);
-        UpdateManifestEntry(bundle, fileName, markdown, fileResult.ManifestSections);
+        var sections = importStructuredCanon
+            ? ImportFile(bundle, fileName, markdown).ManifestSections
+            : ParseManifestSectionsWithoutMutatingCanon(bundle, fileName, markdown);
+        UpdateManifestEntry(bundle, fileName, markdown, sections);
+    }
+
+    private static IReadOnlyList<SectionManifestEntry> ParseManifestSectionsWithoutMutatingCanon(
+        AdventureBundle bundle,
+        string fileName,
+        string markdown)
+    {
+        var sandbox = ImportStateSnapshot.CreateImportSandbox(bundle);
+        return ImportFile(sandbox, fileName, markdown, queueMissingRemovals: false).ManifestSections;
     }
 
     public static SourceImportResult Import(AdventureBundle bundle, SourceImportOptions? options = null)
@@ -125,6 +142,41 @@ internal static class ProjectSourceImportService
         }
     }
 
+    /// <summary>
+    /// Drops import-removal proposals that conflict with JSON canon (structured JSON wins over stale markdown).
+    /// </summary>
+    internal static int PruneStaleImportRemovalProposals(AdventureBundle bundle)
+    {
+        const string rationale = "Entity missing from source after JSON regenerate import";
+        var removed = 0;
+
+        for (var i = bundle.Scenario.SourceEditReviewQueue.Count - 1; i >= 0; i--)
+        {
+            var item = bundle.Scenario.SourceEditReviewQueue[i];
+            if (!string.Equals(item.Operation, "remove", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(item.Rationale, rationale, StringComparison.Ordinal))
+                continue;
+
+            if (!SourceEditService.TryParseImportRemovalContent(item.Content, out _, out var entityId))
+                continue;
+
+            if (!SourceEditService.EntityExistsInAnyCollection(bundle.Entities, entityId))
+                continue;
+
+            bundle.Scenario.SourceEditReviewQueue.RemoveAt(i);
+            removed++;
+        }
+
+        return removed;
+    }
+
+    internal static bool IsImportRemovalProposal(SourceEditReviewItem item) =>
+        string.Equals(item.Operation, "remove", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(
+            item.Rationale,
+            "Entity missing from source after JSON regenerate import",
+            StringComparison.Ordinal);
+
     internal static ImportStateSnapshot CaptureImportState(AdventureBundle bundle) =>
         ImportStateSnapshot.Capture(bundle);
 
@@ -153,6 +205,8 @@ internal static class ProjectSourceImportService
         CompareScenarioField(lines, "Lexicon pools", beforeScenario.LexiconPools, after.Scenario.LexiconPools);
         CompareScenarioField(lines, "Lexicon avoid", beforeScenario.LexiconAvoid, after.Scenario.LexiconAvoid);
 
+        ComparePlayerFields(lines, beforeEntities.Player, after.Entities.Player);
+        CompareNamedEntities(lines, beforeEntities.Party, after.Entities.Party, "Companion", p => p.Id, p => p.Name);
         CompareNamedEntities(lines, beforeEntities.Characters, after.Entities.Characters, "NPC", c => c.Id, c => c.Name);
         CompareNamedEntities(lines, beforeEntities.Locations, after.Entities.Locations, "Location", l => l.Id, l => l.Name);
         CompareNamedEntities(lines, beforeEntities.Quests, after.Entities.Quests, "Quest", q => q.Id, q => q.Title);
@@ -160,6 +214,22 @@ internal static class ProjectSourceImportService
         CompareNamedEntities(lines, beforeEntities.Concepts, after.Entities.Concepts, "Concept", c => c.Id, c => c.Name);
 
         return new SourceImportChangeReport { Lines = lines };
+    }
+
+    private static void ComparePlayerFields(List<string> lines, PlayerCharacterSheet before, PlayerCharacterSheet after)
+    {
+        if (string.IsNullOrWhiteSpace(before.Name) && string.IsNullOrWhiteSpace(after.Name))
+            return;
+
+        foreach (var field in CanonSchemaRegistry.Player.BodyFields)
+        {
+            var beforeValue = CanonFieldMapper.GetField(before, CanonSchemaRegistry.Player, field.JsonKey) ?? "";
+            var afterValue = CanonFieldMapper.GetField(after, CanonSchemaRegistry.Player, field.JsonKey) ?? "";
+            if (string.Equals(beforeValue, afterValue, StringComparison.Ordinal))
+                continue;
+
+            lines.Add($"Player {field.Label}: {Preview(afterValue)}");
+        }
     }
 
     private static void CompareScenarioField(List<string> lines, string label, string before, string after)
@@ -212,13 +282,17 @@ internal static class ProjectSourceImportService
         return trimmed[..69] + "…";
     }
 
-    private static SectionedFileImportResult ImportFile(AdventureBundle bundle, string fileName, string markdown) =>
+    private static SectionedFileImportResult ImportFile(
+        AdventureBundle bundle,
+        string fileName,
+        string markdown,
+        bool queueMissingRemovals = true) =>
         fileName.ToLowerInvariant() switch
         {
             SectionSchema.ScenarioFile => SectionedImportService.ImportScenario(bundle, markdown),
-            SectionSchema.WorldFile => SectionedImportService.ImportWorld(bundle, markdown),
-            SectionSchema.PlotFile => SectionedImportService.ImportPlot(bundle, markdown),
-            SectionSchema.CastFile => SectionedImportService.ImportCast(bundle, markdown),
+            SectionSchema.WorldFile => SectionedImportService.ImportWorld(bundle, markdown, queueMissingRemovals),
+            SectionSchema.PlotFile => SectionedImportService.ImportPlot(bundle, markdown, queueMissingRemovals),
+            SectionSchema.CastFile => SectionedImportService.ImportCast(bundle, markdown, queueMissingRemovals),
             SectionSchema.LexiconFile => SectionedImportService.ImportLexicon(bundle, markdown),
             _ => new SectionedFileImportResult
             {
@@ -332,5 +406,21 @@ internal static class ProjectSourceImportService
             bundle.SourceManifest.Entries =
                 JsonSerializer.Deserialize<List<SourceManifestEntry>>(ManifestJson, AdventureJson.Options) ?? [];
         }
+
+        internal static AdventureBundle CreateImportSandbox(AdventureBundle source) => new()
+        {
+            Metadata = source.Metadata,
+            Scenario = CloneJson(source.Scenario),
+            Entities = CloneJson(source.Entities),
+            SourceManifest = new SourceManifest
+            {
+                SchemaVersion = source.SourceManifest.SchemaVersion,
+                Entries = CloneJson(source.SourceManifest.Entries),
+            },
+        };
+
+        private static T CloneJson<T>(T value) where T : class, new() =>
+            JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, AdventureJson.Options), AdventureJson.Options)
+            ?? new();
     }
 }
